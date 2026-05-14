@@ -27,41 +27,43 @@ v0의 기본 응답 모드는 OpenAI 기반입니다. 채팅 응답 생성을 �
 
 ## 아키텍처 개요
 
-```text
-HTTP client
-  |
-  v
-FastAPI app (`main.py`)
-  |
-  v
-POST /assistant/chat
-  |
-  v
-General assistant agent graph
-(`my_agents/agents/general_assistant/`)
-  |
-  +--> classify_request
-          |
-          v
-      conditional route label
-          |
-          +--> respond_general
-          +--> respond_learning
-          +--> respond_research
-          +--> respond_project
-          +--> respond_career
-          |
-          v
-      response provider
-          |
-          +--> langchain-openai ChatOpenAI (default)
-          +--> deterministic templates (offline/test mode)
-          |
-          v
-        END
-  |
-  v
-Typed JSON response
+```mermaid
+flowchart TD
+    Client["HTTP client"]
+    CLI["Terminal CLI"]
+    API["FastAPI app"]
+    Graph["General assistant graph"]
+    Classifier["classify_request"]
+    Router{"route label"}
+    General["respond_general"]
+    Learning["respond_learning"]
+    Research["respond_research"]
+    Project["respond_project"]
+    Career["respond_career"]
+    Provider{"response provider"}
+    OpenAI["ChatOpenAI default"]
+    Deterministic["deterministic offline/test"]
+    Response["typed response"]
+
+    Client --> API
+    API --> Graph
+    CLI --> Graph
+    Graph --> Classifier
+    Classifier --> Router
+    Router --> General
+    Router --> Learning
+    Router --> Research
+    Router --> Project
+    Router --> Career
+    General --> Provider
+    Learning --> Provider
+    Research --> Provider
+    Project --> Provider
+    Career --> Provider
+    Provider --> OpenAI
+    Provider --> Deterministic
+    OpenAI --> Response
+    Deterministic --> Response
 ```
 
 현재 그래프는 `my_agents/agents/general_assistant/` 아래에 있으며 하나의 어시스턴트/라우터 흐름을 가집니다. 분류는 결정론적으로 수행됩니다. 응답 노드는 provider 인터페이스를 통해 라우트별 응답을 구성합니다. 기본값은 `langchain-openai`의 `ChatOpenAI`이며, 오프라인/테스트용으로 결정론적 템플릿 모드를 사용할 수 있습니다. 라우트별 응답 노드는 별도의 에이전트가 아닙니다.

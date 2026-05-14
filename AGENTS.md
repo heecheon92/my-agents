@@ -131,15 +131,28 @@ Rules for README maintenance:
 - Do not leave one README stale after changing the other.
 - If only one README exists when documentation work starts, create or restore the missing language variant.
 
-Learning documentation lives under `docs/learning/`.
+Learning documentation lives under `docs/learning/`. Follow `docs/learning/README.md` as the durable workflow guide for when to create a new note, when to update an existing note, and how to track creation/update dates.
 
 Rules for learning-oriented work:
 
 - Treat this repo as a study project as well as a codebase.
 - When implementation becomes more abstract, add or update a learner-facing explanation in `docs/learning/`.
+- Create a new learning note for a new durable topic, new agent/graph lifecycle, major integration, memory/tools/evaluation/persistence concept, or independent decision record.
+- Update an existing learning note for corrections, small additions, refactor alignment, or new exercises on the same topic.
+- Every learning note except `docs/learning/README.md` should include front matter with immutable `created`, refreshed `updated`, `status`, `topics`, and `related_code`.
+- Every learning note should end with a concise `## Revision history` section.
 - Prefer step-by-step walkthroughs, request lifecycles, diagrams, vocabulary tables, and small exercises.
 - Keep learning docs honest about what is implemented now versus future intent.
 - Do not replace tests or README docs with learning notes; learning notes are an additional teaching layer.
+
+Mermaid diagram guidance for Markdown work:
+
+- When creating or updating any Markdown file, proactively consider whether a Mermaid diagram would improve readability or comprehension.
+- Prefer Mermaid for architecture overviews, request lifecycles, graph/node flows, state transitions, sequence interactions, decision trees, and data relationships.
+- Add a diagram only when it clarifies the explanation; do not add decorative diagrams that duplicate simple prose.
+- Keep each diagram focused on one concept and place it near the section it explains.
+- Use fenced `mermaid` blocks so diagrams stay version-controllable and render on GitHub-compatible surfaces.
+- If a diagram would become large or noisy, split it into smaller diagrams or keep the explanation textual.
 
 When behavior changes, update:
 

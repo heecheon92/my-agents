@@ -27,41 +27,43 @@ This repository has no frontend UI. The v0 interface is the FastAPI backend API 
 
 ## Architecture overview
 
-```text
-HTTP client
-  |
-  v
-FastAPI app (`main.py`)
-  |
-  v
-POST /assistant/chat
-  |
-  v
-General assistant agent graph
-(`my_agents/agents/general_assistant/`)
-  |
-  +--> classify_request
-          |
-          v
-      conditional route label
-          |
-          +--> respond_general
-          +--> respond_learning
-          +--> respond_research
-          +--> respond_project
-          +--> respond_career
-          |
-          v
-      response provider
-          |
-          +--> langchain-openai ChatOpenAI (default)
-          +--> deterministic templates (offline/test mode)
-          |
-          v
-        END
-  |
-  v
-Typed JSON response
+```mermaid
+flowchart TD
+    Client["HTTP client"]
+    CLI["Terminal CLI"]
+    API["FastAPI app"]
+    Graph["General assistant graph"]
+    Classifier["classify_request"]
+    Router{"route label"}
+    General["respond_general"]
+    Learning["respond_learning"]
+    Research["respond_research"]
+    Project["respond_project"]
+    Career["respond_career"]
+    Provider{"response provider"}
+    OpenAI["ChatOpenAI default"]
+    Deterministic["deterministic offline/test"]
+    Response["typed response"]
+
+    Client --> API
+    API --> Graph
+    CLI --> Graph
+    Graph --> Classifier
+    Classifier --> Router
+    Router --> General
+    Router --> Learning
+    Router --> Research
+    Router --> Project
+    Router --> Career
+    General --> Provider
+    Learning --> Provider
+    Research --> Provider
+    Project --> Provider
+    Career --> Provider
+    Provider --> OpenAI
+    Provider --> Deterministic
+    OpenAI --> Response
+    Deterministic --> Response
 ```
 
 The current graph lives under `my_agents/agents/general_assistant/` and has one assistant/router flow. Classification is deterministic. Response nodes compose route-specific replies through a provider interface: `langchain-openai` `ChatOpenAI` by default, or deterministic templates for offline/test mode. The route-specific response nodes are not separate agents.

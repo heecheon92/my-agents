@@ -1,3 +1,24 @@
+---
+created: 2026-05-14
+updated: 2026-05-14
+status: active
+topics:
+  - fastapi
+  - langgraph
+  - langchain-messages
+  - cli-streaming
+  - openai-response-mode
+related_code:
+  - main.py
+  - my_agents/api.py
+  - my_agents/cli.py
+  - my_agents/schemas.py
+  - my_agents/settings.py
+  - my_agents/agents/general_assistant/classifier.py
+  - my_agents/agents/general_assistant/graph.py
+  - my_agents/agents/general_assistant/responders.py
+---
+
 # Current backend walkthrough
 
 This note explains the current `my_agents` implementation from a learner's point of view.
@@ -39,14 +60,26 @@ curl -X POST http://127.0.0.1:8000/assistant/chat \
 
 The app does this:
 
-```text
-api.py
-  -> ChatRequest validates input in schemas.py
-  -> graph.invoke(...) runs the LangGraph flow
-  -> agents/general_assistant/classifier.py chooses a route label
-  -> agents/general_assistant/graph.py chooses a response node
-  -> agents/general_assistant/responders.py composes reply text
-  -> ChatResponse validates output in schemas.py
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API as FastAPI API
+    participant Schema as Pydantic schemas
+    participant Graph as LangGraph graph
+    participant Classifier
+    participant Provider as Response provider
+
+    Client->>API: POST /assistant/chat
+    API->>Schema: validate ChatRequest
+    Schema-->>API: message and history
+    API->>Graph: invoke with LangChain messages
+    Graph->>Classifier: classify latest user request
+    Classifier-->>Graph: route label and explanation
+    Graph->>Provider: compose reply for selected route
+    Provider-->>Graph: reply text
+    Graph-->>API: reply, route, handled_by
+    API->>Schema: validate ChatResponse
+    API-->>Client: typed JSON response
 ```
 
 ## 3. FastAPI layer: `api.py`
@@ -181,6 +214,24 @@ The classifier now accepts LangChain `BaseMessage` history internally, rather th
 ## 6. LangGraph layer: `agents/general_assistant/graph.py`
 
 LangGraph is the workflow layer.
+
+The current graph has one classify step, one conditional route decision, and one response-composition node:
+
+```mermaid
+flowchart TD
+    Start([START]) --> Classify["classify_request"]
+    Classify --> Route{"route label"}
+    Route -->|general_assistant| General["respond_general"]
+    Route -->|learning_coach| Learning["respond_learning"]
+    Route -->|research_helper| Research["respond_research"]
+    Route -->|project_planner| Project["respond_project"]
+    Route -->|career_helper| Career["respond_career"]
+    General --> End([END])
+    Learning --> End
+    Research --> End
+    Project --> End
+    Career --> End
+```
 
 The graph state is defined around LangGraph/LangChain message conventions:
 
@@ -452,3 +503,10 @@ simple behavior
 ```
 
 The behavior is still small. The boundaries are there so future features do not become tangled.
+
+
+## Revision history
+
+- 2026-05-14: Created the initial backend walkthrough for the v0 FastAPI + LangGraph assistant foundation.
+- 2026-05-14: Updated after restructuring agent code, adopting LangChain message types, adding CLI chat, enabling CLI streaming, and making OpenAI the default response mode.
+- 2026-05-14: Added Mermaid diagrams for the request lifecycle and LangGraph node flow.
