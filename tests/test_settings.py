@@ -8,18 +8,29 @@ from pydantic import ValidationError
 from my_agents.settings import Settings
 
 
-def test_settings_default_to_deterministic_without_openai_key(
+def test_settings_default_to_openai_when_api_key_is_available(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("MY_AGENTS_RESPONSE_MODE", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.delenv("MY_AGENTS_OPENAI_API_KEY", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.response_mode == "openai"
+    assert settings.openai_model == "gpt-5.5"
+    assert settings.openai_api_key_value() == "test-key"
+
+
+def test_default_openai_mode_requires_api_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("MY_AGENTS_RESPONSE_MODE", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("MY_AGENTS_OPENAI_API_KEY", raising=False)
 
-    settings = Settings(_env_file=None)
-
-    assert settings.response_mode == "deterministic"
-    assert settings.openai_model == "gpt-5.5"
-    assert settings.openai_api_key_value() is None
+    with pytest.raises(ValidationError, match="OPENAI_API_KEY"):
+        Settings(_env_file=None)
 
 
 def test_openai_mode_requires_standard_openai_api_key(
@@ -27,6 +38,17 @@ def test_openai_mode_requires_standard_openai_api_key(
 ) -> None:
     monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "openai")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("MY_AGENTS_OPENAI_API_KEY", raising=False)
+
+    with pytest.raises(ValidationError, match="OPENAI_API_KEY"):
+        Settings(_env_file=None)
+
+
+def test_openai_mode_rejects_blank_api_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "   ")
     monkeypatch.delenv("MY_AGENTS_OPENAI_API_KEY", raising=False)
 
     with pytest.raises(ValidationError, match="OPENAI_API_KEY"):

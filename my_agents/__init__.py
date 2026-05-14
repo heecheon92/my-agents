@@ -1,4 +1,4 @@
-"""Backend package for the deterministic personal assistant graph."""
+"""Backend package for the OpenAI-backed personal assistant graph."""
 
 from my_agents.api import create_app
 

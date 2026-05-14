@@ -6,7 +6,7 @@
 
 ## 목적과 v0 범위
 
-`my-agents` v0는 개인 어시스턴트/라우터를 위한 결정론적 백엔드 기반입니다. 현재 버전은 다음을 보여줍니다.
+`my-agents` v0는 OpenAI 기반 응답 생성을 기본으로 사용하는 개인 어시스턴트/라우터 백엔드 기반입니다. 현재 버전은 다음을 보여줍니다.
 
 - 헬스 체크와 채팅 요청을 위한 FastAPI API 표면
 - 명시적인 상태, 노드, `START`, `END`, 조건부 라우팅을 사용하는 실제 LangGraph `StateGraph`
@@ -17,9 +17,9 @@ v0는 의도적으로 작게 유지합니다. 이 저장소는 백엔드 전용 
 
 ## 명시적인 v0 안내
 
-v0는 기본적으로 결정론적이며 규칙 기반입니다. 기본 모드에서는 **LLM을 호출하지 않고**, **API 키가 필요하지 않으며**, **유료 또는 자격 증명이 필요한 provider 서비스를 사용하지 않습니다**.
+v0의 기본 응답 모드는 OpenAI 기반입니다. 채팅 응답 생성을 실행하려면 `OPENAI_API_KEY`가 필요합니다. 테스트와 오프라인 확인을 위해 `MY_AGENTS_RESPONSE_MODE=deterministic` 모드는 계속 유지합니다.
 
-OpenAI 기반 응답 생성은 환경 변수를 통해 명시적으로 선택할 때만 활성화됩니다. 분류는 계속 결정론적으로 수행되며, 선택한 OpenAI GPT 모델은 최종 응답 텍스트만 생성합니다. v0의 라우트 라벨은 향후 범주를 위한 분류 정보일 뿐이며, 실제 전문 에이전트 실행이나 위임을 의미하지 않습니다.
+분류는 계속 결정론적으로 수행되며, 선택한 OpenAI GPT 모델은 최종 응답 텍스트만 생성합니다. API 키 없이 실행해야 하는 경우에는 deterministic 모드로 전환합니다. v0의 라우트 라벨은 향후 범주를 위한 분류 정보일 뿐이며, 실제 전문 에이전트 실행이나 위임을 의미하지 않습니다.
 
 ## 프론트엔드 없음
 
@@ -37,7 +37,8 @@ FastAPI app (`main.py`)
 POST /assistant/chat
   |
   v
-Personal assistant LangGraph
+General assistant agent graph
+(`my_agents/agents/general_assistant/`)
   |
   +--> classify_request
           |
@@ -53,8 +54,8 @@ Personal assistant LangGraph
           v
       response provider
           |
-          +--> deterministic templates (default)
-          +--> langchain-openai ChatOpenAI (env opt-in)
+          +--> langchain-openai ChatOpenAI (default)
+          +--> deterministic templates (offline/test mode)
           |
           v
         END
@@ -63,13 +64,13 @@ Personal assistant LangGraph
 Typed JSON response
 ```
 
-그래프에는 하나의 어시스턴트/라우터 흐름이 있습니다. 분류는 결정론적으로 수행됩니다. 응답 노드는 provider 인터페이스를 통해 라우트별 응답을 구성합니다. 기본값은 결정론적 템플릿이며, 명시적으로 활성화하면 `langchain-openai`의 `ChatOpenAI`를 사용합니다. 이 노드들은 별도의 에이전트가 아닙니다.
+현재 그래프는 `my_agents/agents/general_assistant/` 아래에 있으며 하나의 어시스턴트/라우터 흐름을 가집니다. 분류는 결정론적으로 수행됩니다. 응답 노드는 provider 인터페이스를 통해 라우트별 응답을 구성합니다. 기본값은 `langchain-openai`의 `ChatOpenAI`이며, 오프라인/테스트용으로 결정론적 템플릿 모드를 사용할 수 있습니다. 라우트별 응답 노드는 별도의 에이전트가 아닙니다.
 
 ## 그래프 흐름
 
 1. API가 비어 있지 않은 `message`와 선택적 `history`를 포함한 채팅 요청을 받습니다.
 2. FastAPI/Pydantic이 그래프 실행 전에 요청을 검증합니다.
-3. LangGraph 상태가 메시지, 히스토리, 라우트 결정, 응답, 그래프 메타데이터를 저장합니다.
+3. API가 공개 JSON의 `message`/`history`를 LangChain messages로 변환하고, LangGraph 상태는 `messages`, 라우트 결정, 응답, 그래프 메타데이터를 저장합니다.
 4. `classify_request`가 결정론적 규칙을 적용해 라우트 라벨과 설명을 반환합니다.
 5. 조건부 그래프 엣지가 라우트 라벨에 맞는 응답 구성 노드를 선택합니다.
 6. 선택된 response provider가 응답을 구성합니다.
@@ -95,13 +96,13 @@ uv로 의존성을 설치합니다.
 uv sync
 ```
 
-OpenAI 기반 응답을 로컬에서 실행하려면 환경 설정 파일을 만듭니다.
+로컬에서 기본 OpenAI 응답 모드를 실행하려면 환경 설정 파일을 만듭니다.
 
 ```bash
 cp .env.example .env
 ```
 
-기본 `.env.example` 설정은 앱을 결정론적/오프라인 모드로 유지합니다. OpenAI 기반 응답을 활성화하려면 `.env`를 수정합니다.
+기본 `.env.example` 설정은 OpenAI 응답 모드를 사용하도록 되어 있습니다. 실제 실행 전에 `OPENAI_API_KEY` 줄의 주석을 해제하고 본인의 키로 바꿉니다.
 
 ```bash
 MY_AGENTS_RESPONSE_MODE=openai
@@ -151,7 +152,28 @@ uv run uvicorn main:app --reload
 
 기본적으로 로컬 API는 `http://127.0.0.1:8000`에서 사용할 수 있습니다.
 
+## 터미널에서 채팅하기
+
+FastAPI 서버를 시작하지 않고 general assistant graph를 직접 실행할 수 있습니다.
+
+```bash
+uv run python -m my_agents.cli
+```
+
+그다음 터미널에서 메시지를 입력합니다.
+
+```text
+You: Help me study LangGraph
+Assistant: Classified as route label `learning_coach`...
+You: /exit
+Goodbye.
+```
+
+터미널 채팅은 OpenAI 모드에서 LangGraph streaming을 사용해 토큰이 생성되는 대로 출력합니다. deterministic 모드에서는 같은 스트리밍 경로로 최종 그래프 업데이트를 출력합니다. 메시지 히스토리는 현재 프로세스 안에서만 유지되며 영속화하지 않습니다.
+
 ## API 예시
+
+아래 응답 예시는 문서와 테스트에서 안정적으로 비교할 수 있도록 deterministic 모드 기준입니다. 기본 OpenAI 모드에서는 `reply` 문구가 모델 응답에 따라 달라질 수 있습니다.
 
 ### `GET /health`
 

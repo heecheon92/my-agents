@@ -27,7 +27,8 @@ htmlcov/
 
 # Editor/OS-local files
 .DS_Store
-.vscode/
+.vscode/*
+!.vscode/launch.json
 .idea/
 
 # Local agent/workflow planning artifacts

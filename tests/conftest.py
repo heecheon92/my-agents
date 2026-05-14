@@ -8,6 +8,7 @@ from collections.abc import Callable, Mapping
 from typing import Any
 
 import pytest
+from langchain_core.messages import AIMessage, AnyMessage, HumanMessage
 
 ALLOWED_ROUTE_LABELS = {
     "general_assistant",
@@ -103,19 +104,19 @@ def assert_no_delegation_claims(value: Any) -> None:
 
 
 def get_classifier() -> Callable[[str], Any]:
-    module = importlib.import_module("my_agents.classifier")
+    module = importlib.import_module("my_agents.agents.general_assistant.classifier")
     for name in ("classify_message", "classify_request", "classify_route", "classify"):
         fn = getattr(module, name, None)
         if callable(fn):
             return fn
     pytest.fail(
-        "my_agents.classifier must expose a callable classifier "
+        "my_agents.agents.general_assistant.classifier must expose a callable classifier "
         "(preferred: classify_message(message: str) -> RouteDecision)"
     )
 
 
 def get_compiled_graph():
-    module = importlib.import_module("my_agents.graph")
+    module = importlib.import_module("my_agents.agents.general_assistant.graph")
     for name in (
         "build_assistant_graph",
         "create_assistant_graph",
@@ -129,7 +130,10 @@ def get_compiled_graph():
     else:
         graph = getattr(module, "assistant_graph", None) or getattr(module, "graph", None)
     if graph is None:
-        pytest.fail("my_agents.graph must expose a compiled assistant graph or graph factory")
+        pytest.fail(
+            "my_agents.agents.general_assistant.graph must expose a compiled "
+            "assistant graph or graph factory"
+        )
     if not hasattr(graph, "invoke") and hasattr(graph, "compile"):
         graph = graph.compile()
     assert hasattr(graph, "invoke"), "assistant graph must compile to an invokable LangGraph object"
@@ -138,21 +142,28 @@ def get_compiled_graph():
 
 def invoke_graph(message: str, history: list[dict[str, str]] | None = None) -> dict[str, Any]:
     graph = get_compiled_graph()
-    normalized_history: list[Any] = []
-    if history:
-        try:
-            ChatMessage = importlib.import_module("my_agents.schemas").ChatMessage
-            normalized_history = [ChatMessage.model_validate(item) for item in history]
-        except ModuleNotFoundError, AttributeError:
-            normalized_history = history
-    state = {"message": message, "history": normalized_history}
+    state = {"messages": messages_from_payload(message, history)}
     return as_dict(graph.invoke(state))
+
+
+def messages_from_payload(
+    message: str,
+    history: list[dict[str, str]] | None = None,
+) -> list[AnyMessage]:
+    messages: list[AnyMessage] = []
+    for item in history or []:
+        if item["role"] == "assistant":
+            messages.append(AIMessage(content=item["content"]))
+        else:
+            messages.append(HumanMessage(content=item["content"]))
+    messages.append(HumanMessage(content=message))
+    return messages
 
 
 def _clear_runtime_caches() -> None:
     for module_name, cached_names in {
         "my_agents.settings": ("get_settings",),
-        "my_agents.responders": ("get_response_provider",),
+        "my_agents.agents.general_assistant.responders": ("get_response_provider",),
     }.items():
         module = sys.modules.get(module_name)
         if module is None:

@@ -2,7 +2,7 @@
 
 This repository is a backend-only AI-agent project. It is intentionally small, incremental, and learning-oriented.
 
-The current product shape is a FastAPI + LangGraph assistant/router foundation that can run deterministically by default and optionally generate replies with OpenAI GPT variants through `langchain-openai`.
+The current product shape is a FastAPI + LangGraph assistant/router foundation that uses OpenAI GPT variants through `langchain-openai` by default, with deterministic mode kept for offline tests and smoke checks.
 
 ## Product intent
 
@@ -13,10 +13,11 @@ The current product shape is a FastAPI + LangGraph assistant/router foundation t
 ## Current architecture
 
 - `main.py` exposes the ASGI app.
+- `my_agents/cli.py` exposes a local terminal chat loop for the current graph.
 - `my_agents/api.py` owns the FastAPI app factory and routes.
-- `my_agents/graph.py` owns the LangGraph `StateGraph`.
-- `my_agents/classifier.py` owns deterministic route classification.
-- `my_agents/responders.py` owns deterministic and OpenAI-backed reply composition.
+- `my_agents/agents/general_assistant/graph.py` owns the current general assistant LangGraph `StateGraph`.
+- `my_agents/agents/general_assistant/classifier.py` owns deterministic route classification for the general assistant.
+- `my_agents/agents/general_assistant/responders.py` owns deterministic and OpenAI-backed reply composition for the general assistant.
 - `my_agents/settings.py` owns environment-driven runtime configuration.
 - `my_agents/schemas.py` owns Pydantic request/response contracts.
 - `tests/` defines the behavior contract and must stay offline by default.
@@ -28,7 +29,7 @@ The graph currently has one assistant/router path. Route labels are metadata for
 - No frontend files, UI framework setup, or browser app scaffolding in this repo.
 - No provider sprawl. The only planned LLM provider is OpenAI.
 - Use `langchain-openai` / `ChatOpenAI` for OpenAI model access, not direct provider calls in application code.
-- Keep deterministic mode as the default. The app must run and tests must pass without credentials.
+- Keep deterministic mode available for tests and offline smoke checks. The normal local response mode is OpenAI-backed and requires `OPENAI_API_KEY` before chat requests can succeed.
 - Never commit real secrets. Do not read or print `.env` contents unless the user explicitly asks and understands the risk.
 - Keep `.env.example` safe and secret-free.
 - Do not claim live specialized agents, persistent memory, hosted deployment, or frontend functionality unless implemented and tested.
@@ -38,15 +39,14 @@ The graph currently has one assistant/router path. Route labels are metadata for
 Default local behavior:
 
 ```bash
-MY_AGENTS_RESPONSE_MODE=deterministic
-```
-
-OpenAI-backed reply generation is opt-in:
-
-```bash
 MY_AGENTS_RESPONSE_MODE=openai
 OPENAI_API_KEY=sk-your-project-key
-MY_AGENTS_OPENAI_MODEL=gpt-5.5
+```
+
+Offline deterministic mode is available for tests and credential-free smoke checks:
+
+```bash
+MY_AGENTS_RESPONSE_MODE=deterministic
 ```
 
 Optional knobs:
@@ -71,7 +71,7 @@ If adding conversation memory later, prefer LangGraph checkpointers as the app-o
 
 - Python target is defined in `pyproject.toml`.
 - Use typed Pydantic schemas at API boundaries.
-- Keep route handlers thin; put graph logic in `my_agents/graph.py` and provider logic in `my_agents/responders.py`.
+- Keep route handlers thin; put agent-specific graph/classifier/responder logic under `my_agents/agents/<agent_name>/`.
 - Keep graph state explicit and small.
 - Keep responses honest: classify, explain, and disclose current behavior.
 - Prefer small, reversible changes with tests.
@@ -96,6 +96,12 @@ curl -X POST http://127.0.0.1:8000/assistant/chat \
   -d '{"message":"Plan my next backend milestone","history":[]}'
 ```
 
+For terminal chat smoke testing:
+
+```bash
+printf 'Hello\n/exit\n' | MY_AGENTS_RESPONSE_MODE=deterministic uv run python -m my_agents.cli
+```
+
 Tests must not require `OPENAI_API_KEY`. Mock LangChain/OpenAI boundaries in tests.
 
 ## Incremental roadmap bias
@@ -103,7 +109,7 @@ Tests must not require `OPENAI_API_KEY`. Mock LangChain/OpenAI boundaries in tes
 Prefer this sequence:
 
 1. Preserve deterministic classify/router contract.
-2. Add OpenAI-backed reply behavior behind env flags.
+2. Keep OpenAI-backed reply behavior as the normal local mode while preserving deterministic tests.
 3. Add LangGraph checkpointer-backed short-term memory.
 4. Store OpenAI `previous_response_id` only after graph thread state exists.
 5. Add real tool/function capabilities one at a time with tests.
@@ -125,9 +131,20 @@ Rules for README maintenance:
 - Do not leave one README stale after changing the other.
 - If only one README exists when documentation work starts, create or restore the missing language variant.
 
+Learning documentation lives under `docs/learning/`.
+
+Rules for learning-oriented work:
+
+- Treat this repo as a study project as well as a codebase.
+- When implementation becomes more abstract, add or update a learner-facing explanation in `docs/learning/`.
+- Prefer step-by-step walkthroughs, request lifecycles, diagrams, vocabulary tables, and small exercises.
+- Keep learning docs honest about what is implemented now versus future intent.
+- Do not replace tests or README docs with learning notes; learning notes are an additional teaching layer.
+
 When behavior changes, update:
 
 - `README.md` and `README.en.md` for user-facing setup and examples.
+- `docs/learning/` when architecture or implementation concepts become harder to understand.
 - `.env.example` for safe env knobs.
 - tests for the behavior contract.
 - this `AGENTS.md` if project constraints or architecture conventions change.
@@ -140,5 +157,6 @@ A change is complete only when:
 - tests cover the important path without real credentials;
 - lint and format checks pass;
 - Korean and English README/env docs are accurate if setup changed;
+- learning notes are updated when the change introduces new concepts or abstractions;
 - no secrets are exposed;
 - no frontend or non-OpenAI provider scope was added accidentally.

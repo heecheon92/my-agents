@@ -1,12 +1,14 @@
 """LangGraph implementation for the personal assistant backend."""
 
-from typing import TypedDict
+from typing import Annotated, TypedDict
 
+from langchain_core.messages import AnyMessage
 from langgraph.graph import END, START, StateGraph
+from langgraph.graph.message import add_messages
 
-from my_agents.classifier import classify_message
-from my_agents.responders import get_response_provider
-from my_agents.schemas import ChatMessage, RouteDecision
+from my_agents.agents.general_assistant.classifier import classify_messages
+from my_agents.agents.general_assistant.responders import get_response_provider
+from my_agents.schemas import RouteDecision
 
 HANDLED_BY = "personal_assistant_graph"
 
@@ -14,8 +16,7 @@ HANDLED_BY = "personal_assistant_graph"
 class AssistantState(TypedDict, total=False):
     """State passed through the personal assistant graph."""
 
-    message: str
-    history: list[ChatMessage]
+    messages: Annotated[list[AnyMessage], add_messages]
     route: RouteDecision
     reply: str
     handled_by: str
@@ -23,7 +24,7 @@ class AssistantState(TypedDict, total=False):
 
 def classify_request(state: AssistantState) -> AssistantState:
     """Classify the message into a route label using deterministic local rules."""
-    route = classify_message(state["message"], state.get("history", []))
+    route = classify_messages(state.get("messages", []))
     return {"route": route, "handled_by": HANDLED_BY}
 
 
@@ -90,8 +91,7 @@ def respond_career(state: AssistantState) -> AssistantState:
 def _compose_reply(state: AssistantState, guidance: str) -> str:
     route = state["route"]
     return get_response_provider().compose_reply(
-        message=state["message"],
-        history=state.get("history", []),
+        messages=state.get("messages", []),
         route=route,
         guidance=guidance,
     )

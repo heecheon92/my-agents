@@ -97,7 +97,7 @@ def test_blank_message_returns_client_error_before_graph_is_invoked(
 
     # Patch common graph seams before app creation. Implementations can choose any of
     # these names while still proving validation short-circuits before graph execution.
-    for module_name in ("my_agents.graph", "my_agents.api"):
+    for module_name in ("my_agents.agents.general_assistant.graph", "my_agents.api"):
         try:
             module = importlib.import_module(module_name)
         except ModuleNotFoundError:

@@ -12,24 +12,7 @@ RouteLabel = Literal[
     "career_helper",
 ]
 HistoryRole = Literal["user", "assistant"]
-
-
-class ChatMessage(BaseModel):
-    """A single context-only chat history item."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    role: HistoryRole
-    content: str = Field(min_length=1)
-
-    @field_validator("content")
-    @classmethod
-    def content_must_not_be_blank(cls, value: str) -> str:
-        """Reject whitespace-only history content before graph execution."""
-        stripped = value.strip()
-        if not stripped:
-            raise ValueError("history content must not be blank")
-        return stripped
+HistoryItem = dict[str, str]
 
 
 class ChatRequest(BaseModel):
@@ -38,7 +21,7 @@ class ChatRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     message: str = Field(min_length=1)
-    history: list[ChatMessage] = Field(default_factory=list)
+    history: list[HistoryItem] = Field(default_factory=list)
 
     @field_validator("message")
     @classmethod
@@ -48,6 +31,26 @@ class ChatRequest(BaseModel):
         if not stripped:
             raise ValueError("message must not be blank")
         return stripped
+
+    @field_validator("history")
+    @classmethod
+    def history_must_use_supported_message_shape(
+        cls,
+        value: list[HistoryItem],
+    ) -> list[HistoryItem]:
+        """Validate simple JSON history before converting it to LangChain messages."""
+        normalized: list[HistoryItem] = []
+        for item in value:
+            if set(item) != {"role", "content"}:
+                raise ValueError("history items must contain exactly role and content")
+            role = item["role"]
+            if role not in ("user", "assistant"):
+                raise ValueError("history role must be user or assistant")
+            content = item["content"].strip()
+            if not content:
+                raise ValueError("history content must not be blank")
+            normalized.append({"role": role, "content": content})
+        return normalized
 
 
 class RouteDecision(BaseModel):

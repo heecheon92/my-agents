@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 
-from my_agents.responders import (
+from my_agents.agents.general_assistant.responders import (
     DeterministicResponseProvider,
     OpenAIResponseProvider,
     _build_chat_model_args,
@@ -28,8 +28,7 @@ def test_deterministic_provider_is_credential_free() -> None:
     route = RouteDecision(label="project_planner", explanation="planning request")
 
     reply = provider.compose_reply(
-        message="Plan the next milestone",
-        history=[],
+        messages=[HumanMessage(content="Plan the next milestone")],
         route=route,
         guidance="Break the work into one verifiable milestone.",
     )
@@ -53,8 +52,7 @@ def test_openai_provider_passes_gpt_variant_and_optional_tuning(
     route = RouteDecision(label="learning_coach", explanation="study request")
 
     reply = provider.compose_reply(
-        message="Help me learn LangGraph",
-        history=[],
+        messages=[HumanMessage(content="Help me learn LangGraph")],
         route=route,
         guidance="Define, build, and test one tiny example.",
     )

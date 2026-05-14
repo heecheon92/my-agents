@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     )
 
     response_mode: ResponseMode = Field(
-        default="deterministic",
+        default="openai",
         validation_alias=AliasChoices("MY_AGENTS_RESPONSE_MODE"),
     )
     openai_api_key: SecretStr | None = Field(
@@ -69,6 +69,14 @@ class Settings(BaseSettings):
         if not stripped:
             raise ValueError("MY_AGENTS_OPENAI_MODEL must not be blank")
         return stripped
+
+    @field_validator("openai_api_key", mode="before")
+    @classmethod
+    def blank_openai_api_key_is_missing(cls, value: object) -> object:
+        """Treat a blank API key like a missing key so OpenAI mode fails clearly."""
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
     @field_validator("openai_reasoning_effort", "openai_verbosity", mode="before")
     @classmethod

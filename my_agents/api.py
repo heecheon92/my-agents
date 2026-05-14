@@ -3,9 +3,10 @@
 from typing import Annotated, Protocol
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
-from my_agents.graph import build_graph
-from my_agents.responders import ResponseProviderConfigurationError
+from my_agents.agents.general_assistant.graph import build_graph
+from my_agents.agents.general_assistant.responders import ResponseProviderConfigurationError
 from my_agents.schemas import ChatRequest, ChatResponse, RouteDecision
 
 
@@ -35,7 +36,7 @@ def chat(
 ) -> ChatResponse:
     """Run a validated chat request through the personal assistant graph."""
     try:
-        result = graph_runner.invoke({"message": request.message, "history": request.history})
+        result = graph_runner.invoke({"messages": _messages_from_request(request)})
     except ResponseProviderConfigurationError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return ChatResponse(
@@ -61,3 +62,15 @@ def _coerce_route(route: RouteDecision | dict) -> RouteDecision:
     if isinstance(route, RouteDecision):
         return route
     return RouteDecision.model_validate(route)
+
+
+def _messages_from_request(request: ChatRequest) -> list[BaseMessage]:
+    """Convert public JSON request shape into LangChain message objects."""
+    messages: list[BaseMessage] = []
+    for item in request.history:
+        if item["role"] == "assistant":
+            messages.append(AIMessage(content=item["content"]))
+        else:
+            messages.append(HumanMessage(content=item["content"]))
+    messages.append(HumanMessage(content=request.message))
+    return messages

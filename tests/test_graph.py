@@ -17,7 +17,7 @@ def test_graph_compiles_to_real_invokable_langgraph_path() -> None:
     graph = get_compiled_graph()
 
     assert callable(graph.invoke)
-    result = graph.invoke({"message": "Hello, what can you do?", "history": []})
+    result = graph.invoke({"messages": invoke_graph_messages("Hello, what can you do?")})
 
     assert_chat_response_shape(result, expected_label="general_assistant")
 
@@ -43,3 +43,9 @@ def test_graph_accepts_history_context_without_claiming_persistent_memory() -> N
     assert_chat_response_shape(result)
     assert "persistent memory" not in str(result).lower()
     assert_no_delegation_claims(result)
+
+
+def invoke_graph_messages(message: str):
+    from .conftest import messages_from_payload
+
+    return messages_from_payload(message)

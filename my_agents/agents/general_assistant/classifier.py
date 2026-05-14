@@ -2,7 +2,9 @@
 
 from collections.abc import Iterable
 
-from my_agents.schemas import ChatMessage, RouteDecision, RouteLabel
+from langchain_core.messages import BaseMessage, HumanMessage
+
+from my_agents.schemas import RouteDecision, RouteLabel
 
 _LABEL_KEYWORDS: tuple[tuple[RouteLabel, tuple[str, ...], str], ...] = (
     (
@@ -81,7 +83,7 @@ _GENERAL_EXPLANATION = (
 )
 
 
-def classify_message(message: str, history: Iterable[ChatMessage] | None = None) -> RouteDecision:
+def classify_message(message: str, history: Iterable[BaseMessage] | None = None) -> RouteDecision:
     """Classify a request into a future-agent route label.
 
     The classifier is intentionally local, deterministic, and credential-free. History is included
@@ -94,6 +96,34 @@ def classify_message(message: str, history: Iterable[ChatMessage] | None = None)
     return RouteDecision(label="general_assistant", explanation=_GENERAL_EXPLANATION)
 
 
-def _classification_text(message: str, history: Iterable[ChatMessage] | None) -> str:
-    history_text = " ".join(item.content for item in history or ())
+def classify_messages(messages: Iterable[BaseMessage]) -> RouteDecision:
+    """Classify a LangChain message list by its latest human message plus prior context."""
+    message_list = list(messages)
+    latest_user_message = _latest_human_text(message_list)
+    return classify_message(latest_user_message, message_list[:-1])
+
+
+def _classification_text(message: str, history: Iterable[BaseMessage] | None) -> str:
+    history_text = " ".join(_message_text(item) for item in history or ())
     return f"{message} {history_text}".casefold()
+
+
+def _latest_human_text(messages: list[BaseMessage]) -> str:
+    for message in reversed(messages):
+        if isinstance(message, HumanMessage):
+            return _message_text(message)
+    return ""
+
+
+def _message_text(message: BaseMessage) -> str:
+    content = message.content
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = [
+            item["text"]
+            for item in content
+            if isinstance(item, dict) and isinstance(item.get("text"), str)
+        ]
+        return " ".join(parts)
+    return str(content)
