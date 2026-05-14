@@ -1,0 +1,47 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.eggs/
+
+# Virtual environments
+.venv/
+
+# Local/package manager caches
+.uv-cache/
+
+# Test/lint caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyright/
+.pyre/
+.hypothesis/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Editor/OS-local files
+.DS_Store
+.vscode/
+.idea/
+
+# Local agent/workflow planning artifacts
+.omx/
+.codex/
+
+# Local environment files
+.env
+.env.*
+.envrc
+*.local
+!.env.example
+
+# Local logs and databases
+*.log
+*.sqlite
+*.sqlite3

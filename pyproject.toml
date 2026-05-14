@@ -1,0 +1,25 @@
+[project]
+name = "my-agents"
+version = "0.1.0"
+description = "Deterministic FastAPI and LangGraph personal assistant backend foundation."
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi[standard]",
+    "langchain-openai>=1.2.1",
+    "langgraph",
+    "pydantic-settings",
+]
+
+[dependency-groups]
+dev = [
+    "httpx",
+    "pytest",
+    "ruff",
+]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
