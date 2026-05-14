@@ -131,6 +131,15 @@ Rules for README maintenance:
 - Do not leave one README stale after changing the other.
 - If only one README exists when documentation work starts, create or restore the missing language variant.
 
+Agent-level README convention:
+
+- Every concrete agent implementation folder under `my_agents/agents/<agent_name>/` should have its own bilingual README pair.
+- `my_agents/agents/<agent_name>/README.md` is Korean.
+- `my_agents/agents/<agent_name>/README.en.md` is English.
+- Agent README files should cross-link to each other near the top, just like the repo-root READMEs.
+- Agent README files should explain the agent purpose, file responsibilities, graph/tool flow, current behavior, planned extension seams, and relevant tests.
+- Update the agent README pair whenever that agent's behavior, graph shape, tool policy, state contract, or extension guidance changes.
+
 Learning documentation lives under `docs/learning/`. Follow `docs/learning/README.md` as the durable workflow guide for when to create a new note, when to update an existing note, and how to track creation/update dates.
 
 Rules for learning-oriented work:
@@ -141,6 +150,7 @@ Rules for learning-oriented work:
 - Update an existing learning note for corrections, small additions, refactor alignment, or new exercises on the same topic.
 - Every learning note except `docs/learning/README.md` should include front matter with immutable `created`, refreshed `updated`, `status`, `topics`, and `related_code`.
 - Every learning note should end with a concise `## Revision history` section.
+- For non-trivial bugs or model/tool failures, add or update a debug/fix learning note that records the symptom, root cause or hypothesis, rejected fixes, fix/mitigation, tests, and follow-up risks.
 - Prefer step-by-step walkthroughs, request lifecycles, diagrams, vocabulary tables, and small exercises.
 - Keep learning docs honest about what is implemented now versus future intent.
 - Do not replace tests or README docs with learning notes; learning notes are an additional teaching layer.

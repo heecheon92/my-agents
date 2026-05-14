@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 from functools import lru_cache
 from typing import Any, Protocol
@@ -17,6 +18,35 @@ _SYSTEM_PROMPT = (
     "You are the reply-generation component of a backend-only FastAPI + LangGraph "
     "assistant backend. Be concise, practical, and helpful. Preserve the provided route "
     "label as metadata; do not claim that a separate specialized agent ran."
+)
+_WEB_SEARCH_TOOL = {"type": "web_search"}
+_GENERAL_ASSISTANT_WEB_SEARCH_HINTS = (
+    "current",
+    "currently",
+    "latest",
+    "recent",
+    "recently",
+    "today",
+    "this week",
+    "this month",
+    "this year",
+    "news",
+    "web",
+    "internet",
+    "online",
+    "search",
+    "browse",
+    "look up",
+    "find source",
+    "find sources",
+    "source",
+    "sources",
+    "citation",
+    "citations",
+    "docs",
+    "documentation",
+    "2025",
+    "2026",
 )
 
 
@@ -37,6 +67,7 @@ class ResponseProvider(Protocol):
         messages: Sequence[BaseMessage],
         route: RouteDecision,
         guidance: str,
+        debug_empty_response: bool = False,
     ) -> str:
         """Return a user-facing reply for the classified request."""
         ...
@@ -51,7 +82,9 @@ class DeterministicResponseProvider:
         messages: Sequence[BaseMessage],
         route: RouteDecision,
         guidance: str,
+        debug_empty_response: bool = False,
     ) -> str:
+        _ = debug_empty_response
         _ = messages
         return (
             f"Classified as route label `{route.label}`. {guidance} "
@@ -77,15 +110,25 @@ class OpenAIResponseProvider:
         messages: Sequence[BaseMessage],
         route: RouteDecision,
         guidance: str,
+        debug_empty_response: bool = False,
     ) -> str:
-        response = self._chat_model.invoke(
+        model = self._chat_model
+        tools = _tools_for_route(route, messages)
+
+        if tools:
+            model = model.bind_tools(tools)
+
+        response = model.invoke(
             _build_input_messages(
                 messages=messages,
                 route=route,
                 guidance=guidance,
             )
         )
-        return _extract_message_content(response)
+        return _extract_message_content(
+            response,
+            debug_empty_response=debug_empty_response,
+        )
 
 
 @lru_cache
@@ -140,12 +183,30 @@ def _build_chat_model_args(settings: Settings) -> dict[str, Any]:
         "timeout": settings.openai_timeout_seconds,
         "max_completion_tokens": settings.openai_max_output_tokens,
         "use_responses_api": True,
+        "output_version": "responses/v1",
     }
     if settings.openai_reasoning_effort is not None:
         args["reasoning_effort"] = settings.openai_reasoning_effort
     if settings.openai_verbosity is not None:
         args["verbosity"] = settings.openai_verbosity
     return args
+
+
+def _tools_for_route(
+    route: RouteDecision,
+    messages: Sequence[BaseMessage],
+) -> list[dict[str, str]]:
+    """Choose OpenAI hosted tools for a route without changing graph flow."""
+    if route.label == "research_helper":
+        return [_WEB_SEARCH_TOOL]
+    if route.label == "general_assistant" and _latest_human_message_needs_web_search(messages):
+        return [_WEB_SEARCH_TOOL]
+    return []
+
+
+def _latest_human_message_needs_web_search(messages: Sequence[BaseMessage]) -> bool:
+    latest_user_message = _latest_human_text(messages).casefold()
+    return any(hint in latest_user_message for hint in _GENERAL_ASSISTANT_WEB_SEARCH_HINTS)
 
 
 def _latest_human_text(messages: Sequence[BaseMessage]) -> str:
@@ -169,25 +230,113 @@ def _message_text(message: BaseMessage) -> str:
     return str(content)
 
 
-def _extract_message_content(response: Any) -> str:
+def _extract_message_content(
+    response: Any,
+    *,
+    debug_empty_response: bool = False,
+) -> str:
     """Extract text from LangChain AI messages and lightweight test doubles."""
-    content = getattr(response, "content", None)
-    if isinstance(content, str) and content.strip():
-        return content.strip()
+    text = getattr(response, "text", "")
+    if isinstance(text, str) and text.strip():
+        return text.strip()
 
-    if isinstance(content, list):
-        text_parts = [
-            item["text"]
-            for item in content
-            if isinstance(item, dict) and isinstance(item.get("text"), str)
-        ]
-        text = "\n".join(part.strip() for part in text_parts if part.strip())
-        if text:
-            return text
+    text = _collect_text(response)
+    if text:
+        return text
 
-    if isinstance(response, dict):
-        content = response.get("content")
-        if isinstance(content, str) and content.strip():
-            return content.strip()
+    return _fallback_message_for_empty_openai_response(
+        response,
+        debug_empty_response=debug_empty_response,
+    )
 
-    raise ResponseProviderError("LangChain OpenAI response did not include text content.")
+
+def _collect_text(value: Any) -> str:
+    """Collect text from common LangChain/OpenAI response block shapes."""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, list):
+        parts = [_collect_text(item) for item in value]
+        return "\n".join(part for part in parts if part)
+    if isinstance(value, dict):
+        direct_text = value.get("text") or value.get("output_text")
+        if isinstance(direct_text, str) and direct_text.strip():
+            return direct_text.strip()
+
+        nested_parts = []
+        for key in ("content", "output", "message", "value"):
+            if key in value:
+                nested_text = _collect_text(value[key])
+                if nested_text:
+                    nested_parts.append(nested_text)
+        return "\n".join(nested_parts)
+
+    content = getattr(value, "content", None)
+    additional_kwargs = getattr(value, "additional_kwargs", None)
+    response_metadata = getattr(value, "response_metadata", None)
+
+    parts = []
+    for item in (content, additional_kwargs, response_metadata):
+        nested_text = _collect_text(item)
+        if nested_text:
+            parts.append(nested_text)
+    return "\n".join(parts)
+
+
+def _fallback_message_for_empty_openai_response(
+    response: Any,
+    *,
+    debug_empty_response: bool,
+) -> str:
+    """Return a fallback instead of crashing when OpenAI emits no text."""
+    metadata = getattr(response, "response_metadata", {}) or {}
+    status = metadata.get("status")
+    incomplete_details = metadata.get("incomplete_details")
+
+    details = []
+    if status:
+        details.append(f"status={status}")
+    if incomplete_details:
+        details.append(f"incomplete_details={incomplete_details}")
+
+    suffix = f" ({'; '.join(details)})" if details else ""
+    reason = _empty_response_failure_reason(status, incomplete_details)
+    message = f"I could not extract a final text answer from the OpenAI response{suffix}. {reason}"
+    if not debug_empty_response:
+        return message
+
+    return f"{message}\n\nRaw response object:\n```text\n{_debug_dump_response(response)}\n```"
+
+
+def _empty_response_failure_reason(status: Any, incomplete_details: Any) -> str:
+    """Explain why OpenAI returned no final text in user-facing language."""
+    reason = None
+    if isinstance(incomplete_details, dict):
+        reason = incomplete_details.get("reason")
+
+    if status == "incomplete" and reason == "max_output_tokens":
+        return (
+            "The model used the full output token budget before it produced a final answer. "
+            "This can happen with web search because the model spends output tokens on "
+            "reasoning and search steps first. Try increasing "
+            "MY_AGENTS_OPENAI_MAX_OUTPUT_TOKENS, for example to 1200 or 2000, "
+            "or ask a narrower question."
+        )
+    if status == "incomplete" and reason:
+        return (
+            f"The OpenAI response ended early because `{reason}`. "
+            "Try again with a narrower question or adjust the relevant OpenAI setting."
+        )
+    if status == "incomplete":
+        return "The OpenAI response ended early before producing final text."
+    return "Please try again with a narrower question."
+
+
+def _debug_dump_response(response: Any) -> str:
+    """Serialize the full response object for local CLI debugging."""
+    model_dump = getattr(response, "model_dump", None)
+    if callable(model_dump):
+        try:
+            return json.dumps(model_dump(mode="json"), indent=2, ensure_ascii=False)
+        except TypeError:
+            return json.dumps(model_dump(), indent=2, default=str, ensure_ascii=False)
+    return repr(response)

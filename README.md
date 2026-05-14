@@ -80,6 +80,36 @@ flowchart TD
 
 `handled_by`는 단일 그래프 경로(`personal_assistant_graph`)를 식별합니다. 전문 에이전트를 식별하는 값이 아닙니다.
 
+## 에이전트 구현 패턴
+
+새 에이전트는 `my_agents/agents/<agent_name>/` 아래에 독립된 폴더로 추가합니다. 현재 예시는 [`my_agents/agents/general_assistant/`](./my_agents/agents/general_assistant/README.md)입니다.
+
+권장 책임 분리는 다음과 같습니다.
+
+```mermaid
+flowchart TD
+    API["API 또는 CLI"] --> Graph["graph.py"]
+    Graph --> Classifier["classifier.py"]
+    Graph --> Responder["responders.py"]
+    Responder --> Provider{"response provider"}
+    Provider --> HostedTools["OpenAI hosted tools"]
+    Provider --> CustomTools["custom tools.py"]
+
+    Graph -. "workflow, state, routing" .-> GraphNote["흐름 제어"]
+    Responder -. "prompt, model call, tool binding" .-> ResponderNote["모델 동작"]
+    CustomTools -. "local Python tool implementation" .-> ToolNote["도구 구현"]
+```
+
+원칙:
+
+- `graph.py`는 workflow, state, node routing을 담당합니다.
+- `classifier.py`는 사용자 입력을 route label로 분류합니다.
+- `responders.py`는 prompt 구성, `ChatOpenAI` 호출, LLM tool binding을 담당합니다.
+- OpenAI hosted tools(`web_search`, `file_search` 등)는 먼저 `responders.py`의 provider 경계에서 route-specific policy로 붙입니다.
+- 직접 만든 Python tool은 별도 `tools.py`에 구현하고, `responders.py`에서 필요한 route에만 bind합니다.
+- tool workflow가 여러 단계의 상태 전이, retry, interrupt, 별도 검증을 필요로 하면 그때 LangGraph node로 승격합니다.
+- 각 에이전트 폴더에는 한국어 `README.md`와 영어 `README.en.md`를 함께 둡니다.
+
 ## 라우트 라벨
 
 | 라우트 라벨 | v0 의미 | 예시 요청 문구 |
@@ -115,7 +145,7 @@ MY_AGENTS_OPENAI_MODEL=gpt-5.5
 선택적 튜닝 값은 다음과 같습니다.
 
 ```bash
-MY_AGENTS_OPENAI_MAX_OUTPUT_TOKENS=300
+MY_AGENTS_OPENAI_MAX_OUTPUT_TOKENS=1200
 MY_AGENTS_OPENAI_TIMEOUT_SECONDS=30
 # GPT-5 계열 튜닝, 선택 사항:
 # MY_AGENTS_OPENAI_REASONING_EFFORT=low

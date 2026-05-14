@@ -5,6 +5,7 @@ These notes explain the backend from a learner's point of view. They are also a 
 Start here:
 
 1. [Current backend walkthrough](./01-current-backend-walkthrough.md)
+2. [Debug note: OpenAI web search returned no final text](./02-debug-openai-web-search-empty-response.md)
 
 ## Learning-doc workflow
 
@@ -119,6 +120,21 @@ git log --follow --diff-filter=A --format='%h %cs %s' -- docs/learning/01-curren
 ```
 
 If these disagree, trust git for repository history and fix the front matter in the next documentation update.
+
+
+### Debug/fix log workflow
+
+When debugging reveals a durable lesson, create or update a learning note that records:
+
+- the user-visible symptom;
+- the failing command, prompt, or response shape when safe to include;
+- the root cause or best current hypothesis;
+- why rejected fixes were not the right fix;
+- the code change that fixed or mitigated it;
+- the tests or checks added;
+- future follow-up risks.
+
+Create a new debug note when the failure teaches a reusable agent, LangGraph, OpenAI, tooling, or workflow lesson. Update an existing note when it is the same failure family.
 
 ### Maintenance checklist
 

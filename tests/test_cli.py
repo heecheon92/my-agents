@@ -11,6 +11,7 @@ from my_agents.cli import run_chat_loop, stream_graph_reply
 
 class FakeStreamingGraph:
     def stream(self, input: dict, **kwargs: Any):  # noqa: A002 - mirrors LangGraph API
+        assert input["debug_empty_openai_response"] is True
         assert kwargs["stream_mode"] == ["messages", "updates"]
         assert kwargs["version"] == "v2"
         yield {"type": "messages", "data": (AIMessageChunk(content="Hel"), {"node": "test"})}

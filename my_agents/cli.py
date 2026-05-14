@@ -80,7 +80,7 @@ def stream_graph_reply(
     final_reply = ""
 
     for event in graph.stream(
-        {"messages": messages},
+        {"messages": messages, "debug_empty_openai_response": True},
         stream_mode=["messages", "updates"],
         version="v2",
     ):

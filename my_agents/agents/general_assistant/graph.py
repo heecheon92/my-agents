@@ -20,6 +20,7 @@ class AssistantState(TypedDict, total=False):
     route: RouteDecision
     reply: str
     handled_by: str
+    debug_empty_openai_response: bool
 
 
 def classify_request(state: AssistantState) -> AssistantState:
@@ -94,6 +95,7 @@ def _compose_reply(state: AssistantState, guidance: str) -> str:
         messages=state.get("messages", []),
         route=route,
         guidance=guidance,
+        debug_empty_response=state.get("debug_empty_openai_response", False),
     )
 
 

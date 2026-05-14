@@ -47,7 +47,7 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("MY_AGENTS_OPENAI_TIMEOUT_SECONDS"),
     )
     openai_max_output_tokens: int = Field(
-        default=300,
+        default=1200,
         ge=16,
         le=4096,
         validation_alias=AliasChoices("MY_AGENTS_OPENAI_MAX_OUTPUT_TOKENS"),

@@ -80,6 +80,36 @@ The current graph lives under `my_agents/agents/general_assistant/` and has one 
 
 `handled_by` identifies the single graph path (`personal_assistant_graph`). It does not identify a specialized agent.
 
+## Agent implementation pattern
+
+Add each new agent as its own folder under `my_agents/agents/<agent_name>/`. The current example is [`my_agents/agents/general_assistant/`](./my_agents/agents/general_assistant/README.en.md).
+
+The recommended responsibility split is:
+
+```mermaid
+flowchart TD
+    API["API or CLI"] --> Graph["graph.py"]
+    Graph --> Classifier["classifier.py"]
+    Graph --> Responder["responders.py"]
+    Responder --> Provider{"response provider"}
+    Provider --> HostedTools["OpenAI hosted tools"]
+    Provider --> CustomTools["custom tools.py"]
+
+    Graph -. "workflow, state, routing" .-> GraphNote["flow control"]
+    Responder -. "prompt, model call, tool binding" .-> ResponderNote["model behavior"]
+    CustomTools -. "local Python tool implementation" .-> ToolNote["tool implementation"]
+```
+
+Principles:
+
+- `graph.py` owns workflow, state, and node routing.
+- `classifier.py` maps user input to route labels.
+- `responders.py` owns prompt construction, `ChatOpenAI` calls, and LLM tool binding.
+- OpenAI hosted tools such as `web_search` and `file_search` should first be attached at the provider boundary in `responders.py` with route-specific policy.
+- Custom Python tools should live in a separate `tools.py`, then be bound from `responders.py` only for routes that need them.
+- Promote a tool workflow into LangGraph nodes only when it needs multi-step state transitions, retries, interrupts, or separate verification.
+- Each agent folder should include both Korean `README.md` and English `README.en.md`.
+
 ## Route labels
 
 | Route label | v0 meaning | Example request wording |
@@ -115,7 +145,7 @@ MY_AGENTS_OPENAI_MODEL=gpt-5.5
 Optional tuning knobs:
 
 ```bash
-MY_AGENTS_OPENAI_MAX_OUTPUT_TOKENS=300
+MY_AGENTS_OPENAI_MAX_OUTPUT_TOKENS=1200
 MY_AGENTS_OPENAI_TIMEOUT_SECONDS=30
 # GPT-5-series tuning, optional:
 # MY_AGENTS_OPENAI_REASONING_EFFORT=low
