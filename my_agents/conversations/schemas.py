@@ -1,0 +1,66 @@
+"""Pydantic schemas for conversation and chat-run APIs."""
+
+from __future__ import annotations
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from my_agents.knowledge.schemas import CitationResponse
+from my_agents.schemas import RouteDecision
+
+
+class ConversationCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(default="Untitled conversation", min_length=1, max_length=200)
+    group_id: str | None = None
+
+
+class ConversationResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    title: str
+    owner_user_id: str
+    group_id: str | None
+
+
+class MessageCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    content: str = Field(min_length=1)
+
+
+class MessageResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    conversation_id: str
+    role: str
+    content: str
+
+
+class ConversationRunRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    message: str = Field(min_length=1)
+
+
+class ConversationRunResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str
+    conversation_id: str
+    reply: str
+    route: RouteDecision
+    handled_by: str
+    citations: list[CitationResponse] = Field(default_factory=list)
+
+
+class AgentEventResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    run_id: str
+    sequence: int
+    event_type: str
+    payload: dict

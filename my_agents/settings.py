@@ -11,6 +11,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 ResponseMode = Literal["deterministic", "openai"]
 ReasoningEffort = Literal["low", "medium", "high", "xhigh"]
 TextVerbosity = Literal["low", "medium", "high"]
+SameSitePolicy = Literal["lax", "strict", "none"]
 
 
 class Settings(BaseSettings):
@@ -60,6 +61,33 @@ class Settings(BaseSettings):
         default=None,
         validation_alias=AliasChoices("MY_AGENTS_OPENAI_VERBOSITY"),
     )
+    database_url: str = Field(
+        default="sqlite+pysqlite:///:memory:",
+        min_length=1,
+        validation_alias=AliasChoices("MY_AGENTS_DATABASE_URL"),
+    )
+    test_database_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("MY_AGENTS_TEST_DATABASE_URL"),
+    )
+    session_cookie_name: str = Field(
+        default="my_agents_session",
+        min_length=1,
+        validation_alias=AliasChoices("MY_AGENTS_SESSION_COOKIE_NAME"),
+    )
+    session_cookie_secure: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("MY_AGENTS_SESSION_COOKIE_SECURE"),
+    )
+    session_cookie_samesite: SameSitePolicy = Field(
+        default="lax",
+        validation_alias=AliasChoices("MY_AGENTS_SESSION_COOKIE_SAMESITE"),
+    )
+    csrf_header_name: str = Field(
+        default="X-CSRF-Token",
+        min_length=1,
+        validation_alias=AliasChoices("MY_AGENTS_CSRF_HEADER_NAME"),
+    )
 
     @field_validator("openai_model")
     @classmethod
@@ -82,6 +110,23 @@ class Settings(BaseSettings):
     @classmethod
     def empty_optional_string_is_none(cls, value: object) -> object:
         """Allow optional `.env` tuning keys to be present but blank."""
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+    @field_validator("database_url", "session_cookie_name", "csrf_header_name")
+    @classmethod
+    def service_setting_must_not_be_blank(cls, value: str) -> str:
+        """Reject blank service-foundation settings before request handling."""
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("service foundation settings must not be blank")
+        return stripped
+
+    @field_validator("test_database_url", mode="before")
+    @classmethod
+    def blank_test_database_url_is_missing(cls, value: object) -> object:
+        """Treat a blank optional integration-test database URL as absent."""
         if isinstance(value, str) and not value.strip():
             return None
         return value

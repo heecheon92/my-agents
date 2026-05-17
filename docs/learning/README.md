@@ -7,6 +7,10 @@ Start here:
 1. [Current backend walkthrough](./01-current-backend-walkthrough.md)
 2. [Debug note: OpenAI web search returned no final text](./02-debug-openai-web-search-empty-response.md)
 
+Project-generated v1-draft architecture docs live in
+[`docs/portfolio-chat-service/`](../portfolio-chat-service/). This directory is reserved
+for the owner's personal learning logs.
+
 ## Learning-doc workflow
 
 ```mermaid
@@ -93,7 +97,7 @@ Field meanings:
 - `related_code`: repo paths that the note explains.
 - Optional `superseded_by`: path to the replacement note when status is `superseded`.
 
-Use the current date in `YYYY-MM-DD` format. For example, today is `2026-05-14`.
+Use the current date in `YYYY-MM-DD` format. For example, today is `2026-05-17`.
 
 ### Revision history
 

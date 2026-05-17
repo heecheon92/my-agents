@@ -6,7 +6,7 @@
 
 ## Current role
 
-- It is the single graph path behind FastAPI `/assistant/chat` and the terminal CLI.
+- It is the single LangGraph reply path invoked by legacy FastAPI `/assistant/chat`, the terminal CLI, and product conversation runs.
 - Route labels are metadata for choosing response behavior.
 - Current route-specific nodes do not mean separate specialized agents executed.
 - OpenAI reply generation goes through `langchain-openai` `ChatOpenAI`.
@@ -49,6 +49,21 @@ flowchart TD
 | `research_helper` | Research questions, source discovery, source-oriented answer direction |
 | `project_planner` | Project milestones, scope, verification planning |
 | `career_helper` | Resume, interview, and career wording improvements |
+
+
+## Relationship to the product service layer
+
+The `general_assistant` folder owns only the graph/classifier/responder boundary. Auth, group/document permissions, server-owned conversations, knowledge ingestion, RAG retrieval, citations, and agent events are owned by service-layer modules such as `my_agents/api/`, `my_agents/knowledge/`, and `my_agents/conversations/`.
+
+```mermaid
+flowchart LR
+    RunAPI["conversation run API"] --> Retrieval["authorized retrieval"]
+    RunAPI --> Graph["general_assistant graph"]
+    RunAPI --> Citations["citations/events"]
+    Graph --> Provider["response provider"]
+```
+
+This separation matters for the portfolio: LangGraph demonstrates AI reply flow, while the service layer demonstrates production boundaries such as auth, permissions, and provenance.
 
 ## Where to add OpenAI hosted tools
 

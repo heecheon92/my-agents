@@ -6,7 +6,7 @@
 
 ## 현재 역할
 
-- FastAPI `/assistant/chat` 요청과 터미널 CLI 요청을 처리하는 단일 그래프 경로입니다.
+- FastAPI legacy `/assistant/chat`, 터미널 CLI, product conversation run에서 호출되는 단일 LangGraph 응답 경로입니다.
 - 라우트 라벨은 응답 방식을 고르는 메타데이터입니다.
 - 현재 라우트별 노드는 별도의 전문 에이전트 실행을 의미하지 않습니다.
 - OpenAI 응답 생성은 `langchain-openai`의 `ChatOpenAI`를 통해 수행합니다.
@@ -49,6 +49,21 @@ flowchart TD
 | `research_helper` | 리서치 질문, 자료 탐색, 출처 중심 답변 방향 |
 | `project_planner` | 프로젝트 마일스톤, 범위, 검증 계획 |
 | `career_helper` | 이력서, 인터뷰, 커리어 문구 개선 |
+
+
+## Product service layer와의 관계
+
+`general_assistant` 폴더는 graph/classifier/responder만 소유합니다. Auth, group/document permission, server-owned conversation, knowledge ingestion, RAG retrieval, citation, agent event는 `my_agents/api/`, `my_agents/knowledge/`, `my_agents/conversations/` 같은 서비스 레이어에서 소유합니다.
+
+```mermaid
+flowchart LR
+    RunAPI["conversation run API"] --> Retrieval["authorized retrieval"]
+    RunAPI --> Graph["general_assistant graph"]
+    RunAPI --> Citations["citations/events"]
+    Graph --> Provider["response provider"]
+```
+
+이 분리는 포트폴리오에서 중요합니다. LangGraph는 AI 응답 흐름을 보여주고, 서비스 레이어는 실제 제품에 필요한 auth/permission/provenance 경계를 보여줍니다.
 
 ## OpenAI hosted tools를 추가할 위치
 
