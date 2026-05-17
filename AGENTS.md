@@ -140,16 +140,16 @@ Agent-level README convention:
 - Agent README files should explain the agent purpose, file responsibilities, graph/tool flow, current behavior, planned extension seams, and relevant tests.
 - Update the agent README pair whenever that agent's behavior, graph shape, tool policy, state contract, or extension guidance changes.
 
-Learning documentation lives under `docs/learning/`. Follow `docs/learning/README.md` as the durable workflow guide for when to create a new note, when to update an existing note, and how to track creation/update dates.
+Personal learning documentation lives under `docs/learning/`; this directory is reserved for the owner's personal learning logs. Agent-generated project architecture and implementation docs should live outside `docs/learning/` (for the portfolio chat service, use `docs/portfolio-chat-service/`). Follow `docs/learning/README.md` only when the user explicitly wants a personal learning log.
 
 Rules for learning-oriented work:
 
 - Treat this repo as a study project as well as a codebase.
-- When implementation becomes more abstract, add or update a learner-facing explanation in `docs/learning/`.
-- Create a new learning note for a new durable topic, new agent/graph lifecycle, major integration, memory/tools/evaluation/persistence concept, or independent decision record.
-- Update an existing learning note for corrections, small additions, refactor alignment, or new exercises on the same topic.
-- Every learning note except `docs/learning/README.md` should include front matter with immutable `created`, refreshed `updated`, `status`, `topics`, and `related_code`.
-- Every learning note should end with a concise `## Revision history` section.
+- When implementation becomes more abstract, add or update project-facing explanations outside `docs/learning/` unless the user explicitly asks for a personal learning log.
+- Create a new personal learning note only when the user explicitly wants that topic recorded as a personal learning log.
+- Update existing personal learning notes only for corrections or user-requested personal study additions on the same topic.
+- Every personal learning note except `docs/learning/README.md` should include front matter with immutable `created`, refreshed `updated`, `status`, `topics`, and `related_code`.
+- Every personal learning note should end with a concise `## Revision history` section.
 - For non-trivial bugs or model/tool failures, add or update a debug/fix learning note that records the symptom, root cause or hypothesis, rejected fixes, fix/mitigation, tests, and follow-up risks.
 - Prefer step-by-step walkthroughs, request lifecycles, diagrams, vocabulary tables, and small exercises.
 - Keep learning docs honest about what is implemented now versus future intent.
@@ -167,7 +167,7 @@ Mermaid diagram guidance for Markdown work:
 When behavior changes, update:
 
 - `README.md` and `README.en.md` for user-facing setup and examples.
-- `docs/learning/` when architecture or implementation concepts become harder to understand.
+- project docs outside `docs/learning/` when architecture or implementation concepts become harder to understand; use `docs/learning/` only for user-requested personal learning logs.
 - `.env.example` for safe env knobs.
 - tests for the behavior contract.
 - this `AGENTS.md` if project constraints or architecture conventions change.
