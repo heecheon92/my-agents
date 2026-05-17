@@ -33,7 +33,6 @@ htmlcov/
 
 # Local agent/workflow planning artifacts
 .omx/
-.codex/
 
 # Local environment files
 .env

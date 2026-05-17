@@ -1,0 +1,4 @@
+interface:
+  display_name: "Simulated Agent Bootstrap"
+  short_description: "Scaffold simulated agent learning folders."
+  default_prompt: "Use $simulated-agent-bootstrap to create a new learning-only simulated agent scaffold."
