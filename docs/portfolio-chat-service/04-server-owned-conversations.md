@@ -49,8 +49,11 @@ sequenceDiagram
 - `ConversationModel` stores owner/group scope.
 - `MessageModel` stores user and assistant messages.
 - `AgentRunModel` stores the first durable run boundary.
+- `/conversations/{id}/messages` returns the authorized server-owned transcript for frontend display.
 - `/conversations/{id}/runs` invokes the existing LangGraph assistant with server-owned history.
+- `/conversations/{id}/runs` also supports `GET` so a frontend can list completed and failed runs.
 - Runs now include permission-aware retrieval context IDs, citations, and redacted events.
+- Failed graph invocations persist a failed run and redacted `run_failed` event before returning a client-safe error.
 - Group conversations are visible to group members.
 - Outsiders receive safe denial.
 
@@ -74,12 +77,17 @@ Retrieval, citations, and redacted events now exist as later learning notes.
 `tests/test_conversations_api.py` verifies:
 
 - run endpoint uses persisted server-owned history;
+- message listing returns the stored transcript in server-owned order;
+- run listing returns frontend-safe run summaries without reply or event payloads;
+- failed graph invocation stores `status=failed` and a redacted `run_failed` event;
 - graph invocation receives `principal_id` and `conversation_id`;
 - group members can read group conversations;
-- outsiders cannot read group conversations;
+- outsiders cannot read group conversations or message transcripts;
 - legacy `/assistant/chat` does not return product run fields.
 
 ## Revision history
 
+- 2026-05-17: Added run history and redacted failed-run persistence.
+- 2026-05-17: Added authorized conversation transcript listing for frontend display.
 - 2026-05-17: Updated after adding citations and redacted run events.
 - 2026-05-17: Created after adding server-owned conversations and product run endpoint.

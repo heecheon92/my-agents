@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from my_agents.knowledge.schemas import CitationResponse
@@ -54,6 +56,16 @@ class ConversationRunResponse(BaseModel):
     route: RouteDecision
     handled_by: str
     citations: list[CitationResponse] = Field(default_factory=list)
+
+
+class AgentRunSummaryResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str
+    conversation_id: str
+    status: str
+    route_label: str | None
+    created_at: datetime
 
 
 class AgentEventResponse(BaseModel):

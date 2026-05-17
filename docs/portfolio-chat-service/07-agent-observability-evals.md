@@ -38,6 +38,8 @@ The current events are intentionally high-level:
 
 They are enough to show a visible service surface: the UI can say that the backend stored
 the message, retrieved authorized context, invoked the graph, and composed a cited answer.
+If graph invocation fails, the service stores a failed run and emits `run_failed` with only
+safe error metadata before returning a client-safe error response.
 
 ## Redaction boundary
 
@@ -77,6 +79,10 @@ claims testable: grounding, permission safety, redaction, and basic performance 
 - deterministic eval helpers pass for grounded authorized answers;
 - the permission leakage eval passes when an outsider receives no private context.
 
+`tests/test_conversations_api.py` also verifies that failed graph invocation stores
+`status=failed` plus a redacted `run_failed` event.
+
 ## Revision history
 
+- 2026-05-17: Updated after adding failed-run event persistence.
 - 2026-05-17: Created after adding structured agent run events and deterministic eval fixtures.

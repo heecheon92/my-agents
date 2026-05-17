@@ -36,6 +36,7 @@ def test_persistence_config_normalizes_settings() -> None:
 
     assert config.database_url == "postgresql+psycopg://app:pw@localhost/app"
     assert config.test_database_url == "postgresql+psycopg://app:pw@localhost/test_app"
+    assert config.auto_create_tables is False
     assert config.has_external_test_database is True
 
 

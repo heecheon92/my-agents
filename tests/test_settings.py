@@ -88,6 +88,8 @@ def test_service_foundation_settings_have_safe_defaults(
 
     assert settings.database_url == "sqlite+pysqlite:///:memory:"
     assert settings.test_database_url is None
+    assert settings.auto_create_tables is None
+    assert settings.should_auto_create_tables() is True
     assert settings.session_cookie_name == "my_agents_session"
     assert settings.session_cookie_secure is True
     assert settings.session_cookie_samesite == "lax"
@@ -112,7 +114,22 @@ def test_service_foundation_settings_accept_overrides(
 
     assert settings.database_url == "postgresql+psycopg://app:pw@db/app"
     assert settings.test_database_url == "postgresql+psycopg://app:pw@db/test_app"
+    assert settings.auto_create_tables is None
+    assert settings.should_auto_create_tables() is False
     assert settings.session_cookie_name == "portfolio_session"
     assert settings.session_cookie_secure is False
     assert settings.session_cookie_samesite == "strict"
     assert settings.csrf_header_name == "X-Portfolio-CSRF"
+
+
+def test_service_foundation_settings_accept_auto_create_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
+    monkeypatch.setenv("MY_AGENTS_DATABASE_URL", "postgresql+psycopg://app:pw@db/app")
+    monkeypatch.setenv("MY_AGENTS_AUTO_CREATE_TABLES", "true")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.auto_create_tables is True
+    assert settings.should_auto_create_tables() is True

@@ -33,6 +33,7 @@ class AgentEventType(StrEnum):
     RETRIEVAL_COMPLETED = "retrieval_completed"
     GRAPH_INVOKED = "graph_invoked"
     ANSWER_COMPOSED = "answer_composed"
+    RUN_FAILED = "run_failed"
 
 
 class ConversationModel(Base):

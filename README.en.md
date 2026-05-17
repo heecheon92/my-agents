@@ -191,6 +191,9 @@ the local default; these settings define the persistence and first-party session
 
 ```bash
 MY_AGENTS_DATABASE_URL=sqlite+pysqlite:///:memory:
+# Blank means runtime auto-create is allowed only for in-memory SQLite.
+# Postgres/Neon should use Alembic migrations.
+# MY_AGENTS_AUTO_CREATE_TABLES=
 # MY_AGENTS_TEST_DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/my_agents_test
 MY_AGENTS_SESSION_COOKIE_NAME=my_agents_session
 MY_AGENTS_SESSION_COOKIE_SECURE=true
@@ -199,6 +202,41 @@ MY_AGENTS_CSRF_HEADER_NAME=X-CSRF-Token
 ```
 
 `.env` and `.env.*` are ignored by git. `.env.example` is safe to commit because it contains no real secrets.
+
+### Postgres/Neon and Alembic migrations
+
+The local test default is a fast, credential-free in-memory SQLite database. For service demos or deployment-like runs, use Postgres/Neon and let Alembic migrations create the schema instead of SQLAlchemy `create_all`.
+
+```mermaid
+flowchart LR
+    Models["SQLAlchemy models"] --> Alembic["Alembic migration files"]
+    Alembic --> Postgres[("Postgres / Neon schema")]
+    Tests["Offline tests"] --> SQLite[("SQLite in-memory auto-create")]
+```
+
+When using Neon, keep your real connection string only in local environment variables. Use a URL shape that includes `sslmode=require`, and never commit or paste the real URL into docs.
+
+```bash
+MY_AGENTS_DATABASE_URL=postgresql+psycopg://user:password@host/dbname?sslmode=require
+MY_AGENTS_RESPONSE_MODE=deterministic
+uv run alembic upgrade head
+```
+
+Run the Postgres/Neon migration smoke only when you have a dedicated test database.
+When the value is unset, the external database test is skipped automatically.
+
+```bash
+MY_AGENTS_TEST_DATABASE_URL=postgresql+psycopg://user:password@host/test_db?sslmode=require \
+uv run pytest tests/test_migrations.py -q
+```
+
+You do not need to run Neon's sample `playing_with_neon` table query for this app. This project's tables are created by Alembic migrations.
+
+In short:
+
+- **SQLAlchemy** is the Python ORM/database access layer for table and relationship code.
+- **Postgres/Neon** is the database that stores real service data. Neon is managed Postgres.
+- **Alembic** is the migration ledger that connects SQLAlchemy model changes to real database schema changes.
 
 ## Run checks
 
@@ -336,7 +374,9 @@ runs. The current conversation surface includes:
 - `GET /conversations`
 - `GET /conversations/{conversation_id}`
 - `POST /conversations/{conversation_id}/messages`
+- `GET /conversations/{conversation_id}/messages`
 - `POST /conversations/{conversation_id}/runs`
+- `GET /conversations/{conversation_id}/runs`
 
 `/conversations/{conversation_id}/runs` persists the user message and invokes the
 current LangGraph assistant with server-owned conversation history plus
@@ -345,6 +385,10 @@ expands related authorized chunks through entity mentions, stores the assistant 
 and citations, and returns a `run_id`. The older `/assistant/chat` endpoint remains as a
 legacy/dev smoke surface and should not become the product chat surface for
 personal/group KB access.
+Frontend clients can read the stored transcript through
+`GET /conversations/{conversation_id}/messages` after the same conversation access check,
+and can inspect completed/failed run history through
+`GET /conversations/{conversation_id}/runs`.
 
 ### Knowledge-base ingestion foundation
 
@@ -403,8 +447,10 @@ exposing hidden chain-of-thought.
 - `GET /conversations/{conversation_id}/runs/{run_id}/events`
 
 The current events show user-message storage, permission-aware retrieval completion, graph
-invocation, and answer composition in order. Payloads avoid raw messages, document content,
-and secret tokens; they contain redacted metadata such as counts, route labels, and latency.
+invocation, and answer composition in order. If graph execution fails, the service stores a
+failed run plus a `run_failed` event with only a safe error type. Payloads avoid raw messages,
+document content, and secret tokens; they contain redacted metadata such as counts, route
+labels, and latency.
 
 `my_agents/agent_runtime/evals.py` also provides deterministic eval helpers for
 grounding/citations, permission leakage, event redaction, and latency budgets. These are

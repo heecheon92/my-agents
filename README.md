@@ -191,6 +191,9 @@ SQLite는 로컬 기본값이며, 아래 값들은 persistence와 first-party se
 
 ```bash
 MY_AGENTS_DATABASE_URL=sqlite+pysqlite:///:memory:
+# 비워 두면 in-memory SQLite에서만 자동 테이블 생성을 허용합니다.
+# Postgres/Neon은 Alembic migration을 사용합니다.
+# MY_AGENTS_AUTO_CREATE_TABLES=
 # MY_AGENTS_TEST_DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/my_agents_test
 MY_AGENTS_SESSION_COOKIE_NAME=my_agents_session
 MY_AGENTS_SESSION_COOKIE_SECURE=true
@@ -199,6 +202,41 @@ MY_AGENTS_CSRF_HEADER_NAME=X-CSRF-Token
 ```
 
 `.env`와 `.env.*`는 git에서 제외됩니다. `.env.example`에는 실제 비밀값이 없으므로 커밋해도 안전합니다.
+
+### Postgres/Neon과 Alembic migration
+
+로컬 테스트 기본값은 빠르고 credential-free인 SQLite in-memory 데이터베이스입니다. 실제 서비스 데모나 배포형 실행에서는 Postgres/Neon을 사용하고, 테이블 생성은 SQLAlchemy `create_all`이 아니라 Alembic migration이 담당합니다.
+
+```mermaid
+flowchart LR
+    Models["SQLAlchemy models"] --> Alembic["Alembic migration files"]
+    Alembic --> Postgres[("Postgres / Neon schema")]
+    Tests["Offline tests"] --> SQLite[("SQLite in-memory auto-create")]
+```
+
+Neon을 사용할 때는 `.env`에 본인의 연결 문자열을 로컬로만 넣습니다. `sslmode=require`를 포함한 URL 형태를 사용하고, 실제 URL은 문서나 커밋에 남기지 않습니다.
+
+```bash
+MY_AGENTS_DATABASE_URL=postgresql+psycopg://user:password@host/dbname?sslmode=require
+MY_AGENTS_RESPONSE_MODE=deterministic
+uv run alembic upgrade head
+```
+
+전용 테스트 데이터베이스가 있을 때만 Postgres/Neon migration smoke test를 실행합니다.
+값이 없으면 해당 테스트는 자동으로 skip됩니다.
+
+```bash
+MY_AGENTS_TEST_DATABASE_URL=postgresql+psycopg://user:password@host/test_db?sslmode=require \
+uv run pytest tests/test_migrations.py -q
+```
+
+Neon 콘솔이 보여주는 샘플 `playing_with_neon` 테이블 쿼리는 이 앱 스키마와 무관하므로 실행하지 않아도 됩니다. 이 프로젝트의 테이블은 Alembic migration으로 생성합니다.
+
+SQLAlchemy, Postgres, Alembic의 관계를 짧게 정리하면 다음과 같습니다.
+
+- **SQLAlchemy**: Python 코드에서 테이블/관계를 다루는 ORM과 DB 접근 도구입니다.
+- **Postgres/Neon**: 실제 데이터를 저장하는 데이터베이스입니다. Neon은 managed Postgres 서비스입니다.
+- **Alembic**: SQLAlchemy model 변화와 실제 DB schema 변화를 연결하는 migration ledger입니다.
 
 ## 검사 실행
 
@@ -337,7 +375,9 @@ conversation run으로 이동하고 있습니다. 현재 conversation surface는
 - `GET /conversations`
 - `GET /conversations/{conversation_id}`
 - `POST /conversations/{conversation_id}/messages`
+- `GET /conversations/{conversation_id}/messages`
 - `POST /conversations/{conversation_id}/runs`
+- `GET /conversations/{conversation_id}/runs`
 
 `/conversations/{conversation_id}/runs`는 user message를 저장하고, 서버가 소유하는
 conversation history와 principal/conversation context를 현재 LangGraph assistant에
@@ -345,6 +385,9 @@ conversation history와 principal/conversation context를 현재 LangGraph assis
 권한 내 관련 chunk를 확장한 뒤, assistant reply와 citation을 저장하고 `run_id`를
 반환합니다. 기존 `/assistant/chat` endpoint는 legacy/dev smoke surface로 남아 있으며,
 personal/group KB 접근을 위한 제품용 chat surface가 되어서는 안 됩니다.
+프론트엔드는 `GET /conversations/{conversation_id}/messages`로 서버가 저장한 transcript를
+권한 확인 후 다시 읽고, `GET /conversations/{conversation_id}/runs`로 completed/failed run
+history를 확인할 수 있습니다.
 
 ### Knowledge-base ingestion 기반
 
@@ -404,8 +447,10 @@ activity event를 저장합니다.
 - `GET /conversations/{conversation_id}/runs/{run_id}/events`
 
 현재 이벤트는 user message 저장, permission-aware retrieval 완료, graph invoke, answer
-composition 단계를 순서대로 보여줍니다. payload에는 raw message, document content,
-secret token을 넣지 않고 count, route label, latency 같은 redacted metadata만 둡니다.
+composition 단계를 순서대로 보여줍니다. graph 실행이 실패하면 failed run과 `run_failed`
+event를 저장하되, payload에는 safe error type만 남깁니다. payload에는 raw message,
+document content, secret token을 넣지 않고 count, route label, latency 같은 redacted
+metadata만 둡니다.
 
 또한 `my_agents/agent_runtime/evals.py`에는 grounding/citation, permission leakage,
 event redaction, latency budget을 확인하는 deterministic eval helper가 있습니다. 이 eval은

@@ -11,6 +11,7 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from my_agents.agents.general_assistant.responders import ResponseProviderConfigurationError
 from my_agents.api.assistant import GraphRunner, get_graph_runner
 from my_agents.auth.contracts import Principal
 from my_agents.auth.dependencies import get_current_principal
@@ -25,6 +26,7 @@ from my_agents.conversations.models import (
 )
 from my_agents.conversations.schemas import (
     AgentEventResponse,
+    AgentRunSummaryResponse,
     ConversationCreateRequest,
     ConversationResponse,
     ConversationRunRequest,
@@ -115,6 +117,22 @@ def add_message(
     return _message_response(message)
 
 
+@conversations_router.get("/{conversation_id}/messages", response_model=list[MessageResponse])
+def list_messages(
+    conversation_id: str,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    db: Annotated[Session, Depends(get_database_session)],
+) -> list[MessageResponse]:
+    """Return the authorized server-owned transcript for a conversation."""
+    _get_authorized_conversation(db, conversation_id, principal.user_id)
+    messages = db.scalars(
+        select(MessageModel)
+        .where(MessageModel.conversation_id == conversation_id)
+        .order_by(MessageModel.created_at, MessageModel.id)
+    ).all()
+    return [_message_response(message) for message in messages]
+
+
 @conversations_router.post("/{conversation_id}/runs", response_model=ConversationRunResponse)
 def run_conversation(
     conversation_id: str,
@@ -140,14 +158,38 @@ def run_conversation(
         query=request.message,
     )
     retrieval_latency_ms = round((perf_counter() - retrieval_started) * 1000, 3)
-    result = graph_runner.invoke(
-        {
-            "messages": messages,
-            "principal_id": principal.user_id,
-            "conversation_id": conversation_id,
-            "retrieved_chunk_ids": [item.chunk.id for item in retrieved_chunks],
-        }
-    )
+    graph_input = {
+        "messages": messages,
+        "principal_id": principal.user_id,
+        "conversation_id": conversation_id,
+        "retrieved_chunk_ids": [item.chunk.id for item in retrieved_chunks],
+    }
+    try:
+        result = graph_runner.invoke(graph_input)
+    except ResponseProviderConfigurationError as exc:
+        _persist_failed_run(
+            db=db,
+            conversation_id=conversation_id,
+            user_id=principal.user_id,
+            user_message_id=user_message.id,
+            message_content_length=len(request.message.strip()),
+            retrieved_chunks=retrieved_chunks,
+            retrieval_latency_ms=retrieval_latency_ms,
+            error_type=type(exc).__name__,
+        )
+        raise HTTPException(status_code=503, detail="conversation run failed") from exc
+    except Exception as exc:
+        _persist_failed_run(
+            db=db,
+            conversation_id=conversation_id,
+            user_id=principal.user_id,
+            user_message_id=user_message.id,
+            message_content_length=len(request.message.strip()),
+            retrieved_chunks=retrieved_chunks,
+            retrieval_latency_ms=retrieval_latency_ms,
+            error_type=type(exc).__name__,
+        )
+        raise HTTPException(status_code=502, detail="conversation run failed") from exc
     route = _coerce_route(result["route"])
     reply = _compose_rag_reply(result["reply"], retrieved_chunks)
     assistant_message = MessageModel(
@@ -230,6 +272,25 @@ def run_conversation(
             for citation in citations
         ],
     )
+
+
+@conversations_router.get(
+    "/{conversation_id}/runs",
+    response_model=list[AgentRunSummaryResponse],
+)
+def list_runs(
+    conversation_id: str,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    db: Annotated[Session, Depends(get_database_session)],
+) -> list[AgentRunSummaryResponse]:
+    """Return frontend-safe run history for an authorized conversation."""
+    _get_authorized_conversation(db, conversation_id, principal.user_id)
+    runs = db.scalars(
+        select(AgentRunModel)
+        .where(AgentRunModel.conversation_id == conversation_id)
+        .order_by(AgentRunModel.created_at.desc(), AgentRunModel.id.desc())
+    ).all()
+    return [_run_summary_response(run) for run in runs]
 
 
 @conversations_router.get(
@@ -322,6 +383,57 @@ def _count_retrieval_source(retrieved_chunks: list[RetrievedChunk], source: str)
     return sum(1 for chunk in retrieved_chunks if chunk.source == source)
 
 
+def _persist_failed_run(
+    *,
+    db: Session,
+    conversation_id: str,
+    user_id: str,
+    user_message_id: str,
+    message_content_length: int,
+    retrieved_chunks: list[RetrievedChunk],
+    retrieval_latency_ms: float,
+    error_type: str,
+) -> None:
+    run = AgentRunModel(
+        conversation_id=conversation_id,
+        user_id=user_id,
+        status=RunStatus.FAILED.value,
+        route_label=None,
+    )
+    db.add(run)
+    db.flush()
+    db.add_all(
+        [
+            _event(
+                run.id,
+                1,
+                AgentEventType.USER_MESSAGE_STORED,
+                {"message_id": user_message_id, "content_length": message_content_length},
+            ),
+            _event(
+                run.id,
+                2,
+                AgentEventType.RETRIEVAL_COMPLETED,
+                {
+                    "authorized_context_count": len(retrieved_chunks),
+                    "direct_count": _count_retrieval_source(retrieved_chunks, "vector_fixture"),
+                    "graph_expansion_count": _count_retrieval_source(
+                        retrieved_chunks, "graph_expansion"
+                    ),
+                    "latency_ms": retrieval_latency_ms,
+                },
+            ),
+            _event(
+                run.id,
+                3,
+                AgentEventType.RUN_FAILED,
+                {"safe_error_type": error_type},
+            ),
+        ]
+    )
+    db.commit()
+
+
 def _event(
     run_id: str,
     sequence: int,
@@ -352,6 +464,16 @@ def _conversation_response(conversation: ConversationModel) -> ConversationRespo
         title=conversation.title,
         owner_user_id=conversation.owner_user_id,
         group_id=conversation.group_id,
+    )
+
+
+def _run_summary_response(run: AgentRunModel) -> AgentRunSummaryResponse:
+    return AgentRunSummaryResponse(
+        run_id=run.id,
+        conversation_id=run.conversation_id,
+        status=run.status,
+        route_label=run.route_label,
+        created_at=run.created_at,
     )
 
 

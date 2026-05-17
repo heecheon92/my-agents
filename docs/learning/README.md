@@ -6,6 +6,7 @@ Start here:
 
 1. [Current backend walkthrough](./01-current-backend-walkthrough.md)
 2. [Debug note: OpenAI web search returned no final text](./02-debug-openai-web-search-empty-response.md)
+3. [SQLAlchemy, Postgres, and Alembic](./03-sqlalchemy-postgres-alembic.md)
 
 This directory is the owner's learning path archive. The root numbered notes are personal learning logs. Focused learning tracks can live in subfolders, such as [`agent-lab/`](./agent-lab/). Project architecture docs that are not primarily learning logs live outside this directory, for example [`docs/portfolio-chat-service/`](../portfolio-chat-service/).
 

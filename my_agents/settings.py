@@ -70,6 +70,10 @@ class Settings(BaseSettings):
         default=None,
         validation_alias=AliasChoices("MY_AGENTS_TEST_DATABASE_URL"),
     )
+    auto_create_tables: bool | None = Field(
+        default=None,
+        validation_alias=AliasChoices("MY_AGENTS_AUTO_CREATE_TABLES"),
+    )
     session_cookie_name: str = Field(
         default="my_agents_session",
         min_length=1,
@@ -123,13 +127,19 @@ class Settings(BaseSettings):
             raise ValueError("service foundation settings must not be blank")
         return stripped
 
-    @field_validator("test_database_url", mode="before")
+    @field_validator("test_database_url", "auto_create_tables", mode="before")
     @classmethod
-    def blank_test_database_url_is_missing(cls, value: object) -> object:
-        """Treat a blank optional integration-test database URL as absent."""
+    def blank_optional_service_setting_is_missing(cls, value: object) -> object:
+        """Treat blank optional service settings as absent."""
         if isinstance(value, str) and not value.strip():
             return None
         return value
+
+    def should_auto_create_tables(self) -> bool:
+        """Return whether runtime startup should create tables for this database URL."""
+        if self.auto_create_tables is not None:
+            return self.auto_create_tables
+        return self.database_url == "sqlite+pysqlite:///:memory:"
 
     @model_validator(mode="after")
     def require_api_key_when_openai_mode_is_enabled(self) -> Settings:
