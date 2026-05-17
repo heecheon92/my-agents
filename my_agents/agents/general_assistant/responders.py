@@ -11,6 +11,7 @@ from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from pydantic import ValidationError
 
+from my_agents.agents.capabilities import AgentCapability
 from my_agents.schemas import RouteDecision
 from my_agents.settings import Settings, get_settings
 
@@ -67,6 +68,7 @@ class ResponseProvider(Protocol):
         messages: Sequence[BaseMessage],
         route: RouteDecision,
         guidance: str,
+        capability: AgentCapability | None = None,
         debug_empty_response: bool = False,
     ) -> str:
         """Return a user-facing reply for the classified request."""
@@ -82,12 +84,14 @@ class DeterministicResponseProvider:
         messages: Sequence[BaseMessage],
         route: RouteDecision,
         guidance: str,
+        capability: AgentCapability | None = None,
         debug_empty_response: bool = False,
     ) -> str:
         _ = debug_empty_response
         _ = messages
+        capability_sentence = _deterministic_capability_sentence(capability)
         return (
-            f"Classified as route label `{route.label}`. {guidance} "
+            f"Classified as route label `{route.label}`. {capability_sentence}{guidance} "
             "This backend is running in deterministic response mode."
         )
 
@@ -110,6 +114,7 @@ class OpenAIResponseProvider:
         messages: Sequence[BaseMessage],
         route: RouteDecision,
         guidance: str,
+        capability: AgentCapability | None = None,
         debug_empty_response: bool = False,
     ) -> str:
         model = self._chat_model
@@ -123,6 +128,7 @@ class OpenAIResponseProvider:
                 messages=messages,
                 route=route,
                 guidance=guidance,
+                capability=capability,
             )
         )
         return _extract_message_content(
@@ -154,6 +160,7 @@ def _build_input_messages(
     messages: Sequence[BaseMessage],
     route: RouteDecision,
     guidance: str,
+    capability: AgentCapability | None = None,
 ) -> list[BaseMessage]:
     recent_context = list(messages[-6:])
     latest_user_message = _latest_human_text(recent_context)
@@ -165,14 +172,38 @@ def _build_input_messages(
                 "Use the route metadata and guidance to answer the user.\n\n"
                 f"Route label: {route.label}\n"
                 f"Route explanation: {route.explanation}\n"
+                f"{_capability_guidance(capability)}\n"
                 f"Local guidance: {guidance}\n\n"
                 f"User message: {latest_user_message}\n\n"
-                "Write one concise, actionable reply. Do not invent completed actions, "
-                "persistent memory, hidden tools, or a frontend."
+                "Write one concise, actionable reply. If capability mode is simulation, "
+                "be honest that it is an experimental or placeholder capability when that "
+                "affects the answer. Do not invent completed actions, persistent memory, "
+                "hidden tools, real-world side effects, or a frontend."
             )
         )
     )
     return provider_messages
+
+
+def _capability_guidance(capability: AgentCapability | None) -> str:
+    if capability is None:
+        return "Capability metadata: unavailable"
+    return capability.guidance_text()
+
+
+def _deterministic_capability_sentence(capability: AgentCapability | None) -> str:
+    if capability is None:
+        return ""
+    if capability.mode == "simulation":
+        return (
+            f"Capability mode `{capability.mode}`; `{capability.name}` is a "
+            f"{capability.maturity} learning/test capability, not a real-world integration. "
+        )
+    return (
+        f"Capability mode `{capability.mode}`; `{capability.name}` is a "
+        f"{capability.maturity} capability with side effects: "
+        f"{', '.join(capability.side_effects) if capability.side_effects else 'none'}. "
+    )
 
 
 def _build_chat_model_args(settings: Settings) -> dict[str, Any]:

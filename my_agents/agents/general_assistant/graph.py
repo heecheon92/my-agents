@@ -6,6 +6,7 @@ from langchain_core.messages import AnyMessage
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 
+from my_agents.agents.capabilities import AgentCapability, get_capability_for_route
 from my_agents.agents.general_assistant.classifier import classify_messages
 from my_agents.agents.general_assistant.responders import get_response_provider
 from my_agents.schemas import RouteDecision
@@ -18,6 +19,7 @@ class AssistantState(TypedDict, total=False):
 
     messages: Annotated[list[AnyMessage], add_messages]
     route: RouteDecision
+    capability: AgentCapability
     reply: str
     handled_by: str
     debug_empty_openai_response: bool
@@ -26,7 +28,8 @@ class AssistantState(TypedDict, total=False):
 def classify_request(state: AssistantState) -> AssistantState:
     """Classify the message into a route label using deterministic local rules."""
     route = classify_messages(state.get("messages", []))
-    return {"route": route, "handled_by": HANDLED_BY}
+    capability = get_capability_for_route(route.label)
+    return {"route": route, "capability": capability, "handled_by": HANDLED_BY}
 
 
 def select_response_node(state: AssistantState) -> str:
@@ -94,6 +97,7 @@ def _compose_reply(state: AssistantState, guidance: str) -> str:
     return get_response_provider().compose_reply(
         messages=state.get("messages", []),
         route=route,
+        capability=state["capability"],
         guidance=guidance,
         debug_empty_response=state.get("debug_empty_openai_response", False),
     )

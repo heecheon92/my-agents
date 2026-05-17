@@ -14,15 +14,17 @@ The current product shape is a FastAPI + LangGraph assistant/router foundation t
 
 - `main.py` exposes the ASGI app.
 - `my_agents/cli.py` exposes a local terminal chat loop for the current graph.
-- `my_agents/api.py` owns the FastAPI app factory and routes.
+- `my_agents/api/` owns the FastAPI app factory and route modules.
 - `my_agents/agents/general_assistant/graph.py` owns the current general assistant LangGraph `StateGraph`.
 - `my_agents/agents/general_assistant/classifier.py` owns deterministic route classification for the general assistant.
 - `my_agents/agents/general_assistant/responders.py` owns deterministic and OpenAI-backed reply composition for the general assistant.
+- `my_agents/agents/capabilities.py` describes route capability metadata without claiming separate agents executed.
+- `my_agents/simulated_agents/` contains learning-only graph experiments that are not production API/CLI surfaces.
 - `my_agents/settings.py` owns environment-driven runtime configuration.
 - `my_agents/schemas.py` owns Pydantic request/response contracts.
 - `tests/` defines the behavior contract and must stay offline by default.
 
-The graph currently has one assistant/router path. Route labels are metadata for future capabilities, not proof that specialized agents ran.
+The graph currently has one production assistant/router path. Route labels and capability metadata describe behavior honestly; they are not proof that separate specialized agents ran. Simulation-only graphs live under `my_agents/simulated_agents/`.
 
 ## Hard constraints
 
@@ -71,7 +73,8 @@ If adding conversation memory later, prefer LangGraph checkpointers as the app-o
 
 - Python target is defined in `pyproject.toml`.
 - Use typed Pydantic schemas at API boundaries.
-- Keep route handlers thin; put agent-specific graph/classifier/responder logic under `my_agents/agents/<agent_name>/`.
+- Keep route handlers thin; put production-surface agent graph/classifier/responder logic under `my_agents/agents/<agent_name>/`.
+- Put learning-only or simulation-only architectures under `my_agents/simulated_agents/<agent_name>/`; do not import them into production API/CLI surfaces unless explicitly promoted.
 - Keep graph state explicit and small.
 - Keep responses honest: classify, explain, and disclose current behavior.
 - Prefer small, reversible changes with tests.
@@ -133,23 +136,25 @@ Rules for README maintenance:
 
 Agent-level README convention:
 
-- Every concrete agent implementation folder under `my_agents/agents/<agent_name>/` should have its own bilingual README pair.
-- `my_agents/agents/<agent_name>/README.md` is Korean.
-- `my_agents/agents/<agent_name>/README.en.md` is English.
+- Every concrete production-surface agent implementation folder under `my_agents/agents/<agent_name>/` should have its own bilingual README pair.
+- Every concrete simulation-only implementation folder under `my_agents/simulated_agents/<agent_name>/` should also have its own bilingual README pair.
+- `README.md` is Korean.
+- `README.en.md` is English.
 - Agent README files should cross-link to each other near the top, just like the repo-root READMEs.
 - Agent README files should explain the agent purpose, file responsibilities, graph/tool flow, current behavior, planned extension seams, and relevant tests.
 - Update the agent README pair whenever that agent's behavior, graph shape, tool policy, state contract, or extension guidance changes.
 
-Personal learning documentation lives under `docs/learning/`; this directory is reserved for the owner's personal learning logs. Agent-generated project architecture and implementation docs should live outside `docs/learning/` (for the portfolio chat service, use `docs/portfolio-chat-service/`). Follow `docs/learning/README.md` only when the user explicitly wants a personal learning log.
+Learning documentation that supports the owner's learning path lives under `docs/learning/`. Keep the root numbered sequence for personal learning logs, and use subfolders such as `docs/learning/agent-lab/` for focused learning tracks that came from conversations. Agent-generated project architecture docs that are not primarily learning logs should live outside `docs/learning/` (for the portfolio chat service, use `docs/portfolio-chat-service/`).
 
 Rules for learning-oriented work:
 
 - Treat this repo as a study project as well as a codebase.
-- When implementation becomes more abstract, add or update project-facing explanations outside `docs/learning/` unless the user explicitly asks for a personal learning log.
-- Create a new personal learning note only when the user explicitly wants that topic recorded as a personal learning log.
-- Update existing personal learning notes only for corrections or user-requested personal study additions on the same topic.
+- When implementation becomes more abstract, decide whether the explanation is for the owner's learning path or for project architecture. Learning-path material belongs under `docs/learning/`; project architecture docs can live in a project-specific docs folder.
+- Create root numbered personal learning notes when the user wants a conversation lesson preserved as a personal log.
+- Use learning subfolders, such as `docs/learning/agent-lab/`, for focused learning tracks that should not pollute the root numbered sequence.
 - Every personal learning note except `docs/learning/README.md` should include front matter with immutable `created`, refreshed `updated`, `status`, `topics`, and `related_code`.
 - Every personal learning note should end with a concise `## Revision history` section.
+- For new user-requested personal learning notes, prefer `uv run python scripts/learning_log.py` so numbering, front matter, revision history, and index updates stay consistent.
 - For non-trivial bugs or model/tool failures, add or update a debug/fix learning note that records the symptom, root cause or hypothesis, rejected fixes, fix/mitigation, tests, and follow-up risks.
 - Prefer step-by-step walkthroughs, request lifecycles, diagrams, vocabulary tables, and small exercises.
 - Keep learning docs honest about what is implemented now versus future intent.
@@ -167,7 +172,7 @@ Mermaid diagram guidance for Markdown work:
 When behavior changes, update:
 
 - `README.md` and `README.en.md` for user-facing setup and examples.
-- project docs outside `docs/learning/` when architecture or implementation concepts become harder to understand; use `docs/learning/` only for user-requested personal learning logs.
+- `docs/learning/` when the content supports the owner's learning path; use `docs/learning/agent-lab/` for generated agent-lab learning notes and `docs/portfolio-chat-service/` for service architecture docs.
 - `.env.example` for safe env knobs.
 - tests for the behavior contract.
 - this `AGENTS.md` if project constraints or architecture conventions change.

@@ -8,6 +8,7 @@
 
 - It is the single LangGraph reply path invoked by legacy FastAPI `/assistant/chat`, the terminal CLI, and product conversation runs.
 - Route labels are metadata for choosing response behavior.
+- Route labels are paired with `AgentCapability` metadata so replies can distinguish real-world prototype behavior from simulation-only placeholders.
 - Current route-specific nodes do not mean separate specialized agents executed.
 - OpenAI reply generation goes through `langchain-openai` `ChatOpenAI`.
 - deterministic mode remains available for tests and offline smoke checks.
@@ -50,6 +51,13 @@ flowchart TD
 | `project_planner` | Project milestones, scope, verification planning |
 | `career_helper` | Resume, interview, and career wording improvements |
 
+
+
+## Capability metadata
+
+`my_agents/agents/capabilities.py` records the route capability name, mode, maturity, tools, data sources, and side effects. The graph attaches this metadata after classification, and `responders.py` includes it in deterministic replies and OpenAI prompts.
+
+This keeps the API honest: a `learning_coach` route may be useful for study guidance, but the metadata can disclose when the capability is only a simulation rather than a real production integration.
 
 ## Relationship to the product service layer
 

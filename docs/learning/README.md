@@ -7,9 +7,7 @@ Start here:
 1. [Current backend walkthrough](./01-current-backend-walkthrough.md)
 2. [Debug note: OpenAI web search returned no final text](./02-debug-openai-web-search-empty-response.md)
 
-Project-generated v1-draft architecture docs live in
-[`docs/portfolio-chat-service/`](../portfolio-chat-service/). This directory is reserved
-for the owner's personal learning logs.
+This directory is the owner's learning path archive. The root numbered notes are personal learning logs. Focused learning tracks can live in subfolders, such as [`agent-lab/`](./agent-lab/). Project architecture docs that are not primarily learning logs live outside this directory, for example [`docs/portfolio-chat-service/`](../portfolio-chat-service/).
 
 ## Learning-doc workflow
 
@@ -71,6 +69,22 @@ Rules:
 - Use lowercase kebab-case for the slug.
 - Prefer adding a new number at the end over renumbering old files.
 - If a file is replaced, keep the old file unless it is actively harmful; mark it superseded instead.
+
+
+### Automated personal-log helper
+
+When the owner explicitly wants to save a personal learning log, prefer the helper:
+
+```bash
+uv run python scripts/learning_log.py \
+  --title "Python syntax catch-up: *, Iterable, and **" \
+  --body-file /tmp/learning-note.md \
+  --topic python \
+  --related-code my_agents/agents/general_assistant/responders.py
+```
+
+The helper creates the next numbered personal note, adds front matter and revision history,
+and updates this index. Use subfolders for focused learning tracks when a note set should stay separate from the root numbered sequence.
 
 ### Required front matter
 

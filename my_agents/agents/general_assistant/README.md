@@ -8,6 +8,7 @@
 
 - FastAPI legacy `/assistant/chat`, 터미널 CLI, product conversation run에서 호출되는 단일 LangGraph 응답 경로입니다.
 - 라우트 라벨은 응답 방식을 고르는 메타데이터입니다.
+- 라우트 라벨은 `AgentCapability` metadata와 연결되어 real-world prototype과 simulation-only placeholder를 구분합니다.
 - 현재 라우트별 노드는 별도의 전문 에이전트 실행을 의미하지 않습니다.
 - OpenAI 응답 생성은 `langchain-openai`의 `ChatOpenAI`를 통해 수행합니다.
 - deterministic 모드는 테스트와 오프라인 smoke check를 위해 유지합니다.
@@ -50,6 +51,13 @@ flowchart TD
 | `project_planner` | 프로젝트 마일스톤, 범위, 검증 계획 |
 | `career_helper` | 이력서, 인터뷰, 커리어 문구 개선 |
 
+
+
+## Capability metadata
+
+`my_agents/agents/capabilities.py`는 route capability name, mode, maturity, tool, data source, side effect를 기록합니다. 그래프는 classification 뒤에 이 metadata를 붙이고, `responders.py`는 deterministic reply와 OpenAI prompt에 이를 포함합니다.
+
+이 구조는 API를 정직하게 유지합니다. 예를 들어 `learning_coach` route가 학습 안내에는 유용하더라도, metadata를 통해 해당 capability가 실제 production integration이 아니라 simulation임을 드러낼 수 있습니다.
 
 ## Product service layer와의 관계
 

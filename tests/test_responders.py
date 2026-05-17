@@ -79,6 +79,43 @@ def test_openai_provider_passes_gpt_variant_and_optional_tuning(
     assert model_args["verbosity"] == "low"
 
 
+def test_deterministic_provider_discloses_simulated_capability() -> None:
+    from my_agents.agents.capabilities import get_capability_for_route
+
+    provider = DeterministicResponseProvider()
+    route = RouteDecision(label="project_planner", explanation="planning request")
+
+    reply = provider.compose_reply(
+        messages=[HumanMessage(content="Plan the next milestone")],
+        route=route,
+        capability=get_capability_for_route("project_planner"),
+        guidance="Break the work into one verifiable milestone.",
+    )
+
+    assert "Capability mode `simulation`" in reply
+    assert "not a real-world integration" in reply
+
+
+def test_openai_provider_includes_capability_metadata_in_prompt() -> None:
+    from my_agents.agents.capabilities import get_capability_for_route
+
+    settings = Settings(_env_file=None, OPENAI_API_KEY="test-key")
+    chat_model = FakeChatModel()
+    provider = OpenAIResponseProvider(settings=settings, chat_model=chat_model)
+
+    provider.compose_reply(
+        messages=[HumanMessage(content="Help me study LangGraph")],
+        route=RouteDecision(label="learning_coach", explanation="study request"),
+        capability=get_capability_for_route("learning_coach"),
+        guidance="Define, build, and test one tiny example.",
+    )
+
+    final_prompt = str(chat_model.calls[0][-1].content)
+    assert "Capability mode: simulation" in final_prompt
+    assert "simulated_learning_coach" in final_prompt
+    assert "Do not invent" in final_prompt
+
+
 @pytest.mark.parametrize(
     ("route", "message", "expected_tools"),
     [

@@ -21,7 +21,7 @@ v0는 의도적으로 thin end-to-end slice로 유지합니다. 이 저장소는
 
 v0의 기본 응답 모드는 OpenAI 기반입니다. 채팅 응답 생성을 실행하려면 `OPENAI_API_KEY`가 필요합니다. 테스트와 오프라인 확인을 위해 `MY_AGENTS_RESPONSE_MODE=deterministic` 모드는 계속 유지합니다.
 
-분류는 계속 결정론적으로 수행되며, 선택한 OpenAI GPT 모델은 최종 응답 텍스트만 생성합니다. API 키 없이 실행해야 하는 경우에는 deterministic 모드로 전환합니다. v0의 라우트 라벨은 향후 범주를 위한 분류 정보일 뿐이며, 현재 product RAG/permission/event 기능은 별도 전문 에이전트가 아니라 API/service layer가 LangGraph 실행 주변에서 제공하는 기능입니다.
+분류는 계속 결정론적으로 수행되며, 선택한 OpenAI GPT 모델은 최종 응답 텍스트만 생성합니다. API 키 없이 실행해야 하는 경우에는 deterministic 모드로 전환합니다. v0의 라우트 라벨과 capability metadata는 현재 동작을 정직하게 설명하는 정보일 뿐이며, 별도 전문 에이전트가 실행되었다는 뜻은 아닙니다. 현재 product RAG/permission/event 기능은 API/service layer가 LangGraph 실행 주변에서 제공하는 기능입니다. 학습 전용 simulation은 `my_agents/simulated_agents/` 아래에 두며 production API/CLI surface로 import하지 않습니다.
 
 ## 프론트엔드 없음
 
@@ -36,6 +36,7 @@ flowchart TD
     API["FastAPI app"]
     Graph["General assistant graph"]
     Classifier["classify_request"]
+    Capability["capability registry"]
     Router{"route label"}
     General["respond_general"]
     Learning["respond_learning"]
@@ -51,6 +52,7 @@ flowchart TD
     API --> Graph
     CLI --> Graph
     Graph --> Classifier
+    Classifier --> Capability
     Classifier --> Router
     Router --> General
     Router --> Learning
@@ -68,7 +70,7 @@ flowchart TD
     Deterministic --> Response
 ```
 
-현재 그래프는 `my_agents/agents/general_assistant/` 아래에 있으며 하나의 어시스턴트/라우터 흐름을 가집니다. 분류는 결정론적으로 수행됩니다. 응답 노드는 provider 인터페이스를 통해 라우트별 응답을 구성합니다. 기본값은 `langchain-openai`의 `ChatOpenAI`이며, 오프라인/테스트용으로 결정론적 템플릿 모드를 사용할 수 있습니다. 라우트별 응답 노드는 별도의 에이전트가 아닙니다.
+현재 그래프는 `my_agents/agents/general_assistant/` 아래에 있으며 하나의 어시스턴트/라우터 흐름을 가집니다. 분류는 결정론적으로 수행됩니다. 응답 노드는 provider 인터페이스를 통해 라우트별 응답을 구성합니다. 기본값은 `langchain-openai`의 `ChatOpenAI`이며, 오프라인/테스트용으로 결정론적 템플릿 모드를 사용할 수 있습니다. 라우트별 응답 노드는 별도의 에이전트가 아닙니다. Production surface agent 코드는 `my_agents/agents/` 아래에 두고, 학습 전용 simulation은 `my_agents/simulated_agents/` 아래에 분리합니다.
 
 
 ## 제품 서비스 표면
@@ -103,15 +105,16 @@ flowchart TD
 2. FastAPI/Pydantic이 그래프 실행 전에 요청을 검증합니다.
 3. API가 공개 JSON의 `message`/`history`를 LangChain messages로 변환하고, LangGraph 상태는 `messages`, 라우트 결정, 응답, 그래프 메타데이터를 저장합니다.
 4. `classify_request`가 결정론적 규칙을 적용해 라우트 라벨과 설명을 반환합니다.
-5. 조건부 그래프 엣지가 라우트 라벨에 맞는 응답 구성 노드를 선택합니다.
-6. 선택된 response provider가 응답을 구성합니다.
-7. 그래프가 `reply`, `route.label`, `route.explanation`, `handled_by`를 포함한 타입이 지정된 응답을 반환합니다.
+5. 그래프가 선택된 라우트의 `AgentCapability` metadata를 붙입니다.
+6. 조건부 그래프 엣지가 라우트 라벨에 맞는 응답 구성 노드를 선택합니다.
+7. 선택된 response provider가 capability guidance와 함께 응답을 구성합니다.
+8. 그래프가 `reply`, `route.label`, `route.explanation`, `handled_by`를 포함한 타입이 지정된 응답을 반환합니다.
 
 `handled_by`는 단일 그래프 경로(`personal_assistant_graph`)를 식별합니다. 전문 에이전트를 식별하는 값이 아닙니다.
 
 ## 에이전트 구현 패턴
 
-새 에이전트는 `my_agents/agents/<agent_name>/` 아래에 독립된 폴더로 추가합니다. 현재 예시는 [`my_agents/agents/general_assistant/`](./my_agents/agents/general_assistant/README.md)입니다.
+Production surface 에이전트는 `my_agents/agents/<agent_name>/` 아래에 독립된 폴더로 추가합니다. 학습 전용 architecture experiment는 `my_agents/simulated_agents/<agent_name>/` 아래에 둡니다. 현재 production 예시는 [`my_agents/agents/general_assistant/`](./my_agents/agents/general_assistant/README.md)입니다.
 
 권장 책임 분리는 다음과 같습니다.
 
@@ -133,6 +136,8 @@ flowchart TD
 
 - `graph.py`는 workflow, state, node routing을 담당합니다.
 - `classifier.py`는 사용자 입력을 route label로 분류합니다.
+- `my_agents/agents/`는 production surface capability를 위한 위치입니다.
+- `my_agents/simulated_agents/`는 학습/테스트용 architecture experiment를 위한 위치입니다.
 - `responders.py`는 prompt 구성, `ChatOpenAI` 호출, LLM tool binding을 담당합니다.
 - OpenAI hosted tools(`web_search`, `file_search` 등)는 먼저 `responders.py`의 provider 경계에서 route-specific policy로 붙입니다.
 - 직접 만든 Python tool은 별도 `tools.py`에 구현하고, `responders.py`에서 필요한 route에만 bind합니다.
@@ -207,6 +212,21 @@ Ruff 검사를 실행합니다.
 
 ```bash
 uv run ruff check .
+```
+
+
+## 개인 학습 로그
+
+학습 경로를 지원하는 자료는 [`docs/learning/`](./docs/learning/README.md)에 둡니다. root numbered note는 개인 학습 로그 순서로 유지하고, [`docs/learning/agent-lab/`](./docs/learning/agent-lab/README.md)처럼 focused track은 하위 폴더에 둘 수 있습니다. 주로 project architecture를 설명하는 문서는 별도로 [`docs/portfolio-chat-service/`](./docs/portfolio-chat-service/README.md)에 둡니다.
+
+명시적으로 개인 학습 노트를 저장하고 싶을 때는 다음 helper를 사용합니다.
+
+```bash
+uv run python scripts/learning_log.py \
+  --title "Python syntax catch-up: *, Iterable, and **" \
+  --body-file /tmp/learning-note.md \
+  --topic python \
+  --related-code my_agents/agents/general_assistant/responders.py
 ```
 
 ## 로컬에서 API 실행
@@ -418,7 +438,7 @@ curl -X POST http://127.0.0.1:8000/assistant/chat \
 
 ```json
 {
-  "reply": "Classified as route label `learning_coach`. A useful learning path is to define the concept, build a tiny example, then test it. This backend is running in deterministic response mode.",
+  "reply": "Classified as route label `learning_coach`. Capability mode `simulation`; `simulated_learning_coach` is a toy learning/test capability, not a real-world integration. A useful learning path is to define the concept, build a tiny example, then test it. This backend is running in deterministic response mode.",
   "route": {
     "label": "learning_coach",
     "explanation": "This request is about study planning, practice, or skill development."
@@ -441,7 +461,7 @@ curl -X POST http://127.0.0.1:8000/assistant/chat \
 
 ```json
 {
-  "reply": "Classified as route label `project_planner`. A useful planning pass is to name the goal, split the next milestone, and define verification evidence. This backend is running in deterministic response mode.",
+  "reply": "Classified as route label `project_planner`. Capability mode `simulation`; `simulated_project_planner` is a toy learning/test capability, not a real-world integration. A useful planning pass is to name the goal, split the next milestone, and define verification evidence. This backend is running in deterministic response mode.",
   "route": {
     "label": "project_planner",
     "explanation": "This request is about planning project work, milestones, scope, or next steps."
