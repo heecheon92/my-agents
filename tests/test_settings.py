@@ -75,3 +75,44 @@ def test_openai_settings_accept_model_and_tuning_overrides(
     assert settings.openai_max_output_tokens == 123
     assert settings.openai_reasoning_effort == "low"
     assert settings.openai_verbosity == "low"
+
+
+def test_service_foundation_settings_have_safe_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
+    monkeypatch.delenv("MY_AGENTS_DATABASE_URL", raising=False)
+    monkeypatch.delenv("MY_AGENTS_TEST_DATABASE_URL", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.database_url == "sqlite+pysqlite:///:memory:"
+    assert settings.test_database_url is None
+    assert settings.session_cookie_name == "my_agents_session"
+    assert settings.session_cookie_secure is True
+    assert settings.session_cookie_samesite == "lax"
+    assert settings.csrf_header_name == "X-CSRF-Token"
+
+
+def test_service_foundation_settings_accept_overrides(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
+    monkeypatch.setenv("MY_AGENTS_DATABASE_URL", "postgresql+psycopg://app:pw@db/app")
+    monkeypatch.setenv(
+        "MY_AGENTS_TEST_DATABASE_URL",
+        "postgresql+psycopg://app:pw@db/test_app",
+    )
+    monkeypatch.setenv("MY_AGENTS_SESSION_COOKIE_NAME", "portfolio_session")
+    monkeypatch.setenv("MY_AGENTS_SESSION_COOKIE_SECURE", "false")
+    monkeypatch.setenv("MY_AGENTS_SESSION_COOKIE_SAMESITE", "strict")
+    monkeypatch.setenv("MY_AGENTS_CSRF_HEADER_NAME", "X-Portfolio-CSRF")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.database_url == "postgresql+psycopg://app:pw@db/app"
+    assert settings.test_database_url == "postgresql+psycopg://app:pw@db/test_app"
+    assert settings.session_cookie_name == "portfolio_session"
+    assert settings.session_cookie_secure is False
+    assert settings.session_cookie_samesite == "strict"
+    assert settings.csrf_header_name == "X-Portfolio-CSRF"

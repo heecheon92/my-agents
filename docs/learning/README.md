@@ -6,6 +6,13 @@ Start here:
 
 1. [Current backend walkthrough](./01-current-backend-walkthrough.md)
 2. [Debug note: OpenAI web search returned no final text](./02-debug-openai-web-search-empty-response.md)
+3. [Service foundation scaffold](./03-service-foundation-scaffold.md)
+4. [First-party auth and owned sessions](./04-first-party-auth-sessions.md)
+5. [Groups and document permissions](./05-group-document-permissions.md)
+6. [Server-owned conversations and chat runs](./06-server-owned-conversations.md)
+7. [Knowledge ingestion and deterministic extraction](./07-knowledge-ingestion-extraction.md)
+8. [Permission-aware RAG and citation-backed answers](./08-permission-aware-rag.md)
+9. [Agent observability events and eval fixtures](./09-agent-observability-evals.md)
 
 ## Learning-doc workflow
 
@@ -93,7 +100,7 @@ Field meanings:
 - `related_code`: repo paths that the note explains.
 - Optional `superseded_by`: path to the replacement note when status is `superseded`.
 
-Use the current date in `YYYY-MM-DD` format. For example, today is `2026-05-14`.
+Use the current date in `YYYY-MM-DD` format. For example, today is `2026-05-17`.
 
 ### Revision history
 

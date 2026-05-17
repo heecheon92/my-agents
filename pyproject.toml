@@ -5,10 +5,16 @@ description = "OpenAI-backed FastAPI and LangGraph personal assistant backend fo
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
+    "alembic>=1.18.4",
+    "argon2-cffi>=25.1.0",
+    "email-validator>=2.3.0",
     "fastapi[standard]",
     "langchain-openai>=1.2.1",
     "langgraph",
+    "pgvector>=0.4.2",
+    "psycopg[binary]>=3.3.4",
     "pydantic-settings",
+    "sqlalchemy>=2.0.49",
 ]
 
 [dependency-groups]

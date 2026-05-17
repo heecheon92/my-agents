@@ -164,6 +164,7 @@ def _clear_runtime_caches() -> None:
     for module_name, cached_names in {
         "my_agents.settings": ("get_settings",),
         "my_agents.agents.general_assistant.responders": ("get_response_provider",),
+        "my_agents.persistence.database": ("reset_database_caches",),
     }.items():
         module = sys.modules.get(module_name)
         if module is None:
@@ -173,3 +174,5 @@ def _clear_runtime_caches() -> None:
             cache_clear = getattr(cached, "cache_clear", None)
             if callable(cache_clear):
                 cache_clear()
+            elif callable(cached):
+                cached()

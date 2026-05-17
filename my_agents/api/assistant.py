@@ -1,8 +1,8 @@
-"""FastAPI application factory and routes for the assistant backend."""
+"""Legacy assistant routes for the current v0 graph-backed chat surface."""
 
 from typing import Annotated, Protocol
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
 from my_agents.agents.general_assistant.graph import build_graph
@@ -34,7 +34,12 @@ def chat(
     request: ChatRequest,
     graph_runner: Annotated[GraphRunner, Depends(get_graph_runner)],
 ) -> ChatResponse:
-    """Run a validated chat request through the personal assistant graph."""
+    """Run a validated chat request through the legacy personal assistant graph.
+
+    This endpoint remains the v0 deterministic/OpenAI smoke surface. The portfolio
+    service plan treats it as a legacy/dev route once authenticated conversation-run
+    endpoints exist, so it must not become a permission bypass for future KB access.
+    """
     try:
         result = graph_runner.invoke({"messages": _messages_from_request(request)})
     except ResponseProviderConfigurationError as exc:
@@ -44,18 +49,6 @@ def chat(
         route=_coerce_route(result["route"]),
         handled_by="personal_assistant_graph",
     )
-
-
-def create_app() -> FastAPI:
-    """Create and configure the FastAPI application."""
-    app = FastAPI(title="my-agents", version="0.1.0")
-
-    @app.get("/health")
-    def health() -> dict[str, str]:
-        return {"status": "ok", "service": "my-agents", "version": app.version}
-
-    app.include_router(assistant_router)
-    return app
 
 
 def _coerce_route(route: RouteDecision | dict) -> RouteDecision:

@@ -1,0 +1,82 @@
+---
+created: 2026-05-17
+updated: 2026-05-17
+status: active
+topics:
+  - observability
+  - evals
+  - agent-events
+  - redaction
+related_code:
+  - my_agents/api/conversations.py
+  - my_agents/conversations/models.py
+  - my_agents/conversations/schemas.py
+  - my_agents/agent_runtime/evals.py
+  - tests/test_agent_observability_evals.py
+---
+
+# Agent observability events and eval fixtures
+
+This note explains how the portfolio chat service shows agent activity without exposing
+hidden chain-of-thought or private document text.
+
+## What is implemented now
+
+Each product chat run stores structured `AgentEventModel` rows. The frontend can fetch
+those rows from:
+
+```text
+GET /conversations/{conversation_id}/runs/{run_id}/events
+```
+
+The current events are intentionally high-level:
+
+1. `user_message_stored`
+2. `retrieval_completed`
+3. `graph_invoked`
+4. `answer_composed`
+
+They are enough to show a visible service surface: the UI can say that the backend stored
+the message, retrieved authorized context, invoked the graph, and composed a cited answer.
+
+## Redaction boundary
+
+Agent transparency should not mean leaking chain-of-thought, raw prompts, document text,
+or secrets. Event payloads therefore contain metadata such as counts, route labels, and
+latency values rather than raw message or chunk content.
+
+```mermaid
+flowchart LR
+    Raw[Raw user/doc/model text] -->|not stored in events| Blocked[Redaction boundary]
+    Counts[Counts + IDs + route labels + latency] --> Events[AgentEvent payload]
+    Events --> UI[Frontend activity timeline]
+```
+
+Citations remain the explicit provenance channel for document snippets. Events explain
+what happened; citations explain which authorized knowledge supported the answer.
+
+## Deterministic eval fixtures
+
+`my_agents/agent_runtime/evals.py` provides small deterministic helpers:
+
+- `evaluate_grounded_citations` checks that a cited reply visibly uses citation text;
+- `evaluate_permission_leakage` checks forbidden terms are absent from reply/citations;
+- `evaluate_event_redaction` checks forbidden terms are absent from event payloads;
+- `evaluate_event_latency_budget` checks emitted latency metrics fit a fixture budget.
+
+These helpers are not a complete LLM evaluation platform. Their role is to make portfolio
+claims testable: grounding, permission safety, redaction, and basic performance awareness.
+
+## Testing evidence
+
+`tests/test_agent_observability_evals.py` verifies:
+
+- event sequences are ordered and typed;
+- event payloads include retrieval counts, route label, citation count, and latency;
+- raw private phrases and raw user questions do not appear in event payloads;
+- deterministic eval helpers pass for grounded authorized answers;
+- the permission leakage eval passes when an outsider receives no private context.
+
+## Revision history
+
+- 2026-05-17: Created after adding structured agent run events and deterministic eval fixtures.
