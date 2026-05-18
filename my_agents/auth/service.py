@@ -6,7 +6,8 @@ import hashlib
 import secrets
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from typing import Literal
 
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
@@ -14,7 +15,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from my_agents.auth.contracts import Principal
-from my_agents.auth.models import SessionModel, UserModel
+from my_agents.auth.email import AuthEmailSender, get_auth_email_sender
+from my_agents.auth.models import AuthTokenModel, SessionModel, UserModel
+
+AuthTokenPurpose = Literal["email_verification", "password_reset"]
+EMAIL_VERIFICATION_TOKEN_TTL = timedelta(hours=24)
+PASSWORD_RESET_TOKEN_TTL = timedelta(hours=1)
 
 
 class AuthError(RuntimeError):
@@ -29,12 +35,20 @@ class InvalidCredentialsError(AuthError):
     """Raised when login credentials are invalid."""
 
 
+class UnverifiedEmailError(AuthError):
+    """Raised when a user must verify their email before logging in."""
+
+
 class InvalidSessionError(AuthError):
     """Raised when a session token is absent, unknown, or revoked."""
 
 
 class InvalidCsrfTokenError(AuthError):
     """Raised when a mutating cookie-auth request lacks valid CSRF proof."""
+
+
+class InvalidAuthTokenError(AuthError):
+    """Raised when an auth lifecycle token is unknown, expired, or consumed."""
 
 
 @dataclass(frozen=True)
@@ -47,14 +61,28 @@ class AuthenticatedSession:
     csrf_token: str
 
 
-class AuthService:
-    """Own first-party users, password hashes, and revocable sessions."""
+@dataclass(frozen=True)
+class SignupResult:
+    """Signup result with user plus local delivery metadata."""
 
-    def __init__(self, db: Session, password_hasher: PasswordHasher | None = None) -> None:
+    user: UserModel
+    verification_email_sent: bool
+
+
+class AuthService:
+    """Own first-party users, password hashes, sessions, and account lifecycle tokens."""
+
+    def __init__(
+        self,
+        db: Session,
+        password_hasher: PasswordHasher | None = None,
+        email_sender: AuthEmailSender | None = None,
+    ) -> None:
         self._db = db
         self._password_hasher = password_hasher or PasswordHasher()
+        self._email_sender = email_sender or get_auth_email_sender()
 
-    def signup(self, *, email: str, password: str) -> UserModel:
+    def signup(self, *, email: str, password: str) -> SignupResult:
         normalized_email = _normalize_email(email)
         existing = self._db.scalar(select(UserModel).where(UserModel.email == normalized_email))
         if existing is not None:
@@ -65,9 +93,16 @@ class AuthService:
             password_hash=self._password_hasher.hash(password),
         )
         self._db.add(user)
+        self._db.flush()
+        token = self._create_token(
+            user_id=user.id,
+            purpose="email_verification",
+            ttl=EMAIL_VERIFICATION_TOKEN_TTL,
+        )
         self._db.commit()
         self._db.refresh(user)
-        return user
+        self._email_sender.send_email_verification(recipient_email=user.email, token=token)
+        return SignupResult(user=user, verification_email_sent=True)
 
     def login(self, *, email: str, password: str) -> AuthenticatedSession:
         normalized_email = _normalize_email(email)
@@ -80,6 +115,8 @@ class AuthService:
             raise InvalidCredentialsError("invalid email or password") from exc
         if not is_valid:
             raise InvalidCredentialsError("invalid email or password")
+        if user.email_verified_at is None:
+            raise UnverifiedEmailError("email verification required")
 
         session_token = secrets.token_urlsafe(32)
         csrf_token = secrets.token_urlsafe(32)
@@ -98,6 +135,42 @@ class AuthService:
             session_token=session_token,
             csrf_token=csrf_token,
         )
+
+    def verify_email(self, *, token: str) -> UserModel:
+        auth_token = self._consume_token(token=token, purpose="email_verification")
+        user = self._db.get(UserModel, auth_token.user_id)
+        if user is None:
+            raise InvalidAuthTokenError("invalid token")
+        if user.email_verified_at is None:
+            user.email_verified_at = datetime.now(UTC)
+        self._db.add(user)
+        self._db.commit()
+        self._db.refresh(user)
+        return user
+
+    def request_password_reset(self, *, email: str) -> None:
+        """Create a reset token for known users without revealing account existence."""
+        normalized_email = _normalize_email(email)
+        user = self._db.scalar(select(UserModel).where(UserModel.email == normalized_email))
+        if user is None:
+            return
+        token = self._create_token(
+            user_id=user.id,
+            purpose="password_reset",
+            ttl=PASSWORD_RESET_TOKEN_TTL,
+        )
+        self._db.commit()
+        self._email_sender.send_password_reset(recipient_email=user.email, token=token)
+
+    def confirm_password_reset(self, *, token: str, new_password: str) -> None:
+        auth_token = self._consume_token(token=token, purpose="password_reset")
+        user = self._db.get(UserModel, auth_token.user_id)
+        if user is None:
+            raise InvalidAuthTokenError("invalid token")
+        user.password_hash = self._password_hasher.hash(new_password)
+        self._revoke_sessions_for_user(user.id)
+        self._db.add(user)
+        self._db.commit()
 
     def authenticate_session(self, session_token: str | None) -> Principal:
         session = self._active_session(session_token)
@@ -121,6 +194,49 @@ class AuthService:
             raise InvalidSessionError("invalid session")
         return session
 
+    def _create_token(self, *, user_id: str, purpose: AuthTokenPurpose, ttl: timedelta) -> str:
+        token = secrets.token_urlsafe(32)
+        self._db.add(
+            AuthTokenModel(
+                id=str(uuid.uuid4()),
+                user_id=user_id,
+                purpose=purpose,
+                token_hash=_digest(token),
+                expires_at=datetime.now(UTC) + ttl,
+            )
+        )
+        return token
+
+    def _consume_token(self, *, token: str, purpose: AuthTokenPurpose) -> AuthTokenModel:
+        if not token.strip():
+            raise InvalidAuthTokenError("invalid token")
+        auth_token = self._db.scalar(
+            select(AuthTokenModel).where(AuthTokenModel.token_hash == _digest(token))
+        )
+        if (
+            auth_token is None
+            or auth_token.purpose != purpose
+            or auth_token.consumed_at is not None
+            or _as_utc(auth_token.expires_at) <= datetime.now(UTC)
+        ):
+            raise InvalidAuthTokenError("invalid or expired token")
+        auth_token.consumed_at = datetime.now(UTC)
+        self._db.add(auth_token)
+        self._db.flush()
+        return auth_token
+
+    def _revoke_sessions_for_user(self, user_id: str) -> None:
+        now = datetime.now(UTC)
+        sessions = self._db.scalars(
+            select(SessionModel).where(
+                SessionModel.user_id == user_id,
+                SessionModel.revoked_at.is_(None),
+            )
+        ).all()
+        for session in sessions:
+            session.revoked_at = now
+            self._db.add(session)
+
 
 def _normalize_email(email: str) -> str:
     return email.strip().casefold()
@@ -128,3 +244,9 @@ def _normalize_email(email: str) -> str:
 
 def _digest(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)

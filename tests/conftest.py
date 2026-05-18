@@ -103,6 +103,28 @@ def assert_no_delegation_claims(value: Any) -> None:
         assert phrase not in text
 
 
+def latest_auth_email_token(email: str, purpose: str) -> str:
+    """Return the newest local auth email token for a recipient and purpose."""
+    from my_agents.auth.email import get_local_auth_email_outbox
+
+    normalized = email.strip().casefold()
+    matches = [
+        message
+        for message in get_local_auth_email_outbox().messages()
+        if message.recipient_email == normalized and message.purpose == purpose
+    ]
+    assert matches, f"expected local auth email for {normalized} with purpose {purpose}"
+    return matches[-1].token
+
+
+def verify_latest_auth_email(client: Any, email: str) -> dict[str, Any]:
+    """Verify the newest local signup email for a test client."""
+    token = latest_auth_email_token(email, "email_verification")
+    response = client.post("/auth/verify-email", json={"token": token})
+    assert response.status_code == 200
+    return response.json()
+
+
 def get_classifier() -> Callable[[str], Any]:
     module = importlib.import_module("my_agents.agents.general_assistant.classifier")
     for name in ("classify_message", "classify_request", "classify_route", "classify"):
@@ -165,6 +187,7 @@ def _clear_runtime_caches() -> None:
         "my_agents.settings": ("get_settings",),
         "my_agents.agents.general_assistant.responders": ("get_response_provider",),
         "my_agents.persistence.database": ("reset_database_caches",),
+        "my_agents.auth.email": ("reset_local_auth_email_outbox",),
     }.items():
         module = sys.modules.get(module_name)
         if module is None:

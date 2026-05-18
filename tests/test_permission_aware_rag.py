@@ -10,6 +10,8 @@ from my_agents.api import create_app
 from my_agents.api.assistant import get_graph_runner
 from my_agents.schemas import RouteDecision
 
+from .conftest import verify_latest_auth_email
+
 
 class RagSpyGraph:
     """Graph spy that keeps product RAG composition deterministic in tests."""
@@ -38,9 +40,10 @@ def _signup_login(client: TestClient, email: str) -> str:
     password = "correct horse battery staple"
     signup = client.post("/auth/signup", json={"email": email, "password": password})
     assert signup.status_code == 201
+    verify_latest_auth_email(client, email)
     login = client.post("/auth/login", json={"email": email, "password": password})
     assert login.status_code == 200
-    return signup.json()["id"]
+    return signup.json()["user"]["id"]
 
 
 def _create_conversation(client: TestClient, title: str = "RAG") -> str:

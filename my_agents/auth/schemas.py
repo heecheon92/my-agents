@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
@@ -31,6 +33,39 @@ class LoginRequest(BaseModel):
     password: str = Field(min_length=1, max_length=128)
 
 
+class VerifyEmailRequest(BaseModel):
+    """Input payload for email verification."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    token: str = Field(min_length=1, max_length=256)
+
+
+class PasswordResetRequest(BaseModel):
+    """Input payload for requesting a password reset email."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    email: EmailStr
+
+
+class PasswordResetConfirmRequest(BaseModel):
+    """Input payload for consuming a password reset token."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    token: str = Field(min_length=1, max_length=256)
+    new_password: str = Field(min_length=8, max_length=128)
+
+    @field_validator("new_password")
+    @classmethod
+    def new_password_must_not_be_blank(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("new_password must not be blank")
+        return value
+
+
 class UserResponse(BaseModel):
     """Safe user payload. Never include password hashes or session tokens."""
 
@@ -38,6 +73,16 @@ class UserResponse(BaseModel):
 
     id: str
     email: EmailStr
+    email_verified_at: datetime | None
+
+
+class SignupResponse(BaseModel):
+    """Signup response with safe user data and delivery status."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    user: UserResponse
+    verification_email_sent: bool
 
 
 class LoginResponse(BaseModel):
@@ -47,3 +92,11 @@ class LoginResponse(BaseModel):
 
     user: UserResponse
     csrf_token: str = Field(min_length=1)
+
+
+class AcceptedResponse(BaseModel):
+    """Generic accepted response for non-enumerating auth requests."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: str = "accepted"

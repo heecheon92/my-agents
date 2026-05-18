@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from .conftest import load_app
+from .conftest import load_app, verify_latest_auth_email
 
 
 def _client(monkeypatch) -> TestClient:  # noqa: ANN001 - pytest monkeypatch fixture
@@ -17,9 +17,10 @@ def _signup_login(client: TestClient, email: str) -> str:
     password = "correct horse battery staple"
     signup = client.post("/auth/signup", json={"email": email, "password": password})
     assert signup.status_code == 201
+    verify_latest_auth_email(client, email)
     login = client.post("/auth/login", json={"email": email, "password": password})
     assert login.status_code == 200
-    return signup.json()["id"]
+    return signup.json()["user"]["id"]
 
 
 def test_personal_knowledge_base_document_ingestion_creates_extraction_artifacts(

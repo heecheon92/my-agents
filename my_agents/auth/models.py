@@ -18,11 +18,18 @@ class UserModel(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     email: Mapped[str] = mapped_column(String(320), nullable=False, unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(512), nullable=False)
+    email_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )
 
     sessions: Mapped[list[SessionModel]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    auth_tokens: Mapped[list[AuthTokenModel]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",
     )
@@ -48,3 +55,22 @@ class SessionModel(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     user: Mapped[UserModel] = relationship(back_populates="sessions")
+
+
+class AuthTokenModel(Base):
+    """One-time auth lifecycle token stored by digest only."""
+
+    __tablename__ = "auth_tokens"
+    __table_args__ = (UniqueConstraint("token_hash", name="uq_auth_tokens_token_hash"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    purpose: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+
+    user: Mapped[UserModel] = relationship(back_populates="auth_tokens")

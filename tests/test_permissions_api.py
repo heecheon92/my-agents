@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from .conftest import load_app
+from .conftest import load_app, verify_latest_auth_email
 
 
 def _client(monkeypatch) -> TestClient:  # noqa: ANN001 - pytest monkeypatch fixture
@@ -17,7 +17,8 @@ def _signup_login(client: TestClient, email: str) -> tuple[str, str]:
     password = "correct horse battery staple"
     signup = client.post("/auth/signup", json={"email": email, "password": password})
     assert signup.status_code == 201
-    user_id = signup.json()["id"]
+    user_id = signup.json()["user"]["id"]
+    verify_latest_auth_email(client, email)
     login = client.post("/auth/login", json={"email": email, "password": password})
     assert login.status_code == 200
     return user_id, login.json()["csrf_token"]

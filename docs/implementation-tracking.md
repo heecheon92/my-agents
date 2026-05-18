@@ -17,8 +17,8 @@ This file exists because `.omx/` is local runtime state and is not shared across
 
 | Scope | Status | Completion estimate | Notes |
 | --- | --- | ---: | --- |
-| Portfolio-quality backend v0 | In progress, strong foundation | 70-75% | Thin end-to-end backend slice exists and is test-backed. |
-| Production SaaS readiness | Early | 30-40% | Needs email flows, abuse protection, deployment hardening, production ingestion, and ops work. |
+| Portfolio-quality backend v0 | In progress, strong foundation | 78-82% | Thin end-to-end backend slice exists; auth lifecycle is now more product-shaped and test-backed. |
+| Production SaaS readiness | Early | 40-45% | Account lifecycle improved; still needs real email provider, abuse protection, deployment hardening, production ingestion, and ops work. |
 | Full AI agents product vision | Early/mid | 25-35% | Current production graph is one assistant/router path; richer agent/tool workflows are future milestones. |
 | Learning/practice simulated agents | Active learning lab | Ongoing | `my_agents/simulated_agents/` is meaningful practice code, intentionally separate from production API/CLI surfaces. |
 
@@ -44,10 +44,14 @@ This file exists because `.omx/` is local runtime state and is not shared across
 ### Auth/session foundation
 
 - Email/password signup.
-- Login with app-owned opaque session cookie.
+- Local/offline auth email sender boundary for verification and reset messages.
+- Email verification token creation and `POST /auth/verify-email`.
+- Verified-email login with app-owned opaque session cookie.
 - CSRF token support for logout.
 - `/auth/me` for current user lookup.
-- Password hashes are not returned by API responses.
+- Password reset request/confirm flow with non-enumerating request responses.
+- Password reset revokes existing sessions.
+- Password hashes and raw token hashes are not returned by API responses.
 
 ### Groups, documents, permissions
 
@@ -75,7 +79,7 @@ This file exists because `.omx/` is local runtime state and is not shared across
 
 ### Persistence and migrations
 
-- SQLAlchemy models cover auth, sessions, groups, documents, knowledge artifacts, conversations, runs, events, and citations.
+- SQLAlchemy models cover auth, auth lifecycle tokens, sessions, groups, documents, knowledge artifacts, conversations, runs, events, and citations.
 - Alembic migration exists for the initial service schema.
 - SQLite in-memory auto-create supports offline tests.
 - Postgres/Neon readiness is documented, with external DB tests skipped unless configured.
@@ -94,13 +98,13 @@ Last full local verification run: 2026-05-18
 
 ```text
 uv run pytest -q
-84 passed, 1 skipped in 2.94s
+87 passed, 1 skipped in 3.14s
 
 uv run ruff check . --no-cache
 All checks passed!
 
 uv run ruff format --check .
-86 files already formatted
+88 files already formatted
 ```
 
 Note: the shell reported `VIRTUAL_ENV=/Users/heecheonpark/Git/rag-agent/.venv` did not match this project `.venv`, and `uv` ignored it. The checks still completed successfully through this project's environment resolution.
@@ -109,10 +113,10 @@ Note: the shell reported `VIRTUAL_ENV=/Users/heecheonpark/Git/rag-agent/.venv` d
 
 ### Product/account lifecycle
 
-- No email verification for signup yet.
-- No password reset flow yet.
-- No signup/login rate limiting yet.
+- Real outbound email provider integration is not implemented yet; v0 uses an offline local sender boundary.
+- No signup/login/password-reset rate limiting yet.
 - No account deletion or profile management surface yet.
+- Guest mode is deferred; no anonymous daily quota or restricted public-demo mode yet.
 
 ### Security and production hardening
 
@@ -148,24 +152,22 @@ Note: the shell reported `VIRTUAL_ENV=/Users/heecheonpark/Git/rag-agent/.venv` d
 
 ## Recommended next workflow
 
-### Next milestone: account lifecycle and signup email readiness
+### Next milestone: auth abuse protection and provider-readiness
 
-Goal: make auth feel like a real product foundation without overbuilding.
+Goal: harden the new auth lifecycle before adding anonymous guest mode or real provider cost.
 
 Suggested order:
 
-1. Add email verification state to the user/auth model.
-2. Add deterministic/local email sender boundary for tests and development.
-3. Add signup verification-token creation and safe verification endpoint.
-4. Add password reset request/confirm flow using the same email boundary.
-5. Document provider choice separately; do not require paid email during local learning.
-6. Add tests for duplicate signup, unverified login policy, token expiry, and password reset.
-7. Update both READMEs and relevant learning/project docs.
+1. Add a simple rate-limit/attempt-tracking boundary for signup, login, verification, and password reset.
+2. Keep the first implementation local/testable; avoid external Redis or hosted services unless deployment requires them.
+3. Add tests for repeated bad login, repeated reset request, and token brute-force protection.
+4. Draft provider-readiness docs for Resend/AWS SES without implementing live sending yet.
+5. Keep guest mode deferred until authenticated flows have abuse protection.
 
 Stop condition:
 
-- All auth lifecycle tests pass offline without a real email provider.
-- Real provider integration remains optional and secret-free in docs.
+- Auth abuse tests pass offline.
+- Docs clearly separate local sender, future real email provider, and deferred guest mode.
 - Existing deterministic assistant/conversation tests still pass.
 
 ### Alternative next milestone: production RAG realism
@@ -185,12 +187,17 @@ Stop condition:
 
 - A demo can upload/ingest a realistic document and retrieve cited answers with permission safety preserved.
 
+### Deferred idea: guest mode
+
+Guest mode should not be part of the current v0 implementation. A future guest mode may allow unauthenticated users to try a limited demo flow with a small daily quota and no private document access. It should require anonymous identity/session tracking, rate limits, quota persistence, and strict permission separation before implementation. Prefer a seeded demo account or deterministic demo script for v0 portfolio demos.
+
 ## Completed milestone log
 
 | Date | Milestone | Evidence |
 | --- | --- | --- |
 | 2026-05-18 | Portfolio chat-service v0 backend foundation is in a strong test-backed state. | `84 passed, 1 skipped`; Ruff check/format pass. |
 | 2026-05-18 | Portable implementation tracking added outside `.omx/`. | `docs/implementation-tracking.md` created and linked from root READMEs. |
+| 2026-05-18 | Account lifecycle email verification and password reset implemented offline-first. | Local auth email boundary; verified-email login; password reset request/confirm; auth lifecycle token expiry/reuse tests. |
 
 ## Agent handoff checklist
 

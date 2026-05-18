@@ -10,6 +10,8 @@ from my_agents.api import create_app
 from my_agents.api.assistant import get_graph_runner
 from my_agents.schemas import RouteDecision
 
+from .conftest import verify_latest_auth_email
+
 
 class SpyGraph:
     """Graph spy that records app-owned message state passed to run endpoint."""
@@ -51,9 +53,10 @@ def _signup_login(client: TestClient, email: str) -> str:
     password = "correct horse battery staple"
     signup = client.post("/auth/signup", json={"email": email, "password": password})
     assert signup.status_code == 201
+    verify_latest_auth_email(client, email)
     login = client.post("/auth/login", json={"email": email, "password": password})
     assert login.status_code == 200
-    return signup.json()["id"]
+    return signup.json()["user"]["id"]
 
 
 def test_conversation_run_uses_server_owned_history(monkeypatch) -> None:  # noqa: ANN001

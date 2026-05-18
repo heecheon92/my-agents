@@ -330,9 +330,10 @@ curl http://127.0.0.1:8000/health
 
 ### First-party auth 기반
 
-포트폴리오용 채팅 서비스 로드맵을 위해 최소한의 first-party auth/session 기반이
-추가되었습니다. 현재 범위는 email/password signup, login, 앱이 소유하는 opaque
-session, logout용 CSRF proof, `/auth/me`입니다.
+포트폴리오용 채팅 서비스 로드맵을 위해 first-party auth/session 및 account lifecycle
+기반이 추가되었습니다. 현재 범위는 email/password signup, local/dev email verification,
+verified-email login, 앱이 소유하는 opaque session, logout용 CSRF proof, `/auth/me`,
+password reset request/confirm endpoint입니다.
 
 이것이 전체 production-grade RAG 서비스가 완성되었다는 뜻은 아닙니다.
 하지만 auth, group/document permission, server-owned conversation, text KB ingestion,
@@ -340,20 +341,32 @@ permission-aware retrieval, citation-backed answer composition, structured agent
 event의 얇은 end-to-end 흐름은 구현되어 있습니다. streaming, production parser, pgvector
 ranking은 이후 마일스톤입니다.
 
-deterministic 모드 기준 smoke flow 예시:
+구현된 auth endpoint:
+
+- `POST /auth/signup`
+- `POST /auth/verify-email`
+- `POST /auth/login`
+- `POST /auth/logout`
+- `GET /auth/me`
+- `POST /auth/password-reset/request`
+- `POST /auth/password-reset/confirm`
+
+Signup은 안전한 user data와 `verification_email_sent`를 반환합니다. 현재 email sender는
+테스트/개발용 offline local boundary라서 v0에서는 유료 email provider가 필요하지 않습니다.
+Login은 `email_verified_at`이 설정된 사용자만 허용합니다. Password reset request는 email이
+존재하는지와 무관하게 동일한 accepted response를 반환하므로 account enumeration을 피합니다.
+
+signup 요청 예시:
 
 ```bash
 curl -X POST http://127.0.0.1:8000/auth/signup \
   -H 'Content-Type: application/json' \
   -d '{"email":"demo@example.com","password":"correct horse battery staple"}'
-
-curl -i -X POST http://127.0.0.1:8000/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"demo@example.com","password":"correct horse battery staple"}'
 ```
 
-`/auth/login`은 안전한 user data와 `csrf_token`을 반환하고 설정된 session cookie를
-설정합니다. password와 password hash는 API 응답으로 반환하지 않습니다.
+`/auth/login`은 email verification 이후 안전한 user data와 `csrf_token`을 반환하고 설정된
+session cookie를 설정합니다. password, password hash, raw auth-token hash는 API 응답으로
+반환하지 않습니다.
 
 ### Group 및 document permission 기반
 

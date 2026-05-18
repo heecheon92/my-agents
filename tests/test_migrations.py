@@ -20,6 +20,7 @@ EXPECTED_SERVICE_TABLES = {
     "alembic_version",
     "users",
     "sessions",
+    "auth_tokens",
     "groups",
     "memberships",
     "conversations",
@@ -88,8 +89,10 @@ def test_alembic_offline_sql_generation_covers_initial_schema(monkeypatch) -> No
 
     sql = output.getvalue()
     assert "CREATE TABLE users" in sql
+    assert "CREATE TABLE auth_tokens" in sql
     assert "CREATE TABLE citations" in sql
     assert "20260517_0001" in sql
+    assert "20260518_0002" in sql
 
 
 def test_optional_external_test_database_runs_migrations(monkeypatch) -> None:

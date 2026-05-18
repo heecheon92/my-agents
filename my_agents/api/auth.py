@@ -11,13 +11,25 @@ from sqlalchemy.orm import Session
 from my_agents.auth.contracts import Principal
 from my_agents.auth.dependencies import get_auth_service, get_current_principal
 from my_agents.auth.models import UserModel
-from my_agents.auth.schemas import LoginRequest, LoginResponse, SignupRequest, UserResponse
+from my_agents.auth.schemas import (
+    AcceptedResponse,
+    LoginRequest,
+    LoginResponse,
+    PasswordResetConfirmRequest,
+    PasswordResetRequest,
+    SignupRequest,
+    SignupResponse,
+    UserResponse,
+    VerifyEmailRequest,
+)
 from my_agents.auth.service import (
     AuthService,
     DuplicateEmailError,
+    InvalidAuthTokenError,
     InvalidCredentialsError,
     InvalidCsrfTokenError,
     InvalidSessionError,
+    UnverifiedEmailError,
 )
 from my_agents.persistence.database import get_database_session
 from my_agents.settings import Settings, get_settings
@@ -25,18 +37,37 @@ from my_agents.settings import Settings, get_settings
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-@auth_router.post("/signup", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+@auth_router.post("/signup", response_model=SignupResponse, status_code=status.HTTP_201_CREATED)
 def signup(
     request: SignupRequest,
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
-) -> UserResponse:
-    """Create a first-party user account without returning password material."""
+) -> SignupResponse:
+    """Create a user and send a local/dev email verification token."""
     try:
-        user = auth_service.signup(email=str(request.email), password=request.password)
+        result = auth_service.signup(email=str(request.email), password=request.password)
     except DuplicateEmailError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="email unavailable",
+        ) from exc
+    return SignupResponse(
+        user=_user_response(result.user),
+        verification_email_sent=result.verification_email_sent,
+    )
+
+
+@auth_router.post("/verify-email", response_model=UserResponse)
+def verify_email(
+    request: VerifyEmailRequest,
+    auth_service: Annotated[AuthService, Depends(get_auth_service)],
+) -> UserResponse:
+    """Consume an email verification token and mark the user verified."""
+    try:
+        user = auth_service.verify_email(token=request.token)
+    except InvalidAuthTokenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="invalid or expired token",
         ) from exc
     return _user_response(user)
 
@@ -48,13 +79,18 @@ def login(
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> LoginResponse:
-    """Authenticate credentials and issue an app-owned opaque session cookie."""
+    """Authenticate verified credentials and issue an app-owned opaque session cookie."""
     try:
         authenticated = auth_service.login(email=str(request.email), password=request.password)
     except InvalidCredentialsError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="invalid email or password",
+        ) from exc
+    except UnverifiedEmailError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="email verification required",
         ) from exc
     response.set_cookie(
         key=settings.session_cookie_name,
@@ -67,6 +103,36 @@ def login(
         user=_user_response(authenticated.user),
         csrf_token=authenticated.csrf_token,
     )
+
+
+@auth_router.post(
+    "/password-reset/request",
+    response_model=AcceptedResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def request_password_reset(
+    request: PasswordResetRequest,
+    auth_service: Annotated[AuthService, Depends(get_auth_service)],
+) -> AcceptedResponse:
+    """Request a reset token without revealing whether the account exists."""
+    auth_service.request_password_reset(email=str(request.email))
+    return AcceptedResponse()
+
+
+@auth_router.post("/password-reset/confirm", status_code=status.HTTP_204_NO_CONTENT)
+def confirm_password_reset(
+    request: PasswordResetConfirmRequest,
+    auth_service: Annotated[AuthService, Depends(get_auth_service)],
+) -> Response:
+    """Consume a reset token, replace the password, and revoke existing sessions."""
+    try:
+        auth_service.confirm_password_reset(token=request.token, new_password=request.new_password)
+    except InvalidAuthTokenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="invalid or expired token",
+        ) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @auth_router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
@@ -116,4 +182,8 @@ def me(
 
 
 def _user_response(user: UserModel) -> UserResponse:
-    return UserResponse(id=user.id, email=user.email)
+    return UserResponse(
+        id=user.id,
+        email=user.email,
+        email_verified_at=user.email_verified_at,
+    )

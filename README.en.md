@@ -330,30 +330,44 @@ Example response:
 
 ### First-party auth foundation
 
-The backend now includes a minimal first-party auth/session foundation for the
-portfolio chat-service roadmap. It is intentionally small: email/password signup,
-login, app-owned opaque sessions, CSRF proof for logout, and `/auth/me`.
+The backend now includes a first-party auth/session and account-lifecycle foundation for
+the portfolio chat-service roadmap. The current scope is email/password signup, local/dev
+email verification, verified-email login, app-owned opaque sessions, CSRF proof for logout,
+`/auth/me`, and password reset request/confirm endpoints.
 
 This does **not** yet mean the production-grade RAG service is complete.
 However, the thin end-to-end path now covers auth, groups/document permissions,
-server-owned conversations, text KB ingestion, permission-aware retrieval, and
+server-owned conversations, text KB ingestion, permission-aware retrieval,
 citation-backed answer composition, and structured agent activity events. Streaming,
 production parsers, and pgvector ranking remain later milestones.
 
-Example deterministic smoke flow:
+Implemented auth endpoints:
+
+- `POST /auth/signup`
+- `POST /auth/verify-email`
+- `POST /auth/login`
+- `POST /auth/logout`
+- `GET /auth/me`
+- `POST /auth/password-reset/request`
+- `POST /auth/password-reset/confirm`
+
+Signup returns safe user data plus `verification_email_sent`. The current email sender is
+an offline local boundary used by tests/development, so no paid email provider is required
+for v0. Login requires `email_verified_at` to be set. Password reset requests return the
+same accepted response whether or not the email exists, so the API does not enumerate
+accounts.
+
+Example signup request:
 
 ```bash
 curl -X POST http://127.0.0.1:8000/auth/signup \
   -H 'Content-Type: application/json' \
   -d '{"email":"demo@example.com","password":"correct horse battery staple"}'
-
-curl -i -X POST http://127.0.0.1:8000/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"demo@example.com","password":"correct horse battery staple"}'
 ```
 
 `/auth/login` returns safe user data plus a `csrf_token` and sets the configured
-session cookie. Passwords and password hashes are never returned by the API.
+session cookie after the email is verified. Passwords, password hashes, and raw auth-token
+hashes are never returned by the API.
 
 ### Groups and document permissions foundation
 
