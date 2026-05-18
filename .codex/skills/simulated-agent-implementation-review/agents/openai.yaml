@@ -1,0 +1,4 @@
+interface:
+  display_name: "Simulated Agent Review"
+  short_description: "Review simulated agents with reference code"
+  default_prompt: "Use $simulated-agent-implementation-review to review this simulated agent implementation and create FEEDBACK.md plus graph_reference.py."

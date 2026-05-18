@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa: E501
 """Create a learning-only simulated-agent scaffold.
 
 The scaffold follows this repository's simulated agent convention:

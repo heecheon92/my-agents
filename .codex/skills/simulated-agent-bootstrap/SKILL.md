@@ -26,7 +26,7 @@ python3 /path/to/simulated-agent-bootstrap/scripts/create_simulated_agent.py <ag
   --simulated-root /path/to/repo/my_agents/simulated_agents
 ```
 
-4. Keep `graph.py` as a bootstrap loop only: `respond()` is a placeholder, and the `while True` CLI loop mirrors the existing simulated-agent examples. Do not add real graph nodes unless the user separately asks for implementation.
+4. Keep `graph.py` as a bootstrap loop only: `respond()` is a beginner-friendly CLI adapter placeholder, and the `while True` CLI loop mirrors the existing simulated-agent examples. Do not add real graph nodes unless the user separately asks for implementation.
 5. Report the created path and files.
 
 ## Scaffold shape
@@ -52,7 +52,7 @@ The README snippets include:
 The generated `graph.py` includes:
 
 - `AGENT_NAME`;
-- `respond(user_input: str)` placeholder;
+- `respond(user_input: str)` placeholder as a thin beginner CLI adapter;
 - `if __name__ == "__main__"`;
 - `while True` terminal loop with `/quit`, `/exit`, `/q`, `KeyboardInterrupt`, and generic exception handling.
 
@@ -63,7 +63,7 @@ Use `my_agents/simulated_agents/mbti` and `my_agents/simulated_agents/study_coac
 Respect the simulated-agent boundary:
 
 - do not import simulation code into production API/CLI surfaces;
-- prefer inline, readable LangGraph code when implementation is later requested;
+- prefer inline, readable LangGraph code when implementation is later requested; when moving beyond bootstrap, either keep `respond()` as a thin CLI adapter or invoke `graph.invoke(...)` directly in the terminal loop for learning clarity;
 - keep fake tools and side effects clearly labeled as simulation.
 
 ## Safety

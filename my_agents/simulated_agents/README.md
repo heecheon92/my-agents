@@ -54,6 +54,7 @@ Example:
 ```text
 mbti/ -> practice swarm / handoff architecture
 study_coach/ -> practice planner / executor / critic revision loop
+debate_council/ -> practice sequential multi-agent orchestration / moderator synthesis
 ```
 
 The MBTI graph is not meant to be a real MBTI product. It is a practice graph for understanding how swarm-style active-agent handoff works.
