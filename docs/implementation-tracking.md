@@ -5,13 +5,22 @@ Status owner: repo-tracked source of truth for cross-machine agent handoff
 
 This file exists because `.omx/` is local runtime state and is not shared across machines. When working with an agent on any machine, start here before re-discovering project status from the codebase.
 
+Use this file to answer: **"What should we do next?"** without first re-reading the whole codebase. For detailed backlog coverage, use [`../ROADMAP.md`](../ROADMAP.md) as the companion checklist.
+
+## Source-of-truth contract
+
+- `docs/implementation-tracking.md` is the canonical cross-machine handoff summary: current status, latest verification, known gaps, recommended next workflow, and completed milestone log.
+- `ROADMAP.md` is the detailed roadmap/checklist backlog: broader v1 scope, deferred items, and definition of done.
+- If both files mention the same item, this file decides current priority and freshness; update `ROADMAP.md` afterward so the checklist does not drift.
+- If `.omx/` and this file disagree, treat this file as the portable baseline and `.omx/` as machine-local context only.
+
 ## How to use this file
 
+- Start here when the user asks what to do next, what is incomplete, or what changed since another machine/session.
 - Update this file when a workflow meaningfully changes project completion, next priorities, or known gaps.
 - Keep it factual: record implemented behavior, verification evidence, and remaining risk separately.
 - Prefer short entries with links to code/docs/tests instead of long narrative.
 - Do not use this file for secrets, local `.env` values, or machine-specific runtime state.
-- If `.omx/` and this file disagree, treat this file as the portable baseline and `.omx/` as machine-local context only.
 
 ## Current overall status
 

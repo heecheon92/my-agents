@@ -19,7 +19,7 @@ v0 is intentionally a thin end-to-end slice. It is a backend-only learning/portf
 
 ## Portable implementation tracking
 
-Use [`docs/implementation-tracking.md`](./docs/implementation-tracking.md) as the repo-tracked source of truth for current completion, completed milestones, next workflow priorities, and cross-machine agent handoff. Local `.omx/` state is useful runtime context, but it is not shared across machines.
+Use [`docs/implementation-tracking.md`](./docs/implementation-tracking.md) as the repo-tracked source of truth for current completion, completed milestones, next workflow priorities, and cross-machine agent handoff. Use [`ROADMAP.md`](./ROADMAP.md) as the companion detailed v1 backlog/checklist. Local `.omx/` state is useful runtime context, but it is not shared across machines.
 
 ## Explicit v0 disclosure
 

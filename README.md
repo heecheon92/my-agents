@@ -19,7 +19,7 @@ v0는 의도적으로 thin end-to-end slice로 유지합니다. 이 저장소는
 
 ## 이식 가능한 구현 추적
 
-현재 완성도, 완료된 milestone, 다음 workflow 우선순위, 다른 머신의 agent handoff는 [`docs/implementation-tracking.md`](./docs/implementation-tracking.md)를 repo-tracked source of truth로 사용합니다. 로컬 `.omx/` 상태는 runtime context로는 유용하지만 머신 간에 공유되지 않습니다.
+현재 완성도, 완료된 milestone, 다음 workflow 우선순위, 다른 머신의 agent handoff는 [`docs/implementation-tracking.md`](./docs/implementation-tracking.md)를 repo-tracked source of truth로 사용합니다. 더 자세한 v1 backlog/checklist는 [`ROADMAP.md`](./ROADMAP.md)를 companion 문서로 사용합니다. 로컬 `.omx/` 상태는 runtime context로는 유용하지만 머신 간에 공유되지 않습니다.
 
 ## 명시적인 v0 안내
 

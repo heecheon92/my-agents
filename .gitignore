@@ -45,3 +45,6 @@ htmlcov/
 *.log
 *.sqlite
 *.sqlite3
+
+# Playwright MCP local artifacts
+.playwright-mcp/
