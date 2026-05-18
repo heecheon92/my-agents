@@ -17,6 +17,10 @@ Backend-only FastAPI + LangGraph assistant/router foundation for learning and ca
 
 v0 is intentionally a thin end-to-end slice. It is a backend-only learning/portfolio artifact; the frontend belongs in a separate repository.
 
+## Portable implementation tracking
+
+Use [`docs/implementation-tracking.md`](./docs/implementation-tracking.md) as the repo-tracked source of truth for current completion, completed milestones, next workflow priorities, and cross-machine agent handoff. Local `.omx/` state is useful runtime context, but it is not shared across machines.
+
 ## Explicit v0 disclosure
 
 v0 uses OpenAI-backed reply generation by default. Chat replies require `OPENAI_API_KEY`. Deterministic mode remains available for tests and offline checks with `MY_AGENTS_RESPONSE_MODE=deterministic`.
