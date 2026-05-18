@@ -17,6 +17,13 @@ Examples of patterns to practice here:
 - checkpointer and memory experiments;
 - tool-use protocols.
 
+Optional idea reference catalog:
+
+- `docs/learning/agent-lab/simulated-agent-candidate-materials/README.md` indexes self-contained LangGraph pattern notes and simulated-agent idea seeds.
+- Use it as inspiration when the user asks for simulated-agent practice ideas or when choosing the next pattern to implement.
+- Do not treat it as a required or exhaustive list. It is acceptable to propose other ideas when they better match the user's request, current code, or learning need.
+- To avoid context explosion, load the catalog index first and then at most one relevant `patterns/*.md` detail file unless the user explicitly asks for a broad survey.
+
 ## Priority order
 
 When editing files under this directory, prioritize:

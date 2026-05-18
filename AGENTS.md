@@ -146,6 +146,8 @@ Agent-level README convention:
 
 Learning documentation that supports the owner's learning path lives under `docs/learning/`. Keep the root numbered sequence for personal learning logs, and use subfolders such as `docs/learning/agent-lab/` for focused learning tracks that came from conversations. Agent-generated project architecture docs that are not primarily learning logs should live outside `docs/learning/` (for the portfolio chat service, use `docs/portfolio-chat-service/`).
 
+Simulated-agent idea references live under `docs/learning/agent-lab/simulated-agent-candidate-materials/`. Use that catalog as optional inspiration when suggesting or bootstrapping learning-only simulated agents, especially when the user asks for practice ideas. It is not mandatory or exclusive; agents may propose other ideas when they better fit the user's current goal.
+
 Rules for learning-oriented work:
 
 - Treat this repo as a study project as well as a codebase.
