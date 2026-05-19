@@ -57,7 +57,8 @@ study_coach/ -> practice planner / executor / critic revision loop
 debate_council/ -> practice sequential multi-agent orchestration / moderator synthesis
 reducer_playground/ -> practice state reducers and parallel merge rules
 support_ticket_router/ -> practice conditional routing with structured route labels
-editor_in_chief_review_loop/ -> bootstrap for human-in-the-loop approval/revision loop practice
+editor_in_chief_review_loop/ -> human-in-the-loop approval/revision loop practice
+missing_info_interviewer/ -> interrupt/resume practice for collecting required missing fields
 ```
 
 The MBTI graph is not meant to be a real MBTI product. It is a practice graph for understanding how swarm-style active-agent handoff works.
