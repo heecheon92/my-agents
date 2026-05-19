@@ -203,6 +203,9 @@ MY_AGENTS_SESSION_COOKIE_NAME=my_agents_session
 MY_AGENTS_SESSION_COOKIE_SECURE=true
 MY_AGENTS_SESSION_COOKIE_SAMESITE=lax
 MY_AGENTS_CSRF_HEADER_NAME=X-CSRF-Token
+MY_AGENTS_AUTH_ABUSE_PROTECTION_ENABLED=true
+MY_AGENTS_AUTH_ABUSE_MAX_ATTEMPTS=20
+MY_AGENTS_AUTH_ABUSE_WINDOW_SECONDS=900
 ```
 
 `.env` and `.env.*` are ignored by git. `.env.example` is safe to commit because it contains no real secrets.
@@ -333,7 +336,8 @@ Example response:
 The backend now includes a first-party auth/session and account-lifecycle foundation for
 the portfolio chat-service roadmap. The current scope is email/password signup, local/dev
 email verification, verified-email login, app-owned opaque sessions, CSRF proof for logout,
-`/auth/me`, and password reset request/confirm endpoints.
+`/auth/me`, password reset request/confirm endpoints, and a local in-process
+attempt limiter for signup, login, verification-token, and password-reset abuse.
 
 This does **not** yet mean the production-grade RAG service is complete.
 However, the thin end-to-end path now covers auth, groups/document permissions,
@@ -356,6 +360,11 @@ an offline local boundary used by tests/development, so no paid email provider i
 for v0. Login requires `email_verified_at` to be set. Password reset requests return the
 same accepted response whether or not the email exists, so the API does not enumerate
 accounts.
+
+Auth abuse protection is intentionally local and replaceable in v0: bucket keys are
+digested, limits are controlled by `MY_AGENTS_AUTH_ABUSE_*`, and tests exercise the
+offline behavior. A future public deployment can move the same boundary to Redis or a
+gateway/shared store before enabling multi-worker or distributed rate limiting.
 
 Example signup request:
 

@@ -7,6 +7,7 @@ from typing import Annotated
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
+from my_agents.auth.abuse import AuthAbuseConfig, AuthAbuseProtector, get_auth_abuse_protector
 from my_agents.auth.contracts import Principal
 from my_agents.auth.email import AuthEmailSender, get_auth_email_sender
 from my_agents.auth.service import AuthService, InvalidSessionError
@@ -20,6 +21,19 @@ def get_auth_service(
 ) -> AuthService:
     """Return an auth service bound to the request database session."""
     return AuthService(db, email_sender=email_sender)
+
+
+def get_auth_abuse_guard(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> AuthAbuseProtector:
+    """Return the local auth abuse guard derived from runtime settings."""
+    return get_auth_abuse_protector(
+        AuthAbuseConfig(
+            enabled=settings.auth_abuse_protection_enabled,
+            max_attempts=settings.auth_abuse_max_attempts,
+            window_seconds=settings.auth_abuse_window_seconds,
+        )
+    )
 
 
 def get_current_principal(

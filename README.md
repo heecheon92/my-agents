@@ -203,6 +203,9 @@ MY_AGENTS_SESSION_COOKIE_NAME=my_agents_session
 MY_AGENTS_SESSION_COOKIE_SECURE=true
 MY_AGENTS_SESSION_COOKIE_SAMESITE=lax
 MY_AGENTS_CSRF_HEADER_NAME=X-CSRF-Token
+MY_AGENTS_AUTH_ABUSE_PROTECTION_ENABLED=true
+MY_AGENTS_AUTH_ABUSE_MAX_ATTEMPTS=20
+MY_AGENTS_AUTH_ABUSE_WINDOW_SECONDS=900
 ```
 
 `.env`와 `.env.*`는 git에서 제외됩니다. `.env.example`에는 실제 비밀값이 없으므로 커밋해도 안전합니다.
@@ -333,7 +336,8 @@ curl http://127.0.0.1:8000/health
 포트폴리오용 채팅 서비스 로드맵을 위해 first-party auth/session 및 account lifecycle
 기반이 추가되었습니다. 현재 범위는 email/password signup, local/dev email verification,
 verified-email login, 앱이 소유하는 opaque session, logout용 CSRF proof, `/auth/me`,
-password reset request/confirm endpoint입니다.
+password reset request/confirm endpoint, 그리고 signup/login/verification-token/password-reset
+남용을 막기 위한 local in-process attempt limiter입니다.
 
 이것이 전체 production-grade RAG 서비스가 완성되었다는 뜻은 아닙니다.
 하지만 auth, group/document permission, server-owned conversation, text KB ingestion,
@@ -353,8 +357,13 @@ ranking은 이후 마일스톤입니다.
 
 Signup은 안전한 user data와 `verification_email_sent`를 반환합니다. 현재 email sender는
 테스트/개발용 offline local boundary라서 v0에서는 유료 email provider가 필요하지 않습니다.
-Login은 `email_verified_at`이 설정된 사용자만 허용합니다. Password reset request는 email이
-존재하는지와 무관하게 동일한 accepted response를 반환하므로 account enumeration을 피합니다.
+Login은 `email_verified_at`이 설정된 뒤에만 성공합니다. Password reset request는 계정 존재
+여부와 관계없이 동일한 accepted response를 반환하므로 account enumeration을 피합니다.
+
+Auth abuse protection은 v0에서 의도적으로 local/replaceable boundary입니다. Bucket key는
+digest로 저장되고, `MY_AGENTS_AUTH_ABUSE_*` 설정으로 제한을 조정하며, offline test가 이
+동작을 검증합니다. 향후 public deployment나 multi-worker 구성이 필요해지면 같은 boundary를
+Redis, gateway, shared store로 교체할 수 있습니다.
 
 signup 요청 예시:
 

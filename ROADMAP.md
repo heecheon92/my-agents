@@ -79,8 +79,9 @@ Current honest status:
 - [~] CSRF is currently used for logout; broader mutating endpoint CSRF policy should be revisited before public browser deployment.
 - [x] Email verification flow: `POST /auth/verify-email`.
 - [x] Password reset request/confirm flow with session revocation.
+- [x] Local in-process abuse protection for signup, login, lifecycle-token guessing, and password reset attempts.
 - [ ] Account deletion/export flow.
-- [ ] Rate limiting / abuse protection for auth endpoints.
+- [~] Shared/distributed rate limiting for multi-worker public deployment.
 - [ ] OAuth account linking seam, e.g. Google/GitHub.
 - [ ] Admin session revocation controls.
 - [ ] MFA / passkeys.
@@ -250,7 +251,7 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
    - Write a deployment runbook: migrate DB, start app, smoke auth/conversation run.
 
 4. **Production-ish auth hardening**
-   - Add rate limiting for signup, login, verification, and password reset.
+   - Promote local auth abuse protection to a shared limiter when deployment topology requires it.
    - Keep the offline/local auth email boundary testable.
    - Prepare real email-provider integration notes before public demo exposure.
 

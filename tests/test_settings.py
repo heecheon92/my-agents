@@ -94,6 +94,9 @@ def test_service_foundation_settings_have_safe_defaults(
     assert settings.session_cookie_secure is True
     assert settings.session_cookie_samesite == "lax"
     assert settings.csrf_header_name == "X-CSRF-Token"
+    assert settings.auth_abuse_protection_enabled is True
+    assert settings.auth_abuse_max_attempts == 20
+    assert settings.auth_abuse_window_seconds == 900
 
 
 def test_service_foundation_settings_accept_overrides(
@@ -109,6 +112,9 @@ def test_service_foundation_settings_accept_overrides(
     monkeypatch.setenv("MY_AGENTS_SESSION_COOKIE_SECURE", "false")
     monkeypatch.setenv("MY_AGENTS_SESSION_COOKIE_SAMESITE", "strict")
     monkeypatch.setenv("MY_AGENTS_CSRF_HEADER_NAME", "X-Portfolio-CSRF")
+    monkeypatch.setenv("MY_AGENTS_AUTH_ABUSE_PROTECTION_ENABLED", "false")
+    monkeypatch.setenv("MY_AGENTS_AUTH_ABUSE_MAX_ATTEMPTS", "5")
+    monkeypatch.setenv("MY_AGENTS_AUTH_ABUSE_WINDOW_SECONDS", "120")
 
     settings = Settings(_env_file=None)
 
@@ -120,6 +126,9 @@ def test_service_foundation_settings_accept_overrides(
     assert settings.session_cookie_secure is False
     assert settings.session_cookie_samesite == "strict"
     assert settings.csrf_header_name == "X-Portfolio-CSRF"
+    assert settings.auth_abuse_protection_enabled is False
+    assert settings.auth_abuse_max_attempts == 5
+    assert settings.auth_abuse_window_seconds == 120
 
 
 def test_service_foundation_settings_accept_auto_create_override(

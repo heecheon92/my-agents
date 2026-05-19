@@ -19,6 +19,12 @@ def _client(monkeypatch) -> TestClient:  # noqa: ANN001 - pytest monkeypatch fix
     return TestClient(load_app())
 
 
+def _client_with_auth_attempt_limit(monkeypatch, max_attempts: int = 2) -> TestClient:  # noqa: ANN001
+    monkeypatch.setenv("MY_AGENTS_AUTH_ABUSE_MAX_ATTEMPTS", str(max_attempts))
+    monkeypatch.setenv("MY_AGENTS_AUTH_ABUSE_WINDOW_SECONDS", "60")
+    return _client(monkeypatch)
+
+
 def test_signup_verify_login_me_and_logout_revoke_owned_session(monkeypatch) -> None:  # noqa: ANN001
     client = _client(monkeypatch)
 
@@ -98,6 +104,18 @@ def test_signup_rejects_duplicate_email(monkeypatch) -> None:  # noqa: ANN001
     assert "password" not in duplicate.text.lower()
 
 
+def test_signup_attempts_are_rate_limited(monkeypatch) -> None:  # noqa: ANN001
+    client = _client_with_auth_attempt_limit(monkeypatch)
+    payload = {"email": "limited-signup@example.com", "password": "correct horse battery staple"}
+
+    assert client.post("/auth/signup", json=payload).status_code == 201
+    assert client.post("/auth/signup", json=payload).status_code == 409
+    limited = client.post("/auth/signup", json=payload)
+
+    assert limited.status_code == 429
+    assert limited.json()["detail"] == "too many auth attempts"
+
+
 def test_login_rejects_invalid_credentials_without_session(monkeypatch) -> None:  # noqa: ANN001
     client = _client(monkeypatch)
     client.post(
@@ -112,6 +130,23 @@ def test_login_rejects_invalid_credentials_without_session(monkeypatch) -> None:
     )
 
     assert response.status_code == 401
+    assert client.get("/auth/me").status_code == 401
+
+
+def test_repeated_bad_logins_are_rate_limited(monkeypatch) -> None:  # noqa: ANN001
+    client = _client_with_auth_attempt_limit(monkeypatch)
+    client.post(
+        "/auth/signup",
+        json={"email": "limited-login@example.com", "password": "correct horse battery staple"},
+    )
+    verify_latest_auth_email(client, "limited-login@example.com")
+    bad_payload = {"email": "limited-login@example.com", "password": "wrong"}
+
+    assert client.post("/auth/login", json=bad_payload).status_code == 401
+    assert client.post("/auth/login", json=bad_payload).status_code == 401
+    limited = client.post("/auth/login", json=bad_payload)
+
+    assert limited.status_code == 429
     assert client.get("/auth/me").status_code == 401
 
 
@@ -185,6 +220,22 @@ def test_password_reset_request_does_not_enumerate_unknown_accounts(monkeypatch)
     assert response.json() == {"status": "accepted"}
 
 
+def test_repeated_password_reset_requests_are_rate_limited(monkeypatch) -> None:  # noqa: ANN001
+    client = _client_with_auth_attempt_limit(monkeypatch)
+    client.post(
+        "/auth/signup",
+        json={"email": "limited-reset@example.com", "password": "correct horse battery staple"},
+    )
+    payload = {"email": "limited-reset@example.com"}
+
+    assert client.post("/auth/password-reset/request", json=payload).status_code == 202
+    assert client.post("/auth/password-reset/request", json=payload).status_code == 202
+    limited = client.post("/auth/password-reset/request", json=payload)
+
+    assert limited.status_code == 429
+    assert limited.json()["detail"] == "too many auth attempts"
+
+
 def test_expired_auth_tokens_are_rejected(monkeypatch) -> None:  # noqa: ANN001
     client = _client(monkeypatch)
     signup = client.post(
@@ -211,3 +262,27 @@ def test_expired_auth_tokens_are_rejected(monkeypatch) -> None:  # noqa: ANN001
 
     assert response.status_code == 400
     assert response.json()["detail"] == "invalid or expired token"
+
+
+def test_invalid_email_verification_tokens_are_rate_limited(monkeypatch) -> None:  # noqa: ANN001
+    client = _client_with_auth_attempt_limit(monkeypatch)
+    payload = {"token": "not-a-real-token"}
+
+    assert client.post("/auth/verify-email", json=payload).status_code == 400
+    assert client.post("/auth/verify-email", json=payload).status_code == 400
+    limited = client.post("/auth/verify-email", json=payload)
+
+    assert limited.status_code == 429
+    assert limited.json()["detail"] == "too many auth attempts"
+
+
+def test_invalid_password_reset_tokens_are_rate_limited(monkeypatch) -> None:  # noqa: ANN001
+    client = _client_with_auth_attempt_limit(monkeypatch)
+    payload = {"token": "not-a-real-token", "new_password": "new correct horse battery staple"}
+
+    assert client.post("/auth/password-reset/confirm", json=payload).status_code == 400
+    assert client.post("/auth/password-reset/confirm", json=payload).status_code == 400
+    limited = client.post("/auth/password-reset/confirm", json=payload)
+
+    assert limited.status_code == 429
+    assert limited.json()["detail"] == "too many auth attempts"
