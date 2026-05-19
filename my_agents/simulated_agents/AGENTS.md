@@ -65,7 +65,13 @@ The user may ask Codex for a practice-agent idea. For example, the `mbti` graph 
 When adding a new simulated agent, document:
 
 - what pattern it practices;
+- what the agent is for, with one concrete example input;
+- how each planned graph node should behave;
+- how routing, loop limits, approvals, or stop conditions work;
+- the shared state design and why the state fields exist;
 - the graph shape;
 - the key state fields;
 - what is fake/simulated;
 - what would need to change for production use.
+
+README files should function as curated implementation guides for practice, not only generic generated stubs. Bilingual README pairs may be localized rather than line-for-line translations, but they should stay semantically equivalent.

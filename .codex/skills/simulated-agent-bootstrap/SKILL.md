@@ -41,12 +41,17 @@ my_agents/simulated_agents/<agent_slug>/
 └── graph.py        # starter CLI while loop with respond() placeholder
 ```
 
-The README snippets include:
+The README snippets should be curated implementation guides for practice. They include:
 
 - cross-links between Korean and English variants;
-- the simulated-agent purpose;
-- a small Mermaid draft graph placeholder;
-- file responsibility table;
+- what pattern this simulated agent is for;
+- the agent goal and example input;
+- expected behavior for each planned node;
+- routing / loop / stop-condition guidance;
+- explicit state design guidance;
+- a Mermaid draft graph placeholder;
+- run instructions and recommended debug-log shape;
+- learning points and implementation constraints;
 - reminders not to connect simulation code to production surfaces.
 
 The generated `graph.py` includes:
@@ -58,7 +63,7 @@ The generated `graph.py` includes:
 
 ## Reference conventions
 
-Use `my_agents/simulated_agents/mbti` and `my_agents/simulated_agents/study_coach` as the local examples for folder shape, learner-facing documentation style, and the terminal chat loop pattern.
+Generated READMEs should read like curated implementation guidelines, not generic folder stubs. Use existing simulated-agent folders only as examples for package shape and terminal chat loop patterns; this skill is the source of truth for new bootstrap README structure.
 
 Respect the simulated-agent boundary:
 
