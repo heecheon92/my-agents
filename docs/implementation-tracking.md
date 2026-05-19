@@ -1,6 +1,6 @@
 # Implementation tracking
 
-Last updated: 2026-05-18
+Last updated: 2026-05-19
 Status owner: repo-tracked source of truth for cross-machine agent handoff
 
 This file exists because `.omx/` is local runtime state and is not shared across machines. When working with an agent on any machine, start here before re-discovering project status from the codebase.
@@ -26,8 +26,8 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 
 | Scope | Status | Completion estimate | Notes |
 | --- | --- | ---: | --- |
-| Portfolio-quality backend v0 | In progress, strong foundation | 78-82% | Thin end-to-end backend slice exists; auth lifecycle is now more product-shaped and test-backed. |
-| Production SaaS readiness | Early | 40-45% | Account lifecycle improved; still needs real email provider, abuse protection, deployment hardening, production ingestion, and ops work. |
+| Portfolio-quality backend v0 | In progress, strong foundation | 82-86% | Thin end-to-end backend slice exists; auth lifecycle includes local abuse protection, and conversation runs now have SSE progress plus assistant-delta streaming. |
+| Production SaaS readiness | Early | 44-49% | Account lifecycle improved; still needs real email provider, deployment hardening, production ingestion, and ops work. |
 | Full AI agents product vision | Early/mid | 25-35% | Current production graph is one assistant/router path; richer agent/tool workflows are future milestones. |
 | Learning/practice simulated agents | Active learning lab | Ongoing | `my_agents/simulated_agents/` is meaningful practice code, intentionally separate from production API/CLI surfaces. |
 
@@ -61,6 +61,7 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 - Password reset request/confirm flow with non-enumerating request responses.
 - Password reset revokes existing sessions.
 - Password hashes and raw token hashes are not returned by API responses.
+- Local in-process auth abuse protection covers repeated signup, bad login, reset request, and invalid lifecycle-token attempts.
 
 ### Groups, documents, permissions
 
@@ -75,6 +76,7 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 - Server-owned conversations.
 - Persisted user and assistant messages.
 - Conversation run endpoint invokes the current graph.
+- SSE conversation-run stream emits redacted progress events, `answer_delta` assistant text chunks, and a final run response.
 - Run summaries and run activity events are persisted and readable.
 - Failure path records a failed run with redacted event metadata.
 
@@ -103,17 +105,17 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 
 ## Latest verification evidence
 
-Last full local verification run: 2026-05-18
+Last full local verification run: 2026-05-19
 
 ```text
 uv run pytest -q
-87 passed, 1 skipped in 3.14s
+95 passed, 1 skipped in 5.49s
 
 uv run ruff check . --no-cache
 All checks passed!
 
 uv run ruff format --check .
-88 files already formatted
+95 files already formatted
 ```
 
 Note: the shell reported `VIRTUAL_ENV=/Users/heecheonpark/Git/rag-agent/.venv` did not match this project `.venv`, and `uv` ignored it. The checks still completed successfully through this project's environment resolution.
@@ -123,14 +125,14 @@ Note: the shell reported `VIRTUAL_ENV=/Users/heecheonpark/Git/rag-agent/.venv` d
 ### Product/account lifecycle
 
 - Real outbound email provider integration is not implemented yet; v0 uses an offline local sender boundary.
-- No signup/login/password-reset rate limiting yet.
+- Auth abuse protection is local/in-process; it is not a shared Redis/gateway limiter for multi-worker public deployment yet.
 - No account deletion or profile management surface yet.
 - Guest mode is deferred; no anonymous daily quota or restricted public-demo mode yet.
 
 ### Security and production hardening
 
 - Needs explicit production security review.
-- Needs rate limits and abuse protection.
+- Needs shared/distributed rate limits before multi-worker public deployment; local in-process auth abuse protection exists.
 - Needs CORS/deployment configuration review for a real frontend origin.
 - Needs secure cookie behavior verified behind the intended deployment/proxy setup.
 - Needs secrets/deployment runbook outside local `.env` usage.
@@ -146,7 +148,7 @@ Note: the shell reported `VIRTUAL_ENV=/Users/heecheonpark/Git/rag-agent/.venv` d
 
 ### Agent/product behavior
 
-- Product conversation runs are not streaming yet.
+- Product conversation runs support SSE progress streaming and incremental `answer_delta` assistant text events.
 - Current production graph is still one assistant/router path.
 - Most route labels are capability metadata and response paths, not separate production specialist agents.
 - Tool workflows beyond hosted web search are not implemented as production graph capabilities yet.
@@ -161,22 +163,21 @@ Note: the shell reported `VIRTUAL_ENV=/Users/heecheonpark/Git/rag-agent/.venv` d
 
 ## Recommended next workflow
 
-### Next milestone: auth abuse protection and provider-readiness
+### Next milestone: local debug/deploy ergonomics
 
-Goal: harden the new auth lifecycle before adding anonymous guest mode or real provider cost.
+Goal: make the backend easier to run as a portfolio demo with a realistic local/dev deployment path.
 
 Suggested order:
 
-1. Add a simple rate-limit/attempt-tracking boundary for signup, login, verification, and password reset.
-2. Keep the first implementation local/testable; avoid external Redis or hosted services unless deployment requires them.
-3. Add tests for repeated bad login, repeated reset request, and token brute-force protection.
-4. Draft provider-readiness docs for Resend/AWS SES without implementing live sending yet.
-5. Keep guest mode deferred until authenticated flows have abuse protection.
+1. Add a simple local SQLite-file debug recipe or helper script.
+2. Add demo seed/reset commands if needed for portfolio demos.
+3. Write a deployment runbook covering migrations, app startup, auth smoke, and conversation-run smoke.
+4. Keep secrets in `.env` only and avoid frontend code in this repository.
 
 Stop condition:
 
-- Auth abuse tests pass offline.
-- Docs clearly separate local sender, future real email provider, and deferred guest mode.
+- A fresh developer can run a deterministic local demo without reading source code.
+- The runbook clearly separates local SQLite, Postgres/Neon, migrations, and secrets.
 - Existing deterministic assistant/conversation tests still pass.
 
 ### Alternative next milestone: production RAG realism
@@ -204,6 +205,8 @@ Guest mode should not be part of the current v0 implementation. A future guest m
 
 | Date | Milestone | Evidence |
 | --- | --- | --- |
+| 2026-05-19 | Product conversation runs gained SSE progress and assistant-delta streaming plus frontend contract docs. | `tests/test_conversations_api.py`; `docs/portfolio-chat-service/09-http-streaming-frontend-contract.md`. |
+| 2026-05-19 | Local auth abuse protection added for account lifecycle endpoints. | `92 passed, 1 skipped`; Ruff check/format pass; in-process `AuthAbuseProtector`; README/env/learning docs updated. |
 | 2026-05-18 | Portfolio chat-service v0 backend foundation is in a strong test-backed state. | `84 passed, 1 skipped`; Ruff check/format pass. |
 | 2026-05-18 | Portable implementation tracking added outside `.omx/`. | `docs/implementation-tracking.md` created and linked from root READMEs. |
 | 2026-05-18 | Account lifecycle email verification and password reset implemented offline-first. | Local auth email boundary; verified-email login; password reset request/confirm; auth lifecycle token expiry/reuse tests. |

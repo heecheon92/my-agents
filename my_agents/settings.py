@@ -92,6 +92,22 @@ class Settings(BaseSettings):
         min_length=1,
         validation_alias=AliasChoices("MY_AGENTS_CSRF_HEADER_NAME"),
     )
+    auth_abuse_protection_enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("MY_AGENTS_AUTH_ABUSE_PROTECTION_ENABLED"),
+    )
+    auth_abuse_max_attempts: int = Field(
+        default=20,
+        ge=1,
+        le=1000,
+        validation_alias=AliasChoices("MY_AGENTS_AUTH_ABUSE_MAX_ATTEMPTS"),
+    )
+    auth_abuse_window_seconds: int = Field(
+        default=900,
+        ge=1,
+        le=86400,
+        validation_alias=AliasChoices("MY_AGENTS_AUTH_ABUSE_WINDOW_SECONDS"),
+    )
 
     @field_validator("openai_model")
     @classmethod

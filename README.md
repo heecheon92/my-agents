@@ -85,7 +85,7 @@ flowchart TD
     Frontend --> Groups["/groups memberships"]
     Frontend --> Docs["/documents + permissions"]
     Frontend --> KB["/knowledge-bases + ingest"]
-    Frontend --> Runs["/conversations/{id}/runs"]
+    Frontend --> Runs["/conversations/{id}/runs or /runs/stream"]
     Runs --> History["server-owned messages"]
     Runs --> Retrieval["permission-aware retrieval"]
     Retrieval --> GraphExpand["entity mention expansion"]
@@ -203,6 +203,9 @@ MY_AGENTS_SESSION_COOKIE_NAME=my_agents_session
 MY_AGENTS_SESSION_COOKIE_SECURE=true
 MY_AGENTS_SESSION_COOKIE_SAMESITE=lax
 MY_AGENTS_CSRF_HEADER_NAME=X-CSRF-Token
+MY_AGENTS_AUTH_ABUSE_PROTECTION_ENABLED=true
+MY_AGENTS_AUTH_ABUSE_MAX_ATTEMPTS=20
+MY_AGENTS_AUTH_ABUSE_WINDOW_SECONDS=900
 ```
 
 `.env`와 `.env.*`는 git에서 제외됩니다. `.env.example`에는 실제 비밀값이 없으므로 커밋해도 안전합니다.
@@ -333,13 +336,14 @@ curl http://127.0.0.1:8000/health
 포트폴리오용 채팅 서비스 로드맵을 위해 first-party auth/session 및 account lifecycle
 기반이 추가되었습니다. 현재 범위는 email/password signup, local/dev email verification,
 verified-email login, 앱이 소유하는 opaque session, logout용 CSRF proof, `/auth/me`,
-password reset request/confirm endpoint입니다.
+password reset request/confirm endpoint, 그리고 signup/login/verification-token/password-reset
+남용을 막기 위한 local in-process attempt limiter입니다.
 
 이것이 전체 production-grade RAG 서비스가 완성되었다는 뜻은 아닙니다.
 하지만 auth, group/document permission, server-owned conversation, text KB ingestion,
 permission-aware retrieval, citation-backed answer composition, structured agent activity
-event의 얇은 end-to-end 흐름은 구현되어 있습니다. streaming, production parser, pgvector
-ranking은 이후 마일스톤입니다.
+event, SSE conversation-run stream의 얇은 end-to-end 흐름은 구현되어 있습니다.
+production parser와 pgvector ranking은 이후 마일스톤입니다.
 
 구현된 auth endpoint:
 
@@ -353,8 +357,13 @@ ranking은 이후 마일스톤입니다.
 
 Signup은 안전한 user data와 `verification_email_sent`를 반환합니다. 현재 email sender는
 테스트/개발용 offline local boundary라서 v0에서는 유료 email provider가 필요하지 않습니다.
-Login은 `email_verified_at`이 설정된 사용자만 허용합니다. Password reset request는 email이
-존재하는지와 무관하게 동일한 accepted response를 반환하므로 account enumeration을 피합니다.
+Login은 `email_verified_at`이 설정된 뒤에만 성공합니다. Password reset request는 계정 존재
+여부와 관계없이 동일한 accepted response를 반환하므로 account enumeration을 피합니다.
+
+Auth abuse protection은 v0에서 의도적으로 local/replaceable boundary입니다. Bucket key는
+digest로 저장되고, `MY_AGENTS_AUTH_ABUSE_*` 설정으로 제한을 조정하며, offline test가 이
+동작을 검증합니다. 향후 public deployment나 multi-worker 구성이 필요해지면 같은 boundary를
+Redis, gateway, shared store로 교체할 수 있습니다.
 
 signup 요청 예시:
 
@@ -394,6 +403,7 @@ conversation run으로 이동하고 있습니다. 현재 conversation surface는
 - `POST /conversations/{conversation_id}/messages`
 - `GET /conversations/{conversation_id}/messages`
 - `POST /conversations/{conversation_id}/runs`
+- `POST /conversations/{conversation_id}/runs/stream`
 - `GET /conversations/{conversation_id}/runs`
 
 `/conversations/{conversation_id}/runs`는 user message를 저장하고, 서버가 소유하는
@@ -402,6 +412,14 @@ conversation history와 principal/conversation context를 현재 LangGraph assis
 권한 내 관련 chunk를 확장한 뒤, assistant reply와 citation을 저장하고 `run_id`를
 반환합니다. 기존 `/assistant/chat` endpoint는 legacy/dev smoke surface로 남아 있으며,
 personal/group KB 접근을 위한 제품용 chat surface가 되어서는 안 됩니다.
+
+`/conversations/{conversation_id}/runs/stream`은 같은 product run을
+`text/event-stream` Server-Sent Events로 노출합니다. `user_message_stored`,
+`retrieval_completed`, `graph_invoked`, `answer_composed` 같은 redacted progress event를
+보내고, assistant text는 `answer_delta` event로 점진적으로 보낸 뒤, `/runs`와 같은 응답
+shape를 담은 최종 `run_completed` event를 보냅니다. stream 시작 후 graph 실행이 실패하면
+failed run을 저장하고 raw prompt나 provider exception text를 노출하지 않는 `run_failed`
+및 `run_error` event를 보냅니다.
 프론트엔드는 `GET /conversations/{conversation_id}/messages`로 서버가 저장한 transcript를
 권한 확인 후 다시 읽고, `GET /conversations/{conversation_id}/runs`로 completed/failed run
 history를 확인할 수 있습니다.
@@ -464,7 +482,8 @@ activity event를 저장합니다.
 - `GET /conversations/{conversation_id}/runs/{run_id}/events`
 
 현재 이벤트는 user message 저장, permission-aware retrieval 완료, graph invoke, answer
-composition 단계를 순서대로 보여줍니다. graph 실행이 실패하면 failed run과 `run_failed`
+composition 단계를 순서대로 보여줍니다. streaming endpoint는 request 중에도 같은 high-level
+event vocabulary와 점진적인 assistant text용 `answer_delta` chunk를 전송합니다. graph 실행이 실패하면 failed run과 `run_failed`
 event를 저장하되, payload에는 safe error type만 남깁니다. payload에는 raw message,
 document content, secret token을 넣지 않고 count, route label, latency 같은 redacted
 metadata만 둡니다.

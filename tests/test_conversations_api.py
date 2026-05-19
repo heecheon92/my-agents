@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from fastapi.testclient import TestClient
@@ -28,6 +29,35 @@ class SpyGraph:
         }
 
 
+class _TextChunk:
+    def __init__(self, content: str) -> None:
+        self.content = content
+
+
+class StreamingSpyGraph:
+    """Graph spy that emits assistant text chunks before the final graph update."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    def invoke(self, input: dict) -> dict:  # noqa: A002, ARG002 - matches LangGraph API
+        raise AssertionError("streaming endpoint should use graph.stream when available")
+
+    def stream(self, input: dict, **kwargs: Any):  # noqa: A002, ARG002 - matches LangGraph API
+        self.calls.append(input)
+        yield {"type": "messages", "data": (_TextChunk("streamed "), {})}
+        yield {"type": "messages", "data": (_TextChunk("answer"), {})}
+        yield {
+            "type": "updates",
+            "data": {
+                "classify_request": {
+                    "route": RouteDecision(label="general_assistant", explanation="spy route")
+                },
+                "respond_general": {"reply": "streamed answer"},
+            },
+        }
+
+
 class FailingGraph:
     """Graph spy that forces the product run failure path."""
 
@@ -37,7 +67,7 @@ class FailingGraph:
 
 def _client(
     monkeypatch,  # noqa: ANN001
-    graph: SpyGraph | FailingGraph | None = None,
+    graph: SpyGraph | StreamingSpyGraph | FailingGraph | None = None,
     *,
     raise_server_exceptions: bool = True,
 ) -> TestClient:
@@ -171,6 +201,137 @@ def test_conversation_runs_can_be_listed_without_event_details(monkeypatch) -> N
     assert all("reply" not in run for run in payload)
 
 
+def test_streaming_conversation_run_emits_events_and_persists_result(monkeypatch) -> None:  # noqa: ANN001
+    graph = SpyGraph()
+    client = _client(monkeypatch, graph)
+    _signup_login(client, "stream@example.com")
+    conversation_id = client.post("/conversations", json={"title": "Stream"}).json()["id"]
+
+    with client.stream(
+        "POST",
+        f"/conversations/{conversation_id}/runs/stream",
+        json={"message": "Stream this"},
+    ) as response:
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/event-stream")
+        events = _parse_sse(response.read().decode())
+
+    assert [event["event"] for event in events] == [
+        "user_message_stored",
+        "retrieval_completed",
+        "graph_invoked",
+        "answer_delta",
+        "answer_delta",
+        "answer_delta",
+        "answer_composed",
+        "run_completed",
+    ]
+    completed = events[-1]["data"]
+    assert completed["conversation_id"] == conversation_id
+    assert completed["reply"] == "saw 1 messages"
+    assert completed["handled_by"] == "personal_assistant_graph"
+    assert completed["route"]["label"] == "general_assistant"
+    assert graph.calls[0]["conversation_id"] == conversation_id
+
+    transcript = client.get(f"/conversations/{conversation_id}/messages")
+    run_events = client.get(f"/conversations/{conversation_id}/runs/{completed['run_id']}/events")
+
+    assert [(message["role"], message["content"]) for message in transcript.json()] == [
+        ("user", "Stream this"),
+        ("assistant", "saw 1 messages"),
+    ]
+    assert [event["event_type"] for event in run_events.json()] == [
+        "user_message_stored",
+        "retrieval_completed",
+        "graph_invoked",
+        "answer_composed",
+    ]
+
+
+def test_streaming_conversation_run_emits_answer_deltas_before_completion(monkeypatch) -> None:  # noqa: ANN001
+    graph = StreamingSpyGraph()
+    client = _client(monkeypatch, graph)
+    _signup_login(client, "stream-delta@example.com")
+    conversation_id = client.post("/conversations", json={"title": "Stream deltas"}).json()["id"]
+
+    with client.stream(
+        "POST",
+        f"/conversations/{conversation_id}/runs/stream",
+        json={"message": "Stream actual assistant text"},
+    ) as response:
+        assert response.status_code == 200
+        events = _parse_sse(response.read().decode())
+
+    event_names = [event["event"] for event in events]
+    delta_events = [event for event in events if event["event"] == "answer_delta"]
+    completed = events[-1]["data"]
+
+    assert event_names == [
+        "user_message_stored",
+        "retrieval_completed",
+        "graph_invoked",
+        "answer_delta",
+        "answer_delta",
+        "answer_composed",
+        "run_completed",
+    ]
+    assert len(delta_events) == 2
+    assert [event["data"]["sequence"] for event in delta_events] == [1, 2]
+    assert "".join(event["data"]["delta"] for event in delta_events) == "streamed answer"
+    assert event_names.index("answer_delta") < event_names.index("run_completed")
+    assert completed["reply"] == "streamed answer"
+    assert graph.calls[0]["conversation_id"] == conversation_id
+
+    transcript = client.get(f"/conversations/{conversation_id}/messages").json()
+    runs = client.get(f"/conversations/{conversation_id}/runs").json()
+
+    assert [(message["role"], message["content"]) for message in transcript] == [
+        ("user", "Stream actual assistant text"),
+        ("assistant", "streamed answer"),
+    ]
+    assert len(runs) == 1
+    assert runs[0]["run_id"] == completed["run_id"]
+
+
+def test_failed_streaming_conversation_run_persists_redacted_error(monkeypatch) -> None:  # noqa: ANN001
+    client = _client(monkeypatch, FailingGraph())
+    _signup_login(client, "failed-stream@example.com")
+    conversation_id = client.post("/conversations", json={"title": "Failed stream"}).json()["id"]
+
+    with client.stream(
+        "POST",
+        f"/conversations/{conversation_id}/runs/stream",
+        json={"message": "Do not leak streamed text"},
+    ) as response:
+        assert response.status_code == 200
+        body = response.read().decode()
+        events = _parse_sse(body)
+
+    assert [event["event"] for event in events] == [
+        "user_message_stored",
+        "retrieval_completed",
+        "run_failed",
+        "run_error",
+    ]
+    assert events[-2]["data"]["safe_error_type"] == "RuntimeError"
+    assert events[-1]["data"]["status_code"] == 502
+    assert "Do not leak streamed text" not in body
+    assert "private provider failure" not in body
+
+    runs = client.get(f"/conversations/{conversation_id}/runs").json()
+    failed_run = runs[0]
+    run_events = client.get(f"/conversations/{conversation_id}/runs/{failed_run['run_id']}/events")
+
+    assert failed_run["status"] == "failed"
+    assert [event["event_type"] for event in run_events.json()] == [
+        "user_message_stored",
+        "retrieval_completed",
+        "run_failed",
+    ]
+    assert run_events.json()[-1]["payload"] == {"safe_error_type": "RuntimeError"}
+    assert "Do not leak streamed text" not in run_events.text
+
+
 def test_failed_conversation_run_is_persisted_with_redacted_event(monkeypatch) -> None:  # noqa: ANN001
     client = _client(
         monkeypatch,
@@ -217,3 +378,17 @@ def test_legacy_assistant_chat_remains_dev_surface_without_product_run_fields(mo
     assert payload["handled_by"] == "personal_assistant_graph"
     assert "run_id" not in payload
     assert "citations" not in payload
+
+
+def _parse_sse(body: str) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    for raw_event in body.strip().split("\n\n"):
+        event_name = ""
+        data = ""
+        for line in raw_event.splitlines():
+            if line.startswith("event: "):
+                event_name = line.removeprefix("event: ")
+            if line.startswith("data: "):
+                data = line.removeprefix("data: ")
+        events.append({"event": event_name, "data": json.loads(data)})
+    return events

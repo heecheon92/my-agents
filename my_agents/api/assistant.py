@@ -1,6 +1,6 @@
 """Legacy assistant routes for the current v0 graph-backed chat surface."""
 
-from typing import Annotated, Protocol
+from typing import Annotated, Any, Protocol
 
 from fastapi import APIRouter, Depends, HTTPException
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
@@ -15,6 +15,10 @@ class GraphRunner(Protocol):
 
     def invoke(self, input: dict) -> dict:  # noqa: A002 - matches LangGraph API name
         """Invoke the graph with a state dictionary."""
+        ...
+
+    def stream(self, input: dict, **kwargs: Any):  # noqa: A002 - matches LangGraph API name
+        """Stream graph events for a state dictionary when the runner supports it."""
         ...
 
 
