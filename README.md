@@ -416,9 +416,10 @@ personal/group KB 접근을 위한 제품용 chat surface가 되어서는 안 �
 `/conversations/{conversation_id}/runs/stream`은 같은 product run을
 `text/event-stream` Server-Sent Events로 노출합니다. `user_message_stored`,
 `retrieval_completed`, `graph_invoked`, `answer_composed` 같은 redacted progress event를
-보낸 뒤, `/runs`와 같은 응답 shape를 담은 최종 `run_completed` event를 보냅니다.
-stream 시작 후 graph 실행이 실패하면 failed run을 저장하고 raw prompt나 provider exception
-text를 노출하지 않는 `run_failed` 및 `run_error` event를 보냅니다.
+보내고, assistant text는 `answer_delta` event로 점진적으로 보낸 뒤, `/runs`와 같은 응답
+shape를 담은 최종 `run_completed` event를 보냅니다. stream 시작 후 graph 실행이 실패하면
+failed run을 저장하고 raw prompt나 provider exception text를 노출하지 않는 `run_failed`
+및 `run_error` event를 보냅니다.
 프론트엔드는 `GET /conversations/{conversation_id}/messages`로 서버가 저장한 transcript를
 권한 확인 후 다시 읽고, `GET /conversations/{conversation_id}/runs`로 completed/failed run
 history를 확인할 수 있습니다.
@@ -482,7 +483,7 @@ activity event를 저장합니다.
 
 현재 이벤트는 user message 저장, permission-aware retrieval 완료, graph invoke, answer
 composition 단계를 순서대로 보여줍니다. streaming endpoint는 request 중에도 같은 high-level
-event vocabulary를 전송합니다. graph 실행이 실패하면 failed run과 `run_failed`
+event vocabulary와 점진적인 assistant text용 `answer_delta` chunk를 전송합니다. graph 실행이 실패하면 failed run과 `run_failed`
 event를 저장하되, payload에는 safe error type만 남깁니다. payload에는 raw message,
 document content, secret token을 넣지 않고 count, route label, latency 같은 redacted
 metadata만 둡니다.

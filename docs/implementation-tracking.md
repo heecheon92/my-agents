@@ -26,7 +26,7 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 
 | Scope | Status | Completion estimate | Notes |
 | --- | --- | ---: | --- |
-| Portfolio-quality backend v0 | In progress, strong foundation | 82-86% | Thin end-to-end backend slice exists; auth lifecycle includes local abuse protection, and conversation runs now have SSE progress streaming. |
+| Portfolio-quality backend v0 | In progress, strong foundation | 82-86% | Thin end-to-end backend slice exists; auth lifecycle includes local abuse protection, and conversation runs now have SSE progress plus assistant-delta streaming. |
 | Production SaaS readiness | Early | 44-49% | Account lifecycle improved; still needs real email provider, deployment hardening, production ingestion, and ops work. |
 | Full AI agents product vision | Early/mid | 25-35% | Current production graph is one assistant/router path; richer agent/tool workflows are future milestones. |
 | Learning/practice simulated agents | Active learning lab | Ongoing | `my_agents/simulated_agents/` is meaningful practice code, intentionally separate from production API/CLI surfaces. |
@@ -76,7 +76,7 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 - Server-owned conversations.
 - Persisted user and assistant messages.
 - Conversation run endpoint invokes the current graph.
-- SSE conversation-run stream emits redacted progress events and a final run response.
+- SSE conversation-run stream emits redacted progress events, `answer_delta` assistant text chunks, and a final run response.
 - Run summaries and run activity events are persisted and readable.
 - Failure path records a failed run with redacted event metadata.
 
@@ -109,7 +109,7 @@ Last full local verification run: 2026-05-19
 
 ```text
 uv run pytest -q
-94 passed, 1 skipped in 5.79s
+95 passed, 1 skipped in 5.49s
 
 uv run ruff check . --no-cache
 All checks passed!
@@ -148,7 +148,7 @@ Note: the shell reported `VIRTUAL_ENV=/Users/heecheonpark/Git/rag-agent/.venv` d
 
 ### Agent/product behavior
 
-- Product conversation runs support SSE progress streaming, but not token-by-token assistant text streaming.
+- Product conversation runs support SSE progress streaming and incremental `answer_delta` assistant text events.
 - Current production graph is still one assistant/router path.
 - Most route labels are capability metadata and response paths, not separate production specialist agents.
 - Tool workflows beyond hosted web search are not implemented as production graph capabilities yet.
@@ -205,7 +205,7 @@ Guest mode should not be part of the current v0 implementation. A future guest m
 
 | Date | Milestone | Evidence |
 | --- | --- | --- |
-| 2026-05-19 | Product conversation runs gained an SSE progress stream and frontend contract doc. | `tests/test_conversations_api.py`; `docs/portfolio-chat-service/09-http-streaming-frontend-contract.md`. |
+| 2026-05-19 | Product conversation runs gained SSE progress and assistant-delta streaming plus frontend contract docs. | `tests/test_conversations_api.py`; `docs/portfolio-chat-service/09-http-streaming-frontend-contract.md`. |
 | 2026-05-19 | Local auth abuse protection added for account lifecycle endpoints. | `92 passed, 1 skipped`; Ruff check/format pass; in-process `AuthAbuseProtector`; README/env/learning docs updated. |
 | 2026-05-18 | Portfolio chat-service v0 backend foundation is in a strong test-backed state. | `84 passed, 1 skipped`; Ruff check/format pass. |
 | 2026-05-18 | Portable implementation tracking added outside `.omx/`. | `docs/implementation-tracking.md` created and linked from root READMEs. |

@@ -51,9 +51,11 @@ sequenceDiagram
     API-->>UI: event user_message_stored
     API->>R: retrieve authorized chunks only
     API-->>UI: event retrieval_completed
-    API->>G: invoke graph with server-owned history
-    API->>DB: store assistant message, run, citations, events
+    API->>G: stream graph with server-owned history
     API-->>UI: event graph_invoked
+    G-->>API: assistant text chunk
+    API-->>UI: event answer_delta
+    API->>DB: store assistant message, run, citations, events
     API-->>UI: event answer_composed
     API-->>UI: event run_completed
 ```
@@ -65,8 +67,22 @@ Successful streams emit:
 1. `user_message_stored`
 2. `retrieval_completed`
 3. `graph_invoked`
-4. `answer_composed`
-5. `run_completed`
+4. zero or more `answer_delta`
+5. `answer_composed`
+6. `run_completed`
+
+`answer_delta` events carry incremental assistant text:
+
+```json
+{
+  "delta": "partial assistant text",
+  "sequence": 1
+}
+```
+
+When the OpenAI-backed graph/provider yields token chunks, these deltas are emitted while
+the graph is still running. Deterministic/local graph spies can also emit multiple deltas
+so frontend tests can verify incremental rendering without real credentials.
 
 The final `run_completed` event contains the same response shape as
 `POST /conversations/{conversation_id}/runs`:
@@ -82,20 +98,23 @@ The final `run_completed` event contains the same response shape as
 }
 ```
 
-Failed graph execution after the stream starts emits:
+Failed graph execution after the stream starts emits a redacted failure path:
 
 1. `user_message_stored`
 2. `retrieval_completed`
 3. `run_failed`
 4. `run_error`
 
-The persisted run status is still `failed`, and `GET /conversations/{conversation_id}/runs/{run_id}/events`
-returns the redacted persisted event sequence. The stream intentionally does not expose raw user prompts,
-private provider exceptions, chain-of-thought, or document content.
+If the graph had already begun streaming, the client may have seen `graph_invoked` or
+partial `answer_delta` events before the failure event. The persisted run status is still
+`failed`, and `GET /conversations/{conversation_id}/runs/{run_id}/events` returns the
+redacted persisted event sequence. The stream intentionally does not expose raw user
+prompts, private provider exceptions, chain-of-thought, or document content.
 
 ## Frontend contract guidance
 
-- Use `/conversations/{conversation_id}/runs/stream` for chat UX that wants live progress.
+- Use `/conversations/{conversation_id}/runs/stream` for chat UX that wants live progress
+  and incremental assistant text.
 - Use `/conversations/{conversation_id}/runs` when a full-response request is sufficient.
 - Do not use legacy `/assistant/chat` for product personal/group knowledge-base chat.
 - After `run_completed`, the frontend can refresh messages from
@@ -106,7 +125,10 @@ private provider exceptions, chain-of-thought, or document content.
 
 ## Current limitations
 
-- This is progress-event streaming, not token-by-token assistant text streaming.
+- `answer_delta` streams assistant text, but the final `run_completed.reply` remains the
+  compatibility source of truth for the persisted answer.
+- Deterministic fallback may chunk the final local reply immediately before completion when
+  the graph provider does not emit token chunks.
 - Run cancellation and retry endpoints are not implemented yet.
 - Long-running jobs still execute inside the request; background queues remain a later milestone.
 - CORS must be configured when a real frontend origin is chosen.
@@ -114,3 +136,4 @@ private provider exceptions, chain-of-thought, or document content.
 ## Revision history
 
 - 2026-05-19: Created after adding the SSE conversation-run stream endpoint.
+- 2026-05-19: Added `answer_delta` events for incremental assistant text streaming.

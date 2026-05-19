@@ -416,10 +416,11 @@ personal/group KB access.
 
 `/conversations/{conversation_id}/runs/stream` exposes the same product run as
 `text/event-stream` Server-Sent Events. It emits redacted progress events
-(`user_message_stored`, `retrieval_completed`, `graph_invoked`, `answer_composed`) and a
-final `run_completed` event with the same response shape as `/runs`. If graph execution
-fails after the stream starts, the backend persists a failed run and emits `run_failed`
-plus `run_error` without leaking raw prompts or provider exception text.
+(`user_message_stored`, `retrieval_completed`, `graph_invoked`, `answer_composed`),
+incremental assistant text as `answer_delta` events, and a final `run_completed` event
+with the same response shape as `/runs`. If graph execution fails after the stream starts,
+the backend persists a failed run and emits `run_failed` plus `run_error` without leaking
+raw prompts or provider exception text.
 Frontend clients can read the stored transcript through
 `GET /conversations/{conversation_id}/messages` after the same conversation access check,
 and can inspect completed/failed run history through
@@ -483,8 +484,9 @@ exposing hidden chain-of-thought.
 
 The current events show user-message storage, permission-aware retrieval completion, graph
 invocation, and answer composition in order. The streaming endpoint emits the same
-high-level event vocabulary during the request. If graph execution fails, the service stores
-a failed run plus a `run_failed` event with only a safe error type. Payloads avoid raw messages,
+high-level event vocabulary during the request plus `answer_delta` chunks for incremental
+assistant text. If graph execution fails, the service stores a failed run plus a
+`run_failed` event with only a safe error type. Payloads avoid raw messages,
 document content, and secret tokens; they contain redacted metadata such as counts, route
 labels, and latency.
 

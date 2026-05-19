@@ -29,6 +29,35 @@ class SpyGraph:
         }
 
 
+class _TextChunk:
+    def __init__(self, content: str) -> None:
+        self.content = content
+
+
+class StreamingSpyGraph:
+    """Graph spy that emits assistant text chunks before the final graph update."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    def invoke(self, input: dict) -> dict:  # noqa: A002, ARG002 - matches LangGraph API
+        raise AssertionError("streaming endpoint should use graph.stream when available")
+
+    def stream(self, input: dict, **kwargs: Any):  # noqa: A002, ARG002 - matches LangGraph API
+        self.calls.append(input)
+        yield {"type": "messages", "data": (_TextChunk("streamed "), {})}
+        yield {"type": "messages", "data": (_TextChunk("answer"), {})}
+        yield {
+            "type": "updates",
+            "data": {
+                "classify_request": {
+                    "route": RouteDecision(label="general_assistant", explanation="spy route")
+                },
+                "respond_general": {"reply": "streamed answer"},
+            },
+        }
+
+
 class FailingGraph:
     """Graph spy that forces the product run failure path."""
 
@@ -38,7 +67,7 @@ class FailingGraph:
 
 def _client(
     monkeypatch,  # noqa: ANN001
-    graph: SpyGraph | FailingGraph | None = None,
+    graph: SpyGraph | StreamingSpyGraph | FailingGraph | None = None,
     *,
     raise_server_exceptions: bool = True,
 ) -> TestClient:
@@ -191,6 +220,9 @@ def test_streaming_conversation_run_emits_events_and_persists_result(monkeypatch
         "user_message_stored",
         "retrieval_completed",
         "graph_invoked",
+        "answer_delta",
+        "answer_delta",
+        "answer_delta",
         "answer_composed",
         "run_completed",
     ]
@@ -214,6 +246,51 @@ def test_streaming_conversation_run_emits_events_and_persists_result(monkeypatch
         "graph_invoked",
         "answer_composed",
     ]
+
+
+def test_streaming_conversation_run_emits_answer_deltas_before_completion(monkeypatch) -> None:  # noqa: ANN001
+    graph = StreamingSpyGraph()
+    client = _client(monkeypatch, graph)
+    _signup_login(client, "stream-delta@example.com")
+    conversation_id = client.post("/conversations", json={"title": "Stream deltas"}).json()["id"]
+
+    with client.stream(
+        "POST",
+        f"/conversations/{conversation_id}/runs/stream",
+        json={"message": "Stream actual assistant text"},
+    ) as response:
+        assert response.status_code == 200
+        events = _parse_sse(response.read().decode())
+
+    event_names = [event["event"] for event in events]
+    delta_events = [event for event in events if event["event"] == "answer_delta"]
+    completed = events[-1]["data"]
+
+    assert event_names == [
+        "user_message_stored",
+        "retrieval_completed",
+        "graph_invoked",
+        "answer_delta",
+        "answer_delta",
+        "answer_composed",
+        "run_completed",
+    ]
+    assert len(delta_events) == 2
+    assert [event["data"]["sequence"] for event in delta_events] == [1, 2]
+    assert "".join(event["data"]["delta"] for event in delta_events) == "streamed answer"
+    assert event_names.index("answer_delta") < event_names.index("run_completed")
+    assert completed["reply"] == "streamed answer"
+    assert graph.calls[0]["conversation_id"] == conversation_id
+
+    transcript = client.get(f"/conversations/{conversation_id}/messages").json()
+    runs = client.get(f"/conversations/{conversation_id}/runs").json()
+
+    assert [(message["role"], message["content"]) for message in transcript] == [
+        ("user", "Stream actual assistant text"),
+        ("assistant", "streamed answer"),
+    ]
+    assert len(runs) == 1
+    assert runs[0]["run_id"] == completed["run_id"]
 
 
 def test_failed_streaming_conversation_run_persists_redacted_error(monkeypatch) -> None:  # noqa: ANN001

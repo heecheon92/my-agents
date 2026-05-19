@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterator
+from dataclasses import dataclass
 from time import perf_counter
-from typing import Annotated
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -13,6 +14,7 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from my_agents.agents.general_assistant.classifier import classify_messages
 from my_agents.agents.general_assistant.responders import ResponseProviderConfigurationError
 from my_agents.api.assistant import GraphRunner, get_graph_runner
 from my_agents.auth.contracts import Principal
@@ -44,6 +46,17 @@ from my_agents.persistence.database import get_database_session
 from my_agents.schemas import RouteDecision
 
 conversations_router = APIRouter(prefix="/conversations", tags=["conversations"])
+
+GraphStreamItemKind = Literal["delta", "result"]
+
+
+@dataclass(frozen=True)
+class GraphStreamItem:
+    """Internal item emitted while adapting graph stream events to SSE."""
+
+    kind: GraphStreamItemKind
+    delta: str = ""
+    result: dict[str, Any] | None = None
 
 
 @conversations_router.post(
@@ -200,7 +213,26 @@ def run_conversation(
     )
 
 
-@conversations_router.post("/{conversation_id}/runs/stream")
+@conversations_router.post(
+    "/{conversation_id}/runs/stream",
+    responses={
+        200: {
+            "description": (
+                "Server-Sent Events stream with progress, answer_delta, and run_completed events."
+            ),
+            "content": {
+                "text/event-stream": {
+                    "example": (
+                        "event: answer_delta\n"
+                        'data: {"delta":"Hello","sequence":1}\n\n'
+                        "event: run_completed\n"
+                        'data: {"run_id":"...","reply":"Hello"}\n\n'
+                    )
+                }
+            },
+        }
+    },
+)
 def stream_conversation_run(
     conversation_id: str,
     request: ConversationRunRequest,
@@ -210,10 +242,12 @@ def stream_conversation_run(
 ) -> StreamingResponse:
     """Stream redacted conversation-run progress as Server-Sent Events.
 
-    The final `run_completed` event contains the same response shape returned by the
-    non-streaming `/runs` endpoint. If graph execution fails after streaming starts, the
-    endpoint persists the failed run and emits `run_failed` plus `run_error` events instead
-    of leaking raw prompts or provider exception text.
+    The stream keeps progress events compatible, emits incremental `answer_delta` text
+    while the graph/provider streams, then finishes with `run_completed` containing the
+    same response shape returned by the non-streaming `/runs` endpoint. If graph execution
+    fails after streaming starts, the endpoint persists the failed run and emits
+    `run_failed` plus `run_error` events instead of leaking raw prompts or provider
+    exception text.
     """
     _get_authorized_conversation(db, conversation_id, principal.user_id)
     return StreamingResponse(
@@ -262,8 +296,32 @@ def _conversation_run_events(
         "conversation_id": conversation_id,
         "retrieved_chunk_ids": [item.chunk.id for item in retrieved_chunks],
     }
+    stream_route = classify_messages(messages)
+    graph_invoked = False
+    delta_sequence = 0
+    streamed_base_reply_parts: list[str] = []
+    result: dict[str, Any] | None = None
     try:
-        result = graph_runner.invoke(graph_input)
+        for item in _stream_graph_items(graph_runner=graph_runner, graph_input=graph_input):
+            if not graph_invoked:
+                yield _sse_event(
+                    AgentEventType.GRAPH_INVOKED.value,
+                    _graph_invoked_payload(
+                        route=stream_route,
+                        messages=messages,
+                        retrieved_chunks=retrieved_chunks,
+                    ),
+                )
+                graph_invoked = True
+            if item.kind == "delta":
+                delta_sequence += 1
+                streamed_base_reply_parts.append(item.delta)
+                yield _sse_event(
+                    "answer_delta",
+                    {"delta": item.delta, "sequence": delta_sequence},
+                )
+                continue
+            result = item.result
     except ResponseProviderConfigurationError as exc:
         run_id = _persist_failed_run(
             db=db,
@@ -299,8 +357,24 @@ def _conversation_run_events(
         yield _sse_event("run_error", {"run_id": run_id, "status_code": 502})
         return
 
+    if result is None:
+        raise RuntimeError("conversation graph stream ended without a final result")
     route = _coerce_route(result["route"])
-    reply = _compose_rag_reply(result["reply"], retrieved_chunks)
+    base_reply = result.get("reply") or "".join(streamed_base_reply_parts).strip()
+    reply = _compose_rag_reply(base_reply, retrieved_chunks)
+    if not graph_invoked:
+        yield _sse_event(
+            AgentEventType.GRAPH_INVOKED.value,
+            _graph_invoked_payload(
+                route=route,
+                messages=messages,
+                retrieved_chunks=retrieved_chunks,
+            ),
+        )
+    if not streamed_base_reply_parts:
+        for delta in _fallback_answer_deltas(base_reply):
+            delta_sequence += 1
+            yield _sse_event("answer_delta", {"delta": delta, "sequence": delta_sequence})
     response = _persist_completed_run(
         db=db,
         conversation_id=conversation_id,
@@ -312,10 +386,6 @@ def _conversation_run_events(
         retrieval_latency_ms=retrieval_latency_ms,
         route=route,
         reply=reply,
-    )
-    yield _sse_event(
-        AgentEventType.GRAPH_INVOKED.value,
-        _graph_invoked_payload(route=route, messages=messages, retrieved_chunks=retrieved_chunks),
     )
     yield _sse_event(
         AgentEventType.ANSWER_COMPOSED.value,
@@ -531,6 +601,102 @@ def _retrieve_authorized_context(
     )
     retrieval_latency_ms = round((perf_counter() - retrieval_started) * 1000, 3)
     return retrieved_chunks, retrieval_latency_ms
+
+
+def _stream_graph_items(
+    *,
+    graph_runner: GraphRunner,
+    graph_input: dict,
+) -> Iterator[GraphStreamItem]:
+    """Yield assistant text deltas plus one final graph result.
+
+    The compiled LangGraph runner supports `.stream(...)` in local CLI usage. Tests and
+    simple spies may only implement `.invoke(...)`, so this adapter falls back to invoke
+    while still emitting deterministic `answer_delta` chunks before `run_completed`.
+    """
+    stream = getattr(graph_runner, "stream", None)
+    if not callable(stream):
+        yield GraphStreamItem(kind="result", result=graph_runner.invoke(graph_input))
+        return
+
+    streamed_parts: list[str] = []
+    final_result: dict[str, Any] = {}
+    emitted_stream_event = False
+    for event in stream(
+        graph_input,
+        stream_mode=["messages", "updates"],
+        version="v2",
+    ):
+        emitted_stream_event = True
+        event_type, event_data = _stream_event_parts(event)
+        if event_type == "messages":
+            message_chunk, _metadata = event_data
+            text = _message_chunk_text(message_chunk)
+            if text:
+                streamed_parts.append(text)
+                yield GraphStreamItem(kind="delta", delta=text)
+            continue
+        if event_type == "updates" and isinstance(event_data, dict):
+            final_result.update(_result_fields_from_update(event_data))
+
+    if "reply" not in final_result and streamed_parts:
+        final_result["reply"] = "".join(streamed_parts).strip()
+    if "route" not in final_result:
+        final_result["route"] = classify_messages(graph_input.get("messages", []))
+    if "reply" in final_result:
+        yield GraphStreamItem(kind="result", result=final_result)
+        return
+    if not emitted_stream_event:
+        yield GraphStreamItem(kind="result", result=graph_runner.invoke(graph_input))
+        return
+    raise RuntimeError("graph stream did not yield a reply")
+
+
+def _stream_event_parts(event: Any) -> tuple[str | None, Any]:
+    if isinstance(event, dict):
+        return event.get("type"), event.get("data")
+    if isinstance(event, tuple) and len(event) == 2:
+        return event
+    return None, None
+
+
+def _result_fields_from_update(update: dict[str, Any]) -> dict[str, Any]:
+    fields: dict[str, Any] = {}
+    for node_update in update.values():
+        if not isinstance(node_update, dict):
+            continue
+        route = node_update.get("route")
+        if route is not None:
+            fields["route"] = route
+        reply = node_update.get("reply")
+        if isinstance(reply, str):
+            fields["reply"] = reply
+    return fields
+
+
+def _message_chunk_text(message_chunk: Any) -> str:
+    text = getattr(message_chunk, "text", "")
+    if isinstance(text, str) and text:
+        return str(text)
+
+    content = getattr(message_chunk, "content", None)
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = [
+            item["text"]
+            for item in content
+            if isinstance(item, dict) and isinstance(item.get("text"), str)
+        ]
+        return "".join(parts)
+    return ""
+
+
+def _fallback_answer_deltas(reply: str) -> list[str]:
+    words = reply.split(" ")
+    if len(words) <= 1:
+        return [reply] if reply else []
+    return [f"{word} " for word in words[:-1]] + [words[-1]]
 
 
 def _coerce_route(route: RouteDecision | dict) -> RouteDecision:
