@@ -26,8 +26,8 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 
 | Scope | Status | Completion estimate | Notes |
 | --- | --- | ---: | --- |
-| Portfolio-quality backend v0 | In progress, strong foundation | 80-84% | Thin end-to-end backend slice exists; auth lifecycle now includes local abuse protection and is test-backed. |
-| Production SaaS readiness | Early | 42-47% | Account lifecycle improved; still needs real email provider, deployment hardening, production ingestion, and ops work. |
+| Portfolio-quality backend v0 | In progress, strong foundation | 82-86% | Thin end-to-end backend slice exists; auth lifecycle includes local abuse protection, and conversation runs now have SSE progress streaming. |
+| Production SaaS readiness | Early | 44-49% | Account lifecycle improved; still needs real email provider, deployment hardening, production ingestion, and ops work. |
 | Full AI agents product vision | Early/mid | 25-35% | Current production graph is one assistant/router path; richer agent/tool workflows are future milestones. |
 | Learning/practice simulated agents | Active learning lab | Ongoing | `my_agents/simulated_agents/` is meaningful practice code, intentionally separate from production API/CLI surfaces. |
 
@@ -76,6 +76,7 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 - Server-owned conversations.
 - Persisted user and assistant messages.
 - Conversation run endpoint invokes the current graph.
+- SSE conversation-run stream emits redacted progress events and a final run response.
 - Run summaries and run activity events are persisted and readable.
 - Failure path records a failed run with redacted event metadata.
 
@@ -108,7 +109,7 @@ Last full local verification run: 2026-05-19
 
 ```text
 uv run pytest -q
-92 passed, 1 skipped in 6.73s
+94 passed, 1 skipped in 5.79s
 
 uv run ruff check . --no-cache
 All checks passed!
@@ -131,7 +132,7 @@ Note: the shell reported `VIRTUAL_ENV=/Users/heecheonpark/Git/rag-agent/.venv` d
 ### Security and production hardening
 
 - Needs explicit production security review.
-- Needs rate limits and abuse protection.
+- Needs shared/distributed rate limits before multi-worker public deployment; local in-process auth abuse protection exists.
 - Needs CORS/deployment configuration review for a real frontend origin.
 - Needs secure cookie behavior verified behind the intended deployment/proxy setup.
 - Needs secrets/deployment runbook outside local `.env` usage.
@@ -147,7 +148,7 @@ Note: the shell reported `VIRTUAL_ENV=/Users/heecheonpark/Git/rag-agent/.venv` d
 
 ### Agent/product behavior
 
-- Product conversation runs are not streaming yet.
+- Product conversation runs support SSE progress streaming, but not token-by-token assistant text streaming.
 - Current production graph is still one assistant/router path.
 - Most route labels are capability metadata and response paths, not separate production specialist agents.
 - Tool workflows beyond hosted web search are not implemented as production graph capabilities yet.
@@ -162,22 +163,21 @@ Note: the shell reported `VIRTUAL_ENV=/Users/heecheonpark/Git/rag-agent/.venv` d
 
 ## Recommended next workflow
 
-### Next milestone: frontend contract stabilization and HTTP streaming
+### Next milestone: local debug/deploy ergonomics
 
-Goal: make the existing product conversation surface easier for a separate frontend to consume without adding frontend code to this repository.
+Goal: make the backend easier to run as a portfolio demo with a realistic local/dev deployment path.
 
 Suggested order:
 
-1. Confirm frontend clients should use product endpoints, not legacy `/assistant/chat`.
-2. Document exact cookie + CSRF expectations for signup/login/logout and mutating calls.
-3. Add a product-safe streaming endpoint for conversation runs.
-4. Preserve server-owned conversation history, authorization checks, final persisted messages, citations, and events.
-5. Add tests for stream success and failure paths without requiring OpenAI credentials.
+1. Add a simple local SQLite-file debug recipe or helper script.
+2. Add demo seed/reset commands if needed for portfolio demos.
+3. Write a deployment runbook covering migrations, app startup, auth smoke, and conversation-run smoke.
+4. Keep secrets in `.env` only and avoid frontend code in this repository.
 
 Stop condition:
 
-- A separate frontend can implement auth and chat streaming from documented backend contracts.
-- Streaming tests pass offline.
+- A fresh developer can run a deterministic local demo without reading source code.
+- The runbook clearly separates local SQLite, Postgres/Neon, migrations, and secrets.
 - Existing deterministic assistant/conversation tests still pass.
 
 ### Alternative next milestone: production RAG realism
@@ -205,6 +205,7 @@ Guest mode should not be part of the current v0 implementation. A future guest m
 
 | Date | Milestone | Evidence |
 | --- | --- | --- |
+| 2026-05-19 | Product conversation runs gained an SSE progress stream and frontend contract doc. | `tests/test_conversations_api.py`; `docs/portfolio-chat-service/09-http-streaming-frontend-contract.md`. |
 | 2026-05-19 | Local auth abuse protection added for account lifecycle endpoints. | `92 passed, 1 skipped`; Ruff check/format pass; in-process `AuthAbuseProtector`; README/env/learning docs updated. |
 | 2026-05-18 | Portfolio chat-service v0 backend foundation is in a strong test-backed state. | `84 passed, 1 skipped`; Ruff check/format pass. |
 | 2026-05-18 | Portable implementation tracking added outside `.omx/`. | `docs/implementation-tracking.md` created and linked from root READMEs. |

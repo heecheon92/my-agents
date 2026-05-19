@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from time import perf_counter
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
@@ -142,22 +144,14 @@ def run_conversation(
     graph_runner: Annotated[GraphRunner, Depends(get_graph_runner)],
 ) -> ConversationRunResponse:
     _get_authorized_conversation(db, conversation_id, principal.user_id)
-    user_message = MessageModel(
-        conversation_id=conversation_id,
-        role=MessageRole.USER.value,
-        content=request.message.strip(),
-    )
-    db.add(user_message)
-    db.commit()
-    db.refresh(user_message)
+    user_message = _store_user_message(db, conversation_id, request.message)
 
     messages = _messages_for_conversation(db, conversation_id)
-    retrieval_started = perf_counter()
-    retrieved_chunks = RetrievalService(db).retrieve(
+    retrieved_chunks, retrieval_latency_ms = _retrieve_authorized_context(
+        db=db,
         user_id=principal.user_id,
-        query=request.message,
+        message=request.message,
     )
-    retrieval_latency_ms = round((perf_counter() - retrieval_started) * 1000, 3)
     graph_input = {
         "messages": messages,
         "principal_id": principal.user_id,
@@ -192,6 +186,157 @@ def run_conversation(
         raise HTTPException(status_code=502, detail="conversation run failed") from exc
     route = _coerce_route(result["route"])
     reply = _compose_rag_reply(result["reply"], retrieved_chunks)
+    return _persist_completed_run(
+        db=db,
+        conversation_id=conversation_id,
+        user_id=principal.user_id,
+        user_message_id=user_message.id,
+        message_content_length=len(request.message.strip()),
+        messages=messages,
+        retrieved_chunks=retrieved_chunks,
+        retrieval_latency_ms=retrieval_latency_ms,
+        route=route,
+        reply=reply,
+    )
+
+
+@conversations_router.post("/{conversation_id}/runs/stream")
+def stream_conversation_run(
+    conversation_id: str,
+    request: ConversationRunRequest,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    db: Annotated[Session, Depends(get_database_session)],
+    graph_runner: Annotated[GraphRunner, Depends(get_graph_runner)],
+) -> StreamingResponse:
+    """Stream redacted conversation-run progress as Server-Sent Events.
+
+    The final `run_completed` event contains the same response shape returned by the
+    non-streaming `/runs` endpoint. If graph execution fails after streaming starts, the
+    endpoint persists the failed run and emits `run_failed` plus `run_error` events instead
+    of leaking raw prompts or provider exception text.
+    """
+    _get_authorized_conversation(db, conversation_id, principal.user_id)
+    return StreamingResponse(
+        _conversation_run_events(
+            db=db,
+            conversation_id=conversation_id,
+            request=request,
+            user_id=principal.user_id,
+            graph_runner=graph_runner,
+        ),
+        media_type="text/event-stream",
+    )
+
+
+def _conversation_run_events(
+    *,
+    db: Session,
+    conversation_id: str,
+    request: ConversationRunRequest,
+    user_id: str,
+    graph_runner: GraphRunner,
+) -> Iterator[str]:
+    user_message = _store_user_message(db, conversation_id, request.message)
+    message_content_length = len(request.message.strip())
+    user_message_payload = _user_message_stored_payload(
+        message_id=user_message.id,
+        content_length=message_content_length,
+    )
+    yield _sse_event(AgentEventType.USER_MESSAGE_STORED.value, user_message_payload)
+
+    messages = _messages_for_conversation(db, conversation_id)
+    retrieved_chunks, retrieval_latency_ms = _retrieve_authorized_context(
+        db=db,
+        user_id=user_id,
+        message=request.message,
+    )
+    retrieval_payload = _retrieval_completed_payload(
+        retrieved_chunks=retrieved_chunks,
+        retrieval_latency_ms=retrieval_latency_ms,
+    )
+    yield _sse_event(AgentEventType.RETRIEVAL_COMPLETED.value, retrieval_payload)
+
+    graph_input = {
+        "messages": messages,
+        "principal_id": user_id,
+        "conversation_id": conversation_id,
+        "retrieved_chunk_ids": [item.chunk.id for item in retrieved_chunks],
+    }
+    try:
+        result = graph_runner.invoke(graph_input)
+    except ResponseProviderConfigurationError as exc:
+        run_id = _persist_failed_run(
+            db=db,
+            conversation_id=conversation_id,
+            user_id=user_id,
+            user_message_id=user_message.id,
+            message_content_length=message_content_length,
+            retrieved_chunks=retrieved_chunks,
+            retrieval_latency_ms=retrieval_latency_ms,
+            error_type=type(exc).__name__,
+        )
+        yield _sse_event(
+            AgentEventType.RUN_FAILED.value,
+            {"run_id": run_id, "safe_error_type": type(exc).__name__},
+        )
+        yield _sse_event("run_error", {"run_id": run_id, "status_code": 503})
+        return
+    except Exception as exc:
+        run_id = _persist_failed_run(
+            db=db,
+            conversation_id=conversation_id,
+            user_id=user_id,
+            user_message_id=user_message.id,
+            message_content_length=message_content_length,
+            retrieved_chunks=retrieved_chunks,
+            retrieval_latency_ms=retrieval_latency_ms,
+            error_type=type(exc).__name__,
+        )
+        yield _sse_event(
+            AgentEventType.RUN_FAILED.value,
+            {"run_id": run_id, "safe_error_type": type(exc).__name__},
+        )
+        yield _sse_event("run_error", {"run_id": run_id, "status_code": 502})
+        return
+
+    route = _coerce_route(result["route"])
+    reply = _compose_rag_reply(result["reply"], retrieved_chunks)
+    response = _persist_completed_run(
+        db=db,
+        conversation_id=conversation_id,
+        user_id=user_id,
+        user_message_id=user_message.id,
+        message_content_length=message_content_length,
+        messages=messages,
+        retrieved_chunks=retrieved_chunks,
+        retrieval_latency_ms=retrieval_latency_ms,
+        route=route,
+        reply=reply,
+    )
+    yield _sse_event(
+        AgentEventType.GRAPH_INVOKED.value,
+        _graph_invoked_payload(route=route, messages=messages, retrieved_chunks=retrieved_chunks),
+    )
+    yield _sse_event(
+        AgentEventType.ANSWER_COMPOSED.value,
+        _answer_composed_payload(citation_count=len(response.citations), reply=reply),
+    )
+    yield _sse_event("run_completed", response.model_dump(mode="json"))
+
+
+def _persist_completed_run(
+    *,
+    db: Session,
+    conversation_id: str,
+    user_id: str,
+    user_message_id: str,
+    message_content_length: int,
+    messages: list[BaseMessage],
+    retrieved_chunks: list[RetrievedChunk],
+    retrieval_latency_ms: float,
+    route: RouteDecision,
+    reply: str,
+) -> ConversationRunResponse:
     assistant_message = MessageModel(
         conversation_id=conversation_id,
         role=MessageRole.ASSISTANT.value,
@@ -199,7 +344,7 @@ def run_conversation(
     )
     run = AgentRunModel(
         conversation_id=conversation_id,
-        user_id=principal.user_id,
+        user_id=user_id,
         status=RunStatus.COMPLETED.value,
         route_label=route.label,
     )
@@ -219,36 +364,35 @@ def run_conversation(
             run.id,
             1,
             AgentEventType.USER_MESSAGE_STORED,
-            {"message_id": user_message.id, "content_length": len(request.message.strip())},
+            _user_message_stored_payload(
+                message_id=user_message_id,
+                content_length=message_content_length,
+            ),
         ),
         _event(
             run.id,
             2,
             AgentEventType.RETRIEVAL_COMPLETED,
-            {
-                "authorized_context_count": len(retrieved_chunks),
-                "direct_count": _count_retrieval_source(retrieved_chunks, "vector_fixture"),
-                "graph_expansion_count": _count_retrieval_source(
-                    retrieved_chunks, "graph_expansion"
-                ),
-                "latency_ms": retrieval_latency_ms,
-            },
+            _retrieval_completed_payload(
+                retrieved_chunks=retrieved_chunks,
+                retrieval_latency_ms=retrieval_latency_ms,
+            ),
         ),
         _event(
             run.id,
             3,
             AgentEventType.GRAPH_INVOKED,
-            {
-                "route_label": route.label,
-                "message_count": len(messages),
-                "retrieved_chunk_count": len(retrieved_chunks),
-            },
+            _graph_invoked_payload(
+                route=route,
+                messages=messages,
+                retrieved_chunks=retrieved_chunks,
+            ),
         ),
         _event(
             run.id,
             4,
             AgentEventType.ANSWER_COMPOSED,
-            {"citation_count": len(citations), "reply_length": len(reply)},
+            _answer_composed_payload(citation_count=len(citations), reply=reply),
         ),
     ]
     db.add_all([*citations, *events])
@@ -362,6 +506,33 @@ def _messages_for_conversation(db: Session, conversation_id: str) -> list[BaseMe
     return messages
 
 
+def _store_user_message(db: Session, conversation_id: str, message: str) -> MessageModel:
+    user_message = MessageModel(
+        conversation_id=conversation_id,
+        role=MessageRole.USER.value,
+        content=message.strip(),
+    )
+    db.add(user_message)
+    db.commit()
+    db.refresh(user_message)
+    return user_message
+
+
+def _retrieve_authorized_context(
+    *,
+    db: Session,
+    user_id: str,
+    message: str,
+) -> tuple[list[RetrievedChunk], float]:
+    retrieval_started = perf_counter()
+    retrieved_chunks = RetrievalService(db).retrieve(
+        user_id=user_id,
+        query=message,
+    )
+    retrieval_latency_ms = round((perf_counter() - retrieval_started) * 1000, 3)
+    return retrieved_chunks, retrieval_latency_ms
+
+
 def _coerce_route(route: RouteDecision | dict) -> RouteDecision:
     if isinstance(route, RouteDecision):
         return route
@@ -383,6 +554,40 @@ def _count_retrieval_source(retrieved_chunks: list[RetrievedChunk], source: str)
     return sum(1 for chunk in retrieved_chunks if chunk.source == source)
 
 
+def _user_message_stored_payload(*, message_id: str, content_length: int) -> dict:
+    return {"message_id": message_id, "content_length": content_length}
+
+
+def _retrieval_completed_payload(
+    *,
+    retrieved_chunks: list[RetrievedChunk],
+    retrieval_latency_ms: float,
+) -> dict:
+    return {
+        "authorized_context_count": len(retrieved_chunks),
+        "direct_count": _count_retrieval_source(retrieved_chunks, "vector_fixture"),
+        "graph_expansion_count": _count_retrieval_source(retrieved_chunks, "graph_expansion"),
+        "latency_ms": retrieval_latency_ms,
+    }
+
+
+def _graph_invoked_payload(
+    *,
+    route: RouteDecision,
+    messages: list[BaseMessage],
+    retrieved_chunks: list[RetrievedChunk],
+) -> dict:
+    return {
+        "route_label": route.label,
+        "message_count": len(messages),
+        "retrieved_chunk_count": len(retrieved_chunks),
+    }
+
+
+def _answer_composed_payload(*, citation_count: int, reply: str) -> dict:
+    return {"citation_count": citation_count, "reply_length": len(reply)}
+
+
 def _persist_failed_run(
     *,
     db: Session,
@@ -393,7 +598,7 @@ def _persist_failed_run(
     retrieved_chunks: list[RetrievedChunk],
     retrieval_latency_ms: float,
     error_type: str,
-) -> None:
+) -> str:
     run = AgentRunModel(
         conversation_id=conversation_id,
         user_id=user_id,
@@ -408,20 +613,19 @@ def _persist_failed_run(
                 run.id,
                 1,
                 AgentEventType.USER_MESSAGE_STORED,
-                {"message_id": user_message_id, "content_length": message_content_length},
+                _user_message_stored_payload(
+                    message_id=user_message_id,
+                    content_length=message_content_length,
+                ),
             ),
             _event(
                 run.id,
                 2,
                 AgentEventType.RETRIEVAL_COMPLETED,
-                {
-                    "authorized_context_count": len(retrieved_chunks),
-                    "direct_count": _count_retrieval_source(retrieved_chunks, "vector_fixture"),
-                    "graph_expansion_count": _count_retrieval_source(
-                        retrieved_chunks, "graph_expansion"
-                    ),
-                    "latency_ms": retrieval_latency_ms,
-                },
+                _retrieval_completed_payload(
+                    retrieved_chunks=retrieved_chunks,
+                    retrieval_latency_ms=retrieval_latency_ms,
+                ),
             ),
             _event(
                 run.id,
@@ -432,6 +636,7 @@ def _persist_failed_run(
         ]
     )
     db.commit()
+    return run.id
 
 
 def _event(
@@ -456,6 +661,11 @@ def _event_response(event: AgentEventModel) -> AgentEventResponse:
         event_type=event.event_type,
         payload=json.loads(event.payload_json),
     )
+
+
+def _sse_event(event_name: str, payload: dict) -> str:
+    data = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return f"event: {event_name}\ndata: {data}\n\n"
 
 
 def _conversation_response(conversation: ConversationModel) -> ConversationResponse:

@@ -29,7 +29,7 @@ flowchart LR
 
 Current honest status:
 
-> The project is a strong **v1-draft backend foundation**: auth, permissions, server-owned conversations, text ingestion, permission-aware retrieval, citations, events, and migrations exist as a thin end-to-end slice. It is not yet a production-ready v1 because streaming, production ingestion, real vector retrieval, background jobs, stronger auth hardening, and deployment operations remain.
+> The project is a strong **v1-draft backend foundation**: auth, permissions, server-owned conversations, text ingestion, permission-aware retrieval, citations, events, migrations, and SSE progress streaming exist as a thin end-to-end slice. It is not yet a production-ready v1 because production ingestion, real vector retrieval, background jobs, stronger deployment-grade auth hardening, and operations remain.
 
 ## 1. Backend foundation
 
@@ -57,7 +57,7 @@ Current honest status:
 - [x] Legacy/dev chat endpoint: `POST /assistant/chat`.
 - [x] Terminal CLI chat.
 - [x] CLI token streaming through LangGraph `graph.stream(...)`.
-- [~] Product chat uses the graph inside conversation runs.
+- [x] Product chat uses the graph inside conversation runs.
 - [ ] LangGraph checkpointer-backed memory for durable thread state.
 - [ ] Real tool/function capabilities exposed through the graph.
 - [ ] Production multi-agent orchestration surface.
@@ -156,8 +156,9 @@ Current honest status:
 - [x] Failed graph invocation persists a failed run and safe failure event.
 - [x] Event types cover user message storage, retrieval completion, graph invocation, and answer composition.
 - [~] Run event vocabulary differs from the larger `.omx` contract; current implementation is a thin safe subset.
-- [ ] HTTP streaming response for frontend chat.
-- [ ] SSE or chunked transport endpoint, likely `/conversations/{id}/runs/stream` or `/runs/{id}/stream`.
+- [x] HTTP progress streaming response for frontend chat.
+- [x] SSE transport endpoint: `POST /conversations/{id}/runs/stream`.
+- [~] Token-by-token assistant text streaming is not implemented for product chat yet.
 - [ ] Background job queue for long-running runs/ingestion.
 - [ ] Run cancellation.
 - [ ] Run retry.
@@ -207,11 +208,11 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
 - [x] Auth uses browser cookie sessions.
 - [x] Login returns safe user data plus CSRF token.
 - [x] Product demo flow is documented: auth -> group/doc -> ingest -> conversation run -> citations/events.
-- [~] Frontend currently waits for full run responses because HTTP streaming is not implemented.
-- [ ] Finalize frontend-facing signup/login response parser expectations.
+- [x] Frontend can use SSE progress streaming instead of waiting only for full run responses.
+- [~] Frontend-facing signup/login response parser expectations are documented in README examples but not generated as a typed client.
 - [ ] Document exact frontend auth/session flow, including cookies and CSRF headers.
 - [ ] Add CORS configuration when a real frontend origin exists.
-- [ ] Add streaming contract for chat UX.
+- [x] Add streaming contract for chat UX.
 - [ ] Add OpenAPI/client generation workflow if useful.
 
 ## 11. Testing and quality gates
@@ -227,7 +228,7 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
 - [x] Settings/database initialization tests.
 - [x] Ruff lint and format gates.
 - [~] Optional Postgres/Neon test is skipped unless `MY_AGENTS_TEST_DATABASE_URL` is set.
-- [ ] Dedicated streaming endpoint tests once streaming exists.
+- [x] Dedicated streaming endpoint tests.
 - [ ] Upload/parser tests once file ingestion exists.
 - [ ] Background job tests once queueing exists.
 - [ ] Load/performance smoke tests for larger fixture data.
@@ -240,22 +241,17 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
    - Align signup/login parser shapes with backend contracts.
    - Document cookie + CSRF expectations.
 
-2. **HTTP streaming for conversation runs**
-   - Add a product-safe streaming endpoint.
-   - Preserve server-owned conversation history and authorization checks.
-   - Persist final messages, citations, and events after stream completion/failure.
-
-3. **Local debug/deploy ergonomics**
+2. **Local debug/deploy ergonomics**
    - Add a simple local SQLite-file debug recipe or helper script.
    - Add demo seed/reset commands if needed for portfolio demos.
    - Write a deployment runbook: migrate DB, start app, smoke auth/conversation run.
 
-4. **Production-ish auth hardening**
+3. **Production-ish auth hardening**
    - Promote local auth abuse protection to a shared limiter when deployment topology requires it.
    - Keep the offline/local auth email boundary testable.
    - Prepare real email-provider integration notes before public demo exposure.
 
-5. **Real retrieval upgrade**
+4. **Real retrieval upgrade**
    - Add embedding provider boundary.
    - Add pgvector schema and migrations only when real embedding retrieval is implemented.
    - Keep permission filtering inside query construction.

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from fastapi.testclient import TestClient
@@ -171,6 +172,89 @@ def test_conversation_runs_can_be_listed_without_event_details(monkeypatch) -> N
     assert all("reply" not in run for run in payload)
 
 
+def test_streaming_conversation_run_emits_events_and_persists_result(monkeypatch) -> None:  # noqa: ANN001
+    graph = SpyGraph()
+    client = _client(monkeypatch, graph)
+    _signup_login(client, "stream@example.com")
+    conversation_id = client.post("/conversations", json={"title": "Stream"}).json()["id"]
+
+    with client.stream(
+        "POST",
+        f"/conversations/{conversation_id}/runs/stream",
+        json={"message": "Stream this"},
+    ) as response:
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/event-stream")
+        events = _parse_sse(response.read().decode())
+
+    assert [event["event"] for event in events] == [
+        "user_message_stored",
+        "retrieval_completed",
+        "graph_invoked",
+        "answer_composed",
+        "run_completed",
+    ]
+    completed = events[-1]["data"]
+    assert completed["conversation_id"] == conversation_id
+    assert completed["reply"] == "saw 1 messages"
+    assert completed["handled_by"] == "personal_assistant_graph"
+    assert completed["route"]["label"] == "general_assistant"
+    assert graph.calls[0]["conversation_id"] == conversation_id
+
+    transcript = client.get(f"/conversations/{conversation_id}/messages")
+    run_events = client.get(f"/conversations/{conversation_id}/runs/{completed['run_id']}/events")
+
+    assert [(message["role"], message["content"]) for message in transcript.json()] == [
+        ("user", "Stream this"),
+        ("assistant", "saw 1 messages"),
+    ]
+    assert [event["event_type"] for event in run_events.json()] == [
+        "user_message_stored",
+        "retrieval_completed",
+        "graph_invoked",
+        "answer_composed",
+    ]
+
+
+def test_failed_streaming_conversation_run_persists_redacted_error(monkeypatch) -> None:  # noqa: ANN001
+    client = _client(monkeypatch, FailingGraph())
+    _signup_login(client, "failed-stream@example.com")
+    conversation_id = client.post("/conversations", json={"title": "Failed stream"}).json()["id"]
+
+    with client.stream(
+        "POST",
+        f"/conversations/{conversation_id}/runs/stream",
+        json={"message": "Do not leak streamed text"},
+    ) as response:
+        assert response.status_code == 200
+        body = response.read().decode()
+        events = _parse_sse(body)
+
+    assert [event["event"] for event in events] == [
+        "user_message_stored",
+        "retrieval_completed",
+        "run_failed",
+        "run_error",
+    ]
+    assert events[-2]["data"]["safe_error_type"] == "RuntimeError"
+    assert events[-1]["data"]["status_code"] == 502
+    assert "Do not leak streamed text" not in body
+    assert "private provider failure" not in body
+
+    runs = client.get(f"/conversations/{conversation_id}/runs").json()
+    failed_run = runs[0]
+    run_events = client.get(f"/conversations/{conversation_id}/runs/{failed_run['run_id']}/events")
+
+    assert failed_run["status"] == "failed"
+    assert [event["event_type"] for event in run_events.json()] == [
+        "user_message_stored",
+        "retrieval_completed",
+        "run_failed",
+    ]
+    assert run_events.json()[-1]["payload"] == {"safe_error_type": "RuntimeError"}
+    assert "Do not leak streamed text" not in run_events.text
+
+
 def test_failed_conversation_run_is_persisted_with_redacted_event(monkeypatch) -> None:  # noqa: ANN001
     client = _client(
         monkeypatch,
@@ -217,3 +301,17 @@ def test_legacy_assistant_chat_remains_dev_surface_without_product_run_fields(mo
     assert payload["handled_by"] == "personal_assistant_graph"
     assert "run_id" not in payload
     assert "citations" not in payload
+
+
+def _parse_sse(body: str) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    for raw_event in body.strip().split("\n\n"):
+        event_name = ""
+        data = ""
+        for line in raw_event.splitlines():
+            if line.startswith("event: "):
+                event_name = line.removeprefix("event: ")
+            if line.startswith("data: "):
+                data = line.removeprefix("data: ")
+        events.append({"event": event_name, "data": json.loads(data)})
+    return events
