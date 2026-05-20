@@ -22,6 +22,7 @@ class AssistantState(TypedDict, total=False):
     capability: AgentCapability
     reply: str
     handled_by: str
+    retrieved_context: list[dict[str, object]]
     debug_empty_openai_response: bool
 
 
@@ -99,6 +100,7 @@ def _compose_reply(state: AssistantState, guidance: str) -> str:
         route=route,
         capability=state["capability"],
         guidance=guidance,
+        retrieved_context=state.get("retrieved_context", []),
         debug_empty_response=state.get("debug_empty_openai_response", False),
     )
 

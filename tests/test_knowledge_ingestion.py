@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import zlib
+
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
@@ -14,7 +17,7 @@ from my_agents.knowledge.models import (
     EntityRelationshipModel,
     ExtractionRunModel,
 )
-from my_agents.knowledge.pdf_uploads import parse_uploaded_pdf
+from my_agents.knowledge.pdf_uploads import PdfUploadError, parse_uploaded_pdf
 from my_agents.persistence.database import get_database_session
 
 from .conftest import load_app, verify_latest_auth_email
@@ -55,6 +58,52 @@ def _text_pdf(*pages: str) -> bytes:
         1, f"2 0 obj << /Type /Pages /Kids [{' '.join(kids)}] /Count {len(kids)} >> endobj"
     )
     return ("%PDF-1.4\n" + "\n".join(objects) + "\n%%EOF\n").encode()
+
+
+def _compressed_text_pdf(*pages: str) -> bytes:
+    objects = ["1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj"]
+    kids = []
+    for index, page in enumerate(pages, start=1):
+        page_obj = 2 + (index * 2) - 1
+        stream_obj = page_obj + 1
+        kids.append(f"{page_obj} 0 R")
+        escaped = page.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+        stream = f"BT /F1 12 Tf 72 720 Td ({escaped}) Tj ET".encode()
+        compressed = zlib.compress(stream)
+        objects.append(
+            f"{page_obj} 0 obj << /Type /Page /Parent 2 0 R /Contents {stream_obj} 0 R >> endobj"
+        )
+        objects.append(
+            b"".join(
+                [
+                    (
+                        f"{stream_obj} 0 obj "
+                        f"<< /Length {len(compressed)} /Filter /FlateDecode >> stream\n"
+                    ).encode(),
+                    compressed,
+                    b"\nendstream endobj",
+                ]
+            ).decode("latin-1")
+        )
+    objects.insert(
+        1, f"2 0 obj << /Type /Pages /Kids [{' '.join(kids)}] /Count {len(kids)} >> endobj"
+    )
+    return ("%PDF-1.4\n" + "\n".join(objects) + "\n%%EOF\n").encode("latin-1")
+
+
+def _binary_noise_pdf() -> bytes:
+    noise = b"$\xa6\xedO\x7f /\x89\xe1\x88e<m\xde(\x8d\x97Xz\xf7x\xb5q;)\xff\xfe"
+    objects = [
+        b"1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj",
+        b"2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj",
+        b"3 0 obj << /Type /Page /Parent 2 0 R /Contents 4 0 R >> endobj",
+        b"4 0 obj << /Length "
+        + str(len(noise)).encode()
+        + b" >> stream\n"
+        + noise
+        + b"\nendstream endobj",
+    ]
+    return b"%PDF-1.4\n" + b"\n".join(objects) + b"\n%%EOF\n"
 
 
 def _raw_stream_pdf(stream: str) -> bytes:
@@ -128,6 +177,26 @@ def test_pdf_parser_tolerates_invalid_octal_like_literal_escape() -> None:
     assert parsed.page_count == 1
 
 
+def test_pdf_parser_decodes_flate_streams() -> None:
+    parsed = parse_uploaded_pdf(
+        filename="compressed.pdf",
+        content_type="application/pdf",
+        content=_compressed_text_pdf("Compressed resume mentions FastAPI and LangGraph."),
+    )
+
+    assert parsed.content == "Compressed resume mentions FastAPI and LangGraph."
+    assert parsed.page_count == 1
+
+
+def test_pdf_parser_rejects_binary_literal_noise() -> None:
+    with pytest.raises(PdfUploadError, match="does not contain extractable text"):
+        parse_uploaded_pdf(
+            filename="noise.pdf",
+            content_type="application/pdf",
+            content=_binary_noise_pdf(),
+        )
+
+
 def test_pdf_upload_persists_metadata_and_ingests_page_provenance(monkeypatch) -> None:  # noqa: ANN001
     client = _client(monkeypatch)
     _signup_login(client, "pdf-owner@example.com")
@@ -174,6 +243,43 @@ def test_pdf_upload_persists_metadata_and_ingests_page_provenance(monkeypatch) -
     assert [chunk.source_page for chunk in chunks] == [1, 2]
     assert "LangGraph" in chunks[0].content
     assert "FastAPI" in chunks[1].content
+
+
+def test_pdf_upload_ingest_and_conversation_retrieval_pipeline(monkeypatch) -> None:  # noqa: ANN001
+    client = _client(monkeypatch)
+    _signup_login(client, "pdf-rag-owner@example.com")
+
+    resume_phrase = "Heecheon Park builds FastAPI and LangGraph portfolio systems"
+    document = client.post(
+        "/documents/upload",
+        data={"title": "Resume PDF"},
+        files={
+            "file": (
+                "resume.pdf",
+                _compressed_text_pdf(f"{resume_phrase} with permission-aware retrieval."),
+                "application/pdf",
+            )
+        },
+    )
+    assert document.status_code == 201
+
+    ingest = client.post(f"/documents/{document.json()['id']}/ingest")
+    assert ingest.status_code == 200
+    assert ingest.json()["chunk_count"] == 1
+
+    conversation = client.post("/conversations", json={"title": "Resume PDF RAG"})
+    assert conversation.status_code == 201
+    run = client.post(
+        f"/conversations/{conversation.json()['id']}/runs",
+        json={"message": "Tell me about me from my uploaded resume."},
+    )
+
+    assert run.status_code == 200
+    payload = run.json()
+    assert payload["citations"]
+    assert payload["citations"][0]["document_id"] == document.json()["id"]
+    assert payload["citations"][0]["source_filename"] == "resume.pdf"
+    assert resume_phrase in payload["reply"]
 
 
 def test_owner_can_delete_uploaded_pdf_and_cleanup_ingestion_artifacts(monkeypatch) -> None:  # noqa: ANN001

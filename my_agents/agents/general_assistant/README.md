@@ -61,12 +61,14 @@ flowchart TD
 
 ## Product service layer와의 관계
 
-`general_assistant` 폴더는 graph/classifier/responder만 소유합니다. Auth, group/document permission, server-owned conversation, knowledge ingestion, RAG retrieval, citation, agent event는 `my_agents/api/`, `my_agents/knowledge/`, `my_agents/conversations/` 같은 서비스 레이어에서 소유합니다.
+`general_assistant` 폴더는 graph/classifier/responder 경계를 소유합니다. Auth, group/document permission, server-owned conversation, knowledge ingestion, retrieval selection, citation, agent event는 `my_agents/api/`, `my_agents/knowledge/`, `my_agents/conversations/` 같은 서비스 레이어에서 소유합니다.
+
+제품용 conversation run은 이미 권한 확인이 끝난 compact `retrieved_context` payload를 graph/provider prompt에 전달합니다. 덕분에 OpenAI 응답은 업로드한 문서 기반의 넓은 이력서/프로필 질문에 답할 수 있고, 보안 결정은 계속 서비스 레이어에 남습니다.
 
 ```mermaid
 flowchart LR
-    RunAPI["conversation run API"] --> Retrieval["authorized retrieval"]
-    RunAPI --> Graph["general_assistant graph"]
+    RunAPI["conversation run API"] --> Retrieval["authorized retrieval + personal-doc fallback"]
+    Retrieval --> Graph["general_assistant graph with retrieved_context"]
     RunAPI --> Citations["citations/events"]
     Graph --> Provider["response provider"]
 ```

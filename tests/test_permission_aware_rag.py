@@ -101,6 +101,53 @@ def test_chat_run_cites_only_authorized_personal_knowledge(monkeypatch) -> None:
     assert graph.calls[-1]["retrieved_chunk_ids"] == []
 
 
+def test_broad_resume_question_uses_recent_authorized_document(monkeypatch) -> None:  # noqa: ANN001
+    graph = RagSpyGraph()
+    owner = _client(monkeypatch, graph)
+    outsider = _client(monkeypatch, graph)
+    _signup_login(owner, "resume-owner@example.com")
+    _signup_login(outsider, "resume-outsider@example.com")
+
+    resume_phrase = "Heecheon Park builds FastAPI LangGraph portfolio systems"
+    document = owner.post(
+        "/documents",
+        json={
+            "title": "Resume 2026",
+            "content": f"{resume_phrase} with permission-aware document retrieval.",
+        },
+    )
+    assert document.status_code == 201
+    assert owner.post(f"/documents/{document.json()['id']}/ingest").status_code == 200
+
+    owner_conversation_id = _create_conversation(owner, "Resume chat")
+    owner_run = owner.post(
+        f"/conversations/{owner_conversation_id}/runs",
+        json={"message": "Tell me about me from my uploaded resume."},
+    )
+
+    assert owner_run.status_code == 200
+    owner_payload = owner_run.json()
+    assert owner_payload["citations"]
+    assert owner_payload["citations"][0]["document_id"] == document.json()["id"]
+    assert resume_phrase in owner_payload["reply"]
+    assert graph.calls[-1]["retrieved_chunk_ids"]
+    assert graph.calls[-1]["retrieved_context"][0]["title"] == "Resume 2026"
+    assert resume_phrase in graph.calls[-1]["retrieved_context"][0]["snippet"]
+
+    outsider_conversation_id = _create_conversation(outsider, "No resume leak")
+    outsider_run = outsider.post(
+        f"/conversations/{outsider_conversation_id}/runs",
+        json={"message": "Tell me about me from my uploaded resume."},
+    )
+
+    assert outsider_run.status_code == 200
+    outsider_payload = outsider_run.json()
+    assert outsider_payload["citations"] == []
+    assert resume_phrase not in outsider_payload["reply"]
+    assert graph.calls[-1]["retrieved_chunk_ids"] == []
+    assert graph.calls[-1]["retrieved_context"] == []
+
+
 def test_graph_expansion_adds_authorized_related_chunks(monkeypatch) -> None:  # noqa: ANN001
     graph = RagSpyGraph()
     client = _client(monkeypatch, graph)

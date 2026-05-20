@@ -60,7 +60,7 @@ This is a scaffold for portfolio-visible architecture, not a claim of production
 
 ## Current limitations
 
-- PDF support is intentionally narrow: text-based, unencrypted/uncompressed PDFs with literal text streams;
+- PDF support is intentionally narrow: text-based PDFs with literal text streams, including common FlateDecode-compressed streams;
 - no scanned PDF OCR, docx, or HTML ingestion yet;
 - no cloud object storage adapter yet;
 - no OpenAI extraction yet;

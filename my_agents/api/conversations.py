@@ -170,6 +170,7 @@ def run_conversation(
         "principal_id": principal.user_id,
         "conversation_id": conversation_id,
         "retrieved_chunk_ids": [item.chunk.id for item in retrieved_chunks],
+        "retrieved_context": _retrieved_context_for_graph(retrieved_chunks),
     }
     try:
         result = graph_runner.invoke(graph_input)
@@ -295,6 +296,7 @@ def _conversation_run_events(
         "principal_id": user_id,
         "conversation_id": conversation_id,
         "retrieved_chunk_ids": [item.chunk.id for item in retrieved_chunks],
+        "retrieved_context": _retrieved_context_for_graph(retrieved_chunks),
     }
     stream_route = classify_messages(messages)
     graph_invoked = False
@@ -627,6 +629,21 @@ def _retrieve_authorized_context(
     )
     retrieval_latency_ms = round((perf_counter() - retrieval_started) * 1000, 3)
     return retrieved_chunks, retrieval_latency_ms
+
+
+def _retrieved_context_for_graph(retrieved_chunks: list[RetrievedChunk]) -> list[dict[str, object]]:
+    return [
+        {
+            "document_id": item.document.id,
+            "chunk_id": item.chunk.id,
+            "title": item.document.title,
+            "snippet": item.chunk.content[:800],
+            "source_page": item.chunk.source_page,
+            "source_filename": item.document.source_filename,
+            "source": item.source,
+        }
+        for item in retrieved_chunks
+    ]
 
 
 def _stream_graph_items(

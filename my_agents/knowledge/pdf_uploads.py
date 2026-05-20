@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import hashlib
 import re
+import zlib
 from dataclasses import dataclass
 
 MAX_PDF_UPLOAD_BYTES = 5 * 1024 * 1024
 PDF_CONTENT_TYPES = frozenset({"application/pdf", "application/octet-stream"})
 PDF_PARSER_NAME = "deterministic_pdf_text_v1"
 PDF_PAGE_SEPARATOR = "\n\n\f\n\n"
+_SAFE_PUNCTUATION = set(".,;:!?@#%&/\\-_'\"+()[]{}<>|•·$€£₩")
 
 
 class PdfUploadError(ValueError):
@@ -36,8 +38,9 @@ def parse_uploaded_pdf(
     """Validate and extract deterministic text from a V1 PDF upload.
 
     This intentionally small parser supports text-based PDFs that expose literal text
-    operators in page streams. Scanned/encrypted/compressed PDFs are rejected instead
-    of being accepted with misleading empty provenance.
+    operators in page streams, including common FlateDecode-compressed streams.
+    Scanned/encrypted/unsupported encoded PDFs are rejected instead of being accepted
+    with misleading empty or corrupted provenance.
     """
     safe_filename = _validate_pdf_filename(filename)
     _validate_pdf_content_type(content_type)
@@ -92,14 +95,29 @@ def _all_streams(content: bytes) -> list[bytes]:
 
 
 def _streams_from_blob(content: bytes) -> list[bytes]:
-    return [
-        match.group("stream").strip(b"\r\n")
-        for match in re.finditer(
-            rb"stream\r?\n(?P<stream>.*?)\r?\nendstream",
-            content,
-            flags=re.DOTALL,
-        )
-    ]
+    streams: list[bytes] = []
+    for match in re.finditer(
+        rb"(?P<dictionary><<.*?>>)\s*stream\r?\n(?P<stream>.*?)\r?\nendstream",
+        content,
+        flags=re.DOTALL,
+    ):
+        dictionary = match.group("dictionary")
+        stream = match.group("stream").strip(b"\r\n")
+        decoded = _decode_stream(dictionary=dictionary, stream=stream)
+        if decoded is not None:
+            streams.append(decoded)
+    return streams
+
+
+def _decode_stream(*, dictionary: bytes, stream: bytes) -> bytes | None:
+    if b"/Filter" not in dictionary:
+        return stream
+    if b"/FlateDecode" not in dictionary:
+        return None
+    try:
+        return zlib.decompress(stream)
+    except zlib.error:
+        return None
 
 
 def _extract_literal_text(stream: bytes) -> str:
@@ -107,7 +125,10 @@ def _extract_literal_text(stream: bytes) -> str:
     literals = [
         _decode_pdf_literal(match.group(1)) for match in _literal_pattern().finditer(source)
     ]
-    return " ".join(part for part in (_normalize_text(value) for value in literals) if part)
+    text = " ".join(part for part in (_normalize_text(value) for value in literals) if part)
+    if not _looks_like_human_text(text):
+        return ""
+    return text
 
 
 def _literal_pattern() -> re.Pattern[str]:
@@ -155,3 +176,21 @@ def _decode_pdf_literal(value: str) -> str:
 
 def _normalize_text(value: str) -> str:
     return re.sub(r"\s+", " ", value).strip()
+
+
+def _looks_like_human_text(value: str) -> bool:
+    if not value:
+        return False
+    meaningful = [char for char in value if not char.isspace()]
+    if len(meaningful) < 3:
+        return False
+    safe_chars = sum(1 for char in meaningful if _is_safe_text_char(char))
+    return safe_chars / len(meaningful) >= 0.7
+
+
+def _is_safe_text_char(char: str) -> bool:
+    if char.isalnum():
+        return True
+    if "가" <= char <= "힣":
+        return True
+    return char in _SAFE_PUNCTUATION

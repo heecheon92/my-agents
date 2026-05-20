@@ -61,12 +61,14 @@ This keeps the API honest: a `learning_coach` route may be useful for study guid
 
 ## Relationship to the product service layer
 
-The `general_assistant` folder owns only the graph/classifier/responder boundary. Auth, group/document permissions, server-owned conversations, knowledge ingestion, RAG retrieval, citations, and agent events are owned by service-layer modules such as `my_agents/api/`, `my_agents/knowledge/`, and `my_agents/conversations/`.
+The `general_assistant` folder owns the graph/classifier/responder boundary. Auth, group/document permissions, server-owned conversations, knowledge ingestion, retrieval selection, citations, and agent events are owned by service-layer modules such as `my_agents/api/`, `my_agents/knowledge/`, and `my_agents/conversations/`.
+
+Product conversation runs now pass a compact, already-authorized `retrieved_context` payload into the graph/provider prompt. This lets the OpenAI response answer broad resume/profile questions from uploaded documents while keeping the security decision in the service layer.
 
 ```mermaid
 flowchart LR
-    RunAPI["conversation run API"] --> Retrieval["authorized retrieval"]
-    RunAPI --> Graph["general_assistant graph"]
+    RunAPI["conversation run API"] --> Retrieval["authorized retrieval + personal-doc fallback"]
+    Retrieval --> Graph["general_assistant graph with retrieved_context"]
     RunAPI --> Citations["citations/events"]
     Graph --> Provider["response provider"]
 ```

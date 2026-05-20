@@ -501,11 +501,11 @@ PDF-first upload/ingestion slice가 추가되었습니다.
 - `GET /documents/{document_id}/extraction-runs`
 
 텍스트 document 경로는 그대로 유지됩니다. PDF 경로는 `application/pdf` `.pdf` 파일만
-받고, 5 MiB 이하의 text-based PDF에서 page text를 추출합니다. 업로드 metadata
+받고, 5 MiB 이하의 text-based PDF에서 page text를 추출합니다. 일반적인 FlateDecode 압축 page stream도 지원합니다. 업로드 metadata
 (`source_filename`, content type, byte size, SHA-256, page count, parser name)는 document에
 저장되고, ingestion chunk에는 `source_page`가 기록되어 이후 citation provenance에 사용할 수
 있습니다. conversation citation 응답은 이미 가능한 경우 `source_page`와 `source_filename`을
-함께 반환합니다. 이 파서는 scanned/encrypted/compressed PDF를 완전 지원하는 production
+함께 반환합니다. 이 파서는 scanned/encrypted/image-only/unsupported encoded PDF를 완전 지원하는 production
 parser가 아니라 V1 portfolio demo용 deterministic parser이며, OpenAI extraction과 pgvector
 ranking은 아직 수행하지 않습니다.
 
@@ -516,10 +516,10 @@ ranking은 아직 수행하지 않습니다.
 
 1. 현재 사용자에게 읽기 권한이 있는 document chunk 후보만 먼저 선택합니다.
 2. 그 후보 안에서 deterministic term score로 직접 관련 chunk를 찾습니다.
-3. 직접 검색된 chunk의 entity mention을 기준으로, 같은 entity를 공유하는 권한 내 chunk를
+3. “나에 대해 알려줘”, “내 이력서”, “업로드한 문서”처럼 넓은 personal-document 질문에서 직접 term match가 없으면, 최신 권한 내 chunk로 fallback합니다. 이 방식은 client가 보낸 user_id를 믿지 않으면서도 이력서/프로필 데모 질문이 빈 검색 결과로 끝나지 않게 합니다.
+4. 직접 검색된 chunk의 entity mention을 기준으로, 같은 entity를 공유하는 권한 내 chunk를
    graph expansion context로 추가합니다.
-4. assistant reply에는 권한이 확인된 context만 포함하고, 응답 payload에는 `citations`를
-   함께 반환합니다.
+5. 권한이 확인된 context payload를 `general_assistant` graph/provider prompt에 전달하고, 응답 payload에는 `citations`를 함께 반환합니다.
 
 예시 응답 일부:
 

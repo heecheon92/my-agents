@@ -109,7 +109,7 @@ Generated from `my_agents.api.create_app().openapi()` on 2026-05-20.
 | Gap | Why it is not frozen as complete in Phase 0 | Next owning phase |
 | --- | --- | --- |
 | Shared/distributed rate limiting | Phase 1 explicitly bounds V1 to the existing local in-process limiter for single-process demos. Multi-worker public deployment still needs Redis/gateway/shared-store replacement before it can claim distributed protection. | Phase 6 or deployment hardening |
-| Realistic uploaded file type | Backend now exposes `POST /documents/upload` for text-based PDF uploads with metadata and chunk page provenance. Frontend still needs to verify/use the contract; scanned/encrypted/compressed PDF support remains deferred. | Phase 2 frontend gate / later parser expansion |
+| Realistic uploaded file type | Backend now exposes `POST /documents/upload` for text-based PDF uploads with metadata and chunk page provenance, including common FlateDecode text streams. Frontend still needs to verify/use the contract; scanned/encrypted/image-only/unsupported encoded PDF support remains deferred. | Phase 2 frontend gate / later parser expansion |
 | Ingestion lifecycle for longer parser work | Current extraction run summary exists, but no `pending/running/completed/failed` upload job lifecycle is frozen for realistic files. | Phase 2 or 5 |
 | Rich citation provenance | Current citations include document/chunk/snippet identity, but page/file/source-offset provenance is not complete. | Phase 3 |
 | Stable event vocabulary for upload/retrieval/failure states | Current run events are useful and redacted, but upload/parser/retrieval lifecycle events are not fully frozen. | Phase 3 |

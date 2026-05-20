@@ -118,7 +118,7 @@ Before preview smoke, document or implement each guardrail:
   provider credentials, or fall back to a seeded/invite-only demo if abuse or
   email deliverability fails.
 - Upload limits: record accepted file types, size limits, and unsupported PDFs
-  such as scanned, encrypted, compressed, huge, or non-text PDFs.
+  such as scanned, encrypted, unsupported encoded, huge, or non-text PDFs.
 - Run and cost limits: record response mode, model, timeout, max output tokens,
   host/provider quotas, and any manual budget controls.
 - Dev-only surfaces: assert `MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=false` for preview

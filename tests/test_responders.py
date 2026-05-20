@@ -116,6 +116,32 @@ def test_openai_provider_includes_capability_metadata_in_prompt() -> None:
     assert "Do not invent" in final_prompt
 
 
+def test_openai_provider_includes_authorized_document_context_in_prompt() -> None:
+    settings = Settings(_env_file=None, OPENAI_API_KEY="test-key")
+    chat_model = FakeChatModel()
+    provider = OpenAIResponseProvider(settings=settings, chat_model=chat_model)
+
+    provider.compose_reply(
+        messages=[HumanMessage(content="Tell me about me from my uploaded resume")],
+        route=RouteDecision(label="general_assistant", explanation="general request"),
+        guidance="Answer from available context.",
+        retrieved_context=[
+            {
+                "title": "Resume 2026",
+                "snippet": "Heecheon Park builds FastAPI LangGraph portfolio systems.",
+                "source_page": 1,
+                "source_filename": "resume.pdf",
+            }
+        ],
+    )
+
+    final_prompt = str(chat_model.calls[0][-1].content)
+    assert "Authorized document context" in final_prompt
+    assert "Resume 2026" in final_prompt
+    assert "Heecheon Park builds FastAPI LangGraph portfolio systems" in final_prompt
+    assert "instead of saying you cannot access uploaded documents" in final_prompt
+
+
 @pytest.mark.parametrize(
     ("route", "message", "expected_tools"),
     [

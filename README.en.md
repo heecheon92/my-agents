@@ -503,12 +503,13 @@ The PDF-first upload/ingestion slice is available:
 - `GET /documents/{document_id}/extraction-runs`
 
 The text-document path remains compatible. The PDF path accepts only `application/pdf`
-`.pdf` files up to 5 MiB and extracts page text from text-based PDFs. Upload metadata
-(`source_filename`, content type, byte size, SHA-256, page count, parser name) is persisted
-on the document, and ingestion chunks record `source_page` for later citation provenance.
-Conversation citation responses now include `source_page` and `source_filename` when known.
-This is a deterministic V1 portfolio-demo parser, not full production support for
-scanned/encrypted/compressed PDFs; OpenAI extraction and pgvector ranking are still future work.
+`.pdf` files up to 5 MiB and extracts page text from text-based PDFs, including common
+FlateDecode-compressed page streams. Upload metadata (`source_filename`, content type,
+byte size, SHA-256, page count, parser name) is persisted on the document, and ingestion
+chunks record `source_page` for later citation provenance. Conversation citation responses
+now include `source_page` and `source_filename` when known. This is a deterministic V1
+portfolio-demo parser, not full production support for scanned, encrypted, image-only, or
+unsupported encoded PDFs; OpenAI extraction and pgvector ranking are still future work.
 
 
 ### Permission-aware RAG and citation-backed answers
@@ -517,8 +518,9 @@ The product conversation run includes the first permission-aware RAG slice.
 
 1. It first selects only document chunks the current user can read.
 2. It finds direct matches inside that authorized candidate set using deterministic term scoring.
-3. It expands through entity mentions to related chunks that are still inside the authorized set.
-4. It includes only authorized context in the assistant reply and returns `citations` in the response payload.
+3. If the user asks a broad personal-document question such as “tell me about me,” “my resume,” or “my uploaded document” and no direct term match exists, it falls back to the most recent authorized chunks. This keeps resume/profile demos useful without trusting client-provided user IDs or leaking other users' documents.
+4. It expands through entity mentions to related chunks that are still inside the authorized set.
+5. It passes an authorized context payload into the `general_assistant` graph/provider prompt and returns `citations` in the response payload.
 
 Example response excerpt:
 

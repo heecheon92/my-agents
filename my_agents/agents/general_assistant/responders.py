@@ -69,6 +69,7 @@ class ResponseProvider(Protocol):
         route: RouteDecision,
         guidance: str,
         capability: AgentCapability | None = None,
+        retrieved_context: Sequence[dict[str, Any]] = (),
         debug_empty_response: bool = False,
     ) -> str:
         """Return a user-facing reply for the classified request."""
@@ -85,13 +86,16 @@ class DeterministicResponseProvider:
         route: RouteDecision,
         guidance: str,
         capability: AgentCapability | None = None,
+        retrieved_context: Sequence[dict[str, Any]] = (),
         debug_empty_response: bool = False,
     ) -> str:
         _ = debug_empty_response
         _ = messages
+        context_sentence = _deterministic_context_sentence(retrieved_context)
         capability_sentence = _deterministic_capability_sentence(capability)
         return (
-            f"Classified as route label `{route.label}`. {capability_sentence}{guidance} "
+            f"Classified as route label `{route.label}`. {capability_sentence}"
+            f"{context_sentence}{guidance} "
             "This backend is running in deterministic response mode."
         )
 
@@ -115,6 +119,7 @@ class OpenAIResponseProvider:
         route: RouteDecision,
         guidance: str,
         capability: AgentCapability | None = None,
+        retrieved_context: Sequence[dict[str, Any]] = (),
         debug_empty_response: bool = False,
     ) -> str:
         model = self._chat_model
@@ -129,6 +134,7 @@ class OpenAIResponseProvider:
                 route=route,
                 guidance=guidance,
                 capability=capability,
+                retrieved_context=retrieved_context,
             )
         )
         return _extract_message_content(
@@ -161,6 +167,7 @@ def _build_input_messages(
     route: RouteDecision,
     guidance: str,
     capability: AgentCapability | None = None,
+    retrieved_context: Sequence[dict[str, Any]] = (),
 ) -> list[BaseMessage]:
     recent_context = list(messages[-6:])
     latest_user_message = _latest_human_text(recent_context)
@@ -174,8 +181,13 @@ def _build_input_messages(
                 f"Route explanation: {route.explanation}\n"
                 f"{_capability_guidance(capability)}\n"
                 f"Local guidance: {guidance}\n\n"
+                f"Authorized document context: {_format_retrieved_context(retrieved_context)}\n\n"
                 f"User message: {latest_user_message}\n\n"
-                "Write one concise, actionable reply. If capability mode is simulation, "
+                "Write one concise, actionable reply. If authorized document context is present "
+                "and relevant, answer from it instead of saying you cannot access uploaded "
+                "documents. If the user asks about themself, their resume, or an uploaded "
+                "document, summarize only from the authorized context. If the context is "
+                "insufficient, say what is missing. If capability mode is simulation, "
                 "be honest that it is an experimental or placeholder capability when that "
                 "affects the answer. Do not invent completed actions, persistent memory, "
                 "hidden tools, real-world side effects, or a frontend."
@@ -183,6 +195,31 @@ def _build_input_messages(
         )
     )
     return provider_messages
+
+
+def _format_retrieved_context(retrieved_context: Sequence[dict[str, Any]]) -> str:
+    if not retrieved_context:
+        return "none"
+    lines = []
+    for index, item in enumerate(retrieved_context, start=1):
+        title = str(item.get("title") or "Untitled document")
+        snippet = str(item.get("snippet") or "").strip()
+        page = item.get("source_page")
+        filename = item.get("source_filename")
+        source_parts = [f"title={title!r}"]
+        if filename:
+            source_parts.append(f"file={filename!r}")
+        if page is not None:
+            source_parts.append(f"page={page}")
+        lines.append(f"[{index}] " + ", ".join(source_parts) + f": {snippet}")
+    return "\n".join(lines)
+
+
+def _deterministic_context_sentence(retrieved_context: Sequence[dict[str, Any]]) -> str:
+    if not retrieved_context:
+        return ""
+    count = len(retrieved_context)
+    return f"Authorized document context available: {count} chunk(s). "
 
 
 def _capability_guidance(capability: AgentCapability | None) -> str:

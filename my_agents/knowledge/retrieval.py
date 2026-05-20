@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from sqlalchemy import or_, select
+from sqlalchemy import desc, or_, select
 from sqlalchemy.orm import Session
 
 from my_agents.groups.models import MembershipModel
@@ -40,6 +40,8 @@ class RetrievalService:
         combined: dict[str, RetrievedChunk] = {item.chunk.id: item for item in direct}
         for item in expanded:
             combined.setdefault(item.chunk.id, item)
+        if not combined and _needs_personal_document_fallback(query):
+            return self._recent_authorized_chunks(user_id=user_id, limit=limit)
         return sorted(combined.values(), key=lambda item: (-item.score, item.chunk.ordinal))[:limit]
 
     def _direct_authorized_matches(self, *, user_id: str, terms: set[str]) -> list[RetrievedChunk]:
@@ -92,6 +94,17 @@ class RetrievalService:
                 )
         return expanded
 
+    def _recent_authorized_chunks(self, *, user_id: str, limit: int) -> list[RetrievedChunk]:
+        return [
+            RetrievedChunk(
+                chunk=chunk,
+                document=document,
+                score=1,
+                source="document_fallback",
+            )
+            for chunk, document in self._authorized_chunk_rows(user_id)[:limit]
+        ]
+
     def _authorized_chunk_rows(
         self, user_id: str
     ) -> list[tuple[DocumentChunkModel, DocumentModel]]:
@@ -110,12 +123,43 @@ class RetrievalService:
                     DocumentModel.id.in_(explicit_doc_ids),
                 )
             )
+            .order_by(desc(DocumentModel.created_at), DocumentChunkModel.ordinal)
         )
         return list(self._db.execute(statement).all())
 
 
+_PERSONAL_DOCUMENT_FALLBACK_HINTS = (
+    "about me",
+    "my resume",
+    "my cv",
+    "my profile",
+    "my background",
+    "my experience",
+    "my document",
+    "uploaded document",
+    "uploaded file",
+    "resume",
+    "cv",
+    "portfolio",
+    "나에 대해",
+    "내 이력서",
+    "이력서",
+    "내 문서",
+    "업로드한 문서",
+    "업로드 해놓은",
+    "문서 업로드",
+    "자기소개",
+    "경력",
+)
+
+
 def _query_terms(query: str) -> set[str]:
     return {term.casefold() for term in re.findall(r"[A-Za-z0-9가-힣]+", query) if len(term) > 1}
+
+
+def _needs_personal_document_fallback(query: str) -> bool:
+    normalized = query.casefold()
+    return any(hint in normalized for hint in _PERSONAL_DOCUMENT_FALLBACK_HINTS)
 
 
 def _score(content: str, terms: set[str]) -> int:

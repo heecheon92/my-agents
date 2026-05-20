@@ -84,10 +84,11 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 
 - Knowledge-base create/list.
 - Text document ingestion remains compatible.
-- PDF-first upload path with safe metadata persistence and page provenance.
+- PDF-first upload path with safe metadata persistence, page provenance, and FlateDecode text-stream support.
 - Deterministic chunks, embedding fixtures, entity mentions, and co-occurrence relationships.
 - Permission-aware retrieval filters candidate chunks before ranking/expansion/composition.
-- Citation-backed replies for retrieved authorized context.
+- Broad personal-document fallback now retrieves recent authorized chunks for resume/profile/uploaded-document questions when exact term matching returns nothing.
+- Authorized retrieved context is passed into the general assistant graph/provider prompt, then citation-backed replies are persisted.
 
 ### Persistence and migrations
 
@@ -106,20 +107,20 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 
 ## Latest verification evidence
 
-Last full local verification run: 2026-05-19
+Last full local verification run: 2026-05-20
 
 ```text
 uv run pytest -q
-95 passed, 1 skipped in 5.49s
+135 passed, 1 skipped in 9.19s
 
 uv run ruff check . --no-cache
 All checks passed!
 
 uv run ruff format --check .
-95 files already formatted
+107 files already formatted
 ```
 
-Note: the shell reported `VIRTUAL_ENV=/Users/heecheonpark/Git/rag-agent/.venv` did not match this project `.venv`, and `uv` ignored it. The checks still completed successfully through this project's environment resolution.
+The test harness sets `MY_AGENTS_ENV_FILE=` so a developer's local `.env` file cannot leak file-backed SQLite, cookie, or provider settings into offline verification.
 
 ## Known gaps / not complete yet
 
@@ -140,11 +141,11 @@ Note: the shell reported `VIRTUAL_ENV=/Users/heecheonpark/Git/rag-agent/.venv` d
 
 ### Knowledge ingestion and retrieval
 
-- PDF-first upload and deterministic text extraction now exist for text-based PDFs; scanned/encrypted/compressed PDFs are intentionally unsupported.
+- PDF-first upload and deterministic text extraction now exist for text-based PDFs, including common FlateDecode-compressed text streams; scanned/encrypted/image-only/unsupported encoded PDFs are intentionally rejected.
 - No docx/HTML parsing pipeline yet.
 - No background ingestion jobs yet.
 - Embeddings are deterministic fixtures, not real embedding vectors.
-- Retrieval is deterministic term scoring plus entity expansion, not pgvector similarity search.
+- Retrieval is deterministic term scoring plus entity expansion and a narrow personal-document fallback, not pgvector similarity search.
 - Entity extraction is deterministic/simple, not production NLP/LLM extraction.
 
 ### Agent/product behavior
@@ -212,6 +213,8 @@ Guest mode should not be part of the current v0 implementation. A future guest m
 
 | Date | Milestone | Evidence |
 | --- | --- | --- |
+| 2026-05-20 | PDF parser rejects corrupted binary text and supports FlateDecode resume retrieval smoke. | `my_agents/knowledge/pdf_uploads.py`; `tests/test_knowledge_ingestion.py`; README pair; `docs/portfolio-chat-service/05-knowledge-ingestion-extraction.md`. |
+| 2026-05-20 | Resume/profile RAG fallback added for broad personal-document questions. | `my_agents/knowledge/retrieval.py`; `my_agents/api/conversations.py`; `my_agents/agents/general_assistant/graph.py`; `my_agents/agents/general_assistant/responders.py`; `tests/test_permission_aware_rag.py`; `tests/test_responders.py`; README pair; general assistant README pair; `docs/learning/05-resume-rag-fallback-after-broad-personal-questions.md`. |
 | 2026-05-20 | Public visitor auth email/provider boundary added. | `my_agents/auth/email.py`; `my_agents/auth/dependencies.py`; `my_agents/settings.py`; `tests/test_auth_email.py`; `tests/test_settings.py`; `.env.example`; README pair; `docs/portfolio-chat-service/10-frontend-demo-runbook.md`; `docs/portfolio-chat-service/12-public-demo-deployment-readiness.md`. |
 | 2026-05-20 | Strict V1 Phase 2 backend PDF upload/ingestion added. | `my_agents/api/documents.py`; `my_agents/knowledge/pdf_uploads.py`; `my_agents/knowledge/extraction.py`; `my_agents/knowledge/models.py`; `alembic/versions/20260520_0004_pdf_upload_provenance.py`; `tests/test_knowledge_ingestion.py`; README pair. |
 | 2026-05-20 | Strict V1 Phase 1 backend auth/session hardening added. | `my_agents/settings.py`; `tests/test_auth_api.py`; `tests/test_cors_api.py`; `tests/test_settings.py`; `docs/portfolio-chat-service/02-first-party-auth-sessions.md`; `docs/portfolio-chat-service/10-frontend-demo-runbook.md`. |

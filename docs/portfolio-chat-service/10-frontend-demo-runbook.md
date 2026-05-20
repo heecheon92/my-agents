@@ -339,7 +339,7 @@ Production activation confirmation required: yes.
 - Account deletion/export is not implemented yet; operator cleanup is the current
   rollback/removal path for demo data.
 - The text/PDF parser is portfolio-demo quality. Scanned, encrypted, image-only,
-  compressed, very large, or malformed PDFs may fail or extract partial text.
+  scanned, encrypted, unsupported encoded, very large, or malformed PDFs may fail instead of storing corrupted text.
 - Keep OpenAI model, timeout, and max-output settings conservative; record host/provider
   budget controls before public traffic.
 - Smoke evidence must redact emails, tokens, cookies, API keys, document contents beyond
