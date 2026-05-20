@@ -27,7 +27,7 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 | Scope | Status | Completion estimate | Notes |
 | --- | --- | ---: | --- |
 | Portfolio-quality backend v0 | In progress, strong foundation | 90-93% | Thin end-to-end backend slice exists; auth lifecycle includes Phase 1 single-process public-demo hardening, conversation runs stream over SSE, completed run detail is refresh-safe, local V1 demos have seed/smoke helpers plus frontend credentialed CORS/demo runbook, and strict V1 contract/evidence mapping is explicit. |
-| Production SaaS readiness | Early | 46-51% | Account lifecycle improved; still needs real email provider, deployment hardening, production ingestion, and ops work. |
+| Production SaaS readiness | Early | 49-54% | Account lifecycle improved and generic SMTP email delivery is code-ready; still needs provider secret setup, hosted deployment verification, production ingestion, and ops work. |
 | Full AI agents product vision | Early/mid | 25-35% | Current production graph is one assistant/router path; richer agent/tool workflows are future milestones. |
 | Learning/practice simulated agents | Active learning lab | Ongoing | `my_agents/simulated_agents/` is meaningful practice code, intentionally separate from production API/CLI surfaces. |
 
@@ -125,7 +125,7 @@ Note: the shell reported `VIRTUAL_ENV=/Users/heecheonpark/Git/rag-agent/.venv` d
 
 ### Product/account lifecycle
 
-- Real outbound email provider integration is not implemented yet; v0 uses an offline local sender boundary.
+- Generic SMTP auth email delivery is implemented for preview/public visitor verification and reset, but no live provider secrets or hosted smoke have been configured yet.
 - Auth abuse protection is local/in-process by explicit Phase 1 decision; it is acceptable only for single-process public demos and is not a shared Redis/gateway limiter for multi-worker public deployment.
 - No account deletion or profile management surface yet.
 - Guest mode is deferred; no anonymous daily quota or restricted public-demo mode yet.
@@ -136,7 +136,7 @@ Note: the shell reported `VIRTUAL_ENV=/Users/heecheonpark/Git/rag-agent/.venv` d
 - Needs shared/distributed rate limits before multi-worker public deployment; Phase 1 documents and tests the current single-process boundary.
 - Credentialed CORS has explicit-origin configuration, but deployed frontend origins still need environment-specific verification.
 - Needs secure cookie behavior verified behind the intended deployment/proxy setup.
-- Needs secrets/deployment runbook outside local `.env` usage.
+- Needs live provider/host values and smoke execution; the deployment readiness runbook now defines provider records, privacy copy, rollback, and evidence bundle gates without storing secrets.
 
 ### Knowledge ingestion and retrieval
 
@@ -156,6 +156,7 @@ Note: the shell reported `VIRTUAL_ENV=/Users/heecheonpark/Git/rag-agent/.venv` d
 - Credentialed CORS can be enabled for exact frontend origins through `MY_AGENTS_CORS_ALLOWED_ORIGINS`.
 - `docs/portfolio-chat-service/10-frontend-demo-runbook.md` documents local SQLite demo startup, dev auth outbox, cookie/CSRF expectations, frontend SSE flow, and run-detail refresh.
 - `docs/portfolio-chat-service/11-v1-phase-0-contract-freeze-evidence-map.md` freezes the Phase 0 strict V1 DoD evidence matrix, backend OpenAPI inventory, frontend gate expectations, and known backend contract gaps by phase.
+- `docs/portfolio-chat-service/12-public-demo-deployment-readiness.md` defines hosted preview/public smoke gates, provider/dependency decision records, privacy boundaries, rollback paths, and redacted evidence bundle schema.
 - Current production graph is still one assistant/router path.
 - Most route labels are capability metadata and response paths, not separate production specialist agents.
 - Tool workflows beyond hosted web search are not implemented as production graph capabilities yet.
@@ -164,7 +165,7 @@ Note: the shell reported `VIRTUAL_ENV=/Users/heecheonpark/Git/rag-agent/.venv` d
 ### Deployment/ops
 
 - No deployment pipeline yet.
-- No production DB migration runbook beyond local docs.
+- Hosted preview/public DB migration execution is not proven yet; the readiness runbook records the migration evidence requirement and production remains user-gated.
 - No observability backend/export yet.
 - No frontend integration in this repository by design.
 
@@ -211,9 +212,11 @@ Guest mode should not be part of the current v0 implementation. A future guest m
 
 | Date | Milestone | Evidence |
 | --- | --- | --- |
+| 2026-05-20 | Public visitor auth email/provider boundary added. | `my_agents/auth/email.py`; `my_agents/auth/dependencies.py`; `my_agents/settings.py`; `tests/test_auth_email.py`; `tests/test_settings.py`; `.env.example`; README pair; `docs/portfolio-chat-service/10-frontend-demo-runbook.md`; `docs/portfolio-chat-service/12-public-demo-deployment-readiness.md`. |
 | 2026-05-20 | Strict V1 Phase 2 backend PDF upload/ingestion added. | `my_agents/api/documents.py`; `my_agents/knowledge/pdf_uploads.py`; `my_agents/knowledge/extraction.py`; `my_agents/knowledge/models.py`; `alembic/versions/20260520_0004_pdf_upload_provenance.py`; `tests/test_knowledge_ingestion.py`; README pair. |
 | 2026-05-20 | Strict V1 Phase 1 backend auth/session hardening added. | `my_agents/settings.py`; `tests/test_auth_api.py`; `tests/test_cors_api.py`; `tests/test_settings.py`; `docs/portfolio-chat-service/02-first-party-auth-sessions.md`; `docs/portfolio-chat-service/10-frontend-demo-runbook.md`. |
 | 2026-05-20 | Strict V1 Phase 0 backend contract/evidence map added. | `docs/portfolio-chat-service/11-v1-phase-0-contract-freeze-evidence-map.md`; `docs/portfolio-chat-service/README.md`; `docs/implementation-tracking.md`. |
+| 2026-05-20 | Public demo deployment readiness runbook added. | `docs/portfolio-chat-service/12-public-demo-deployment-readiness.md`; `docs/portfolio-chat-service/README.md`; `docs/implementation-tracking.md`. |
 | 2026-05-20 | Backend-only V1 API smoke helper added for the seeded demo path. | `scripts/local_demo_smoke.py`; `tests/test_local_demo_smoke.py`; `docs/portfolio-chat-service/10-frontend-demo-runbook.md`. |
 | 2026-05-20 | Local V1 demo seed helper added for verified user, text document, and extraction run. | `scripts/local_demo_seed.py`; `tests/test_local_demo_seed.py`; `docs/portfolio-chat-service/10-frontend-demo-runbook.md`. |
 | 2026-05-20 | Refresh-safe run detail and gated local auth dev outbox added for frontend demo verification. | `tests/test_conversations_api.py`; `tests/test_permission_aware_rag.py`; `tests/test_auth_api.py`; `tests/test_migrations.py`. |
