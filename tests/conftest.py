@@ -45,7 +45,8 @@ FORBIDDEN_DELEGATION_PHRASES = (
 
 @pytest.fixture(autouse=True)
 def deterministic_runtime_env(monkeypatch: pytest.MonkeyPatch):
-    """Keep tests offline even when a developer has a local `.env` file."""
+    """Keep tests offline and isolated even when a developer has a local `.env` file."""
+    monkeypatch.setenv("MY_AGENTS_ENV_FILE", "")
     monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
     _clear_runtime_caches()
     yield

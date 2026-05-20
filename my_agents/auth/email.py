@@ -1,14 +1,21 @@
-"""Local auth email delivery boundary.
+"""Auth email delivery boundary.
 
-The current implementation is intentionally offline-only: it records messages in memory so
-signup verification and password reset flows can be developed and tested without a paid
-email provider. A production sender can replace this boundary later.
+The local implementation records messages in memory so signup verification and password
+reset flows can be developed and tested without a paid email provider. The SMTP
+implementation supports preview/public visitor accounts through a generic provider relay
+without making unit tests depend on network access.
 """
 
 from __future__ import annotations
 
+import smtplib
 from dataclasses import dataclass
-from typing import Literal, Protocol
+from email.message import EmailMessage
+from typing import TYPE_CHECKING, Literal, Protocol
+from urllib.parse import quote
+
+if TYPE_CHECKING:
+    from my_agents.settings import Settings
 
 AuthEmailPurpose = Literal["email_verification", "password_reset"]
 
@@ -77,6 +84,76 @@ class InMemoryAuthEmailSender:
         self._messages.clear()
 
 
+class SmtpAuthEmailSender:
+    """SMTP-backed auth email sender for preview/public visitor account flows.
+
+    The sender creates verification/reset links from the configured public frontend URL and
+    sends them through a generic SMTP relay. It does not store raw tokens in process memory;
+    local tests and deterministic demos should continue using `InMemoryAuthEmailSender`.
+    """
+
+    def __init__(
+        self,
+        *,
+        host: str,
+        port: int,
+        from_email: str,
+        public_app_base_url: str,
+        username: str | None = None,
+        password: str | None = None,
+        use_starttls: bool = True,
+        timeout_seconds: float = 10.0,
+    ) -> None:
+        self._host = host
+        self._port = port
+        self._from_email = from_email
+        self._public_app_base_url = public_app_base_url.rstrip("/")
+        self._username = username
+        self._password = password
+        self._use_starttls = use_starttls
+        self._timeout_seconds = timeout_seconds
+
+    def send_email_verification(self, *, recipient_email: str, token: str) -> None:
+        link = self._action_link("/verify-email", token)
+        self._send(
+            recipient_email=recipient_email,
+            subject="Verify your my-agents email",
+            body=(
+                "Verify your my-agents account by opening this link:\n\n"
+                f"{link}\n\n"
+                "If you did not create this account, you can ignore this email."
+            ),
+        )
+
+    def send_password_reset(self, *, recipient_email: str, token: str) -> None:
+        link = self._action_link("/password-reset", token)
+        self._send(
+            recipient_email=recipient_email,
+            subject="Reset your my-agents password",
+            body=(
+                "Reset your my-agents password by opening this link:\n\n"
+                f"{link}\n\n"
+                "If you did not request a reset, you can ignore this email."
+            ),
+        )
+
+    def _send(self, *, recipient_email: str, subject: str, body: str) -> None:
+        message = EmailMessage()
+        message["From"] = self._from_email
+        message["To"] = recipient_email
+        message["Subject"] = subject
+        message.set_content(body)
+        with smtplib.SMTP(self._host, self._port, timeout=self._timeout_seconds) as smtp:
+            if self._use_starttls:
+                smtp.starttls()
+            if self._username is not None and self._password is not None:
+                smtp.login(self._username, self._password)
+            smtp.send_message(message)
+
+    def _action_link(self, path: str, token: str) -> str:
+        return f"{self._public_app_base_url}{path}?token={quote(token, safe='')}"
+
+
 _LOCAL_AUTH_EMAIL_SENDER = InMemoryAuthEmailSender()
 
 
@@ -86,6 +163,27 @@ def get_auth_email_sender() -> AuthEmailSender:
     For v0 this is a local in-memory sender. Keeping it behind a function makes a future
     Resend/AWS SES implementation a boundary change instead of an auth-service rewrite.
     """
+    return _LOCAL_AUTH_EMAIL_SENDER
+
+
+def build_auth_email_sender(settings: Settings) -> AuthEmailSender:
+    """Build the auth email sender for the active runtime settings."""
+    if settings.auth_email_mode == "smtp":
+        password = (
+            settings.auth_smtp_password.get_secret_value()
+            if settings.auth_smtp_password is not None
+            else None
+        )
+        return SmtpAuthEmailSender(
+            host=settings.auth_smtp_host or "",
+            port=settings.auth_smtp_port,
+            from_email=settings.auth_smtp_from_email or "",
+            public_app_base_url=settings.auth_public_app_base_url or "",
+            username=settings.auth_smtp_username,
+            password=password,
+            use_starttls=settings.auth_smtp_use_starttls,
+            timeout_seconds=settings.auth_smtp_timeout_seconds,
+        )
     return _LOCAL_AUTH_EMAIL_SENDER
 
 

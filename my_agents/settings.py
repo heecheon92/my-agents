@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from typing import Literal
 
@@ -12,6 +13,8 @@ ResponseMode = Literal["deterministic", "openai"]
 ReasoningEffort = Literal["low", "medium", "high", "xhigh"]
 TextVerbosity = Literal["low", "medium", "high"]
 SameSitePolicy = Literal["lax", "strict", "none"]
+DeploymentEnvironment = Literal["local", "preview", "production"]
+AuthEmailMode = Literal["local", "smtp"]
 
 
 class Settings(BaseSettings):
@@ -96,6 +99,50 @@ class Settings(BaseSettings):
         default=False,
         validation_alias=AliasChoices("MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED"),
     )
+    deployment_environment: DeploymentEnvironment = Field(
+        default="local",
+        validation_alias=AliasChoices("MY_AGENTS_DEPLOYMENT_ENVIRONMENT"),
+    )
+    auth_email_mode: AuthEmailMode = Field(
+        default="local",
+        validation_alias=AliasChoices("MY_AGENTS_AUTH_EMAIL_MODE"),
+    )
+    auth_public_app_base_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("MY_AGENTS_AUTH_PUBLIC_APP_BASE_URL"),
+    )
+    auth_smtp_host: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("MY_AGENTS_AUTH_SMTP_HOST"),
+    )
+    auth_smtp_port: int = Field(
+        default=587,
+        ge=1,
+        le=65535,
+        validation_alias=AliasChoices("MY_AGENTS_AUTH_SMTP_PORT"),
+    )
+    auth_smtp_username: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("MY_AGENTS_AUTH_SMTP_USERNAME"),
+    )
+    auth_smtp_password: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("MY_AGENTS_AUTH_SMTP_PASSWORD"),
+    )
+    auth_smtp_from_email: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("MY_AGENTS_AUTH_SMTP_FROM_EMAIL"),
+    )
+    auth_smtp_use_starttls: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("MY_AGENTS_AUTH_SMTP_USE_STARTTLS"),
+    )
+    auth_smtp_timeout_seconds: float = Field(
+        default=10.0,
+        gt=0,
+        le=120,
+        validation_alias=AliasChoices("MY_AGENTS_AUTH_SMTP_TIMEOUT_SECONDS"),
+    )
     cors_allowed_origins: str = Field(
         default="",
         validation_alias=AliasChoices("MY_AGENTS_CORS_ALLOWED_ORIGINS"),
@@ -159,12 +206,49 @@ class Settings(BaseSettings):
             raise ValueError("service foundation settings must not be blank")
         return stripped
 
-    @field_validator("test_database_url", "auto_create_tables", mode="before")
+    @field_validator(
+        "test_database_url",
+        "auto_create_tables",
+        "auth_public_app_base_url",
+        "auth_smtp_host",
+        "auth_smtp_username",
+        "auth_smtp_password",
+        "auth_smtp_from_email",
+        mode="before",
+    )
     @classmethod
     def blank_optional_service_setting_is_missing(cls, value: object) -> object:
         """Treat blank optional service settings as absent."""
         if isinstance(value, str) and not value.strip():
             return None
+        return value
+
+    @field_validator(
+        "auth_public_app_base_url",
+        "auth_smtp_host",
+        "auth_smtp_username",
+        "auth_smtp_from_email",
+    )
+    @classmethod
+    def optional_service_string_is_stripped(cls, value: str | None) -> str | None:
+        """Normalize optional deployment/auth strings without accepting blanks."""
+        if value is None:
+            return None
+        stripped = value.strip()
+        if not stripped:
+            return None
+        if stripped.startswith("http://") or stripped.startswith("https://"):
+            return stripped.rstrip("/")
+        return stripped
+
+    @field_validator("auth_public_app_base_url")
+    @classmethod
+    def auth_public_app_base_url_must_be_http_url(cls, value: str | None) -> str | None:
+        """Require real browser URLs for verification/reset links."""
+        if value is None:
+            return None
+        if not (value.startswith("http://") or value.startswith("https://")):
+            raise ValueError("MY_AGENTS_AUTH_PUBLIC_APP_BASE_URL must be an http(s) URL")
         return value
 
     def cors_allowed_origin_list(self) -> tuple[str, ...]:
@@ -191,6 +275,29 @@ class Settings(BaseSettings):
                 "MY_AGENTS_SESSION_COOKIE_SECURE=true is required when "
                 "MY_AGENTS_SESSION_COOKIE_SAMESITE=none"
             )
+        if self.deployment_environment == "production":
+            if self.auth_dev_outbox_enabled:
+                raise ValueError(
+                    "MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=false is required when "
+                    "MY_AGENTS_DEPLOYMENT_ENVIRONMENT=production"
+                )
+            if self.auth_email_mode == "local":
+                raise ValueError(
+                    "MY_AGENTS_AUTH_EMAIL_MODE=smtp is required when "
+                    "MY_AGENTS_DEPLOYMENT_ENVIRONMENT=production"
+                )
+        if self.auth_email_mode == "smtp":
+            missing = [
+                env_name
+                for env_name, value in (
+                    ("MY_AGENTS_AUTH_SMTP_HOST", self.auth_smtp_host),
+                    ("MY_AGENTS_AUTH_SMTP_FROM_EMAIL", self.auth_smtp_from_email),
+                    ("MY_AGENTS_AUTH_PUBLIC_APP_BASE_URL", self.auth_public_app_base_url),
+                )
+                if value is None
+            ]
+            if missing:
+                raise ValueError("MY_AGENTS_AUTH_EMAIL_MODE=smtp requires " + ", ".join(missing))
         return self
 
     def openai_api_key_value(self) -> str | None:
@@ -203,4 +310,9 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     """Return cached process settings for request handling."""
+    env_file = os.environ.get("MY_AGENTS_ENV_FILE")
+    if env_file == "":
+        return Settings(_env_file=None)
+    if env_file is not None:
+        return Settings(_env_file=env_file)
     return Settings()

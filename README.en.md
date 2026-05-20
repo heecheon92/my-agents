@@ -205,6 +205,15 @@ MY_AGENTS_SESSION_COOKIE_SAMESITE=lax
 MY_AGENTS_CSRF_HEADER_NAME=X-CSRF-Token
 # Disabled by default; enable only for local deterministic frontend demos.
 MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=false
+MY_AGENTS_DEPLOYMENT_ENVIRONMENT=local
+MY_AGENTS_AUTH_EMAIL_MODE=local
+# Required when MY_AGENTS_AUTH_EMAIL_MODE=smtp.
+# MY_AGENTS_AUTH_PUBLIC_APP_BASE_URL=https://portfolio.example.com
+# MY_AGENTS_AUTH_SMTP_HOST=smtp.example.com
+# MY_AGENTS_AUTH_SMTP_PORT=587
+# MY_AGENTS_AUTH_SMTP_USERNAME=smtp-user
+# MY_AGENTS_AUTH_SMTP_PASSWORD=replace-locally-only
+# MY_AGENTS_AUTH_SMTP_FROM_EMAIL=noreply@example.com
 # Comma-separated explicit frontend origins for credentialed browser requests.
 # MY_AGENTS_CORS_ALLOWED_ORIGINS=http://localhost:3000
 MY_AGENTS_AUTH_ABUSE_PROTECTION_ENABLED=true
@@ -373,11 +382,15 @@ Implemented auth endpoints:
 - `POST /auth/password-reset/confirm`
 - `GET /auth/dev/outbox` only when `MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=true`
 
-Signup returns safe user data plus `verification_email_sent`. The current email sender is
-an offline local boundary used by tests/development, so no paid email provider is required
-for v0. Login requires `email_verified_at` to be set. Password reset requests return the
-same accepted response whether or not the email exists, so the API does not enumerate
-accounts.
+Signup returns safe user data plus `verification_email_sent`. By default, auth email uses
+an offline local boundary for tests/development, so no paid email provider is required for
+local v0 work. For preview or public visitor accounts, set `MY_AGENTS_AUTH_EMAIL_MODE=smtp`
+with `MY_AGENTS_AUTH_PUBLIC_APP_BASE_URL` and SMTP provider settings; this generic SMTP
+boundary avoids a provider-specific SDK while allowing real verification/reset emails.
+`MY_AGENTS_DEPLOYMENT_ENVIRONMENT=production` refuses the local email mode and refuses
+`MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=true`. Login requires `email_verified_at` to be set.
+Password reset requests return the same accepted response whether or not the email exists,
+so the API does not enumerate accounts.
 
 For deterministic local frontend demos, `MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=true` exposes
 the in-memory auth email outbox at `/auth/dev/outbox` so the UI can read verification and

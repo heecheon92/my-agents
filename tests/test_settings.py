@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from my_agents.settings import Settings
+from my_agents.settings import Settings, get_settings
 
 
 def test_settings_default_to_openai_when_api_key_is_available(
@@ -95,6 +95,11 @@ def test_service_foundation_settings_have_safe_defaults(
     assert settings.session_cookie_secure is True
     assert settings.session_cookie_samesite == "lax"
     assert settings.csrf_header_name == "X-CSRF-Token"
+    assert settings.deployment_environment == "local"
+    assert settings.auth_email_mode == "local"
+    assert settings.auth_public_app_base_url is None
+    assert settings.auth_smtp_host is None
+    assert settings.auth_smtp_from_email is None
     assert settings.auth_abuse_protection_enabled is True
     assert settings.auth_abuse_max_attempts == 20
     assert settings.auth_abuse_window_seconds == 900
@@ -113,6 +118,16 @@ def test_service_foundation_settings_accept_overrides(
     monkeypatch.setenv("MY_AGENTS_SESSION_COOKIE_SECURE", "false")
     monkeypatch.setenv("MY_AGENTS_SESSION_COOKIE_SAMESITE", "strict")
     monkeypatch.setenv("MY_AGENTS_CSRF_HEADER_NAME", "X-Portfolio-CSRF")
+    monkeypatch.setenv("MY_AGENTS_DEPLOYMENT_ENVIRONMENT", "preview")
+    monkeypatch.setenv("MY_AGENTS_AUTH_EMAIL_MODE", "smtp")
+    monkeypatch.setenv("MY_AGENTS_AUTH_PUBLIC_APP_BASE_URL", "https://portfolio.example.com/")
+    monkeypatch.setenv("MY_AGENTS_AUTH_SMTP_HOST", "smtp.example.com")
+    monkeypatch.setenv("MY_AGENTS_AUTH_SMTP_PORT", "2525")
+    monkeypatch.setenv("MY_AGENTS_AUTH_SMTP_USERNAME", "smtp-user")
+    monkeypatch.setenv("MY_AGENTS_AUTH_SMTP_PASSWORD", "smtp-password")
+    monkeypatch.setenv("MY_AGENTS_AUTH_SMTP_FROM_EMAIL", "noreply@example.com")
+    monkeypatch.setenv("MY_AGENTS_AUTH_SMTP_USE_STARTTLS", "false")
+    monkeypatch.setenv("MY_AGENTS_AUTH_SMTP_TIMEOUT_SECONDS", "5")
     monkeypatch.setenv("MY_AGENTS_AUTH_ABUSE_PROTECTION_ENABLED", "false")
     monkeypatch.setenv("MY_AGENTS_AUTH_ABUSE_MAX_ATTEMPTS", "5")
     monkeypatch.setenv("MY_AGENTS_AUTH_ABUSE_WINDOW_SECONDS", "120")
@@ -127,6 +142,17 @@ def test_service_foundation_settings_accept_overrides(
     assert settings.session_cookie_secure is False
     assert settings.session_cookie_samesite == "strict"
     assert settings.csrf_header_name == "X-Portfolio-CSRF"
+    assert settings.deployment_environment == "preview"
+    assert settings.auth_email_mode == "smtp"
+    assert settings.auth_public_app_base_url == "https://portfolio.example.com"
+    assert settings.auth_smtp_host == "smtp.example.com"
+    assert settings.auth_smtp_port == 2525
+    assert settings.auth_smtp_username == "smtp-user"
+    assert settings.auth_smtp_password is not None
+    assert settings.auth_smtp_password.get_secret_value() == "smtp-password"
+    assert settings.auth_smtp_from_email == "noreply@example.com"
+    assert settings.auth_smtp_use_starttls is False
+    assert settings.auth_smtp_timeout_seconds == 5
     assert settings.auth_abuse_protection_enabled is False
     assert settings.auth_abuse_max_attempts == 5
     assert settings.auth_abuse_window_seconds == 120
@@ -183,3 +209,77 @@ def test_cors_allowed_origins_reject_wildcard_for_cookie_credentials(
 
     with pytest.raises(ValidationError, match="explicit origins"):
         Settings(_env_file=None)
+
+
+def test_production_environment_rejects_dev_outbox(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
+    monkeypatch.setenv("MY_AGENTS_DEPLOYMENT_ENVIRONMENT", "production")
+    monkeypatch.setenv("MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED", "true")
+
+    with pytest.raises(ValidationError, match="AUTH_DEV_OUTBOX_ENABLED=false"):
+        Settings(_env_file=None)
+
+
+def test_production_environment_requires_non_local_email(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
+    monkeypatch.setenv("MY_AGENTS_DEPLOYMENT_ENVIRONMENT", "production")
+
+    with pytest.raises(ValidationError, match="AUTH_EMAIL_MODE=smtp"):
+        Settings(_env_file=None)
+
+
+def test_smtp_email_mode_requires_provider_and_public_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
+    monkeypatch.setenv("MY_AGENTS_AUTH_EMAIL_MODE", "smtp")
+    monkeypatch.setenv("MY_AGENTS_AUTH_SMTP_HOST", "smtp.example.com")
+
+    with pytest.raises(ValidationError, match="AUTH_SMTP_FROM_EMAIL"):
+        Settings(_env_file=None)
+
+
+def test_public_app_base_url_must_be_http_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
+    monkeypatch.setenv("MY_AGENTS_AUTH_PUBLIC_APP_BASE_URL", "portfolio.example.com")
+
+    with pytest.raises(ValidationError, match="AUTH_PUBLIC_APP_BASE_URL"):
+        Settings(_env_file=None)
+
+
+def test_get_settings_can_ignore_local_dotenv_for_isolated_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MY_AGENTS_ENV_FILE", "")
+    monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
+    monkeypatch.setenv("MY_AGENTS_SESSION_COOKIE_SECURE", "false")
+    get_settings.cache_clear()
+
+    settings = get_settings()
+
+    assert settings.database_url == "sqlite+pysqlite:///:memory:"
+    assert settings.session_cookie_secure is False
+
+
+def test_get_settings_can_load_explicit_env_file(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:  # noqa: ANN001
+    env_file = tmp_path / "custom.env"
+    env_file.write_text(
+        "MY_AGENTS_RESPONSE_MODE=deterministic\n"
+        "MY_AGENTS_DATABASE_URL=sqlite+pysqlite:///./custom-test.sqlite3\n"
+    )
+    monkeypatch.setenv("MY_AGENTS_ENV_FILE", str(env_file))
+    monkeypatch.delenv("MY_AGENTS_DATABASE_URL", raising=False)
+    get_settings.cache_clear()
+
+    settings = get_settings()
+
+    assert settings.database_url == "sqlite+pysqlite:///./custom-test.sqlite3"

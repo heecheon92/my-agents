@@ -1,0 +1,103 @@
+"""Auth email sender tests."""
+
+from __future__ import annotations
+
+from email.message import EmailMessage
+
+from fastapi.testclient import TestClient
+
+from my_agents.auth import email as auth_email
+from my_agents.auth.email import build_auth_email_sender, get_local_auth_email_outbox
+from my_agents.settings import Settings
+
+from .conftest import load_app
+
+
+class FakeSmtp:
+    """Small SMTP test double that records messages without network access."""
+
+    sent_messages: list[EmailMessage] = []
+    starttls_calls = 0
+    login_calls: list[tuple[str, str]] = []
+
+    def __init__(self, host: str, port: int, timeout: float) -> None:
+        self.host = host
+        self.port = port
+        self.timeout = timeout
+
+    def __enter__(self) -> FakeSmtp:
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        return None
+
+    def starttls(self) -> None:
+        self.starttls_calls += 1
+        type(self).starttls_calls += 1
+
+    def login(self, username: str, password: str) -> None:
+        type(self).login_calls.append((username, password))
+
+    def send_message(self, message: EmailMessage) -> None:
+        type(self).sent_messages.append(message)
+
+
+def test_smtp_sender_builds_visitor_account_links(monkeypatch) -> None:  # noqa: ANN001
+    monkeypatch.setattr(auth_email.smtplib, "SMTP", FakeSmtp)
+    settings = Settings(
+        _env_file=None,
+        MY_AGENTS_RESPONSE_MODE="deterministic",
+        MY_AGENTS_AUTH_EMAIL_MODE="smtp",
+        MY_AGENTS_AUTH_PUBLIC_APP_BASE_URL="https://portfolio.example.com",
+        MY_AGENTS_AUTH_SMTP_HOST="smtp.example.com",
+        MY_AGENTS_AUTH_SMTP_PORT="2525",
+        MY_AGENTS_AUTH_SMTP_USERNAME="smtp-user",
+        MY_AGENTS_AUTH_SMTP_PASSWORD="smtp-password",
+        MY_AGENTS_AUTH_SMTP_FROM_EMAIL="noreply@example.com",
+    )
+    sender = build_auth_email_sender(settings)
+
+    sender.send_email_verification(recipient_email="visitor@example.com", token="verify token")
+    sender.send_password_reset(recipient_email="visitor@example.com", token="reset token")
+
+    assert FakeSmtp.starttls_calls == 2
+    assert FakeSmtp.login_calls == [("smtp-user", "smtp-password")] * 2
+    assert len(FakeSmtp.sent_messages) == 2
+    verification = FakeSmtp.sent_messages[0]
+    reset = FakeSmtp.sent_messages[1]
+    assert verification["From"] == "noreply@example.com"
+    assert verification["To"] == "visitor@example.com"
+    assert "https://portfolio.example.com/verify-email?token=verify%20token" in (
+        verification.get_content()
+    )
+    assert "https://portfolio.example.com/password-reset?token=reset%20token" in (
+        reset.get_content()
+    )
+
+
+def test_signup_uses_configured_smtp_sender_without_local_outbox(monkeypatch) -> None:  # noqa: ANN001
+    FakeSmtp.sent_messages.clear()
+    FakeSmtp.login_calls.clear()
+    FakeSmtp.starttls_calls = 0
+    monkeypatch.setattr(auth_email.smtplib, "SMTP", FakeSmtp)
+    monkeypatch.setenv("MY_AGENTS_AUTH_EMAIL_MODE", "smtp")
+    monkeypatch.setenv("MY_AGENTS_AUTH_PUBLIC_APP_BASE_URL", "https://portfolio.example.com")
+    monkeypatch.setenv("MY_AGENTS_AUTH_SMTP_HOST", "smtp.example.com")
+    monkeypatch.setenv("MY_AGENTS_AUTH_SMTP_USERNAME", "smtp-user")
+    monkeypatch.setenv("MY_AGENTS_AUTH_SMTP_PASSWORD", "smtp-password")
+    monkeypatch.setenv("MY_AGENTS_AUTH_SMTP_FROM_EMAIL", "noreply@example.com")
+    monkeypatch.setenv("MY_AGENTS_SESSION_COOKIE_SECURE", "false")
+    client = TestClient(load_app())
+
+    signup = client.post(
+        "/auth/signup",
+        json={"email": "smtp-signup@example.com", "password": "correct horse battery staple"},
+    )
+
+    assert signup.status_code == 201
+    assert signup.json()["verification_email_sent"] is True
+    assert len(FakeSmtp.sent_messages) == 1
+    assert FakeSmtp.sent_messages[0]["To"] == "smtp-signup@example.com"
+    assert "/verify-email?token=" in FakeSmtp.sent_messages[0].get_content()
+    assert get_local_auth_email_outbox().messages() == ()
+    assert client.get("/auth/dev/outbox").status_code == 404

@@ -128,9 +128,14 @@ sequenceDiagram
 
     UI->>API: POST /auth/signup {email,password}
     API-->>UI: 201 {user, verification_email_sent}
-    Note over API: Local/dev email sender stores token in process memory
-    UI->>API: GET /auth/dev/outbox (local demo only)
-    API-->>UI: 200 [{purpose, token}]
+    alt local deterministic demo
+        Note over API: Local/dev email sender stores token in process memory
+        UI->>API: GET /auth/dev/outbox (local demo only)
+        API-->>UI: 200 [{purpose, token}]
+    else preview/public SMTP mode
+        API-->>Visitor: SMTP verification link
+        Visitor-->>UI: Open /verify-email?token=...
+    end
     UI->>API: POST /auth/verify-email {token}
     API-->>UI: 200 user
     UI->>API: POST /auth/login {email,password}
@@ -151,6 +156,9 @@ Important auth details:
 - If a deployed frontend/backend split requires `SameSite=None`, keep `MY_AGENTS_SESSION_COOKIE_SECURE=true`; settings validation rejects `SameSite=None` with insecure cookies.
 - Keep the frontend hostname aligned with the backend hostname in local direct-browser CORS (`localhost` with `localhost`, or `127.0.0.1` with `127.0.0.1`) so browser cookie rules stay predictable.
 - Password reset request intentionally returns the same accepted response for known and unknown emails.
+- For preview/public visitor accounts, use `MY_AGENTS_AUTH_EMAIL_MODE=smtp`,
+  `MY_AGENTS_AUTH_PUBLIC_APP_BASE_URL`, and SMTP provider settings. Production settings
+  validation rejects local email delivery and rejects `MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=true`.
 
 ## Product conversation demo flow
 
@@ -273,6 +281,66 @@ access-control-allow-credentials: true
 - Set `MY_AGENTS_CORS_ALLOWED_ORIGINS` to the exact deployed frontend origin.
 - Keep `MY_AGENTS_SESSION_COOKIE_SAMESITE=lax` for same-site deployed demos, or use `none` only when the frontend/backend are truly cross-site and HTTPS/Secure cookies are active.
 - Keep `MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=false`.
+- Set `MY_AGENTS_DEPLOYMENT_ENVIRONMENT=production` for public production runtime so
+  startup fails if the dev outbox or local email mode is accidentally enabled.
+- Set `MY_AGENTS_AUTH_EMAIL_MODE=smtp`, `MY_AGENTS_AUTH_PUBLIC_APP_BASE_URL`, and the
+  `MY_AGENTS_AUTH_SMTP_*` settings for real visitor verification/reset email. Keep SMTP
+  secrets only in the host secret manager or local `.env`, never in git.
 - Run Alembic migrations for Postgres/Neon rather than relying on auto-create.
-- Replace the local email sender before public account lifecycle exposure.
 - The current auth abuse limiter is single-process/in-memory. Replace it with a shared limiter before multi-worker deployment; until then, frontend gate evidence should describe the demo as single-process bounded.
+
+### Preview/public readiness matrix
+
+| Environment | Frontend origin | Backend origin | Cookie settings | Email mode | CORS/session proof |
+| --- | --- | --- | --- | --- | --- |
+| Local | `http://localhost:3000` or `http://127.0.0.1:3000` | matching localhost backend | `Secure=false`, `SameSite=Lax` | `local` with dev outbox enabled only for deterministic demos | signup -> dev outbox -> verify -> login -> `/auth/me` |
+| Preview | preview HTTPS URL | preview HTTPS API URL | `Secure=true`, `SameSite=Lax` unless cross-site requires `none` | `smtp` with provider sandbox/free tier if available | real email link -> login -> refresh `/auth/me` |
+| Production | user-confirmed public URL | user-confirmed public API URL | `Secure=true`, exact SameSite choice recorded | `smtp`; no dev outbox | run only after user confirms secrets/spend/final deploy |
+
+### Provider decision record — auth email
+
+Provider/dependency: generic SMTP relay through Python standard library `smtplib`.
+
+Purpose / UX benefit: real visitor signup, verification, and password reset without
+exposing local dev outbox tokens.
+
+Integration surface: `MY_AGENTS_AUTH_EMAIL_MODE=smtp`,
+`MY_AGENTS_AUTH_PUBLIC_APP_BASE_URL`, and `MY_AGENTS_AUTH_SMTP_*` settings used by
+`my_agents.auth.email.SmtpAuthEmailSender`.
+
+Package/API choice: no new dependency; any provider with SMTP support can be used.
+
+Env vars / secrets needed: SMTP host, port, optional username/password, from-address,
+and public frontend base URL. Store values in the deployment provider secret manager.
+
+Free tier or cost ceiling: do not enable a paid provider or production sender until the
+user confirms spend/secrets. Prefer a free/sandbox SMTP mode for preview smoke.
+
+Failure modes: SMTP auth failure, blocked sender identity, spam filtering, incorrect
+public frontend URL, or expired/consumed token link.
+
+Fallback / rollback: set `MY_AGENTS_AUTH_EMAIL_MODE=local` only for local demos; for
+public runtime, disable signup or pause deployment rather than exposing `/auth/dev/outbox`.
+
+Offline test strategy: settings validation tests plus SMTP sender tests with a fake SMTP
+client; API signup test verifies SMTP mode does not populate the local outbox.
+
+Preview smoke evidence: record redacted SMTP provider, preview URL, test account alias,
+login/session restore result, and a redacted email/link screenshot or provider log snippet.
+
+Production activation confirmation required: yes.
+
+### Public-demo guardrails and privacy copy
+
+- The demo stores visitor email, uploaded document text/metadata, conversations,
+  citations, and activity events until an operator manually cleans the database.
+- Do not upload secrets, credentials, private personal records, medical/legal/financial
+  records, or confidential documents.
+- Account deletion/export is not implemented yet; operator cleanup is the current
+  rollback/removal path for demo data.
+- The text/PDF parser is portfolio-demo quality. Scanned, encrypted, image-only,
+  compressed, very large, or malformed PDFs may fail or extract partial text.
+- Keep OpenAI model, timeout, and max-output settings conservative; record host/provider
+  budget controls before public traffic.
+- Smoke evidence must redact emails, tokens, cookies, API keys, document contents beyond
+  safe snippets, provider logs, and host secrets.

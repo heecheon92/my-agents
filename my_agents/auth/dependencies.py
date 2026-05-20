@@ -9,18 +9,10 @@ from sqlalchemy.orm import Session
 
 from my_agents.auth.abuse import AuthAbuseConfig, AuthAbuseProtector, get_auth_abuse_protector
 from my_agents.auth.contracts import Principal
-from my_agents.auth.email import AuthEmailSender, get_auth_email_sender
+from my_agents.auth.email import AuthEmailSender, build_auth_email_sender
 from my_agents.auth.service import AuthService, InvalidSessionError
 from my_agents.persistence.database import get_database_session
 from my_agents.settings import Settings, get_settings
-
-
-def get_auth_service(
-    db: Annotated[Session, Depends(get_database_session)],
-    email_sender: Annotated[AuthEmailSender, Depends(get_auth_email_sender)],
-) -> AuthService:
-    """Return an auth service bound to the request database session."""
-    return AuthService(db, email_sender=email_sender)
 
 
 def get_auth_abuse_guard(
@@ -34,6 +26,21 @@ def get_auth_abuse_guard(
             window_seconds=settings.auth_abuse_window_seconds,
         )
     )
+
+
+def get_configured_auth_email_sender(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> AuthEmailSender:
+    """Return the auth email sender selected by runtime settings."""
+    return build_auth_email_sender(settings)
+
+
+def get_auth_service(
+    db: Annotated[Session, Depends(get_database_session)],
+    email_sender: Annotated[AuthEmailSender, Depends(get_configured_auth_email_sender)],
+) -> AuthService:
+    """Return an auth service bound to the request database session."""
+    return AuthService(db, email_sender=email_sender)
 
 
 def get_current_principal(

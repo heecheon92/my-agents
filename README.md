@@ -205,6 +205,15 @@ MY_AGENTS_SESSION_COOKIE_SAMESITE=lax
 MY_AGENTS_CSRF_HEADER_NAME=X-CSRF-Token
 # 기본값은 비활성화입니다. local deterministic frontend demo에서만 켭니다.
 MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=false
+MY_AGENTS_DEPLOYMENT_ENVIRONMENT=local
+MY_AGENTS_AUTH_EMAIL_MODE=local
+# MY_AGENTS_AUTH_EMAIL_MODE=smtp일 때 필요합니다.
+# MY_AGENTS_AUTH_PUBLIC_APP_BASE_URL=https://portfolio.example.com
+# MY_AGENTS_AUTH_SMTP_HOST=smtp.example.com
+# MY_AGENTS_AUTH_SMTP_PORT=587
+# MY_AGENTS_AUTH_SMTP_USERNAME=smtp-user
+# MY_AGENTS_AUTH_SMTP_PASSWORD=replace-locally-only
+# MY_AGENTS_AUTH_SMTP_FROM_EMAIL=noreply@example.com
 # browser cookie 요청을 허용할 frontend origin을 comma-separated로 명시합니다.
 # MY_AGENTS_CORS_ALLOWED_ORIGINS=http://localhost:3000
 MY_AGENTS_AUTH_ABUSE_PROTECTION_ENABLED=true
@@ -373,10 +382,15 @@ production parser와 pgvector ranking은 이후 마일스톤입니다.
 - `POST /auth/password-reset/confirm`
 - `MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=true`일 때만 `GET /auth/dev/outbox`
 
-Signup은 안전한 user data와 `verification_email_sent`를 반환합니다. 현재 email sender는
-테스트/개발용 offline local boundary라서 v0에서는 유료 email provider가 필요하지 않습니다.
-Login은 `email_verified_at`이 설정된 뒤에만 성공합니다. Password reset request는 계정 존재
-여부와 관계없이 동일한 accepted response를 반환하므로 account enumeration을 피합니다.
+Signup은 안전한 user data와 `verification_email_sent`를 반환합니다. 기본 auth email sender는
+테스트/개발용 offline local boundary라서 local v0 작업에는 유료 email provider가 필요하지 않습니다.
+Preview/public visitor account를 열 때는 `MY_AGENTS_AUTH_EMAIL_MODE=smtp`와
+`MY_AGENTS_AUTH_PUBLIC_APP_BASE_URL`, SMTP provider 설정을 사용합니다. 이 generic SMTP
+boundary는 provider-specific SDK 없이 실제 verification/reset email을 보낼 수 있게 합니다.
+`MY_AGENTS_DEPLOYMENT_ENVIRONMENT=production`은 local email mode와
+`MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=true`를 거부합니다. Login은 `email_verified_at`이 설정된
+뒤에만 성공합니다. Password reset request는 계정 존재 여부와 관계없이 동일한 accepted
+response를 반환하므로 account enumeration을 피합니다.
 
 deterministic local frontend demo에서는 `MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=true`로
 in-memory auth email outbox를 `/auth/dev/outbox`에 노출할 수 있습니다. UI가 verification/reset

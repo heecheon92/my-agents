@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from my_agents.knowledge.models import DocumentChunkModel, DocumentModel
+from my_agents.knowledge.pdf_uploads import parse_uploaded_pdf
 from my_agents.persistence.database import get_database_session
 
 from .conftest import load_app, verify_latest_auth_email
@@ -45,6 +46,16 @@ def _text_pdf(*pages: str) -> bytes:
     objects.insert(
         1, f"2 0 obj << /Type /Pages /Kids [{' '.join(kids)}] /Count {len(kids)} >> endobj"
     )
+    return ("%PDF-1.4\n" + "\n".join(objects) + "\n%%EOF\n").encode()
+
+
+def _raw_stream_pdf(stream: str) -> bytes:
+    objects = [
+        "1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj",
+        "2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj",
+        "3 0 obj << /Type /Page /Parent 2 0 R /Contents 4 0 R >> endobj",
+        f"4 0 obj << /Length {len(stream)} >> stream\n{stream}\nendstream endobj",
+    ]
     return ("%PDF-1.4\n" + "\n".join(objects) + "\n%%EOF\n").encode()
 
 
@@ -96,6 +107,17 @@ def test_personal_knowledge_base_document_ingestion_creates_extraction_artifacts
         select(DocumentChunkModel).where(DocumentChunkModel.document_id == document.json()["id"])
     )
     assert {chunk.source_page for chunk in chunks} == {None}
+
+
+def test_pdf_parser_tolerates_invalid_octal_like_literal_escape() -> None:
+    parsed = parse_uploaded_pdf(
+        filename="invalid-escape.pdf",
+        content_type="application/pdf",
+        content=_raw_stream_pdf(r"BT /F1 12 Tf 72 720 Td (Invalid \9 escape) Tj ET"),
+    )
+
+    assert parsed.content == "Invalid 9 escape"
+    assert parsed.page_count == 1
 
 
 def test_pdf_upload_persists_metadata_and_ingests_page_provenance(monkeypatch) -> None:  # noqa: ANN001

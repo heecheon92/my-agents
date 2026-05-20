@@ -139,12 +139,14 @@ def _decode_pdf_literal(value: str) -> str:
             output.append(" ")
         elif escaped in "\n\r":
             pass
-        elif escaped.isdigit():
+        elif escaped in "01234567":
             octal = escaped
-            while index + 1 < len(value) and len(octal) < 3 and value[index + 1].isdigit():
+            while index + 1 < len(value) and len(octal) < 3 and value[index + 1] in "01234567":
                 index += 1
                 octal += value[index]
             output.append(chr(int(octal, 8)))
+        elif escaped.isdigit():
+            output.append(escaped)
         else:
             output.append(escaped)
         index += 1
