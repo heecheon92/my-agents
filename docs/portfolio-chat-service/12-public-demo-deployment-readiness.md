@@ -87,6 +87,11 @@ Minimum acceptance for an approved record:
 Fill this table with real values during preview setup. Keep URLs redacted in
 public reports if they identify private previews.
 
+Use the [generic container deployment path](./13-generic-container-deployment-path.md)
+for the provider-neutral Docker image, start command, migration command, smoke
+commands, and owner-gated boundaries before choosing a specific host or CI/CD
+pipeline.
+
 | Item | Local value | Preview value | Production value | Stop condition |
 | --- | --- | --- | --- | --- |
 | Frontend origin | `http://localhost:3000` | TBD HTTPS URL | user-confirmed public URL | URL recorded; frontend uses BFF or credentialed exact origin only. |
@@ -114,9 +119,9 @@ Before preview smoke, document or implement each guardrail:
 
 - Signup/login/reset abuse controls: current in-process limits are acceptable only
   for single-process demos and must be labeled as such.
-- Signup-disable or fallback path: document how to disable public signup, revoke
-  provider credentials, or fall back to a seeded/invite-only demo if abuse or
-  email deliverability fails.
+- Signup-disable or fallback path: set `MY_AGENTS_AUTH_SIGNUP_ENABLED=false` to
+  block new backend signups, document how to revoke provider credentials, and
+  fall back to a seeded/invite-only demo if abuse or email deliverability fails.
 - Upload limits: record accepted file types, size limits, and unsupported PDFs
   such as scanned, encrypted, unsupported encoded, huge, or non-text PDFs.
 - Run and cost limits: record response mode, model, timeout, max output tokens,

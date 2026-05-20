@@ -205,6 +205,8 @@ MY_AGENTS_SESSION_COOKIE_SAMESITE=lax
 MY_AGENTS_CSRF_HEADER_NAME=X-CSRF-Token
 # Disabled by default; enable only for local deterministic frontend demos.
 MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=false
+# Backend-owned public-demo signup kill switch. Existing login/session behavior remains.
+MY_AGENTS_AUTH_SIGNUP_ENABLED=true
 MY_AGENTS_DEPLOYMENT_ENVIRONMENT=local
 MY_AGENTS_AUTH_EMAIL_MODE=local
 # Required when MY_AGENTS_AUTH_EMAIL_MODE=smtp.
@@ -270,6 +272,34 @@ In short:
 - **SQLAlchemy** is the Python ORM/database access layer for table and relationship code.
 - **Postgres/Neon** is the database that stores real service data. Neon is managed Postgres.
 - **Alembic** is the migration ledger that connects SQLAlchemy model changes to real database schema changes.
+
+### Generic container deployment path
+
+The repository includes a provider-neutral `Dockerfile` and `.dockerignore` for a
+hosted public portfolio demo. This does not choose a host, configure secrets, run
+hosted migrations, or activate paid providers by itself.
+
+Local container build and run:
+
+```bash
+docker build -t my-agents-backend .
+docker run --rm --env-file .env -p 8000:8000 my-agents-backend
+```
+
+The container starts FastAPI with:
+
+```bash
+uv run --no-sync uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}
+```
+
+Before a reviewer-facing preview/public demo, follow the
+[generic container deployment path](./docs/portfolio-chat-service/13-generic-container-deployment-path.md)
+and the
+[public demo deployment readiness runbook](./docs/portfolio-chat-service/12-public-demo-deployment-readiness.md).
+They cover env var names, Alembic migration command, `/health` and `/openapi.json`
+smoke checks, preview-vs-production guardrails, rollback/disable paths, and the
+owner-gated boundaries for secrets, provider activation, hosted database
+migrations, public URLs, and spend.
 
 ## Run checks
 
@@ -391,6 +421,8 @@ boundary avoids a provider-specific SDK while allowing real verification/reset e
 `MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=true`. Login requires `email_verified_at` to be set.
 Password reset requests return the same accepted response whether or not the email exists,
 so the API does not enumerate accounts.
+Set `MY_AGENTS_AUTH_SIGNUP_ENABLED=false` to disable new public signup from the backend
+without changing existing verified-user login/session behavior.
 
 For deterministic local frontend demos, `MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=true` exposes
 the in-memory auth email outbox at `/auth/dev/outbox` so the UI can read verification and

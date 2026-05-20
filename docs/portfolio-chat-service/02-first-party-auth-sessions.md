@@ -1,6 +1,6 @@
 ---
 created: 2026-05-17
-updated: 2026-05-18
+updated: 2026-05-21
 status: active
 topics:
   - auth
@@ -40,7 +40,9 @@ The backend owns a first-party auth/session path:
 10. `POST /auth/password-reset/request` sends a reset token without revealing whether the account exists.
 11. `POST /auth/password-reset/confirm` consumes the reset token, changes the password, and revokes existing sessions.
 
-The current email sender is intentionally local/offline. It records verification and reset emails in process memory for tests and local development, without requiring Resend, AWS SES, SendGrid, Firebase, or another paid/live provider.
+The default email sender is intentionally local/offline. It records verification and
+reset emails in process memory for tests and local development. Preview/public demos
+can switch to the generic SMTP boundary without adding a provider-specific SDK.
 
 ## Flow
 
@@ -99,11 +101,13 @@ The Phase 1 public-demo boundary is intentionally explicit:
 - Cross-site browser deployments that require `MY_AGENTS_SESSION_COOKIE_SAMESITE=none` must also keep `MY_AGENTS_SESSION_COOKIE_SECURE=true`; settings validation rejects the unsafe combination.
 - `POST /auth/logout` is the current cookie-authenticated mutating auth endpoint and requires the configured CSRF header.
 - `MY_AGENTS_CORS_ALLOWED_ORIGINS` must list exact frontend origins for credentialed browser requests; wildcard origins are rejected.
+- `MY_AGENTS_AUTH_SIGNUP_ENABLED=false` blocks new backend signups as a public-demo
+  kill switch while preserving existing verified-user login/session behavior.
 - Auth abuse protection is implemented as an in-process, digest-keyed attempt limiter for signup, login, verification-token, and password-reset flows. This is acceptable only for local/single-process public-demo topology. Do not claim multi-worker or distributed rate-limit protection until this boundary is moved to a shared store or gateway.
 
 ## What is intentionally not implemented yet
 
-- real outbound email provider integration;
+- provider-specific email SDK integration;
 - MFA/passkeys;
 - OAuth account linking;
 - shared/distributed auth rate limiting for multi-worker deployments;
@@ -127,6 +131,8 @@ Those are later milestones or explicit non-goals for v0.
 - logout honors a configured CSRF header name and leaves the session active after a wrong header;
 - logout with CSRF revokes the session;
 - duplicate signup fails safely;
+- disabled signup fails safely without creating users, tokens, emails, or sessions;
+- disabling signup does not block existing verified-user login;
 - invalid login does not create an authenticated session;
 - password reset requests do not enumerate unknown accounts;
 - password reset changes the password and revokes old sessions;
@@ -142,6 +148,7 @@ Explain this in an interview:
 
 ## Revision history
 
+- 2026-05-21: Documented the backend-owned signup disable switch for public-demo rollback.
 - 2026-05-20: Documented Phase 1 public-demo auth/session boundary, CSRF/CORS/cookie tests, and single-process rate-limit limitation.
 - 2026-05-18: Added email verification, local auth email boundary, password reset tokens, and session revocation after reset.
 - 2026-05-17: Created after implementing minimal first-party auth and owned sessions.

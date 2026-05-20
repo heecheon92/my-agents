@@ -99,6 +99,10 @@ class Settings(BaseSettings):
         default=False,
         validation_alias=AliasChoices("MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED"),
     )
+    auth_signup_enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("MY_AGENTS_AUTH_SIGNUP_ENABLED"),
+    )
     deployment_environment: DeploymentEnvironment = Field(
         default="local",
         validation_alias=AliasChoices("MY_AGENTS_DEPLOYMENT_ENVIRONMENT"),

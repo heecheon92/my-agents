@@ -7,8 +7,10 @@ from datetime import UTC, datetime, timedelta
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from my_agents.auth.models import AuthTokenModel
+from my_agents.auth.email import get_local_auth_email_outbox
+from my_agents.auth.models import AuthTokenModel, UserModel
 from my_agents.persistence.database import get_database_session
+from my_agents.settings import get_settings
 
 from .conftest import latest_auth_email_token, load_app, verify_latest_auth_email
 
@@ -118,6 +120,87 @@ def test_signup_verify_login_me_and_logout_revoke_owned_session(monkeypatch) -> 
 
     assert logout.status_code == 204
     assert client.get("/auth/me").status_code == 401
+
+
+def test_signup_is_enabled_by_default(monkeypatch) -> None:  # noqa: ANN001
+    monkeypatch.delenv("MY_AGENTS_AUTH_SIGNUP_ENABLED", raising=False)
+    client = _client(monkeypatch)
+
+    response = client.post(
+        "/auth/signup",
+        json={
+            "email": "default-signup@example.com",
+            "password": "correct horse battery staple",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["user"]["email"] == "default-signup@example.com"
+
+
+def test_disabled_signup_does_not_create_user_token_or_email(monkeypatch) -> None:  # noqa: ANN001
+    monkeypatch.setenv("MY_AGENTS_AUTH_SIGNUP_ENABLED", "false")
+    client = _client(monkeypatch)
+
+    response = client.post(
+        "/auth/signup",
+        json={
+            "email": "disabled-signup@example.com",
+            "password": "correct horse battery staple",
+        },
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "signup disabled"
+    assert "password" not in response.text.lower()
+    assert get_local_auth_email_outbox().messages() == ()
+
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        user = db.scalar(select(UserModel).where(UserModel.email == "disabled-signup@example.com"))
+        auth_token = db.scalar(select(AuthTokenModel))
+    finally:
+        session_generator.close()
+
+    assert user is None
+    assert auth_token is None
+    assert client.get("/auth/me").status_code == 401
+
+
+def test_disabled_signup_does_not_block_existing_login(monkeypatch) -> None:  # noqa: ANN001
+    client = _client(monkeypatch)
+    signup = client.post(
+        "/auth/signup",
+        json={
+            "email": "existing-login@example.com",
+            "password": "correct horse battery staple",
+        },
+    )
+    assert signup.status_code == 201
+    verify_latest_auth_email(client, "existing-login@example.com")
+
+    monkeypatch.setenv("MY_AGENTS_AUTH_SIGNUP_ENABLED", "false")
+    get_settings.cache_clear()
+
+    blocked_signup = client.post(
+        "/auth/signup",
+        json={
+            "email": "new-disabled-signup@example.com",
+            "password": "correct horse battery staple",
+        },
+    )
+    login = client.post(
+        "/auth/login",
+        json={
+            "email": "existing-login@example.com",
+            "password": "correct horse battery staple",
+        },
+    )
+
+    assert blocked_signup.status_code == 403
+    assert login.status_code == 200
+    assert client.get("/auth/me").status_code == 200
 
 
 def test_logout_honors_configured_csrf_header(monkeypatch) -> None:  # noqa: ANN001

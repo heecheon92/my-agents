@@ -1,6 +1,6 @@
 # Implementation tracking
 
-Last updated: 2026-05-20
+Last updated: 2026-05-21
 Status owner: repo-tracked source of truth for cross-machine agent handoff
 
 This file exists because `.omx/` is local runtime state and is not shared across machines. When working with an agent on any machine, start here before re-discovering project status from the codebase.
@@ -62,6 +62,7 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 - Password reset revokes existing sessions.
 - Password hashes and raw token hashes are not returned by API responses.
 - Local in-process auth abuse protection covers repeated signup, bad login, reset request, and invalid lifecycle-token attempts.
+- `MY_AGENTS_AUTH_SIGNUP_ENABLED=false` blocks new public-demo signups without changing existing login/session behavior.
 
 ### Groups, documents, permissions
 
@@ -213,6 +214,7 @@ Guest mode should not be part of the current v0 implementation. A future guest m
 
 | Date | Milestone | Evidence |
 | --- | --- | --- |
+| 2026-05-21 | Generic container deployment path and backend signup disable switch added for public portfolio demos. | `Dockerfile`; `.dockerignore`; `my_agents/settings.py`; `my_agents/api/auth.py`; `tests/test_auth_api.py`; README pair; `docs/portfolio-chat-service/13-generic-container-deployment-path.md`. |
 | 2026-05-20 | PDF parser rejects corrupted binary text and supports FlateDecode resume retrieval smoke. | `my_agents/knowledge/pdf_uploads.py`; `tests/test_knowledge_ingestion.py`; README pair; `docs/portfolio-chat-service/05-knowledge-ingestion-extraction.md`. |
 | 2026-05-20 | Resume/profile RAG fallback added for broad personal-document questions. | `my_agents/knowledge/retrieval.py`; `my_agents/api/conversations.py`; `my_agents/agents/general_assistant/graph.py`; `my_agents/agents/general_assistant/responders.py`; `tests/test_permission_aware_rag.py`; `tests/test_responders.py`; README pair; general assistant README pair; `docs/learning/05-resume-rag-fallback-after-broad-personal-questions.md`. |
 | 2026-05-20 | Public visitor auth email/provider boundary added. | `my_agents/auth/email.py`; `my_agents/auth/dependencies.py`; `my_agents/settings.py`; `tests/test_auth_email.py`; `tests/test_settings.py`; `.env.example`; README pair; `docs/portfolio-chat-service/10-frontend-demo-runbook.md`; `docs/portfolio-chat-service/12-public-demo-deployment-readiness.md`. |

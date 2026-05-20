@@ -205,6 +205,8 @@ MY_AGENTS_SESSION_COOKIE_SAMESITE=lax
 MY_AGENTS_CSRF_HEADER_NAME=X-CSRF-Token
 # 기본값은 비활성화입니다. local deterministic frontend demo에서만 켭니다.
 MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=false
+# Backend-owned public-demo signup kill switch입니다. 기존 login/session 동작은 유지됩니다.
+MY_AGENTS_AUTH_SIGNUP_ENABLED=true
 MY_AGENTS_DEPLOYMENT_ENVIRONMENT=local
 MY_AGENTS_AUTH_EMAIL_MODE=local
 # MY_AGENTS_AUTH_EMAIL_MODE=smtp일 때 필요합니다.
@@ -270,6 +272,33 @@ SQLAlchemy, Postgres, Alembic의 관계를 짧게 정리하면 다음과 같습�
 - **SQLAlchemy**: Python 코드에서 테이블/관계를 다루는 ORM과 DB 접근 도구입니다.
 - **Postgres/Neon**: 실제 데이터를 저장하는 데이터베이스입니다. Neon은 managed Postgres 서비스입니다.
 - **Alembic**: SQLAlchemy model 변화와 실제 DB schema 변화를 연결하는 migration ledger입니다.
+
+### Generic container deployment path
+
+이 저장소에는 hosted public portfolio demo를 위한 provider-neutral `Dockerfile`과
+`.dockerignore`가 포함되어 있습니다. 이 파일들은 host 선택, secret 설정, hosted
+migration 실행, 유료 provider 활성화를 자체적으로 수행하지 않습니다.
+
+로컬 container build/run 예시는 다음과 같습니다.
+
+```bash
+docker build -t my-agents-backend .
+docker run --rm --env-file .env -p 8000:8000 my-agents-backend
+```
+
+Container는 FastAPI를 다음 명령으로 시작합니다.
+
+```bash
+uv run --no-sync uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}
+```
+
+Reviewer-facing preview/public demo 전에는
+[generic container deployment path](./docs/portfolio-chat-service/13-generic-container-deployment-path.md)와
+[public demo deployment readiness runbook](./docs/portfolio-chat-service/12-public-demo-deployment-readiness.md)을
+따르세요. 두 문서는 env var 이름, Alembic migration command, `/health`와
+`/openapi.json` smoke check, preview-vs-production guardrail, rollback/disable path,
+그리고 secret, provider activation, hosted database migration, public URL, spend에
+대한 owner-gated boundary를 설명합니다.
 
 ## 검사 실행
 
@@ -391,6 +420,8 @@ boundary는 provider-specific SDK 없이 실제 verification/reset email을 보�
 `MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=true`를 거부합니다. Login은 `email_verified_at`이 설정된
 뒤에만 성공합니다. Password reset request는 계정 존재 여부와 관계없이 동일한 accepted
 response를 반환하므로 account enumeration을 피합니다.
+`MY_AGENTS_AUTH_SIGNUP_ENABLED=false`를 설정하면 기존 verified user의 login/session
+동작은 유지하면서 backend에서 새 public signup만 막을 수 있습니다.
 
 deterministic local frontend demo에서는 `MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=true`로
 in-memory auth email outbox를 `/auth/dev/outbox`에 노출할 수 있습니다. UI가 verification/reset

@@ -97,6 +97,7 @@ def test_service_foundation_settings_have_safe_defaults(
     assert settings.csrf_header_name == "X-CSRF-Token"
     assert settings.deployment_environment == "local"
     assert settings.auth_email_mode == "local"
+    assert settings.auth_signup_enabled is True
     assert settings.auth_public_app_base_url is None
     assert settings.auth_smtp_host is None
     assert settings.auth_smtp_from_email is None
@@ -120,6 +121,7 @@ def test_service_foundation_settings_accept_overrides(
     monkeypatch.setenv("MY_AGENTS_CSRF_HEADER_NAME", "X-Portfolio-CSRF")
     monkeypatch.setenv("MY_AGENTS_DEPLOYMENT_ENVIRONMENT", "preview")
     monkeypatch.setenv("MY_AGENTS_AUTH_EMAIL_MODE", "smtp")
+    monkeypatch.setenv("MY_AGENTS_AUTH_SIGNUP_ENABLED", "false")
     monkeypatch.setenv("MY_AGENTS_AUTH_PUBLIC_APP_BASE_URL", "https://portfolio.example.com/")
     monkeypatch.setenv("MY_AGENTS_AUTH_SMTP_HOST", "smtp.example.com")
     monkeypatch.setenv("MY_AGENTS_AUTH_SMTP_PORT", "2525")
@@ -144,6 +146,7 @@ def test_service_foundation_settings_accept_overrides(
     assert settings.csrf_header_name == "X-Portfolio-CSRF"
     assert settings.deployment_environment == "preview"
     assert settings.auth_email_mode == "smtp"
+    assert settings.auth_signup_enabled is False
     assert settings.auth_public_app_base_url == "https://portfolio.example.com"
     assert settings.auth_smtp_host == "smtp.example.com"
     assert settings.auth_smtp_port == 2525

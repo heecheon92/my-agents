@@ -50,8 +50,14 @@ def signup(
     http_request: Request,
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
     abuse_guard: Annotated[AuthAbuseProtector, Depends(get_auth_abuse_guard)],
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> SignupResponse:
     """Create a user and send a local/dev email verification token."""
+    if not settings.auth_signup_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="signup disabled",
+        )
     email_identifier = _email_identifier(str(request.email))
     client_identifier = _request_client_identifier(http_request)
     _assert_auth_allowed(abuse_guard, action="signup_email", identifier=email_identifier)
