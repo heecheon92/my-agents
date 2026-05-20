@@ -210,8 +210,8 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
 - [x] Product demo flow is documented: auth -> group/doc -> ingest -> conversation run -> citations/events.
 - [x] Frontend can use SSE progress and `answer_delta` streaming instead of waiting only for full run responses.
 - [~] Frontend-facing signup/login response parser expectations are documented in README examples but not generated as a typed client.
-- [ ] Document exact frontend auth/session flow, including cookies and CSRF headers.
-- [ ] Add CORS configuration when a real frontend origin exists.
+- [x] Document exact frontend auth/session flow, including cookies and CSRF headers.
+- [x] Add explicit-origin CORS configuration for credentialed frontend requests.
 - [x] Add streaming contract for chat UX.
 - [ ] Add OpenAPI/client generation workflow if useful.
 
@@ -236,10 +236,10 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
 
 ## 12. Near-term recommended sequence
 
-1. **Frontend contract stabilization**
+1. **Frontend integration verification**
    - Confirm frontend uses product endpoints, not legacy `/assistant/chat`.
    - Align signup/login parser shapes with backend contracts.
-   - Document cookie + CSRF expectations.
+   - Verify credentialed CORS, cookie, CSRF, and SSE behavior against the separate frontend.
 
 2. **Local debug/deploy ergonomics**
    - Add a simple local SQLite-file debug recipe or helper script.

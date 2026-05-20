@@ -14,6 +14,7 @@ def test_settings_default_to_openai_when_api_key_is_available(
     monkeypatch.delenv("MY_AGENTS_RESPONSE_MODE", raising=False)
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.delenv("MY_AGENTS_OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("MY_AGENTS_OPENAI_MODEL", raising=False)
 
     settings = Settings(_env_file=None)
 
@@ -142,3 +143,32 @@ def test_service_foundation_settings_accept_auto_create_override(
 
     assert settings.auto_create_tables is True
     assert settings.should_auto_create_tables() is True
+
+
+def test_cors_allowed_origins_parse_csv_and_strip_trailing_slashes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
+    monkeypatch.setenv(
+        "MY_AGENTS_CORS_ALLOWED_ORIGINS",
+        "http://localhost:3000/, https://portfolio.example.com",
+    )
+
+    settings = Settings(_env_file=None)
+
+    assert settings.cors_allowed_origin_list() == (
+        "http://localhost:3000",
+        "https://portfolio.example.com",
+    )
+
+
+@pytest.mark.parametrize("wildcard_origin", ["*", "https://*.example.com"])
+def test_cors_allowed_origins_reject_wildcard_for_cookie_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+    wildcard_origin: str,
+) -> None:
+    monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
+    monkeypatch.setenv("MY_AGENTS_CORS_ALLOWED_ORIGINS", wildcard_origin)
+
+    with pytest.raises(ValidationError, match="explicit origins"):
+        Settings(_env_file=None)

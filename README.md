@@ -203,12 +203,20 @@ MY_AGENTS_SESSION_COOKIE_NAME=my_agents_session
 MY_AGENTS_SESSION_COOKIE_SECURE=true
 MY_AGENTS_SESSION_COOKIE_SAMESITE=lax
 MY_AGENTS_CSRF_HEADER_NAME=X-CSRF-Token
+# browser cookie 요청을 허용할 frontend origin을 comma-separated로 명시합니다.
+# MY_AGENTS_CORS_ALLOWED_ORIGINS=http://localhost:3000
 MY_AGENTS_AUTH_ABUSE_PROTECTION_ENABLED=true
 MY_AGENTS_AUTH_ABUSE_MAX_ATTEMPTS=20
 MY_AGENTS_AUTH_ABUSE_WINDOW_SECONDS=900
 ```
 
 `.env`와 `.env.*`는 git에서 제외됩니다. `.env.example`에는 실제 비밀값이 없으므로 커밋해도 안전합니다.
+
+별도 browser frontend를 붙일 때는 `MY_AGENTS_CORS_ALLOWED_ORIGINS`에 정확한 frontend
+origin을 넣고, frontend 요청은 `credentials: "include"`로 보내야 합니다. 이 백엔드는
+앱 소유 browser cookie를 사용하므로 wildcard CORS origin은 거부합니다. 로컬 SQLite demo
+명령, cookie/CSRF 기대사항, SSE parsing contract는
+[frontend demo runbook](./docs/portfolio-chat-service/10-frontend-demo-runbook.md)을 참고하세요.
 
 ### Postgres/Neon과 Alembic migration
 
@@ -364,6 +372,10 @@ Auth abuse protection은 v0에서 의도적으로 local/replaceable boundary입�
 digest로 저장되고, `MY_AGENTS_AUTH_ABUSE_*` 설정으로 제한을 조정하며, offline test가 이
 동작을 검증합니다. 향후 public deployment나 multi-worker 구성이 필요해지면 같은 boundary를
 Redis, gateway, shared store로 교체할 수 있습니다.
+
+별도 frontend가 browser에서 실행될 때는 `MY_AGENTS_CORS_ALLOWED_ORIGINS`로 정확한 origin을
+설정합니다. Login은 `HttpOnly` session cookie를 설정하므로 frontend 요청은 credentialed
+fetch를 사용해야 하고, logout은 login 응답에서 받은 CSRF token을 설정된 header로 보내야 합니다.
 
 signup 요청 예시:
 

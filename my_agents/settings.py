@@ -92,6 +92,10 @@ class Settings(BaseSettings):
         min_length=1,
         validation_alias=AliasChoices("MY_AGENTS_CSRF_HEADER_NAME"),
     )
+    cors_allowed_origins: str = Field(
+        default="",
+        validation_alias=AliasChoices("MY_AGENTS_CORS_ALLOWED_ORIGINS"),
+    )
     auth_abuse_protection_enabled: bool = Field(
         default=True,
         validation_alias=AliasChoices("MY_AGENTS_AUTH_ABUSE_PROTECTION_ENABLED"),
@@ -134,6 +138,14 @@ class Settings(BaseSettings):
             return None
         return value
 
+    @field_validator("cors_allowed_origins")
+    @classmethod
+    def cors_allowed_origins_must_not_include_wildcard(cls, value: str) -> str:
+        """Keep browser-cookie CORS explicit; wildcard plus credentials is unsafe."""
+        if any("*" in origin.strip() for origin in value.split(",")):
+            raise ValueError("MY_AGENTS_CORS_ALLOWED_ORIGINS must list explicit origins")
+        return value
+
     @field_validator("database_url", "session_cookie_name", "csrf_header_name")
     @classmethod
     def service_setting_must_not_be_blank(cls, value: str) -> str:
@@ -150,6 +162,14 @@ class Settings(BaseSettings):
         if isinstance(value, str) and not value.strip():
             return None
         return value
+
+    def cors_allowed_origin_list(self) -> tuple[str, ...]:
+        """Return configured frontend origins as normalized explicit origins."""
+        return tuple(
+            origin.strip().rstrip("/")
+            for origin in self.cors_allowed_origins.split(",")
+            if origin.strip()
+        )
 
     def should_auto_create_tables(self) -> bool:
         """Return whether runtime startup should create tables for this database URL."""

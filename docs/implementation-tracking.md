@@ -1,6 +1,6 @@
 # Implementation tracking
 
-Last updated: 2026-05-19
+Last updated: 2026-05-20
 Status owner: repo-tracked source of truth for cross-machine agent handoff
 
 This file exists because `.omx/` is local runtime state and is not shared across machines. When working with an agent on any machine, start here before re-discovering project status from the codebase.
@@ -26,7 +26,7 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 
 | Scope | Status | Completion estimate | Notes |
 | --- | --- | ---: | --- |
-| Portfolio-quality backend v0 | In progress, strong foundation | 82-86% | Thin end-to-end backend slice exists; auth lifecycle includes local abuse protection, and conversation runs now have SSE progress plus assistant-delta streaming. |
+| Portfolio-quality backend v0 | In progress, strong foundation | 84-88% | Thin end-to-end backend slice exists; auth lifecycle includes local abuse protection, conversation runs stream over SSE, and frontend credentialed CORS/demo runbook are documented/test-backed. |
 | Production SaaS readiness | Early | 44-49% | Account lifecycle improved; still needs real email provider, deployment hardening, production ingestion, and ops work. |
 | Full AI agents product vision | Early/mid | 25-35% | Current production graph is one assistant/router path; richer agent/tool workflows are future milestones. |
 | Learning/practice simulated agents | Active learning lab | Ongoing | `my_agents/simulated_agents/` is meaningful practice code, intentionally separate from production API/CLI surfaces. |
@@ -133,7 +133,7 @@ Note: the shell reported `VIRTUAL_ENV=/Users/heecheonpark/Git/rag-agent/.venv` d
 
 - Needs explicit production security review.
 - Needs shared/distributed rate limits before multi-worker public deployment; local in-process auth abuse protection exists.
-- Needs CORS/deployment configuration review for a real frontend origin.
+- Credentialed CORS has explicit-origin configuration, but deployed frontend origins still need environment-specific verification.
 - Needs secure cookie behavior verified behind the intended deployment/proxy setup.
 - Needs secrets/deployment runbook outside local `.env` usage.
 
@@ -149,6 +149,8 @@ Note: the shell reported `VIRTUAL_ENV=/Users/heecheonpark/Git/rag-agent/.venv` d
 ### Agent/product behavior
 
 - Product conversation runs support SSE progress streaming and incremental `answer_delta` assistant text events.
+- Credentialed CORS can be enabled for exact frontend origins through `MY_AGENTS_CORS_ALLOWED_ORIGINS`.
+- `docs/portfolio-chat-service/10-frontend-demo-runbook.md` documents local SQLite demo startup, cookie/CSRF expectations, and frontend SSE flow.
 - Current production graph is still one assistant/router path.
 - Most route labels are capability metadata and response paths, not separate production specialist agents.
 - Tool workflows beyond hosted web search are not implemented as production graph capabilities yet.
@@ -163,22 +165,22 @@ Note: the shell reported `VIRTUAL_ENV=/Users/heecheonpark/Git/rag-agent/.venv` d
 
 ## Recommended next workflow
 
-### Next milestone: local debug/deploy ergonomics
+### Next milestone: frontend-integrated demo hardening
 
-Goal: make the backend easier to run as a portfolio demo with a realistic local/dev deployment path.
+Goal: make the separate frontend able to complete the product flow against the backend without using legacy `/assistant/chat`.
 
 Suggested order:
 
-1. Add a simple local SQLite-file debug recipe or helper script.
-2. Add demo seed/reset commands if needed for portfolio demos.
-3. Write a deployment runbook covering migrations, app startup, auth smoke, and conversation-run smoke.
-4. Keep secrets in `.env` only and avoid frontend code in this repository.
+1. Coordinate with the frontend repo to confirm it uses product endpoints and credentialed fetch.
+2. Add demo seed/reset commands if repeated frontend demos need stable sample data.
+3. Verify the local SQLite runbook against the frontend once frontend integration reports its exact origin and API base URL.
+4. Add environment-specific deployment notes for the chosen hosting target.
 
 Stop condition:
 
-- A fresh developer can run a deterministic local demo without reading source code.
-- The runbook clearly separates local SQLite, Postgres/Neon, migrations, and secrets.
-- Existing deterministic assistant/conversation tests still pass.
+- A fresh developer can run the backend plus separate frontend and complete auth -> document ingest -> SSE chat.
+- The runbook clearly separates local SQLite, Postgres/Neon, migrations, cookies, CORS, and secrets.
+- Existing deterministic assistant/conversation/CORS tests still pass.
 
 ### Alternative next milestone: production RAG realism
 
@@ -205,6 +207,7 @@ Guest mode should not be part of the current v0 implementation. A future guest m
 
 | Date | Milestone | Evidence |
 | --- | --- | --- |
+| 2026-05-20 | Credentialed frontend CORS configuration and local frontend demo runbook added. | `tests/test_cors_api.py`; `tests/test_settings.py`; `docs/portfolio-chat-service/10-frontend-demo-runbook.md`. |
 | 2026-05-19 | Product conversation runs gained SSE progress and assistant-delta streaming plus frontend contract docs. | `tests/test_conversations_api.py`; `docs/portfolio-chat-service/09-http-streaming-frontend-contract.md`. |
 | 2026-05-19 | Local auth abuse protection added for account lifecycle endpoints. | `92 passed, 1 skipped`; Ruff check/format pass; in-process `AuthAbuseProtector`; README/env/learning docs updated. |
 | 2026-05-18 | Portfolio chat-service v0 backend foundation is in a strong test-backed state. | `84 passed, 1 skipped`; Ruff check/format pass. |

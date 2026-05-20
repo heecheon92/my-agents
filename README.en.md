@@ -203,12 +203,20 @@ MY_AGENTS_SESSION_COOKIE_NAME=my_agents_session
 MY_AGENTS_SESSION_COOKIE_SECURE=true
 MY_AGENTS_SESSION_COOKIE_SAMESITE=lax
 MY_AGENTS_CSRF_HEADER_NAME=X-CSRF-Token
+# Comma-separated explicit frontend origins for credentialed browser requests.
+# MY_AGENTS_CORS_ALLOWED_ORIGINS=http://localhost:3000
 MY_AGENTS_AUTH_ABUSE_PROTECTION_ENABLED=true
 MY_AGENTS_AUTH_ABUSE_MAX_ATTEMPTS=20
 MY_AGENTS_AUTH_ABUSE_WINDOW_SECONDS=900
 ```
 
 `.env` and `.env.*` are ignored by git. `.env.example` is safe to commit because it contains no real secrets.
+
+For a separate browser frontend, set `MY_AGENTS_CORS_ALLOWED_ORIGINS` to the exact
+frontend origin and use `credentials: "include"` in frontend requests. Wildcard CORS
+origins are rejected because this backend uses app-owned browser cookies. See the
+[frontend demo runbook](./docs/portfolio-chat-service/10-frontend-demo-runbook.md) for
+the local SQLite demo command, cookie/CSRF expectations, and SSE parsing contract.
 
 ### Postgres/Neon and Alembic migrations
 
@@ -365,6 +373,11 @@ Auth abuse protection is intentionally local and replaceable in v0: bucket keys 
 digested, limits are controlled by `MY_AGENTS_AUTH_ABUSE_*`, and tests exercise the
 offline behavior. A future public deployment can move the same boundary to Redis or a
 gateway/shared store before enabling multi-worker or distributed rate limiting.
+
+When a separate frontend is running in the browser, configure exact CORS origins with
+`MY_AGENTS_CORS_ALLOWED_ORIGINS`. Login sets an `HttpOnly` session cookie, so frontend
+requests should use credentialed fetch calls; logout must include the configured CSRF
+header value from the login response.
 
 Example signup request:
 
