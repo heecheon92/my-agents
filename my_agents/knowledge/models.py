@@ -49,6 +49,13 @@ class DocumentModel(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     content: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    source_type: Mapped[str] = mapped_column(String(20), default="text", nullable=False)
+    source_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    source_content_type: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    source_byte_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    source_page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    parser_name: Mapped[str | None] = mapped_column(String(80), nullable=True)
     owner_user_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     group_id: Mapped[str | None] = mapped_column(ForeignKey("groups.id"), nullable=True, index=True)
     knowledge_base_id: Mapped[str | None] = mapped_column(
@@ -105,6 +112,7 @@ class DocumentChunkModel(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     start_offset: Mapped[int] = mapped_column(Integer, nullable=False)
     end_offset: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_page: Mapped[int | None] = mapped_column(Integer, nullable=True)
     embedding_json: Mapped[str] = mapped_column(Text, nullable=False)
 
 

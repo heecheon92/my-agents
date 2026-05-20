@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
+from sqlalchemy import select
+
+from my_agents.knowledge.models import DocumentChunkModel, DocumentModel
+from my_agents.persistence.database import get_database_session
 
 from .conftest import load_app, verify_latest_auth_email
 
@@ -21,6 +25,36 @@ def _signup_login(client: TestClient, email: str) -> str:
     login = client.post("/auth/login", json={"email": email, "password": password})
     assert login.status_code == 200
     return signup.json()["user"]["id"]
+
+
+def _text_pdf(*pages: str) -> bytes:
+    objects = ["1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj"]
+    kids = []
+    for index, page in enumerate(pages, start=1):
+        page_obj = 2 + (index * 2) - 1
+        stream_obj = page_obj + 1
+        kids.append(f"{page_obj} 0 R")
+        escaped = page.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+        stream = f"BT /F1 12 Tf 72 720 Td ({escaped}) Tj ET"
+        objects.append(
+            f"{page_obj} 0 obj << /Type /Page /Parent 2 0 R /Contents {stream_obj} 0 R >> endobj"
+        )
+        objects.append(
+            f"{stream_obj} 0 obj << /Length {len(stream)} >> stream\n{stream}\nendstream endobj"
+        )
+    objects.insert(
+        1, f"2 0 obj << /Type /Pages /Kids [{' '.join(kids)}] /Count {len(kids)} >> endobj"
+    )
+    return ("%PDF-1.4\n" + "\n".join(objects) + "\n%%EOF\n").encode()
+
+
+def _database_rows(statement):  # noqa: ANN001 - SQLAlchemy statement type is verbose
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        return db.scalars(statement).all()
+    finally:
+        session_generator.close()
 
 
 def test_personal_knowledge_base_document_ingestion_creates_extraction_artifacts(
@@ -43,6 +77,8 @@ def test_personal_knowledge_base_document_ingestion_creates_extraction_artifacts
     )
     assert document.status_code == 201
     assert document.json()["knowledge_base_id"] == kb_id
+    assert document.json()["source_type"] == "text"
+    assert document.json()["source_filename"] is None
 
     ingest = client.post(f"/documents/{document.json()['id']}/ingest")
 
@@ -56,6 +92,77 @@ def test_personal_knowledge_base_document_ingestion_creates_extraction_artifacts
     runs = client.get(f"/documents/{document.json()['id']}/extraction-runs")
     assert runs.status_code == 200
     assert runs.json()[0]["id"] == payload["id"]
+    chunks = _database_rows(
+        select(DocumentChunkModel).where(DocumentChunkModel.document_id == document.json()["id"])
+    )
+    assert {chunk.source_page for chunk in chunks} == {None}
+
+
+def test_pdf_upload_persists_metadata_and_ingests_page_provenance(monkeypatch) -> None:  # noqa: ANN001
+    client = _client(monkeypatch)
+    _signup_login(client, "pdf-owner@example.com")
+
+    document = client.post(
+        "/documents/upload",
+        data={"title": "Portfolio PDF"},
+        files={
+            "file": (
+                "portfolio.pdf",
+                _text_pdf(
+                    "OpenAI Agents page one mentions LangGraph.",
+                    "Heecheon Park page two cites FastAPI.",
+                ),
+                "application/pdf",
+            )
+        },
+    )
+
+    assert document.status_code == 201
+    payload = document.json()
+    assert payload["title"] == "Portfolio PDF"
+    assert payload["source_type"] == "pdf"
+    assert payload["source_filename"] == "portfolio.pdf"
+    assert payload["source_content_type"] == "application/pdf"
+    assert payload["source_byte_size"] > 0
+    assert len(payload["source_sha256"]) == 64
+    assert payload["source_page_count"] == 2
+    assert payload["parser_name"] == "deterministic_pdf_text_v1"
+
+    persisted = _database_rows(select(DocumentModel).where(DocumentModel.id == payload["id"]))
+    assert persisted[0].content.count("\f") == 1
+
+    ingest = client.post(f"/documents/{payload['id']}/ingest")
+    assert ingest.status_code == 200
+    assert ingest.json()["status"] == "completed"
+    assert ingest.json()["chunk_count"] == 2
+
+    chunks = _database_rows(
+        select(DocumentChunkModel)
+        .where(DocumentChunkModel.document_id == payload["id"])
+        .order_by(DocumentChunkModel.ordinal)
+    )
+    assert [chunk.source_page for chunk in chunks] == [1, 2]
+    assert "LangGraph" in chunks[0].content
+    assert "FastAPI" in chunks[1].content
+
+
+def test_pdf_upload_rejects_unsupported_or_unsafe_input(monkeypatch) -> None:  # noqa: ANN001
+    client = _client(monkeypatch)
+    _signup_login(client, "pdf-safety@example.com")
+
+    unsupported = client.post(
+        "/documents/upload",
+        data={"title": "Plain text"},
+        files={"file": ("notes.txt", b"not a pdf", "text/plain")},
+    )
+    assert unsupported.status_code == 415
+
+    unsafe_name = client.post(
+        "/documents/upload",
+        data={"title": "Bad name"},
+        files={"file": ("../bad.pdf", _text_pdf("Safe text"), "application/pdf")},
+    )
+    assert unsafe_name.status_code == 400
 
 
 def test_group_knowledge_base_requires_group_membership(monkeypatch) -> None:  # noqa: ANN001

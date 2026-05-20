@@ -42,6 +42,13 @@ class DocumentResponse(BaseModel):
     owner_user_id: str
     group_id: str | None
     knowledge_base_id: str | None
+    source_type: str = "text"
+    source_filename: str | None = None
+    source_content_type: str | None = None
+    source_byte_size: int | None = None
+    source_sha256: str | None = None
+    source_page_count: int | None = None
+    parser_name: str | None = None
 
 
 class DocumentPermissionPatchRequest(BaseModel):
@@ -84,6 +91,7 @@ class ChunkResponse(BaseModel):
     content: str
     start_offset: int
     end_offset: int
+    source_page: int | None = None
 
 
 class EntityResponse(BaseModel):
@@ -110,3 +118,5 @@ class CitationResponse(BaseModel):
     document_id: str
     chunk_id: str
     snippet: str
+    source_page: int | None = None
+    source_filename: str | None = None

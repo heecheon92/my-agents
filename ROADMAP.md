@@ -29,7 +29,7 @@ flowchart LR
 
 Current honest status:
 
-> The project is a strong **v1-draft backend foundation**: auth, permissions, server-owned conversations, text ingestion, permission-aware retrieval, citations, events, migrations, and SSE assistant streaming exist as a thin end-to-end slice. It is not yet a production-ready v1 because production ingestion, real vector retrieval, background jobs, stronger deployment-grade auth hardening, and operations remain.
+> The project is a strong **v1-draft backend foundation**: auth, permissions, server-owned conversations, text/PDF ingestion, permission-aware retrieval, citations, events, migrations, and SSE assistant streaming exist as a thin end-to-end slice. It is not yet a production-ready v1 because broad production ingestion, real vector retrieval, background jobs, stronger deployment-grade auth hardening, and operations remain.
 
 ## 1. Backend foundation
 
@@ -117,9 +117,10 @@ Current honest status:
 - [x] Entity extraction fixtures.
 - [x] Entity mentions and co-occurrence relationships.
 - [x] Extraction-run summaries.
-- [~] Ingestion currently assumes text already stored in the document.
-- [ ] File upload API.
-- [ ] Production document parsers for PDF, Markdown, DOCX, web pages, etc.
+- [x] Text ingestion still supports text already stored in the document.
+- [x] PDF-first upload API: `POST /documents/upload`.
+- [x] Deterministic text-based PDF parser with metadata persistence and chunk page provenance.
+- [ ] Production parsers for scanned/encrypted/compressed PDF, Markdown, DOCX, web pages, etc.
 - [ ] Object storage for uploaded source files.
 - [ ] Reingestion/versioning policy.
 - [ ] Ingestion failure recovery and partial-progress cleanup.
@@ -279,7 +280,7 @@ The backend can be called v1 when all of the following are true:
 - [ ] Fresh Postgres/Neon database setup is migration-driven and documented end to end.
 - [ ] Auth/session behavior is safe enough for a public portfolio demo, including rate limiting and clear cookie/CSRF handling.
 - [ ] Permission-aware retrieval uses a real retrieval path, not only deterministic fixtures.
-- [ ] Document ingestion supports at least one realistic uploaded file type.
+- [x] Document ingestion supports at least one realistic uploaded file type: text-based PDF upload with page provenance.
 - [ ] Citations include enough provenance for users to trust the answer.
 - [ ] Agent events are useful to the UI without exposing hidden chain-of-thought or unauthorized data.
 - [ ] Tests pass offline by default.

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
@@ -21,6 +21,7 @@ from my_agents.knowledge.models import (
     ExtractionRunModel,
     KnowledgeBaseModel,
 )
+from my_agents.knowledge.pdf_uploads import PdfUploadError, parse_uploaded_pdf
 from my_agents.knowledge.schemas import (
     DocumentCreateRequest,
     DocumentPermissionPatchRequest,
@@ -41,20 +42,71 @@ def create_document(
     principal: Annotated[Principal, Depends(get_current_principal)],
     db: Annotated[Session, Depends(get_database_session)],
 ) -> DocumentResponse:
-    group_id = request.group_id
-    if request.knowledge_base_id is not None:
-        knowledge_base = _get_authorized_knowledge_base(
-            db, request.knowledge_base_id, principal.user_id
-        )
-        group_id = knowledge_base.group_id
-    if group_id is not None:
-        _require_group_write_access(db, group_id, principal.user_id)
+    group_id = _resolve_document_group_id(
+        db=db,
+        requested_group_id=request.group_id,
+        knowledge_base_id=request.knowledge_base_id,
+        user_id=principal.user_id,
+    )
     document = DocumentModel(
         title=request.title.strip(),
         content=request.content,
+        source_type="text",
         owner_user_id=principal.user_id,
         group_id=group_id,
         knowledge_base_id=request.knowledge_base_id,
+    )
+    db.add(document)
+    db.commit()
+    db.refresh(document)
+    return _document_response(document)
+
+
+@documents_router.post(
+    "/upload", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED
+)
+async def upload_document(
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    db: Annotated[Session, Depends(get_database_session)],
+    title: Annotated[str, Form(min_length=1, max_length=200)],
+    file: Annotated[UploadFile, File(description="PDF file; V1 supports text-based PDFs only.")],
+    group_id: Annotated[str | None, Form()] = None,
+    knowledge_base_id: Annotated[str | None, Form()] = None,
+) -> DocumentResponse:
+    """Create a document from a safe PDF upload and persist parser metadata."""
+    resolved_group_id = _resolve_document_group_id(
+        db=db,
+        requested_group_id=group_id,
+        knowledge_base_id=knowledge_base_id,
+        user_id=principal.user_id,
+    )
+    content = await file.read()
+    try:
+        parsed = parse_uploaded_pdf(
+            filename=file.filename,
+            content_type=file.content_type,
+            content=content,
+        )
+    except PdfUploadError as exc:
+        status_code = (
+            status.HTTP_415_UNSUPPORTED_MEDIA_TYPE
+            if "only" in str(exc) or "not a PDF" in str(exc)
+            else status.HTTP_400_BAD_REQUEST
+        )
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+    document = DocumentModel(
+        title=title.strip(),
+        content=parsed.content,
+        source_type="pdf",
+        source_filename=file.filename.strip() if file.filename else None,
+        source_content_type="application/pdf",
+        source_byte_size=parsed.byte_size,
+        source_sha256=parsed.sha256,
+        source_page_count=parsed.page_count,
+        parser_name=parsed.parser_name,
+        owner_user_id=principal.user_id,
+        group_id=resolved_group_id,
+        knowledge_base_id=knowledge_base_id,
     )
     db.add(document)
     db.commit()
@@ -211,6 +263,22 @@ def _require_group_write_access(db: Session, group_id: str, user_id: str) -> Non
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="not allowed")
 
 
+def _resolve_document_group_id(
+    *,
+    db: Session,
+    requested_group_id: str | None,
+    knowledge_base_id: str | None,
+    user_id: str,
+) -> str | None:
+    group_id = requested_group_id
+    if knowledge_base_id is not None:
+        knowledge_base = _get_authorized_knowledge_base(db, knowledge_base_id, user_id)
+        group_id = knowledge_base.group_id
+    if group_id is not None:
+        _require_group_write_access(db, group_id, user_id)
+    return group_id
+
+
 def _get_authorized_knowledge_base(
     db: Session, knowledge_base_id: str, user_id: str
 ) -> KnowledgeBaseModel:
@@ -248,6 +316,13 @@ def _document_response(document: DocumentModel) -> DocumentResponse:
         owner_user_id=document.owner_user_id,
         group_id=document.group_id,
         knowledge_base_id=document.knowledge_base_id,
+        source_type=document.source_type,
+        source_filename=document.source_filename,
+        source_content_type=document.source_content_type,
+        source_byte_size=document.source_byte_size,
+        source_sha256=document.source_sha256,
+        source_page_count=document.source_page_count,
+        parser_name=document.parser_name,
     )
 
 

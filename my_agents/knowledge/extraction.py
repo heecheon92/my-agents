@@ -19,6 +19,7 @@ from my_agents.knowledge.models import (
     ExtractionRunModel,
     ExtractionStatus,
 )
+from my_agents.knowledge.pdf_uploads import PDF_PAGE_SEPARATOR
 
 _ENTITY_PATTERN = re.compile(r"\b[A-Z][A-Za-z0-9]*(?:\s+[A-Z][A-Za-z0-9]*){0,2}\b")
 
@@ -44,10 +45,10 @@ class KnowledgeExtractionService:
         self._db.add(run)
         self._db.flush()
 
-        chunks = list(_chunk_text(document.content))
+        chunks = list(_chunk_document_text(document))
         entity_ids: set[str] = set()
         relationship_count = 0
-        for ordinal, (content, start, end) in enumerate(chunks):
+        for ordinal, (content, start, end, source_page) in enumerate(chunks):
             chunk = DocumentChunkModel(
                 document_id=document.id,
                 extraction_run_id=run.id,
@@ -55,6 +56,7 @@ class KnowledgeExtractionService:
                 content=content,
                 start_offset=start,
                 end_offset=end,
+                source_page=source_page,
                 embedding_json=json.dumps(_deterministic_embedding(content)),
             )
             self._db.add(chunk)
@@ -101,6 +103,25 @@ class KnowledgeExtractionService:
         self._db.add(entity)
         self._db.flush()
         return entity
+
+
+def _chunk_document_text(document: DocumentModel) -> list[tuple[str, int, int, int | None]]:
+    if document.source_type == "pdf":
+        return _chunk_pdf_text(document.content)
+    return [(content, start, end, None) for content, start, end in _chunk_text(document.content)]
+
+
+def _chunk_pdf_text(text: str) -> list[tuple[str, int, int, int | None]]:
+    pages = text.split(PDF_PAGE_SEPARATOR)
+    chunks: list[tuple[str, int, int, int | None]] = []
+    base_offset = 0
+    for page_index, page_text in enumerate(pages, start=1):
+        for content, start, end in _chunk_text(page_text):
+            chunks.append((content, base_offset + start, base_offset + end, page_index))
+        base_offset += len(page_text)
+        if page_index < len(pages):
+            base_offset += len(PDF_PAGE_SEPARATOR)
+    return chunks or [("", 0, 0, None)]
 
 
 def _chunk_text(text: str, max_chars: int = 500) -> list[tuple[str, int, int]]:

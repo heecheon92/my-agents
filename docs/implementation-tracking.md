@@ -26,8 +26,8 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 
 | Scope | Status | Completion estimate | Notes |
 | --- | --- | ---: | --- |
-| Portfolio-quality backend v0 | In progress, strong foundation | 88-91% | Thin end-to-end backend slice exists; auth lifecycle includes Phase 1 single-process public-demo hardening, conversation runs stream over SSE, completed run detail is refresh-safe, local V1 demos have seed/smoke helpers plus frontend credentialed CORS/demo runbook, and strict V1 contract/evidence mapping is explicit. |
-| Production SaaS readiness | Early | 44-49% | Account lifecycle improved; still needs real email provider, deployment hardening, production ingestion, and ops work. |
+| Portfolio-quality backend v0 | In progress, strong foundation | 90-93% | Thin end-to-end backend slice exists; auth lifecycle includes Phase 1 single-process public-demo hardening, conversation runs stream over SSE, completed run detail is refresh-safe, local V1 demos have seed/smoke helpers plus frontend credentialed CORS/demo runbook, and strict V1 contract/evidence mapping is explicit. |
+| Production SaaS readiness | Early | 46-51% | Account lifecycle improved; still needs real email provider, deployment hardening, production ingestion, and ops work. |
 | Full AI agents product vision | Early/mid | 25-35% | Current production graph is one assistant/router path; richer agent/tool workflows are future milestones. |
 | Learning/practice simulated agents | Active learning lab | Ongoing | `my_agents/simulated_agents/` is meaningful practice code, intentionally separate from production API/CLI surfaces. |
 
@@ -83,7 +83,8 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 ### Knowledge/RAG prototype
 
 - Knowledge-base create/list.
-- Text document ingestion.
+- Text document ingestion remains compatible.
+- PDF-first upload path with safe metadata persistence and page provenance.
 - Deterministic chunks, embedding fixtures, entity mentions, and co-occurrence relationships.
 - Permission-aware retrieval filters candidate chunks before ranking/expansion/composition.
 - Citation-backed replies for retrieved authorized context.
@@ -91,7 +92,7 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 ### Persistence and migrations
 
 - SQLAlchemy models cover auth, auth lifecycle tokens, sessions, groups, documents, knowledge artifacts, conversations, runs, events, and citations.
-- Alembic migration exists for the initial service schema.
+- Alembic migrations cover the initial service schema, auth lifecycle, run detail refresh fields, and PDF upload provenance fields.
 - SQLite in-memory auto-create supports offline tests.
 - Postgres/Neon readiness is documented, with external DB tests skipped unless configured.
 
@@ -139,8 +140,8 @@ Note: the shell reported `VIRTUAL_ENV=/Users/heecheonpark/Git/rag-agent/.venv` d
 
 ### Knowledge ingestion and retrieval
 
-- No real file upload pipeline yet.
-- No PDF/docx/HTML parsing pipeline yet.
+- PDF-first upload and deterministic text extraction now exist for text-based PDFs; scanned/encrypted/compressed PDFs are intentionally unsupported.
+- No docx/HTML parsing pipeline yet.
 - No background ingestion jobs yet.
 - Embeddings are deterministic fixtures, not real embedding vectors.
 - Retrieval is deterministic term scoring plus entity expansion, not pgvector similarity search.
@@ -169,21 +170,21 @@ Note: the shell reported `VIRTUAL_ENV=/Users/heecheonpark/Git/rag-agent/.venv` d
 
 ## Recommended next workflow
 
-### Next milestone: strict V1 Phase 1 frontend gate, then Phase 2 upload/ingestion
+### Next milestone: strict V1 Phase 2 frontend gate, then Phase 3 citation/event contract
 
-Backend Phase 1 auth/session hardening is now implemented for a single-process public-demo topology. The immediate cross-repo gate is for the separate frontend to verify browser login/me/logout, credentialed cookies, the configured CSRF header, exact CORS origins, and rate-limit error display without inventing backend contracts.
+Backend Phase 2 PDF-first upload/ingestion is now implemented in the backend. The immediate cross-repo gate is for the separate frontend to verify or minimally adapt to `POST /documents/upload`, preserve the bodyless `/documents/{id}/ingest` flow, and consume backend OpenAPI fields without inventing alternate upload contracts.
 
 Suggested order:
 
-1. Frontend verifies `POST /auth/signup`, `POST /auth/verify-email`, `POST /auth/login`, `GET /auth/me`, and `POST /auth/logout` with `credentials: "include"`.
-2. Frontend documents the public-demo topology as single-process bounded unless the backend later adds Redis/gateway/shared rate limiting.
-3. Backend starts strict V1 Phase 2 after frontend gate feedback is recorded: PDF-first realistic upload/ingestion with metadata persistence and Postgres smoke if schema changes.
+1. Frontend verifies the PDF upload contract from backend OpenAPI: multipart `POST /documents/upload` with `title`, optional `group_id`/`knowledge_base_id`, and `file`.
+2. Frontend preserves the existing text seeded/demo path and bodyless `/documents/{id}/ingest` behavior.
+3. Backend starts strict V1 Phase 3 after frontend gate feedback is recorded: richer citation provenance and event contract hardening.
 
 Stop condition:
 
-- Frontend auth gate passes or reports exact backend contract gaps.
+- Frontend upload gate passes or reports exact backend contract gaps.
 - Backend remains green on pytest, Ruff check, Ruff format check, and diff check.
-- Phase 2 does not begin by inventing frontend workarounds or expanding beyond backend upload/ingestion contracts.
+- Phase 3 does not begin by inventing frontend workarounds or expanding beyond citation/event contracts.
 
 ### Alternative next milestone: production RAG realism
 
@@ -210,6 +211,7 @@ Guest mode should not be part of the current v0 implementation. A future guest m
 
 | Date | Milestone | Evidence |
 | --- | --- | --- |
+| 2026-05-20 | Strict V1 Phase 2 backend PDF upload/ingestion added. | `my_agents/api/documents.py`; `my_agents/knowledge/pdf_uploads.py`; `my_agents/knowledge/extraction.py`; `my_agents/knowledge/models.py`; `alembic/versions/20260520_0004_pdf_upload_provenance.py`; `tests/test_knowledge_ingestion.py`; README pair. |
 | 2026-05-20 | Strict V1 Phase 1 backend auth/session hardening added. | `my_agents/settings.py`; `tests/test_auth_api.py`; `tests/test_cors_api.py`; `tests/test_settings.py`; `docs/portfolio-chat-service/02-first-party-auth-sessions.md`; `docs/portfolio-chat-service/10-frontend-demo-runbook.md`. |
 | 2026-05-20 | Strict V1 Phase 0 backend contract/evidence map added. | `docs/portfolio-chat-service/11-v1-phase-0-contract-freeze-evidence-map.md`; `docs/portfolio-chat-service/README.md`; `docs/implementation-tracking.md`. |
 | 2026-05-20 | Backend-only V1 API smoke helper added for the seeded demo path. | `scripts/local_demo_smoke.py`; `tests/test_local_demo_smoke.py`; `docs/portfolio-chat-service/10-frontend-demo-runbook.md`. |

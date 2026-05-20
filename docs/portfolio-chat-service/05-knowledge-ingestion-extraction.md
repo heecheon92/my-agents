@@ -1,6 +1,6 @@
 ---
 created: 2026-05-17
-updated: 2026-05-17
+updated: 2026-05-20
 status: active
 topics:
   - knowledge-base
@@ -17,11 +17,11 @@ related_code:
 
 # Knowledge ingestion and deterministic extraction
 
-This note explains the first thin knowledge-ingestion slice.
+This note explains the PDF-first V1 knowledge-ingestion slice.
 
 ## What is implemented now
 
-A user can create a personal or group knowledge base, attach a document to it, and run deterministic ingestion over the document's stored text.
+A user can create a personal or group knowledge base, attach either a JSON text document or a text-based PDF upload, and run deterministic ingestion over the stored document text. The PDF upload path is additive: the existing bodyless `/documents/{document_id}/ingest` contract remains unchanged.
 
 The ingestion pass creates:
 
@@ -31,14 +31,21 @@ The ingestion pass creates:
 - entities;
 - entity mentions;
 - co-occurrence relationships between adjacent extracted entities;
-- provenance back to document chunks.
+- provenance back to document chunks;
+- PDF upload metadata on documents (`source_filename`, content type, byte size, SHA-256, page count, parser name);
+- page provenance on chunks through `source_page` when the source document is a PDF.
 
 ## Ingestion flow
 
 ```mermaid
 flowchart TD
-    Document[Document text] --> Run[ExtractionRun]
+    Upload[POST /documents/upload PDF] --> Parser[deterministic_pdf_text_v1]
+    Parser --> Metadata[Document source metadata]
+    Parser --> Content[Stored page-separated text]
+    Text[POST /documents JSON text] --> Content
+    Content --> Run[POST /documents/{id}/ingest]
     Run --> Chunks[DocumentChunk rows]
+    Chunks --> Page[PDF source_page when available]
     Chunks --> Embeddings[deterministic embedding_json]
     Chunks --> Entities[Entity extraction]
     Entities --> Mentions[EntityMention provenance]
@@ -53,8 +60,9 @@ This is a scaffold for portfolio-visible architecture, not a claim of production
 
 ## Current limitations
 
-- no file upload parser yet;
-- no PDF/docx ingestion yet;
+- PDF support is intentionally narrow: text-based, unencrypted/uncompressed PDFs with literal text streams;
+- no scanned PDF OCR, docx, or HTML ingestion yet;
+- no cloud object storage adapter yet;
 - no OpenAI extraction yet;
 - no production vector similarity ranking yet.
 
@@ -67,10 +75,15 @@ Thin permission-aware RAG and graph expansion now live in the next learning note
 - personal KB creation;
 - group KB membership enforcement;
 - document attachment to a KB;
+- text-path regression for bodyless ingestion;
+- accepted PDF upload metadata persistence;
+- rejected unsupported or unsafe upload input;
+- PDF parser/page provenance on chunks;
 - ingestion creates chunks, entities, relationships, and extraction-run summaries;
 - outsiders cannot create group KBs for groups they do not belong to.
 
 ## Revision history
 
+- 2026-05-20: Updated for strict V1 Phase 2 PDF upload, metadata persistence, and chunk page provenance.
 - 2026-05-17: Updated limitations after adding thin permission-aware RAG in the next slice.
 - 2026-05-17: Created after adding thin end-to-end knowledge-base ingestion and deterministic extraction.

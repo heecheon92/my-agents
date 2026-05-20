@@ -39,7 +39,7 @@ from my_agents.conversations.schemas import (
     MessageResponse,
 )
 from my_agents.groups.models import MembershipModel
-from my_agents.knowledge.models import CitationModel
+from my_agents.knowledge.models import CitationModel, DocumentChunkModel, DocumentModel
 from my_agents.knowledge.retrieval import RetrievalService, RetrievedChunk
 from my_agents.knowledge.schemas import CitationResponse
 from my_agents.persistence.database import get_database_session
@@ -486,8 +486,10 @@ def _persist_completed_run(
                 document_id=citation.document_id,
                 chunk_id=citation.chunk_id,
                 snippet=citation.snippet,
+                source_page=item.chunk.source_page,
+                source_filename=item.document.source_filename,
             )
-            for citation in citations
+            for citation, item in zip(citations, retrieved_chunks, strict=True)
         ],
     )
 
@@ -894,15 +896,20 @@ def _run_detail_response(db: Session, run: AgentRunModel) -> ConversationRunResp
         reply=assistant_message.content,
         route=RouteDecision(label=run.route_label, explanation=run.route_explanation),
         handled_by="personal_assistant_graph",
-        citations=[
-            CitationResponse(
-                id=citation.id,
-                document_id=citation.document_id,
-                chunk_id=citation.chunk_id,
-                snippet=citation.snippet,
-            )
-            for citation in citations
-        ],
+        citations=[_citation_response(db, citation) for citation in citations],
+    )
+
+
+def _citation_response(db: Session, citation: CitationModel) -> CitationResponse:
+    chunk = db.get(DocumentChunkModel, citation.chunk_id)
+    document = db.get(DocumentModel, citation.document_id)
+    return CitationResponse(
+        id=citation.id,
+        document_id=citation.document_id,
+        chunk_id=citation.chunk_id,
+        snippet=citation.snippet,
+        source_page=chunk.source_page if chunk is not None else None,
+        source_filename=document.source_filename if document is not None else None,
     )
 
 

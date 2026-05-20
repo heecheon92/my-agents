@@ -480,19 +480,22 @@ and can inspect completed/failed run history through
 
 ### Knowledge-base ingestion foundation
 
-The first thin ingestion/extraction slice is available:
+The PDF-first upload/ingestion slice is available:
 
 - `POST /knowledge-bases`
 - `GET /knowledge-bases`
-- `POST /documents/{document_id}/ingest`
+- `POST /documents` — existing JSON text-document creation path
+- `POST /documents/upload` — multipart PDF upload creation path
+- `POST /documents/{document_id}/ingest` — bodyless ingestion execution path
 - `GET /documents/{document_id}/extraction-runs`
 
-Ingestion currently supports text already stored on a document. It creates deterministic
-chunks, embedding fixtures, extracted entities, entity mentions, co-occurrence
-relationships, and extraction-run summaries. Conversation runs can retrieve these
-artifacts behind the permission filter and return them as citations. This is
-intentionally thin and local; it does not yet perform production document parsing,
-OpenAI extraction, or pgvector ranking.
+The text-document path remains compatible. The PDF path accepts only `application/pdf`
+`.pdf` files up to 5 MiB and extracts page text from text-based PDFs. Upload metadata
+(`source_filename`, content type, byte size, SHA-256, page count, parser name) is persisted
+on the document, and ingestion chunks record `source_page` for later citation provenance.
+Conversation citation responses now include `source_page` and `source_filename` when known.
+This is a deterministic V1 portfolio-demo parser, not full production support for
+scanned/encrypted/compressed PDFs; OpenAI extraction and pgvector ranking are still future work.
 
 
 ### Permission-aware RAG and citation-backed answers

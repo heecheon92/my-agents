@@ -477,19 +477,23 @@ history를 확인할 수 있습니다.
 
 ### Knowledge-base ingestion 기반
 
-첫 번째 얇은 ingestion/extraction slice가 추가되었습니다.
+PDF-first upload/ingestion slice가 추가되었습니다.
 
 - `POST /knowledge-bases`
 - `GET /knowledge-bases`
-- `POST /documents/{document_id}/ingest`
+- `POST /documents` — 기존 JSON 텍스트 문서 생성 경로
+- `POST /documents/upload` — multipart PDF 업로드 생성 경로
+- `POST /documents/{document_id}/ingest` — bodyless ingestion 실행 경로
 - `GET /documents/{document_id}/extraction-runs`
 
-현재 ingestion은 document에 이미 저장된 텍스트를 대상으로 합니다. 실행하면
-결정론적 chunk, embedding fixture, extracted entity, entity mention, co-occurrence
-relationship, extraction-run summary를 생성합니다. conversation run은 이 산출물을
-권한 필터 뒤에서만 검색하고 citation으로 반환할 수 있습니다. 이 기능은 의도적으로
-얇고 로컬 중심이며, 아직 production document parsing, OpenAI extraction, pgvector
-ranking은 수행하지 않습니다.
+텍스트 document 경로는 그대로 유지됩니다. PDF 경로는 `application/pdf` `.pdf` 파일만
+받고, 5 MiB 이하의 text-based PDF에서 page text를 추출합니다. 업로드 metadata
+(`source_filename`, content type, byte size, SHA-256, page count, parser name)는 document에
+저장되고, ingestion chunk에는 `source_page`가 기록되어 이후 citation provenance에 사용할 수
+있습니다. conversation citation 응답은 이미 가능한 경우 `source_page`와 `source_filename`을
+함께 반환합니다. 이 파서는 scanned/encrypted/compressed PDF를 완전 지원하는 production
+parser가 아니라 V1 portfolio demo용 deterministic parser이며, OpenAI extraction과 pgvector
+ranking은 아직 수행하지 않습니다.
 
 
 ### Permission-aware RAG 및 citation 기반 응답

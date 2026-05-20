@@ -57,7 +57,7 @@ flowchart LR
 | Fresh Postgres/Neon database setup is migration-driven and documented end to end | 0, 2, 4, 6 | Alembic upgrade and `tests/test_migrations.py`; gated external DB smoke | Frontend waits for backend readiness; no direct DB assumptions | `08-postgres-alembic-neon.md`, README pair | backend | partially implemented; repeat smoke pending for future migrations |
 | Auth/session behavior is safe enough for public portfolio demo, including rate limiting and cookie/CSRF clarity | 1, 6 | Auth abuse tests, cookie/CSRF/CORS tests, production-origin settings docs | Browser login/me/logout and CSRF mutation smoke | `02-first-party-auth-sessions.md`, `10-frontend-demo-runbook.md` | backend primary; frontend verifies | backend Phase 1 hardened for single-process public demo; frontend gate pending |
 | Permission-aware retrieval uses a real retrieval path, not only deterministic fixtures | 4, 6 | Embedding provider boundary, pgvector migration/search, permission-first retrieval tests | Cited answer flow with unauthorized-doc negative proof | `06-permission-aware-rag.md` plus future retrieval doc update | backend | open; deterministic retrieval exists |
-| Document ingestion supports at least one realistic uploaded file type | 2, 6 | Upload API, parser boundary, storage metadata, parser failure tests | Upload/ingestion UI smoke or documented gap | `05-knowledge-ingestion-extraction.md` plus future upload runbook | backend primary; frontend verifies | open; text/body ingestion exists only |
+| Document ingestion supports at least one realistic uploaded file type | 2, 6 | Upload API, parser boundary, storage metadata, parser failure tests | Upload/ingestion UI smoke or documented gap | `05-knowledge-ingestion-extraction.md` plus future upload runbook | backend primary; frontend verifies | backend Phase 2 implemented for text-based PDF; frontend gate pending |
 | Citations include enough provenance for users to trust the answer | 3, 4, 6 | Run response/detail citation schema, document/chunk/source metadata tests | UI renders backend fields and persists after reload | `06-permission-aware-rag.md`, future citation contract update | backend primary; frontend verifies | partially implemented; richer provenance pending |
 | Agent events are useful to the UI without exposing chain-of-thought or unauthorized data | 3, 6 | Event schemas, redaction tests, SSE/fetch event ordering | UI event trail with safe payloads | `07-agent-observability-evals.md`, `09-http-streaming-frontend-contract.md` | backend primary; frontend verifies | partially implemented; schema hardening pending |
 | Tests pass offline by default | every phase | `env -u MY_AGENTS_OPENAI_MODEL uv run pytest -q`, Ruff check, Ruff format check | `pnpm lint`, `pnpm exec tsc --noEmit`, `pnpm exec vitest run`, `pnpm build`, Playwright | `docs/implementation-tracking.md` | both | required at every phase boundary |
@@ -87,6 +87,7 @@ Generated from `my_agents.api.create_app().openapi()` on 2026-05-20.
 | `POST` | `/knowledge-bases` | `KnowledgeBaseCreateRequest` | `201 KnowledgeBaseResponse` | personal/group KB creation |
 | `GET` | `/knowledge-bases` | none | `200 array` | KB list |
 | `POST` | `/documents` | `DocumentCreateRequest` | `201 DocumentResponse` | current text-document creation |
+| `POST` | `/documents/upload` | multipart form: `title`, optional `group_id`/`knowledge_base_id`, `file` PDF | `201 DocumentResponse` | PDF-first uploaded-document creation |
 | `GET` | `/documents` | none | `200 array` | document list |
 | `GET` | `/documents/{document_id}` | none | `200 DocumentResponse` | document detail |
 | `PATCH` | `/documents/{document_id}/permissions` | `DocumentPermissionPatchRequest` | `200 DocumentPermissionResponse` | permission management |
@@ -108,7 +109,7 @@ Generated from `my_agents.api.create_app().openapi()` on 2026-05-20.
 | Gap | Why it is not frozen as complete in Phase 0 | Next owning phase |
 | --- | --- | --- |
 | Shared/distributed rate limiting | Phase 1 explicitly bounds V1 to the existing local in-process limiter for single-process demos. Multi-worker public deployment still needs Redis/gateway/shared-store replacement before it can claim distributed protection. | Phase 6 or deployment hardening |
-| Realistic uploaded file type | Current `POST /documents` stores text and `POST /documents/{id}/ingest` is bodyless; no PDF upload/parser/storage contract yet. | Phase 2 |
+| Realistic uploaded file type | Backend now exposes `POST /documents/upload` for text-based PDF uploads with metadata and chunk page provenance. Frontend still needs to verify/use the contract; scanned/encrypted/compressed PDF support remains deferred. | Phase 2 frontend gate / later parser expansion |
 | Ingestion lifecycle for longer parser work | Current extraction run summary exists, but no `pending/running/completed/failed` upload job lifecycle is frozen for realistic files. | Phase 2 or 5 |
 | Rich citation provenance | Current citations include document/chunk/snippet identity, but page/file/source-offset provenance is not complete. | Phase 3 |
 | Stable event vocabulary for upload/retrieval/failure states | Current run events are useful and redacted, but upload/parser/retrieval lifecycle events are not fully frozen. | Phase 3 |
@@ -127,5 +128,6 @@ Phase 0 is complete when:
 
 ## Revision history
 
+- 2026-05-20: Updated after backend Phase 2 PDF upload/ingestion implementation to add the upload endpoint inventory and revised gap status.
 - 2026-05-20: Updated after backend Phase 1 auth/session hardening to record the single-process rate-limit boundary and pending frontend gate.
 - 2026-05-20: Created Phase 0 contract freeze and V1 evidence map.
