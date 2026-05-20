@@ -18,6 +18,7 @@ related_code:
   - tests/test_auth_api.py
   - tests/test_conversations_api.py
   - scripts/local_demo_seed.py
+  - scripts/local_demo_smoke.py
 ---
 
 # Frontend demo and local runbook
@@ -80,6 +81,22 @@ The helper is idempotent for the seeded extraction run. It verifies the demo use
 resets that local user's password to the demo password. If you need a fresh SQLite file,
 stop the dev server first and add `--reset-database`; do not use reset while Uvicorn is
 holding an open connection to the same SQLite file.
+
+## Backend-only V1 API smoke helper
+
+After the backend is running and the SQLite DB is seeded, verify the production-shaped
+API path without the frontend:
+
+```bash
+uv run python -m scripts.local_demo_smoke --base-url http://localhost:8000
+```
+
+The smoke logs in with the seeded credentials, checks `/auth/me`, finds the seeded
+document, verifies existing extraction runs, calls the bodyless ingest endpoint, creates
+a conversation, consumes SSE `answer_delta` + `run_completed`, refetches run detail
+citations, and checks redacted run events. It intentionally uses only public HTTP API
+contracts. Because it verifies bodyless ingest, each run creates one additional local
+extraction run for the seeded document.
 
 ## Browser request requirements
 

@@ -392,6 +392,16 @@ Seeded credentials are `test@test.com` / `correct horse battery staple`. The hel
 refuses in-memory and non-SQLite database URLs, and `--reset-database` should be used only
 when the dev server is stopped.
 
+After the backend is running, verify the V1 API path without the frontend:
+
+```bash
+uv run python -m scripts.local_demo_smoke --base-url http://localhost:8000
+```
+
+The smoke uses public API calls only and covers health, seeded login, text document
+ingestion, SSE chat, persisted citations, and redacted run events. It creates an additional
+local extraction run each time because it verifies the bodyless ingest endpoint.
+
 Auth abuse protection is intentionally local and replaceable in v0: bucket keys are
 digested, limits are controlled by `MY_AGENTS_AUTH_ABUSE_*`, and tests exercise the
 offline behavior. A future public deployment can move the same boundary to Redis or a

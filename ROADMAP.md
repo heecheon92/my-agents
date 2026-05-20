@@ -184,6 +184,7 @@ Current honest status:
 - [ ] Backup/restore plan.
 - [ ] Data retention and deletion policy.
 - [x] Seed/demo data command for local SQLite V1 demos.
+- [x] Backend-only V1 API smoke command for the seeded local demo path.
 - [ ] Automated migration step in deployment pipeline.
 
 ## 9. Observability, evals, and safety
@@ -215,6 +216,7 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
 - [x] Add explicit-origin CORS configuration for credentialed frontend requests.
 - [x] Add gated local auth dev outbox for deterministic frontend signup/verify demos.
 - [x] Add local SQLite demo seed helper for verified user, text document, and extraction run.
+- [x] Add backend-only V1 API smoke command for health, auth, ingest, SSE, citations, and events.
 - [x] Add refresh-safe completed run detail for persisted citations/reply.
 - [x] Add streaming contract for chat UX.
 - [ ] Add OpenAPI/client generation workflow if useful.

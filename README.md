@@ -391,6 +391,16 @@ seeded credential은 `test@test.com` / `correct horse battery staple`입니다. 
 in-memory 및 non-SQLite database URL을 거부하며, `--reset-database`는 dev server를 멈춘
 뒤에만 사용하세요.
 
+backend 실행 후 frontend 없이 V1 API path를 검증하려면 다음 smoke helper를 사용합니다:
+
+```bash
+uv run python -m scripts.local_demo_smoke --base-url http://localhost:8000
+```
+
+이 smoke는 public API call만 사용해 health, seeded login, text document ingestion, SSE chat,
+persisted citations, redacted run events를 확인합니다. bodyless ingest endpoint를 검증하기
+때문에 실행할 때마다 local extraction run이 하나 추가됩니다.
+
 Auth abuse protection은 v0에서 의도적으로 local/replaceable boundary입니다. Bucket key는
 digest로 저장되고, `MY_AGENTS_AUTH_ABUSE_*` 설정으로 제한을 조정하며, offline test가 이
 동작을 검증합니다. 향후 public deployment나 multi-worker 구성이 필요해지면 같은 boundary를
