@@ -219,7 +219,8 @@ frontend origin and use `credentials: "include"` in frontend requests. Wildcard 
 origins are rejected because this backend uses app-owned browser cookies. See the
 [frontend demo runbook](./docs/portfolio-chat-service/10-frontend-demo-runbook.md) for
 the local SQLite demo command, dev auth outbox, cookie/CSRF expectations, and SSE/run
-detail contract.
+detail contract. For strict V1 closure work, start from the
+[V1 contract freeze and evidence map](./docs/portfolio-chat-service/11-v1-phase-0-contract-freeze-evidence-map.md).
 For local direct-browser CORS, keep hostnames consistent: pair `localhost:3000` with
 `localhost:8000`, or `127.0.0.1:3000` with `127.0.0.1:8000`.
 

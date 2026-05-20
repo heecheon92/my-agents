@@ -266,7 +266,11 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
    - Move long ingestion to a background job model.
    - Store source provenance and parser errors safely.
 
-## 13. Definition of done for v1
+## 13. Strict v1 phase gates
+
+Phase 0 contract/evidence mapping is tracked in [`docs/portfolio-chat-service/11-v1-phase-0-contract-freeze-evidence-map.md`](./docs/portfolio-chat-service/11-v1-phase-0-contract-freeze-evidence-map.md). Use that map before starting the next strict v1 phase so backend evidence, frontend gates, docs evidence, owner repo, and known contract gaps stay aligned.
+
+## 14. Definition of done for v1
 
 The backend can be called v1 when all of the following are true:
 

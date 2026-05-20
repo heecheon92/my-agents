@@ -218,7 +218,8 @@ MY_AGENTS_AUTH_ABUSE_WINDOW_SECONDS=900
 origin을 넣고, frontend 요청은 `credentials: "include"`로 보내야 합니다. 이 백엔드는
 앱 소유 browser cookie를 사용하므로 wildcard CORS origin은 거부합니다. 로컬 SQLite demo
 명령, dev auth outbox, cookie/CSRF 기대사항, SSE/run detail contract는
-[frontend demo runbook](./docs/portfolio-chat-service/10-frontend-demo-runbook.md)을 참고하세요.
+[frontend demo runbook](./docs/portfolio-chat-service/10-frontend-demo-runbook.md)을 참고하세요. strict V1 마무리 작업은
+[V1 contract freeze and evidence map](./docs/portfolio-chat-service/11-v1-phase-0-contract-freeze-evidence-map.md)에서 시작합니다.
 local direct-browser CORS에서는 hostname을 맞추세요. `localhost:3000` frontend는
 `localhost:8000` backend와, `127.0.0.1:3000` frontend는 `127.0.0.1:8000` backend와
 짝지어야 browser cookie가 일관되게 전송됩니다.

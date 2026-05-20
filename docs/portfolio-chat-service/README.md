@@ -15,3 +15,4 @@ They live outside `docs/learning/` because `docs/learning/` is reserved for the 
 8. [Postgres, Alembic, and Neon readiness](./08-postgres-alembic-neon.md)
 9. [HTTP streaming and frontend contract](./09-http-streaming-frontend-contract.md)
 10. [Frontend demo and local runbook](./10-frontend-demo-runbook.md)
+11. [V1 contract freeze and evidence map](./11-v1-phase-0-contract-freeze-evidence-map.md)

@@ -26,7 +26,7 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 
 | Scope | Status | Completion estimate | Notes |
 | --- | --- | ---: | --- |
-| Portfolio-quality backend v0 | In progress, strong foundation | 86-90% | Thin end-to-end backend slice exists; auth lifecycle includes local abuse protection, conversation runs stream over SSE, completed run detail is refresh-safe, and local V1 demos have seed/smoke helpers plus frontend credentialed CORS/demo runbook. |
+| Portfolio-quality backend v0 | In progress, strong foundation | 86-90% | Thin end-to-end backend slice exists; auth lifecycle includes local abuse protection, conversation runs stream over SSE, completed run detail is refresh-safe, local V1 demos have seed/smoke helpers plus frontend credentialed CORS/demo runbook, and Phase 0 strict V1 contract/evidence mapping is now explicit. |
 | Production SaaS readiness | Early | 44-49% | Account lifecycle improved; still needs real email provider, deployment hardening, production ingestion, and ops work. |
 | Full AI agents product vision | Early/mid | 25-35% | Current production graph is one assistant/router path; richer agent/tool workflows are future milestones. |
 | Learning/practice simulated agents | Active learning lab | Ongoing | `my_agents/simulated_agents/` is meaningful practice code, intentionally separate from production API/CLI surfaces. |
@@ -154,6 +154,7 @@ Note: the shell reported `VIRTUAL_ENV=/Users/heecheonpark/Git/rag-agent/.venv` d
 - `uv run python -m scripts.local_demo_smoke --base-url http://localhost:8000` verifies the seeded V1 API path without the frontend.
 - Credentialed CORS can be enabled for exact frontend origins through `MY_AGENTS_CORS_ALLOWED_ORIGINS`.
 - `docs/portfolio-chat-service/10-frontend-demo-runbook.md` documents local SQLite demo startup, dev auth outbox, cookie/CSRF expectations, frontend SSE flow, and run-detail refresh.
+- `docs/portfolio-chat-service/11-v1-phase-0-contract-freeze-evidence-map.md` freezes the Phase 0 strict V1 DoD evidence matrix, backend OpenAPI inventory, frontend gate expectations, and known backend contract gaps by phase.
 - Current production graph is still one assistant/router path.
 - Most route labels are capability metadata and response paths, not separate production specialist agents.
 - Tool workflows beyond hosted web search are not implemented as production graph capabilities yet.
@@ -168,20 +169,21 @@ Note: the shell reported `VIRTUAL_ENV=/Users/heecheonpark/Git/rag-agent/.venv` d
 
 ## Recommended next workflow
 
-### Next milestone: frontend-integrated demo hardening
+### Next milestone: strict V1 Phase 1 auth/session hardening
 
-Goal: make the separate frontend able to complete the product flow against the backend without using legacy `/assistant/chat`.
+Goal: use the Phase 0 contract/evidence map as the baseline, then make auth/session behavior safe enough for a public portfolio demo while the frontend verifies the browser contract.
 
 Suggested order:
 
-1. Coordinate with the frontend repo to verify the seeded V1 path: seeded login, text document, bodyless ingest, streaming, run-detail refresh, and event trail.
-2. Verify the local SQLite runbook against the frontend once frontend integration reports its exact origin and API base URL.
-3. Add environment-specific deployment notes for the chosen hosting target.
+1. Treat `docs/portfolio-chat-service/11-v1-phase-0-contract-freeze-evidence-map.md` as the Phase 0 baseline for V1 DoD ownership, OpenAPI inventory, frontend gates, and backend contract gaps.
+2. Decide the V1 rate-limit boundary: implement a shared/distributed limiter, or document the explicit single-process public-demo limitation if deployment topology allows it.
+3. Re-verify cookie, CSRF header, credentialed CORS, login/me/logout, and auth lifecycle behavior with tests and frontend smoke evidence.
+4. Keep the frontend repo on backend-owned OpenAPI/contracts; frontend should report missing fields instead of inventing them.
 
 Stop condition:
 
-- A fresh developer can run the backend plus separate frontend and complete auth -> document ingest -> SSE chat -> refresh run detail.
-- The runbook clearly separates local SQLite, Postgres/Neon, migrations, cookies, CORS, and secrets.
+- Auth/session/CORS/CSRF/rate-limit behavior is test-backed and documented for the intended public-demo topology.
+- The separate frontend can complete browser login/me/logout and authenticated product mutations against the running backend.
 - Existing deterministic assistant/conversation/CORS/auth/migration tests still pass.
 
 ### Alternative next milestone: production RAG realism
@@ -209,6 +211,7 @@ Guest mode should not be part of the current v0 implementation. A future guest m
 
 | Date | Milestone | Evidence |
 | --- | --- | --- |
+| 2026-05-20 | Strict V1 Phase 0 backend contract/evidence map added. | `docs/portfolio-chat-service/11-v1-phase-0-contract-freeze-evidence-map.md`; `docs/portfolio-chat-service/README.md`; `docs/implementation-tracking.md`. |
 | 2026-05-20 | Backend-only V1 API smoke helper added for the seeded demo path. | `scripts/local_demo_smoke.py`; `tests/test_local_demo_smoke.py`; `docs/portfolio-chat-service/10-frontend-demo-runbook.md`. |
 | 2026-05-20 | Local V1 demo seed helper added for verified user, text document, and extraction run. | `scripts/local_demo_seed.py`; `tests/test_local_demo_seed.py`; `docs/portfolio-chat-service/10-frontend-demo-runbook.md`. |
 | 2026-05-20 | Refresh-safe run detail and gated local auth dev outbox added for frontend demo verification. | `tests/test_conversations_api.py`; `tests/test_permission_aware_rag.py`; `tests/test_auth_api.py`; `tests/test_migrations.py`. |
