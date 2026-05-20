@@ -203,6 +203,8 @@ MY_AGENTS_SESSION_COOKIE_NAME=my_agents_session
 MY_AGENTS_SESSION_COOKIE_SECURE=true
 MY_AGENTS_SESSION_COOKIE_SAMESITE=lax
 MY_AGENTS_CSRF_HEADER_NAME=X-CSRF-Token
+# Disabled by default; enable only for local deterministic frontend demos.
+MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=false
 # Comma-separated explicit frontend origins for credentialed browser requests.
 # MY_AGENTS_CORS_ALLOWED_ORIGINS=http://localhost:3000
 MY_AGENTS_AUTH_ABUSE_PROTECTION_ENABLED=true
@@ -216,7 +218,10 @@ For a separate browser frontend, set `MY_AGENTS_CORS_ALLOWED_ORIGINS` to the exa
 frontend origin and use `credentials: "include"` in frontend requests. Wildcard CORS
 origins are rejected because this backend uses app-owned browser cookies. See the
 [frontend demo runbook](./docs/portfolio-chat-service/10-frontend-demo-runbook.md) for
-the local SQLite demo command, cookie/CSRF expectations, and SSE parsing contract.
+the local SQLite demo command, dev auth outbox, cookie/CSRF expectations, and SSE/run
+detail contract.
+For local direct-browser CORS, keep hostnames consistent: pair `localhost:3000` with
+`localhost:8000`, or `127.0.0.1:3000` with `127.0.0.1:8000`.
 
 ### Postgres/Neon and Alembic migrations
 
@@ -362,12 +367,17 @@ Implemented auth endpoints:
 - `GET /auth/me`
 - `POST /auth/password-reset/request`
 - `POST /auth/password-reset/confirm`
+- `GET /auth/dev/outbox` only when `MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=true`
 
 Signup returns safe user data plus `verification_email_sent`. The current email sender is
 an offline local boundary used by tests/development, so no paid email provider is required
 for v0. Login requires `email_verified_at` to be set. Password reset requests return the
 same accepted response whether or not the email exists, so the API does not enumerate
 accounts.
+
+For deterministic local frontend demos, `MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=true` exposes
+the in-memory auth email outbox at `/auth/dev/outbox` so the UI can read verification and
+reset tokens. Keep it disabled outside local demos.
 
 Auth abuse protection is intentionally local and replaceable in v0: bucket keys are
 digested, limits are controlled by `MY_AGENTS_AUTH_ABUSE_*`, and tests exercise the
@@ -494,6 +504,7 @@ Conversation runs now persist structured activity events that a UI can display w
 exposing hidden chain-of-thought.
 
 - `GET /conversations/{conversation_id}/runs/{run_id}/events`
+- `GET /conversations/{conversation_id}/runs/{run_id}`
 
 The current events show user-message storage, permission-aware retrieval completion, graph
 invocation, and answer composition in order. The streaming endpoint emits the same
@@ -502,6 +513,10 @@ assistant text. If graph execution fails, the service stores a failed run plus a
 `run_failed` event with only a safe error type. Payloads avoid raw messages,
 document content, and secret tokens; they contain redacted metadata such as counts, route
 labels, and latency.
+
+Completed run detail is refresh-safe: `GET /conversations/{id}/runs/{run_id}` returns the
+persisted reply, route, and citations for completed runs. Failed runs return a conflict
+because they do not have a completed reply/citation payload.
 
 `my_agents/agent_runtime/evals.py` also provides deterministic eval helpers for
 grounding/citations, permission leakage, event redaction, and latency budgets. These are
@@ -513,12 +528,13 @@ safety boundaries explainable.
 
 For a portfolio demo, prefer the product conversation-run surface over the legacy `/assistant/chat` smoke endpoint.
 
-1. Create a session with `/auth/signup` and `/auth/login`.
+1. Create a session with `/auth/signup`, `/auth/dev/outbox` in local demos,
+   `/auth/verify-email`, and `/auth/login`.
 2. Create a group with `/groups` and optionally add a member.
 3. Create a personal or group document with `/documents`, then grant explicit permissions with `/documents/{id}/permissions` when needed.
 4. Run `/documents/{id}/ingest` to create chunks, entities, and relationships.
 5. Create a thread with `/conversations`, then ask through `/conversations/{id}/runs`.
-6. Show `citations` together with `/conversations/{id}/runs/{run_id}/events` to explain grounding and agent activity.
+6. Show persisted `citations` from `/conversations/{id}/runs/{run_id}` together with `/conversations/{id}/runs/{run_id}/events` to explain grounding and agent activity.
 
 ### `POST /assistant/chat`
 

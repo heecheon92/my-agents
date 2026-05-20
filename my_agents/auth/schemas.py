@@ -100,3 +100,15 @@ class AcceptedResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     status: str = "accepted"
+
+
+class DevAuthEmailMessageResponse(BaseModel):
+    """Development-only local auth email payload for deterministic demos."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    recipient_email: EmailStr
+    purpose: str
+    subject: str
+    body: str
+    token: str

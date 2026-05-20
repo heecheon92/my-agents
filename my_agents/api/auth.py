@@ -15,9 +15,11 @@ from my_agents.auth.dependencies import (
     get_auth_service,
     get_current_principal,
 )
+from my_agents.auth.email import get_local_auth_email_outbox
 from my_agents.auth.models import UserModel
 from my_agents.auth.schemas import (
     AcceptedResponse,
+    DevAuthEmailMessageResponse,
     LoginRequest,
     LoginResponse,
     PasswordResetConfirmRequest,
@@ -224,6 +226,30 @@ def me(
             detail="authentication required",
         )
     return _user_response(user)
+
+
+@auth_router.get("/dev/outbox", response_model=list[DevAuthEmailMessageResponse])
+def dev_auth_outbox(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> list[DevAuthEmailMessageResponse]:
+    """Return local auth emails only when explicitly enabled for local demos.
+
+    This endpoint exists so a separate frontend can complete signup -> verify-email in
+    deterministic local runs. It is disabled by default and should never be enabled for
+    public deployments.
+    """
+    if not settings.auth_dev_outbox_enabled:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not found")
+    return [
+        DevAuthEmailMessageResponse(
+            recipient_email=message.recipient_email,
+            purpose=message.purpose,
+            subject=message.subject,
+            body=message.body,
+            token=message.token,
+        )
+        for message in get_local_auth_email_outbox().messages()
+    ]
 
 
 def _user_response(user: UserModel) -> UserResponse:

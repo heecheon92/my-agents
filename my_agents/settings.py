@@ -92,6 +92,10 @@ class Settings(BaseSettings):
         min_length=1,
         validation_alias=AliasChoices("MY_AGENTS_CSRF_HEADER_NAME"),
     )
+    auth_dev_outbox_enabled: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED"),
+    )
     cors_allowed_origins: str = Field(
         default="",
         validation_alias=AliasChoices("MY_AGENTS_CORS_ALLOWED_ORIGINS"),

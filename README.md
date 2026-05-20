@@ -203,6 +203,8 @@ MY_AGENTS_SESSION_COOKIE_NAME=my_agents_session
 MY_AGENTS_SESSION_COOKIE_SECURE=true
 MY_AGENTS_SESSION_COOKIE_SAMESITE=lax
 MY_AGENTS_CSRF_HEADER_NAME=X-CSRF-Token
+# 기본값은 비활성화입니다. local deterministic frontend demo에서만 켭니다.
+MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=false
 # browser cookie 요청을 허용할 frontend origin을 comma-separated로 명시합니다.
 # MY_AGENTS_CORS_ALLOWED_ORIGINS=http://localhost:3000
 MY_AGENTS_AUTH_ABUSE_PROTECTION_ENABLED=true
@@ -215,8 +217,11 @@ MY_AGENTS_AUTH_ABUSE_WINDOW_SECONDS=900
 별도 browser frontend를 붙일 때는 `MY_AGENTS_CORS_ALLOWED_ORIGINS`에 정확한 frontend
 origin을 넣고, frontend 요청은 `credentials: "include"`로 보내야 합니다. 이 백엔드는
 앱 소유 browser cookie를 사용하므로 wildcard CORS origin은 거부합니다. 로컬 SQLite demo
-명령, cookie/CSRF 기대사항, SSE parsing contract는
+명령, dev auth outbox, cookie/CSRF 기대사항, SSE/run detail contract는
 [frontend demo runbook](./docs/portfolio-chat-service/10-frontend-demo-runbook.md)을 참고하세요.
+local direct-browser CORS에서는 hostname을 맞추세요. `localhost:3000` frontend는
+`localhost:8000` backend와, `127.0.0.1:3000` frontend는 `127.0.0.1:8000` backend와
+짝지어야 browser cookie가 일관되게 전송됩니다.
 
 ### Postgres/Neon과 Alembic migration
 
@@ -362,11 +367,16 @@ production parser와 pgvector ranking은 이후 마일스톤입니다.
 - `GET /auth/me`
 - `POST /auth/password-reset/request`
 - `POST /auth/password-reset/confirm`
+- `MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=true`일 때만 `GET /auth/dev/outbox`
 
 Signup은 안전한 user data와 `verification_email_sent`를 반환합니다. 현재 email sender는
 테스트/개발용 offline local boundary라서 v0에서는 유료 email provider가 필요하지 않습니다.
 Login은 `email_verified_at`이 설정된 뒤에만 성공합니다. Password reset request는 계정 존재
 여부와 관계없이 동일한 accepted response를 반환하므로 account enumeration을 피합니다.
+
+deterministic local frontend demo에서는 `MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=true`로
+in-memory auth email outbox를 `/auth/dev/outbox`에 노출할 수 있습니다. UI가 verification/reset
+token을 읽기 위한 local demo 전용 기능이므로 local demo 밖에서는 꺼둡니다.
 
 Auth abuse protection은 v0에서 의도적으로 local/replaceable boundary입니다. Bucket key는
 digest로 저장되고, `MY_AGENTS_AUTH_ABUSE_*` 설정으로 제한을 조정하며, offline test가 이
@@ -492,6 +502,7 @@ conversation run은 hidden chain-of-thought를 노출하지 않고, UI가 보여
 activity event를 저장합니다.
 
 - `GET /conversations/{conversation_id}/runs/{run_id}/events`
+- `GET /conversations/{conversation_id}/runs/{run_id}`
 
 현재 이벤트는 user message 저장, permission-aware retrieval 완료, graph invoke, answer
 composition 단계를 순서대로 보여줍니다. streaming endpoint는 request 중에도 같은 high-level
@@ -499,6 +510,10 @@ event vocabulary와 점진적인 assistant text용 `answer_delta` chunk를 전�
 event를 저장하되, payload에는 safe error type만 남깁니다. payload에는 raw message,
 document content, secret token을 넣지 않고 count, route label, latency 같은 redacted
 metadata만 둡니다.
+
+완료된 run detail은 refresh-safe입니다. `GET /conversations/{id}/runs/{run_id}`는 완료된
+run의 persisted reply, route, citations를 반환합니다. 실패한 run은 완료된 reply/citation
+payload가 없으므로 conflict를 반환합니다.
 
 또한 `my_agents/agent_runtime/evals.py`에는 grounding/citation, permission leakage,
 event redaction, latency budget을 확인하는 deterministic eval helper가 있습니다. 이 eval은
@@ -510,12 +525,12 @@ fixture입니다.
 
 포트폴리오 데모에서는 `/assistant/chat`보다 product surface인 conversation run을 우선 보여주는 것이 좋습니다.
 
-1. `/auth/signup` 및 `/auth/login`으로 session을 만든다.
+1. `/auth/signup`, local demo의 `/auth/dev/outbox`, `/auth/verify-email`, `/auth/login`으로 session을 만든다.
 2. `/groups`로 group을 만들고 필요하면 member를 추가한다.
 3. `/documents`로 personal 또는 group document를 만들고 `/documents/{id}/permissions`로 명시적 권한을 부여한다.
 4. `/documents/{id}/ingest`로 chunk/entity/relationship을 생성한다.
 5. `/conversations`로 thread를 만들고 `/conversations/{id}/runs`로 질문한다.
-6. 응답의 `citations`와 `/conversations/{id}/runs/{run_id}/events`를 함께 보여줘서 grounding과 agent activity를 설명한다.
+6. `/conversations/{id}/runs/{run_id}`의 persisted `citations`와 `/conversations/{id}/runs/{run_id}/events`를 함께 보여줘서 grounding과 agent activity를 설명한다.
 
 ### `POST /assistant/chat`
 

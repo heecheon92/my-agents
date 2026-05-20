@@ -78,6 +78,8 @@ class AgentRunModel(Base):
     user_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False)
     route_label: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    route_explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    assistant_message_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )

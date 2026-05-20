@@ -412,13 +412,17 @@ def _persist_completed_run(
         role=MessageRole.ASSISTANT.value,
         content=reply,
     )
+    db.add(assistant_message)
+    db.flush()
     run = AgentRunModel(
         conversation_id=conversation_id,
         user_id=user_id,
         status=RunStatus.COMPLETED.value,
         route_label=route.label,
+        route_explanation=route.explanation,
+        assistant_message_id=assistant_message.id,
     )
-    db.add_all([assistant_message, run])
+    db.add(run)
     db.flush()
     citations = [
         CitationModel(
@@ -505,6 +509,26 @@ def list_runs(
         .order_by(AgentRunModel.created_at.desc(), AgentRunModel.id.desc())
     ).all()
     return [_run_summary_response(run) for run in runs]
+
+
+@conversations_router.get(
+    "/{conversation_id}/runs/{run_id}",
+    response_model=ConversationRunResponse,
+)
+def get_run(
+    conversation_id: str,
+    run_id: str,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    db: Annotated[Session, Depends(get_database_session)],
+) -> ConversationRunResponse:
+    """Return a refresh-safe completed run with reply and persisted citations."""
+    _get_authorized_conversation(db, conversation_id, principal.user_id)
+    run = db.get(AgentRunModel, run_id)
+    if run is None or run.conversation_id != conversation_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="run not found")
+    if run.status != RunStatus.COMPLETED.value:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="run is not completed")
+    return _run_detail_response(db, run)
 
 
 @conversations_router.get(
@@ -850,6 +874,35 @@ def _run_summary_response(run: AgentRunModel) -> AgentRunSummaryResponse:
         status=run.status,
         route_label=run.route_label,
         created_at=run.created_at,
+    )
+
+
+def _run_detail_response(db: Session, run: AgentRunModel) -> ConversationRunResponse:
+    if run.route_label is None or run.route_explanation is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="run is not completed")
+    if run.assistant_message_id is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="run reply is unavailable")
+    assistant_message = db.get(MessageModel, run.assistant_message_id)
+    if assistant_message is None or assistant_message.conversation_id != run.conversation_id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="run reply is unavailable")
+    citations = db.scalars(
+        select(CitationModel).where(CitationModel.run_id == run.id).order_by(CitationModel.id)
+    ).all()
+    return ConversationRunResponse(
+        run_id=run.id,
+        conversation_id=run.conversation_id,
+        reply=assistant_message.content,
+        route=RouteDecision(label=run.route_label, explanation=run.route_explanation),
+        handled_by="personal_assistant_graph",
+        citations=[
+            CitationResponse(
+                id=citation.id,
+                document_id=citation.document_id,
+                chunk_id=citation.chunk_id,
+                snippet=citation.snippet,
+            )
+            for citation in citations
+        ],
     )
 
 

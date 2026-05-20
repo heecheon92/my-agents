@@ -26,7 +26,7 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 
 | Scope | Status | Completion estimate | Notes |
 | --- | --- | ---: | --- |
-| Portfolio-quality backend v0 | In progress, strong foundation | 84-88% | Thin end-to-end backend slice exists; auth lifecycle includes local abuse protection, conversation runs stream over SSE, and frontend credentialed CORS/demo runbook are documented/test-backed. |
+| Portfolio-quality backend v0 | In progress, strong foundation | 86-90% | Thin end-to-end backend slice exists; auth lifecycle includes local abuse protection, conversation runs stream over SSE, completed run detail is refresh-safe, and frontend credentialed CORS/demo runbook are documented/test-backed. |
 | Production SaaS readiness | Early | 44-49% | Account lifecycle improved; still needs real email provider, deployment hardening, production ingestion, and ops work. |
 | Full AI agents product vision | Early/mid | 25-35% | Current production graph is one assistant/router path; richer agent/tool workflows are future milestones. |
 | Learning/practice simulated agents | Active learning lab | Ongoing | `my_agents/simulated_agents/` is meaningful practice code, intentionally separate from production API/CLI surfaces. |
@@ -149,8 +149,9 @@ Note: the shell reported `VIRTUAL_ENV=/Users/heecheonpark/Git/rag-agent/.venv` d
 ### Agent/product behavior
 
 - Product conversation runs support SSE progress streaming and incremental `answer_delta` assistant text events.
+- Completed conversation runs can be refetched with persisted reply, route, and citations.
 - Credentialed CORS can be enabled for exact frontend origins through `MY_AGENTS_CORS_ALLOWED_ORIGINS`.
-- `docs/portfolio-chat-service/10-frontend-demo-runbook.md` documents local SQLite demo startup, cookie/CSRF expectations, and frontend SSE flow.
+- `docs/portfolio-chat-service/10-frontend-demo-runbook.md` documents local SQLite demo startup, dev auth outbox, cookie/CSRF expectations, frontend SSE flow, and run-detail refresh.
 - Current production graph is still one assistant/router path.
 - Most route labels are capability metadata and response paths, not separate production specialist agents.
 - Tool workflows beyond hosted web search are not implemented as production graph capabilities yet.
@@ -171,16 +172,16 @@ Goal: make the separate frontend able to complete the product flow against the b
 
 Suggested order:
 
-1. Coordinate with the frontend repo to confirm it uses product endpoints and credentialed fetch.
+1. Coordinate with the frontend repo to verify product endpoints, credentialed fetch, dev outbox, streaming, and run-detail refresh.
 2. Add demo seed/reset commands if repeated frontend demos need stable sample data.
 3. Verify the local SQLite runbook against the frontend once frontend integration reports its exact origin and API base URL.
 4. Add environment-specific deployment notes for the chosen hosting target.
 
 Stop condition:
 
-- A fresh developer can run the backend plus separate frontend and complete auth -> document ingest -> SSE chat.
+- A fresh developer can run the backend plus separate frontend and complete auth -> document ingest -> SSE chat -> refresh run detail.
 - The runbook clearly separates local SQLite, Postgres/Neon, migrations, cookies, CORS, and secrets.
-- Existing deterministic assistant/conversation/CORS tests still pass.
+- Existing deterministic assistant/conversation/CORS/auth/migration tests still pass.
 
 ### Alternative next milestone: production RAG realism
 
@@ -207,6 +208,7 @@ Guest mode should not be part of the current v0 implementation. A future guest m
 
 | Date | Milestone | Evidence |
 | --- | --- | --- |
+| 2026-05-20 | Refresh-safe run detail and gated local auth dev outbox added for frontend demo verification. | `tests/test_conversations_api.py`; `tests/test_permission_aware_rag.py`; `tests/test_auth_api.py`; `tests/test_migrations.py`. |
 | 2026-05-20 | Credentialed frontend CORS configuration and local frontend demo runbook added. | `tests/test_cors_api.py`; `tests/test_settings.py`; `docs/portfolio-chat-service/10-frontend-demo-runbook.md`. |
 | 2026-05-19 | Product conversation runs gained SSE progress and assistant-delta streaming plus frontend contract docs. | `tests/test_conversations_api.py`; `docs/portfolio-chat-service/09-http-streaming-frontend-contract.md`. |
 | 2026-05-19 | Local auth abuse protection added for account lifecycle endpoints. | `92 passed, 1 skipped`; Ruff check/format pass; in-process `AuthAbuseProtector`; README/env/learning docs updated. |

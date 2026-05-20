@@ -13,7 +13,10 @@ related_code:
   - my_agents/settings.py
   - my_agents/api/auth.py
   - my_agents/api/conversations.py
+  - my_agents/conversations/models.py
   - tests/test_cors_api.py
+  - tests/test_auth_api.py
+  - tests/test_conversations_api.py
 ---
 
 # Frontend demo and local runbook
@@ -31,6 +34,7 @@ MY_AGENTS_RESPONSE_MODE=deterministic \
 MY_AGENTS_DATABASE_URL=sqlite+pysqlite:///./local-demo.db \
 MY_AGENTS_AUTO_CREATE_TABLES=true \
 MY_AGENTS_SESSION_COOKIE_SECURE=false \
+MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=true \
 MY_AGENTS_CORS_ALLOWED_ORIGINS=http://localhost:3000 \
 uv run uvicorn main:app --host 127.0.0.1 --port 8000
 ```
@@ -40,14 +44,19 @@ Notes:
 - `MY_AGENTS_DATABASE_URL=sqlite+pysqlite:///./local-demo.db` keeps local demo state on disk.
 - `MY_AGENTS_AUTO_CREATE_TABLES=true` is acceptable for a local SQLite demo; use Alembic migrations for Postgres/Neon.
 - `MY_AGENTS_SESSION_COOKIE_SECURE=false` is for local HTTP only. Keep secure cookies enabled behind HTTPS.
+- `MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=true` exposes local verification/reset tokens through `/auth/dev/outbox` for deterministic demos only.
 - `MY_AGENTS_CORS_ALLOWED_ORIGINS` must list explicit origins because browser-cookie requests use credentials.
+- FastAPI exposes the current OpenAPI contract at `http://127.0.0.1:8000/openapi.json`.
+- If the frontend origin is `http://localhost:3000`, set the frontend API base URL to
+  `http://localhost:8000`. Browser cookies are host-scoped, so mixing `localhost` and
+  `127.0.0.1` can make login succeed but `/auth/me` look unauthenticated.
 
 ## Browser request requirements
 
 The frontend should call the API with cookies enabled:
 
 ```ts
-fetch("http://127.0.0.1:8000/auth/me", {
+fetch("http://localhost:8000/auth/me", {
   credentials: "include",
 });
 ```
@@ -73,6 +82,8 @@ sequenceDiagram
     UI->>API: POST /auth/signup {email,password}
     API-->>UI: 201 {user, verification_email_sent}
     Note over API: Local/dev email sender stores token in process memory
+    UI->>API: GET /auth/dev/outbox (local demo only)
+    API-->>UI: 200 [{purpose, token}]
     UI->>API: POST /auth/verify-email {token}
     API-->>UI: 200 user
     UI->>API: POST /auth/login {email,password}
@@ -109,13 +120,31 @@ flowchart TD
 Minimal sequence:
 
 1. `POST /auth/signup`
-2. `POST /auth/verify-email` with the local dev token from the backend process/outbox
-3. `POST /auth/login`; store `csrf_token` in frontend state and keep cookies included
-4. `POST /knowledge-bases`
-5. `POST /documents` with `knowledge_base_id` and text `content`
-6. `POST /documents/{document_id}/ingest`
-7. `POST /conversations`
-8. `POST /conversations/{conversation_id}/runs/stream`
+2. `GET /auth/dev/outbox` and read the latest `email_verification` token for that email
+3. `POST /auth/verify-email` with the local dev token
+4. `POST /auth/login`; store `csrf_token` in frontend state and keep cookies included
+5. `POST /knowledge-bases`
+6. `POST /documents` with `knowledge_base_id` and text `content`
+7. `POST /documents/{document_id}/ingest`
+8. `POST /conversations`
+9. `POST /conversations/{conversation_id}/runs/stream`
+
+`GET /auth/dev/outbox` returns `404` unless `MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=true`.
+Do not enable that endpoint outside local deterministic demo runs.
+
+Suggested deterministic demo document:
+
+```text
+The portfolio chat service uses LangGraph for assistant routing, FastAPI for the
+backend API, SQLite or Postgres for app-owned state, and Server-Sent Events for
+incremental answer streaming.
+```
+
+Suggested prompt after ingest:
+
+```text
+How does the portfolio chat service stream answers and persist app state?
+```
 
 ## SSE stream contract
 
@@ -156,18 +185,25 @@ Expected event names:
 }
 ```
 
+Refresh contract:
+
+- `GET /conversations/{conversation_id}/runs` returns summaries ordered newest-first.
+- `GET /conversations/{conversation_id}/runs/{run_id}` returns the persisted completed run with `reply`, `route`, and `citations`.
+- `GET /conversations/{conversation_id}/runs/{run_id}/events` returns redacted run activity events.
+- Failed run detail returns `409` because failed runs do not have a completed reply/citation payload.
+
 ## Smoke checks
 
 Health:
 
 ```bash
-curl http://127.0.0.1:8000/health
+curl http://localhost:8000/health
 ```
 
 CORS preflight from a frontend origin:
 
 ```bash
-curl -i -X OPTIONS http://127.0.0.1:8000/auth/login \
+curl -i -X OPTIONS http://localhost:8000/auth/login \
   -H 'Origin: http://localhost:3000' \
   -H 'Access-Control-Request-Method: POST' \
   -H 'Access-Control-Request-Headers: Content-Type,X-CSRF-Token'
@@ -184,6 +220,7 @@ access-control-allow-credentials: true
 
 - Use HTTPS and keep `MY_AGENTS_SESSION_COOKIE_SECURE=true`.
 - Set `MY_AGENTS_CORS_ALLOWED_ORIGINS` to the exact deployed frontend origin.
+- Keep `MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=false`.
 - Run Alembic migrations for Postgres/Neon rather than relying on auto-create.
 - Replace the local email sender before public account lifecycle exposure.
 - Replace local in-process auth abuse protection with a shared limiter before multi-worker deployment.

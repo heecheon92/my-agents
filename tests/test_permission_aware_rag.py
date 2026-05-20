@@ -83,6 +83,11 @@ def test_chat_run_cites_only_authorized_personal_knowledge(monkeypatch) -> None:
     assert private_phrase in owner_payload["reply"]
     assert private_phrase in owner_payload["citations"][0]["snippet"]
     assert graph.calls[-1]["retrieved_chunk_ids"]
+    owner_detail = owner.get(
+        f"/conversations/{owner_conversation_id}/runs/{owner_payload['run_id']}"
+    )
+    assert owner_detail.status_code == 200
+    assert owner_detail.json() == owner_payload
 
     outsider_conversation_id = _create_conversation(outsider, "Outsider RAG")
     outsider_run = outsider.post(

@@ -152,6 +152,7 @@ Current honest status:
 - [x] Conversation runs use server-owned message history.
 - [x] Run responses include `run_id`, `reply`, route, handler, and citations.
 - [x] List run history.
+- [x] Read completed run detail with persisted reply, route, and citations.
 - [x] List redacted run events: `GET /conversations/{conversation_id}/runs/{run_id}/events`.
 - [x] Failed graph invocation persists a failed run and safe failure event.
 - [x] Event types cover user message storage, retrieval completion, graph invocation, and answer composition.
@@ -212,6 +213,8 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
 - [~] Frontend-facing signup/login response parser expectations are documented in README examples but not generated as a typed client.
 - [x] Document exact frontend auth/session flow, including cookies and CSRF headers.
 - [x] Add explicit-origin CORS configuration for credentialed frontend requests.
+- [x] Add gated local auth dev outbox for deterministic frontend signup/verify demos.
+- [x] Add refresh-safe completed run detail for persisted citations/reply.
 - [x] Add streaming contract for chat UX.
 - [ ] Add OpenAPI/client generation workflow if useful.
 
@@ -239,7 +242,7 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
 1. **Frontend integration verification**
    - Confirm frontend uses product endpoints, not legacy `/assistant/chat`.
    - Align signup/login parser shapes with backend contracts.
-   - Verify credentialed CORS, cookie, CSRF, and SSE behavior against the separate frontend.
+   - Verify credentialed CORS, cookie, CSRF, SSE, dev outbox, and run-detail refresh behavior against the separate frontend.
 
 2. **Local debug/deploy ergonomics**
    - Add a simple local SQLite-file debug recipe or helper script.

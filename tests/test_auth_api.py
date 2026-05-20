@@ -104,6 +104,34 @@ def test_signup_rejects_duplicate_email(monkeypatch) -> None:  # noqa: ANN001
     assert "password" not in duplicate.text.lower()
 
 
+def test_dev_auth_outbox_is_disabled_by_default(monkeypatch) -> None:  # noqa: ANN001
+    client = _client(monkeypatch)
+
+    response = client.get("/auth/dev/outbox")
+
+    assert response.status_code == 404
+
+
+def test_dev_auth_outbox_exposes_local_tokens_only_when_enabled(monkeypatch) -> None:  # noqa: ANN001
+    monkeypatch.setenv("MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED", "true")
+    client = _client(monkeypatch)
+
+    signup = client.post(
+        "/auth/signup",
+        json={"email": "outbox@example.com", "password": "correct horse battery staple"},
+    )
+    outbox = client.get("/auth/dev/outbox")
+
+    assert signup.status_code == 201
+    assert outbox.status_code == 200
+    payload = outbox.json()
+    assert payload[-1]["recipient_email"] == "outbox@example.com"
+    assert payload[-1]["purpose"] == "email_verification"
+    assert payload[-1]["token"] == latest_auth_email_token(
+        "outbox@example.com", "email_verification"
+    )
+
+
 def test_signup_attempts_are_rate_limited(monkeypatch) -> None:  # noqa: ANN001
     client = _client_with_auth_attempt_limit(monkeypatch)
     payload = {"email": "limited-signup@example.com", "password": "correct horse battery staple"}

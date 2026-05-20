@@ -201,6 +201,45 @@ def test_conversation_runs_can_be_listed_without_event_details(monkeypatch) -> N
     assert all("reply" not in run for run in payload)
 
 
+def test_completed_conversation_run_detail_survives_refresh(monkeypatch) -> None:  # noqa: ANN001
+    graph = SpyGraph()
+    client = _client(monkeypatch, graph)
+    _signup_login(client, "run-detail@example.com")
+    conversation_id = client.post("/conversations", json={"title": "Run detail"}).json()["id"]
+    run = client.post(
+        f"/conversations/{conversation_id}/runs",
+        json={"message": "Persist this run"},
+    )
+    assert run.status_code == 200
+    run_payload = run.json()
+
+    detail = client.get(f"/conversations/{conversation_id}/runs/{run_payload['run_id']}")
+
+    assert detail.status_code == 200
+    assert detail.json() == run_payload
+
+
+def test_failed_conversation_run_detail_returns_conflict(monkeypatch) -> None:  # noqa: ANN001
+    client = _client(
+        monkeypatch,
+        FailingGraph(),
+        raise_server_exceptions=False,
+    )
+    _signup_login(client, "failed-detail@example.com")
+    conversation_id = client.post("/conversations", json={"title": "Failed detail"}).json()["id"]
+    response = client.post(
+        f"/conversations/{conversation_id}/runs",
+        json={"message": "This run fails"},
+    )
+    assert response.status_code == 502
+    failed_run = client.get(f"/conversations/{conversation_id}/runs").json()[0]
+
+    detail = client.get(f"/conversations/{conversation_id}/runs/{failed_run['run_id']}")
+
+    assert detail.status_code == 409
+    assert detail.json()["detail"] == "run is not completed"
+
+
 def test_streaming_conversation_run_emits_events_and_persists_result(monkeypatch) -> None:  # noqa: ANN001
     graph = SpyGraph()
     client = _client(monkeypatch, graph)
