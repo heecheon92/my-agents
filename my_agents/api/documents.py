@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from sqlalchemy import or_, select
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile, status
+from sqlalchemy import delete, or_, select
 from sqlalchemy.orm import Session
 
 from my_agents.auth.contracts import Principal
@@ -13,6 +13,7 @@ from my_agents.auth.dependencies import get_current_principal
 from my_agents.groups.models import MembershipModel, MembershipRole
 from my_agents.knowledge.extraction import KnowledgeExtractionService
 from my_agents.knowledge.models import (
+    CitationModel,
     DocumentChunkModel,
     DocumentModel,
     DocumentPermissionModel,
@@ -150,6 +151,26 @@ def get_document(
     ):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="document not found")
     return _document_response(document)
+
+
+@documents_router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_document(
+    document_id: str,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    db: Annotated[Session, Depends(get_database_session)],
+) -> Response:
+    """Delete an authorized document and dependent extraction/retrieval artifacts."""
+    document = _get_document_or_404(db, document_id)
+    if not AuthorizationService(db).can(
+        user_id=principal.user_id,
+        document=document,
+        operation=DocumentOperation.DELETE,
+    ):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="document not found")
+    _delete_document_dependencies(db, document_id)
+    db.delete(document)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @documents_router.patch("/{document_id}/permissions", response_model=DocumentPermissionResponse)
@@ -307,6 +328,20 @@ def _get_document_or_404(db: Session, document_id: str) -> DocumentModel:
     if document is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="document not found")
     return document
+
+
+def _delete_document_dependencies(db: Session, document_id: str) -> None:
+    """Remove rows that hold foreign keys to a document or its chunks/runs."""
+    db.execute(delete(CitationModel).where(CitationModel.document_id == document_id))
+    db.execute(
+        delete(EntityRelationshipModel).where(EntityRelationshipModel.document_id == document_id)
+    )
+    db.execute(delete(EntityMentionModel).where(EntityMentionModel.document_id == document_id))
+    db.execute(delete(DocumentChunkModel).where(DocumentChunkModel.document_id == document_id))
+    db.execute(delete(ExtractionRunModel).where(ExtractionRunModel.document_id == document_id))
+    db.execute(
+        delete(DocumentPermissionModel).where(DocumentPermissionModel.document_id == document_id)
+    )
 
 
 def _document_response(document: DocumentModel) -> DocumentResponse:

@@ -49,6 +49,7 @@ def test_auth_and_permission_contracts_are_explicit() -> None:
         "read",
         "write",
         "manage_permissions",
+        "delete",
         "ingest",
         "retrieve",
         "cite",

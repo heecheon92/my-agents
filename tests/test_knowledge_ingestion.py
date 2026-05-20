@@ -5,7 +5,15 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from my_agents.knowledge.models import DocumentChunkModel, DocumentModel
+from my_agents.knowledge.models import (
+    CitationModel,
+    DocumentChunkModel,
+    DocumentModel,
+    DocumentPermissionModel,
+    EntityMentionModel,
+    EntityRelationshipModel,
+    ExtractionRunModel,
+)
 from my_agents.knowledge.pdf_uploads import parse_uploaded_pdf
 from my_agents.persistence.database import get_database_session
 
@@ -166,6 +174,130 @@ def test_pdf_upload_persists_metadata_and_ingests_page_provenance(monkeypatch) -
     assert [chunk.source_page for chunk in chunks] == [1, 2]
     assert "LangGraph" in chunks[0].content
     assert "FastAPI" in chunks[1].content
+
+
+def test_owner_can_delete_uploaded_pdf_and_cleanup_ingestion_artifacts(monkeypatch) -> None:  # noqa: ANN001
+    owner = _client(monkeypatch)
+    reader = _client(monkeypatch)
+    _signup_login(owner, "delete-pdf-owner@example.com")
+    reader_id = _signup_login(reader, "delete-pdf-reader@example.com")
+
+    document = owner.post(
+        "/documents/upload",
+        data={"title": "Delete Me PDF"},
+        files={
+            "file": (
+                "delete-me.pdf",
+                _text_pdf("Delete Cleanup PDF mentions FastAPI and LangGraph."),
+                "application/pdf",
+            )
+        },
+    )
+    assert document.status_code == 201
+    document_id = document.json()["id"]
+
+    permission = owner.patch(
+        f"/documents/{document_id}/permissions",
+        json={"user_id": reader_id, "can_read": True},
+    )
+    assert permission.status_code == 200
+    ingest = owner.post(f"/documents/{document_id}/ingest")
+    assert ingest.status_code == 200
+
+    conversation = owner.post("/conversations", json={"title": "Delete cleanup RAG"})
+    assert conversation.status_code == 201
+    run = owner.post(
+        f"/conversations/{conversation.json()['id']}/runs",
+        json={"message": "What does Delete Cleanup PDF mention?"},
+    )
+    assert run.status_code == 200
+    assert run.json()["citations"]
+
+    assert _database_rows(select(DocumentModel).where(DocumentModel.id == document_id))
+    assert _database_rows(
+        select(DocumentChunkModel).where(DocumentChunkModel.document_id == document_id)
+    )
+    assert _database_rows(
+        select(ExtractionRunModel).where(ExtractionRunModel.document_id == document_id)
+    )
+    assert _database_rows(
+        select(EntityMentionModel).where(EntityMentionModel.document_id == document_id)
+    )
+    assert _database_rows(
+        select(EntityRelationshipModel).where(EntityRelationshipModel.document_id == document_id)
+    )
+    assert _database_rows(
+        select(DocumentPermissionModel).where(DocumentPermissionModel.document_id == document_id)
+    )
+    assert _database_rows(select(CitationModel).where(CitationModel.document_id == document_id))
+
+    deleted = owner.delete(f"/documents/{document_id}")
+
+    assert deleted.status_code == 204
+    assert owner.get(f"/documents/{document_id}").status_code == 404
+    assert _database_rows(select(DocumentModel).where(DocumentModel.id == document_id)) == []
+    assert (
+        _database_rows(
+            select(DocumentChunkModel).where(DocumentChunkModel.document_id == document_id)
+        )
+        == []
+    )
+    assert (
+        _database_rows(
+            select(ExtractionRunModel).where(ExtractionRunModel.document_id == document_id)
+        )
+        == []
+    )
+    assert (
+        _database_rows(
+            select(EntityMentionModel).where(EntityMentionModel.document_id == document_id)
+        )
+        == []
+    )
+    assert (
+        _database_rows(
+            select(EntityRelationshipModel).where(
+                EntityRelationshipModel.document_id == document_id
+            )
+        )
+        == []
+    )
+    assert (
+        _database_rows(
+            select(DocumentPermissionModel).where(
+                DocumentPermissionModel.document_id == document_id
+            )
+        )
+        == []
+    )
+    assert (
+        _database_rows(select(CitationModel).where(CitationModel.document_id == document_id)) == []
+    )
+
+
+def test_non_owner_cannot_delete_document_without_manage_authorization(monkeypatch) -> None:  # noqa: ANN001
+    owner = _client(monkeypatch)
+    reader = _client(monkeypatch)
+    _signup_login(owner, "delete-denied-owner@example.com")
+    reader_id = _signup_login(reader, "delete-denied-reader@example.com")
+
+    document = owner.post(
+        "/documents",
+        json={"title": "Private delete guard", "content": "reader can see but not delete"},
+    )
+    assert document.status_code == 201
+    document_id = document.json()["id"]
+    grant = owner.patch(
+        f"/documents/{document_id}/permissions",
+        json={"user_id": reader_id, "can_read": True},
+    )
+    assert grant.status_code == 200
+    assert reader.get(f"/documents/{document_id}").status_code == 200
+
+    denied = reader.delete(f"/documents/{document_id}")
+
+    assert denied.status_code == 404
+    assert owner.get(f"/documents/{document_id}").status_code == 200
 
 
 def test_pdf_upload_rejects_unsupported_or_unsafe_input(monkeypatch) -> None:  # noqa: ANN001

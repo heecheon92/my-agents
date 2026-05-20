@@ -11,6 +11,7 @@ class DocumentOperation(StrEnum):
     READ = "read"
     WRITE = "write"
     MANAGE_PERMISSIONS = "manage_permissions"
+    DELETE = "delete"
     INGEST = "ingest"
     RETRIEVE = "retrieve"
     CITE = "cite"

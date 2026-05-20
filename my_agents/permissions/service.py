@@ -49,7 +49,7 @@ def _explicit_allows(permission: DocumentPermissionModel, operation: DocumentOpe
         return permission.can_read
     if operation == DocumentOperation.WRITE:
         return permission.can_write
-    if operation == DocumentOperation.MANAGE_PERMISSIONS:
+    if operation in (DocumentOperation.MANAGE_PERMISSIONS, DocumentOperation.DELETE):
         return permission.can_manage
     if operation == DocumentOperation.INGEST:
         return permission.can_ingest
