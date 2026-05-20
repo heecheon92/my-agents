@@ -379,6 +379,19 @@ For deterministic local frontend demos, `MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=true`
 the in-memory auth email outbox at `/auth/dev/outbox` so the UI can read verification and
 reset tokens. Keep it disabled outside local demos.
 
+For local V1 demos, seed a verified demo user plus one text document and extraction run:
+
+```bash
+MY_AGENTS_RESPONSE_MODE=deterministic \
+MY_AGENTS_DATABASE_URL=sqlite+pysqlite:///./local-demo.db \
+MY_AGENTS_AUTO_CREATE_TABLES=true \
+uv run python -m scripts.local_demo_seed
+```
+
+Seeded credentials are `test@test.com` / `correct horse battery staple`. The helper
+refuses in-memory and non-SQLite database URLs, and `--reset-database` should be used only
+when the dev server is stopped.
+
 Auth abuse protection is intentionally local and replaceable in v0: bucket keys are
 digested, limits are controlled by `MY_AGENTS_AUTH_ABUSE_*`, and tests exercise the
 offline behavior. A future public deployment can move the same boundary to Redis or a
@@ -528,8 +541,7 @@ safety boundaries explainable.
 
 For a portfolio demo, prefer the product conversation-run surface over the legacy `/assistant/chat` smoke endpoint.
 
-1. Create a session with `/auth/signup`, `/auth/dev/outbox` in local demos,
-   `/auth/verify-email`, and `/auth/login`.
+1. Seed a local verified demo account with `uv run python -m scripts.local_demo_seed`, or create a session with `/auth/signup`, `/auth/dev/outbox` in local demos, `/auth/verify-email`, and `/auth/login`.
 2. Create a group with `/groups` and optionally add a member.
 3. Create a personal or group document with `/documents`, then grant explicit permissions with `/documents/{id}/permissions` when needed.
 4. Run `/documents/{id}/ingest` to create chunks, entities, and relationships.

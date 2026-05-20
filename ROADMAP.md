@@ -183,7 +183,7 @@ Current honest status:
 - [ ] Production deployment runbook.
 - [ ] Backup/restore plan.
 - [ ] Data retention and deletion policy.
-- [ ] Seed/demo data command.
+- [x] Seed/demo data command for local SQLite V1 demos.
 - [ ] Automated migration step in deployment pipeline.
 
 ## 9. Observability, evals, and safety
@@ -214,6 +214,7 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
 - [x] Document exact frontend auth/session flow, including cookies and CSRF headers.
 - [x] Add explicit-origin CORS configuration for credentialed frontend requests.
 - [x] Add gated local auth dev outbox for deterministic frontend signup/verify demos.
+- [x] Add local SQLite demo seed helper for verified user, text document, and extraction run.
 - [x] Add refresh-safe completed run detail for persisted citations/reply.
 - [x] Add streaming contract for chat UX.
 - [ ] Add OpenAPI/client generation workflow if useful.
@@ -239,14 +240,13 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
 
 ## 12. Near-term recommended sequence
 
-1. **Frontend integration verification**
+1. **Seeded frontend integration verification**
    - Confirm frontend uses product endpoints, not legacy `/assistant/chat`.
-   - Align signup/login parser shapes with backend contracts.
-   - Verify credentialed CORS, cookie, CSRF, SSE, dev outbox, and run-detail refresh behavior against the separate frontend.
+   - Verify seeded login, bodyless ingest, SSE, run-detail citations, and event trail against the separate frontend.
+   - Keep signup/dev-outbox available for local account lifecycle smoke tests.
 
 2. **Local debug/deploy ergonomics**
-   - Add a simple local SQLite-file debug recipe or helper script.
-   - Add demo seed/reset commands if needed for portfolio demos.
+   - Use the local SQLite seed helper for stable portfolio demo data.
    - Write a deployment runbook: migrate DB, start app, smoke auth/conversation run.
 
 3. **Production-ish auth hardening**

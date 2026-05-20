@@ -17,6 +17,7 @@ related_code:
   - tests/test_cors_api.py
   - tests/test_auth_api.py
   - tests/test_conversations_api.py
+  - scripts/local_demo_seed.py
 ---
 
 # Frontend demo and local runbook
@@ -50,6 +51,35 @@ Notes:
 - If the frontend origin is `http://localhost:3000`, set the frontend API base URL to
   `http://localhost:8000`. Browser cookies are host-scoped, so mixing `localhost` and
   `127.0.0.1` can make login succeed but `/auth/me` look unauthenticated.
+
+## Local demo seed helper
+
+For the fastest V1 walkthrough, seed a verified local account plus one personal knowledge
+base, text document, and extraction run before starting the frontend demo. The helper
+refuses in-memory and non-SQLite databases so it does not target production data.
+
+```bash
+MY_AGENTS_RESPONSE_MODE=deterministic \
+MY_AGENTS_DATABASE_URL=sqlite+pysqlite:///./local-demo.db \
+MY_AGENTS_AUTO_CREATE_TABLES=true \
+uv run python -m scripts.local_demo_seed
+```
+
+Seeded login:
+
+- email: `test@test.com`
+- password: `correct horse battery staple`
+
+Seeded content:
+
+- knowledge base: `V1 Demo Knowledge Base`
+- document: `V1 Portfolio Chat Service Demo`
+- sample prompt: `How does the portfolio chat service stream answers and persist app state?`
+
+The helper is idempotent for the seeded extraction run. It verifies the demo user and
+resets that local user's password to the demo password. If you need a fresh SQLite file,
+stop the dev server first and add `--reset-database`; do not use reset while Uvicorn is
+holding an open connection to the same SQLite file.
 
 ## Browser request requirements
 
@@ -117,7 +147,7 @@ flowchart TD
     Stream --> Events["SSE progress + answer_delta + run_completed"]
 ```
 
-Minimal sequence:
+Minimal sequence without the seed helper:
 
 1. `POST /auth/signup`
 2. `GET /auth/dev/outbox` and read the latest `email_verification` token for that email
@@ -128,6 +158,8 @@ Minimal sequence:
 7. `POST /documents/{document_id}/ingest`
 8. `POST /conversations`
 9. `POST /conversations/{conversation_id}/runs/stream`
+
+With the seed helper, skip signup/dev-outbox/verify and log in directly with `test@test.com` plus the seeded password.
 
 `GET /auth/dev/outbox` returns `404` unless `MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=true`.
 Do not enable that endpoint outside local deterministic demo runs.

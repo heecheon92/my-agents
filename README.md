@@ -378,6 +378,19 @@ deterministic local frontend demo에서는 `MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=tr
 in-memory auth email outbox를 `/auth/dev/outbox`에 노출할 수 있습니다. UI가 verification/reset
 token을 읽기 위한 local demo 전용 기능이므로 local demo 밖에서는 꺼둡니다.
 
+local V1 demo에서는 verified demo user, text document, extraction run을 한 번에 seed할 수 있습니다:
+
+```bash
+MY_AGENTS_RESPONSE_MODE=deterministic \
+MY_AGENTS_DATABASE_URL=sqlite+pysqlite:///./local-demo.db \
+MY_AGENTS_AUTO_CREATE_TABLES=true \
+uv run python -m scripts.local_demo_seed
+```
+
+seeded credential은 `test@test.com` / `correct horse battery staple`입니다. 이 helper는
+in-memory 및 non-SQLite database URL을 거부하며, `--reset-database`는 dev server를 멈춘
+뒤에만 사용하세요.
+
 Auth abuse protection은 v0에서 의도적으로 local/replaceable boundary입니다. Bucket key는
 digest로 저장되고, `MY_AGENTS_AUTH_ABUSE_*` 설정으로 제한을 조정하며, offline test가 이
 동작을 검증합니다. 향후 public deployment나 multi-worker 구성이 필요해지면 같은 boundary를
@@ -525,7 +538,7 @@ fixture입니다.
 
 포트폴리오 데모에서는 `/assistant/chat`보다 product surface인 conversation run을 우선 보여주는 것이 좋습니다.
 
-1. `/auth/signup`, local demo의 `/auth/dev/outbox`, `/auth/verify-email`, `/auth/login`으로 session을 만든다.
+1. `uv run python -m scripts.local_demo_seed`로 local verified demo account를 seed하거나, `/auth/signup`, local demo의 `/auth/dev/outbox`, `/auth/verify-email`, `/auth/login`으로 session을 만든다.
 2. `/groups`로 group을 만들고 필요하면 member를 추가한다.
 3. `/documents`로 personal 또는 group document를 만들고 `/documents/{id}/permissions`로 명시적 권한을 부여한다.
 4. `/documents/{id}/ingest`로 chunk/entity/relationship을 생성한다.
