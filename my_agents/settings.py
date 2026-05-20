@@ -182,10 +182,15 @@ class Settings(BaseSettings):
         return self.database_url == "sqlite+pysqlite:///:memory:"
 
     @model_validator(mode="after")
-    def require_api_key_when_openai_mode_is_enabled(self) -> Settings:
-        """Fail fast with a useful local error when OpenAI mode lacks credentials."""
+    def validate_runtime_security_settings(self) -> Settings:
+        """Fail fast when runtime settings would make auth/session behavior unsafe."""
         if self.response_mode == "openai" and self.openai_api_key is None:
             raise ValueError("OPENAI_API_KEY is required when MY_AGENTS_RESPONSE_MODE=openai")
+        if self.session_cookie_samesite == "none" and not self.session_cookie_secure:
+            raise ValueError(
+                "MY_AGENTS_SESSION_COOKIE_SECURE=true is required when "
+                "MY_AGENTS_SESSION_COOKIE_SAMESITE=none"
+            )
         return self
 
     def openai_api_key_value(self) -> str | None:

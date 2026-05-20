@@ -147,7 +147,9 @@ Important auth details:
 
 - Login returns `csrf_token`; the frontend should keep it in memory for logout and any future CSRF-protected mutating routes.
 - The session cookie is `HttpOnly`; frontend code should not try to read it.
-- For local development over `http://`, set `MY_AGENTS_SESSION_COOKIE_SECURE=false`.
+- The session cookie defaults to `Secure; SameSite=Lax`. For local development over `http://`, set `MY_AGENTS_SESSION_COOKIE_SECURE=false`.
+- If a deployed frontend/backend split requires `SameSite=None`, keep `MY_AGENTS_SESSION_COOKIE_SECURE=true`; settings validation rejects `SameSite=None` with insecure cookies.
+- Keep the frontend hostname aligned with the backend hostname in local direct-browser CORS (`localhost` with `localhost`, or `127.0.0.1` with `127.0.0.1`) so browser cookie rules stay predictable.
 - Password reset request intentionally returns the same accepted response for known and unknown emails.
 
 ## Product conversation demo flow
@@ -269,7 +271,8 @@ access-control-allow-credentials: true
 
 - Use HTTPS and keep `MY_AGENTS_SESSION_COOKIE_SECURE=true`.
 - Set `MY_AGENTS_CORS_ALLOWED_ORIGINS` to the exact deployed frontend origin.
+- Keep `MY_AGENTS_SESSION_COOKIE_SAMESITE=lax` for same-site deployed demos, or use `none` only when the frontend/backend are truly cross-site and HTTPS/Secure cookies are active.
 - Keep `MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=false`.
 - Run Alembic migrations for Postgres/Neon rather than relying on auto-create.
 - Replace the local email sender before public account lifecycle exposure.
-- Replace local in-process auth abuse protection with a shared limiter before multi-worker deployment.
+- The current auth abuse limiter is single-process/in-memory. Replace it with a shared limiter before multi-worker deployment; until then, frontend gate evidence should describe the demo as single-process bounded.

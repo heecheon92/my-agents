@@ -132,6 +132,17 @@ def test_service_foundation_settings_accept_overrides(
     assert settings.auth_abuse_window_seconds == 120
 
 
+def test_samesite_none_requires_secure_cookie(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
+    monkeypatch.setenv("MY_AGENTS_SESSION_COOKIE_SAMESITE", "none")
+    monkeypatch.setenv("MY_AGENTS_SESSION_COOKIE_SECURE", "false")
+
+    with pytest.raises(ValidationError, match="SAMESITE=none"):
+        Settings(_env_file=None)
+
+
 def test_service_foundation_settings_accept_auto_create_override(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

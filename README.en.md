@@ -223,6 +223,9 @@ detail contract. For strict V1 closure work, start from the
 [V1 contract freeze and evidence map](./docs/portfolio-chat-service/11-v1-phase-0-contract-freeze-evidence-map.md).
 For local direct-browser CORS, keep hostnames consistent: pair `localhost:3000` with
 `localhost:8000`, or `127.0.0.1:3000` with `127.0.0.1:8000`.
+If a cross-site deployed frontend requires `MY_AGENTS_SESSION_COOKIE_SAMESITE=none`,
+keep `MY_AGENTS_SESSION_COOKIE_SECURE=true`; the settings layer rejects `SameSite=None`
+with insecure cookies.
 
 ### Postgres/Neon and Alembic migrations
 
@@ -405,13 +408,15 @@ local extraction run each time because it verifies the bodyless ingest endpoint.
 
 Auth abuse protection is intentionally local and replaceable in v0: bucket keys are
 digested, limits are controlled by `MY_AGENTS_AUTH_ABUSE_*`, and tests exercise the
-offline behavior. A future public deployment can move the same boundary to Redis or a
-gateway/shared store before enabling multi-worker or distributed rate limiting.
+offline behavior. This is a single-process public-demo boundary, not multi-worker
+production protection. A future public deployment can move the same boundary to Redis or
+a gateway/shared store before enabling multi-worker or distributed rate limiting.
 
 When a separate frontend is running in the browser, configure exact CORS origins with
 `MY_AGENTS_CORS_ALLOWED_ORIGINS`. Login sets an `HttpOnly` session cookie, so frontend
 requests should use credentialed fetch calls; logout must include the configured CSRF
-header value from the login response.
+header value from the login response. `POST /auth/logout` is the current
+cookie-authenticated CSRF-required mutation.
 
 Example signup request:
 

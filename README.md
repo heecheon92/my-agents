@@ -223,6 +223,9 @@ origin을 넣고, frontend 요청은 `credentials: "include"`로 보내야 합�
 local direct-browser CORS에서는 hostname을 맞추세요. `localhost:3000` frontend는
 `localhost:8000` backend와, `127.0.0.1:3000` frontend는 `127.0.0.1:8000` backend와
 짝지어야 browser cookie가 일관되게 전송됩니다.
+배포된 frontend/backend가 cross-site라서 `MY_AGENTS_SESSION_COOKIE_SAMESITE=none`이
+필요하다면 `MY_AGENTS_SESSION_COOKIE_SECURE=true`를 유지해야 합니다. 설정 계층은
+`SameSite=None`과 insecure cookie 조합을 거부합니다.
 
 ### Postgres/Neon과 Alembic migration
 
@@ -404,12 +407,14 @@ persisted citations, redacted run events를 확인합니다. bodyless ingest end
 
 Auth abuse protection은 v0에서 의도적으로 local/replaceable boundary입니다. Bucket key는
 digest로 저장되고, `MY_AGENTS_AUTH_ABUSE_*` 설정으로 제한을 조정하며, offline test가 이
-동작을 검증합니다. 향후 public deployment나 multi-worker 구성이 필요해지면 같은 boundary를
-Redis, gateway, shared store로 교체할 수 있습니다.
+동작을 검증합니다. 이것은 single-process public demo boundary이며 multi-worker production
+보호라고 주장하면 안 됩니다. 향후 public deployment나 multi-worker 구성이 필요해지면 같은
+boundary를 Redis, gateway, shared store로 교체할 수 있습니다.
 
 별도 frontend가 browser에서 실행될 때는 `MY_AGENTS_CORS_ALLOWED_ORIGINS`로 정확한 origin을
 설정합니다. Login은 `HttpOnly` session cookie를 설정하므로 frontend 요청은 credentialed
 fetch를 사용해야 하고, logout은 login 응답에서 받은 CSRF token을 설정된 header로 보내야 합니다.
+현재 cookie-authenticated CSRF 필수 mutation은 `POST /auth/logout`입니다.
 
 signup 요청 예시:
 

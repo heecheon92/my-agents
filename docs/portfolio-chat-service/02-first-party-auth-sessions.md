@@ -90,12 +90,23 @@ Session, email-verification, and password-reset tokens are bearer credential mat
 
 The local development email sender still sees the raw token because an email must contain either the token or a link containing the token. That boundary is intentionally isolated so a real provider can be added later without rewriting auth lifecycle logic.
 
+## Public-demo auth/session boundary
+
+The Phase 1 public-demo boundary is intentionally explicit:
+
+- Session cookies are `HttpOnly`, default to `Secure`, and use `SameSite=Lax` by default.
+- Local HTTP demos may set `MY_AGENTS_SESSION_COOKIE_SECURE=false`; deployed demos should keep `Secure=true`.
+- Cross-site browser deployments that require `MY_AGENTS_SESSION_COOKIE_SAMESITE=none` must also keep `MY_AGENTS_SESSION_COOKIE_SECURE=true`; settings validation rejects the unsafe combination.
+- `POST /auth/logout` is the current cookie-authenticated mutating auth endpoint and requires the configured CSRF header.
+- `MY_AGENTS_CORS_ALLOWED_ORIGINS` must list exact frontend origins for credentialed browser requests; wildcard origins are rejected.
+- Auth abuse protection is implemented as an in-process, digest-keyed attempt limiter for signup, login, verification-token, and password-reset flows. This is acceptable only for local/single-process public-demo topology. Do not claim multi-worker or distributed rate-limit protection until this boundary is moved to a shared store or gateway.
+
 ## What is intentionally not implemented yet
 
 - real outbound email provider integration;
 - MFA/passkeys;
 - OAuth account linking;
-- account lockout/rate limiting;
+- shared/distributed auth rate limiting for multi-worker deployments;
 - account deletion/profile management;
 - guest mode / anonymous quotas.
 
@@ -110,22 +121,27 @@ Those are later milestones or explicit non-goals for v0.
 - unverified login is blocked;
 - email verification consumes one-time tokens;
 - login returns a CSRF token and creates an owned session;
+- default login cookies are `Secure`, `HttpOnly`, and `SameSite=Lax`;
 - `/auth/me` requires a valid session;
 - logout without CSRF fails;
+- logout honors a configured CSRF header name and leaves the session active after a wrong header;
 - logout with CSRF revokes the session;
 - duplicate signup fails safely;
 - invalid login does not create an authenticated session;
 - password reset requests do not enumerate unknown accounts;
 - password reset changes the password and revokes old sessions;
 - expired auth lifecycle tokens are rejected.
+- auth abuse protection rate-limits repeated signup, bad login, invalid lifecycle-token, and reset-request attempts.
+- settings reject `SameSite=None` without `Secure=true`, and CORS tests prove exact-origin credentialed browser assumptions.
 
 ## Small exercise
 
 Explain this in an interview:
 
-> I used first-party email/password auth to demonstrate backend ownership, but kept provider integration intentionally narrow. The app stores Argon2 password hashes, stores only token digests, requires email verification before login, supports one-time password reset tokens, revokes sessions after password reset, and uses a local email boundary so tests stay offline. I would add rate limiting, MFA/passkeys, OAuth, and a real email provider as separate hardening milestones.
+> I used first-party email/password auth to demonstrate backend ownership, but kept provider integration intentionally narrow. The app stores Argon2 password hashes, stores only token digests, requires email verification before login, supports one-time password reset tokens, revokes sessions after password reset, and uses a local email boundary so tests stay offline. For a public demo, cookie/CSRF/CORS behavior is configured explicitly and auth abuse protection is bounded to a single-process limiter; I would add shared rate limiting, MFA/passkeys, OAuth, and a real email provider as separate hardening milestones.
 
 ## Revision history
 
+- 2026-05-20: Documented Phase 1 public-demo auth/session boundary, CSRF/CORS/cookie tests, and single-process rate-limit limitation.
 - 2026-05-18: Added email verification, local auth email boundary, password reset tokens, and session revocation after reset.
 - 2026-05-17: Created after implementing minimal first-party auth and owned sessions.

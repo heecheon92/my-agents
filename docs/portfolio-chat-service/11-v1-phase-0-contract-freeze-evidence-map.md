@@ -55,7 +55,7 @@ flowchart LR
 | Separate frontend completes signup/login and product conversation flows without legacy `/assistant/chat` | 0, 1, 6 | Auth/session OpenAPI, CORS tests, run endpoints, demo seed/smoke | Browser smoke proves product endpoint use and BFF allowlist blocks `/assistant/*` | `10-frontend-demo-runbook.md`, frontend `docs/implementation-log.md` | both; frontend primary for browser proof | open; local demo slice exists |
 | Product chat supports streaming or intentional polling UX with run status | 0, 3, 6 | `POST /conversations/{conversation_id}/runs/stream`, run detail, events tests | Chat UI shows streaming/polling, completion, refresh-safe state | `09-http-streaming-frontend-contract.md` | both | partially implemented; strict V1 proof pending |
 | Fresh Postgres/Neon database setup is migration-driven and documented end to end | 0, 2, 4, 6 | Alembic upgrade and `tests/test_migrations.py`; gated external DB smoke | Frontend waits for backend readiness; no direct DB assumptions | `08-postgres-alembic-neon.md`, README pair | backend | partially implemented; repeat smoke pending for future migrations |
-| Auth/session behavior is safe enough for public portfolio demo, including rate limiting and cookie/CSRF clarity | 1, 6 | Auth abuse tests, cookie/CSRF/CORS tests, production-origin settings docs | Browser login/me/logout and CSRF mutation smoke | `02-first-party-auth-sessions.md`, `10-frontend-demo-runbook.md` | backend primary; frontend verifies | open; local limiter exists, shared limiter deferred |
+| Auth/session behavior is safe enough for public portfolio demo, including rate limiting and cookie/CSRF clarity | 1, 6 | Auth abuse tests, cookie/CSRF/CORS tests, production-origin settings docs | Browser login/me/logout and CSRF mutation smoke | `02-first-party-auth-sessions.md`, `10-frontend-demo-runbook.md` | backend primary; frontend verifies | backend Phase 1 hardened for single-process public demo; frontend gate pending |
 | Permission-aware retrieval uses a real retrieval path, not only deterministic fixtures | 4, 6 | Embedding provider boundary, pgvector migration/search, permission-first retrieval tests | Cited answer flow with unauthorized-doc negative proof | `06-permission-aware-rag.md` plus future retrieval doc update | backend | open; deterministic retrieval exists |
 | Document ingestion supports at least one realistic uploaded file type | 2, 6 | Upload API, parser boundary, storage metadata, parser failure tests | Upload/ingestion UI smoke or documented gap | `05-knowledge-ingestion-extraction.md` plus future upload runbook | backend primary; frontend verifies | open; text/body ingestion exists only |
 | Citations include enough provenance for users to trust the answer | 3, 4, 6 | Run response/detail citation schema, document/chunk/source metadata tests | UI renders backend fields and persists after reload | `06-permission-aware-rag.md`, future citation contract update | backend primary; frontend verifies | partially implemented; richer provenance pending |
@@ -107,7 +107,7 @@ Generated from `my_agents.api.create_app().openapi()` on 2026-05-20.
 
 | Gap | Why it is not frozen as complete in Phase 0 | Next owning phase |
 | --- | --- | --- |
-| Shared/distributed rate limiting | Local in-process auth abuse protection exists, but multi-worker public demo needs a shared limiter or explicit deployment boundary. | Phase 1 |
+| Shared/distributed rate limiting | Phase 1 explicitly bounds V1 to the existing local in-process limiter for single-process demos. Multi-worker public deployment still needs Redis/gateway/shared-store replacement before it can claim distributed protection. | Phase 6 or deployment hardening |
 | Realistic uploaded file type | Current `POST /documents` stores text and `POST /documents/{id}/ingest` is bodyless; no PDF upload/parser/storage contract yet. | Phase 2 |
 | Ingestion lifecycle for longer parser work | Current extraction run summary exists, but no `pending/running/completed/failed` upload job lifecycle is frozen for realistic files. | Phase 2 or 5 |
 | Rich citation provenance | Current citations include document/chunk/snippet identity, but page/file/source-offset provenance is not complete. | Phase 3 |
@@ -127,4 +127,5 @@ Phase 0 is complete when:
 
 ## Revision history
 
+- 2026-05-20: Updated after backend Phase 1 auth/session hardening to record the single-process rate-limit boundary and pending frontend gate.
 - 2026-05-20: Created Phase 0 contract freeze and V1 evidence map.

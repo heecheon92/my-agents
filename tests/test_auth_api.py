@@ -25,6 +25,32 @@ def _client_with_auth_attempt_limit(monkeypatch, max_attempts: int = 2) -> TestC
     return _client(monkeypatch)
 
 
+def test_login_cookie_is_secure_by_default(monkeypatch) -> None:  # noqa: ANN001
+    monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
+    monkeypatch.delenv("MY_AGENTS_SESSION_COOKIE_SECURE", raising=False)
+    client = TestClient(load_app())
+
+    client.post(
+        "/auth/signup",
+        json={"email": "secure-cookie@example.com", "password": "correct horse battery staple"},
+    )
+    verify_latest_auth_email(client, "secure-cookie@example.com")
+    login = client.post(
+        "/auth/login",
+        json={
+            "email": "secure-cookie@example.com",
+            "password": "correct horse battery staple",
+        },
+    )
+
+    assert login.status_code == 200
+    set_cookie = login.headers["set-cookie"].lower()
+    assert "my_agents_session=" in set_cookie
+    assert "httponly" in set_cookie
+    assert "secure" in set_cookie
+    assert "samesite=lax" in set_cookie
+
+
 def test_signup_verify_login_me_and_logout_revoke_owned_session(monkeypatch) -> None:  # noqa: ANN001
     client = _client(monkeypatch)
 
@@ -86,10 +112,37 @@ def test_signup_verify_login_me_and_logout_revoke_owned_session(monkeypatch) -> 
     logout_without_csrf = client.post("/auth/logout")
 
     assert logout_without_csrf.status_code == 403
+    assert client.get("/auth/me").status_code == 200
 
     logout = client.post("/auth/logout", headers={"X-CSRF-Token": login_payload["csrf_token"]})
 
     assert logout.status_code == 204
+    assert client.get("/auth/me").status_code == 401
+
+
+def test_logout_honors_configured_csrf_header(monkeypatch) -> None:  # noqa: ANN001
+    monkeypatch.setenv("MY_AGENTS_CSRF_HEADER_NAME", "X-Portfolio-CSRF")
+    client = _client(monkeypatch)
+    client.post(
+        "/auth/signup",
+        json={"email": "custom-csrf@example.com", "password": "correct horse battery staple"},
+    )
+    verify_latest_auth_email(client, "custom-csrf@example.com")
+    login = client.post(
+        "/auth/login",
+        json={"email": "custom-csrf@example.com", "password": "correct horse battery staple"},
+    )
+    csrf_token = login.json()["csrf_token"]
+
+    default_header_logout = client.post("/auth/logout", headers={"X-CSRF-Token": csrf_token})
+
+    assert default_header_logout.status_code == 403
+    assert client.get("/auth/me").status_code == 200
+    configured_header_logout = client.post(
+        "/auth/logout",
+        headers={"X-Portfolio-CSRF": csrf_token},
+    )
+    assert configured_header_logout.status_code == 204
     assert client.get("/auth/me").status_code == 401
 
 
