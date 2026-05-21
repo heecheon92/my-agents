@@ -75,18 +75,19 @@ def test_chat_run_events_are_ordered_structured_and_redacted(monkeypatch) -> Non
     events = client.get(f"/conversations/{conversation_id}/runs/{run_payload['run_id']}/events")
     assert events.status_code == 200
     event_payload = events.json()
-    assert [event["sequence"] for event in event_payload] == [1, 2, 3, 4]
+    assert [event["sequence"] for event in event_payload] == [1, 2, 3, 4, 5]
     assert [event["event_type"] for event in event_payload] == [
+        "run_started",
         "user_message_stored",
         "retrieval_completed",
         "graph_invoked",
         "answer_composed",
     ]
     payloads = [event["payload"] for event in event_payload]
-    assert payloads[1]["authorized_context_count"] == 1
-    assert payloads[1]["direct_count"] == 1
-    assert payloads[2]["route_label"] == "general_assistant"
-    assert payloads[3]["citation_count"] == 1
+    assert payloads[2]["authorized_context_count"] == 1
+    assert payloads[2]["direct_count"] == 1
+    assert payloads[3]["route_label"] == "general_assistant"
+    assert payloads[4]["citation_count"] == 1
     assert private_phrase not in str(payloads)
     assert "How does Orion" not in str(payloads)
 

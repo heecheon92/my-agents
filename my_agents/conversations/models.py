@@ -22,17 +22,23 @@ class MessageRole(StrEnum):
 class RunStatus(StrEnum):
     """Chat run lifecycle status."""
 
+    RUNNING = "running"
+    CANCELLING = "cancelling"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class AgentEventType(StrEnum):
     """Frontend-visible agent activity events without hidden chain-of-thought."""
 
+    RUN_STARTED = "run_started"
     USER_MESSAGE_STORED = "user_message_stored"
     RETRIEVAL_COMPLETED = "retrieval_completed"
     GRAPH_INVOKED = "graph_invoked"
     ANSWER_COMPOSED = "answer_composed"
+    RUN_CANCEL_REQUESTED = "run_cancel_requested"
+    RUN_CANCELLED = "run_cancelled"
     RUN_FAILED = "run_failed"
 
 

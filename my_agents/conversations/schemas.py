@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -60,6 +61,14 @@ class ConversationRunResponse(BaseModel):
     answer_mode: AnswerMode
     document_scope: DocumentScope
     citations: list[CitationResponse] = Field(default_factory=list)
+
+
+class ConversationRunCancelResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str
+    conversation_id: str
+    status: Literal["running", "cancelling", "cancelled", "completed", "failed"]
 
 
 class AgentRunSummaryResponse(BaseModel):

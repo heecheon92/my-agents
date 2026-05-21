@@ -11,10 +11,16 @@ from sqlalchemy import select
 from my_agents.api import create_app
 from my_agents.api.assistant import get_graph_runner
 from my_agents.auth.models import AuthTokenModel, GuestAccessCodeModel, SessionModel, UserModel
+from my_agents.conversations.models import AgentRunModel, RunStatus
 from my_agents.persistence.database import get_database_session
 from my_agents.schemas import RouteDecision
 
 from .conftest import verify_latest_auth_email
+
+
+class _TextChunk:
+    def __init__(self, content: str) -> None:
+        self.content = content
 
 
 class GuestSpyGraph:
@@ -27,12 +33,28 @@ class GuestSpyGraph:
         }
 
 
-def _client(monkeypatch, *, guest_enabled: bool = True) -> TestClient:  # noqa: ANN001
+class GuestCancellingStreamingGraph:
+    """Graph spy that simulates cooperative cancellation for guest limit tests."""
+
+    def invoke(self, input: dict[str, Any]) -> dict[str, Any]:  # noqa: A002, ARG002
+        raise AssertionError("streaming endpoint should use graph.stream when available")
+
+    def stream(self, input: dict[str, Any], **kwargs: Any):  # noqa: A002, ARG002, ANN202
+        _mark_latest_running_run_cancelling(input["conversation_id"])
+        yield {"type": "messages", "data": (_TextChunk("cancelled"), {})}
+
+
+def _client(
+    monkeypatch,  # noqa: ANN001
+    *,
+    guest_enabled: bool = True,
+    graph: Any | None = None,
+) -> TestClient:
     monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
     monkeypatch.setenv("MY_AGENTS_SESSION_COOKIE_SECURE", "false")
     monkeypatch.setenv("MY_AGENTS_GUEST_ACCESS_ENABLED", "true" if guest_enabled else "false")
     app = create_app()
-    app.dependency_overrides[get_graph_runner] = lambda: GuestSpyGraph()
+    app.dependency_overrides[get_graph_runner] = lambda: graph or GuestSpyGraph()
     return TestClient(app)
 
 
@@ -59,6 +81,25 @@ def _first_row(model):  # noqa: ANN001 - SQLAlchemy model class
     db = next(session_generator)
     try:
         return db.scalars(select(model)).first()
+    finally:
+        session_generator.close()
+
+
+def _mark_latest_running_run_cancelling(conversation_id: str) -> None:
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        run = db.scalar(
+            select(AgentRunModel)
+            .where(
+                AgentRunModel.conversation_id == conversation_id,
+                AgentRunModel.status == RunStatus.RUNNING.value,
+            )
+            .order_by(AgentRunModel.created_at.desc())
+        )
+        assert run is not None
+        run.status = RunStatus.CANCELLING.value
+        db.commit()
     finally:
         session_generator.close()
 
@@ -161,6 +202,36 @@ def test_guest_prompt_cap_applies_to_chat_runs(monkeypatch) -> None:  # noqa: AN
     )
 
     assert [response.status_code for response in responses] == [200, 200, 200, 200, 200]
+    assert limited.status_code == 429
+    assert limited.json()["detail"] == "guest prompt limit reached"
+
+
+def test_guest_interrupted_prompt_counts_toward_prompt_cap(monkeypatch) -> None:  # noqa: ANN001
+    client = _client(monkeypatch, graph=GuestCancellingStreamingGraph())
+    _guest_login(client)
+    conversation_id = client.post("/conversations", json={"title": "Guest interrupted"}).json()[
+        "id"
+    ]
+
+    with client.stream(
+        "POST",
+        f"/conversations/{conversation_id}/runs/stream",
+        json={"message": "Interrupted prompt"},
+    ) as response:
+        assert response.status_code == 200
+        assert "event: run_cancelled" in response.read().decode()
+
+    client.app.dependency_overrides[get_graph_runner] = lambda: GuestSpyGraph()
+    followups = [
+        client.post(f"/conversations/{conversation_id}/runs", json={"message": f"Prompt {index}"})
+        for index in range(4)
+    ]
+    limited = client.post(
+        f"/conversations/{conversation_id}/runs",
+        json={"message": "Prompt after interrupted plus four"},
+    )
+
+    assert [response.status_code for response in followups] == [200, 200, 200, 200]
     assert limited.status_code == 429
     assert limited.json()["detail"] == "guest prompt limit reached"
 

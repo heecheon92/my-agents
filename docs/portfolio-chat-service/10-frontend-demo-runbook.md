@@ -217,13 +217,17 @@ How does the portfolio chat service stream answers and persist app state?
 
 Expected event names:
 
+- `run_started`
 - `user_message_stored`
 - `retrieval_completed`
 - `graph_invoked`
 - `answer_delta`
 - `answer_composed`
 - `run_completed`
+- cancellation path: `run_cancelled`
 - failure path: `run_failed` and `run_error`
+
+`run_started` includes `{ "run_id": "...", "conversation_id": "...", "status": "running" }`, which the frontend uses for explicit send-immediately cancellation via `POST /conversations/{conversation_id}/runs/{run_id}/cancel`.
 
 `answer_delta` payloads are incremental text chunks:
 

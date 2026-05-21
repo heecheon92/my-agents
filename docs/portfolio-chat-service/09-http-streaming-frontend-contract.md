@@ -47,7 +47,8 @@ sequenceDiagram
     participant G as LangGraph
 
     UI->>API: POST /conversations/{id}/runs/stream
-    API->>DB: store user message
+    API->>DB: store user message and running run
+    API-->>UI: event run_started with run_id
     API-->>UI: event user_message_stored
     API->>API: decide retrieval route and answer mode
     API->>R: retrieve authorized chunks only when required/optional
@@ -65,12 +66,23 @@ sequenceDiagram
 
 Successful streams emit:
 
-1. `user_message_stored`
-2. `retrieval_completed`
-3. `graph_invoked`
-4. zero or more `answer_delta`
-5. `answer_composed`
-6. `run_completed`
+1. `run_started`
+2. `user_message_stored`
+3. `retrieval_completed`
+4. `graph_invoked`
+5. zero or more `answer_delta`
+6. `answer_composed`
+7. `run_completed`
+
+`run_started` carries the server run id early enough for explicit cancellation:
+
+```json
+{
+  "run_id": "...",
+  "conversation_id": "...",
+  "status": "running"
+}
+```
 
 `answer_delta` events carry incremental assistant text:
 
@@ -107,16 +119,67 @@ The final `run_completed` event contains the same response shape as
 
 Failed graph execution after the stream starts emits a redacted failure path:
 
-1. `user_message_stored`
-2. `retrieval_completed`
-3. `run_failed`
-4. `run_error`
+1. `run_started`
+2. `user_message_stored`
+3. `retrieval_completed`
+4. `run_failed`
+5. `run_error`
 
 If the graph had already begun streaming, the client may have seen `graph_invoked` or
 partial `answer_delta` events before the failure event. The persisted run status is still
 `failed`, and `GET /conversations/{conversation_id}/runs/{run_id}/events` returns the
 redacted persisted event sequence. The stream intentionally does not expose raw user
 prompts, private provider exceptions, chain-of-thought, or document content.
+
+## Cancellation / send-immediately steering
+
+The stream supports cooperative cancellation for frontend steering UX. The frontend should
+keep queueing as the default behavior, and use cancellation only for an explicit
+"send immediately" action.
+
+```text
+POST /conversations/{conversation_id}/runs/{run_id}/cancel
+```
+
+Response shape:
+
+```json
+{
+  "run_id": "...",
+  "conversation_id": "...",
+  "status": "cancelling"
+}
+```
+
+If the run is already terminal, the endpoint returns the existing terminal status. A
+streaming run observes cancellation cooperatively between retrieval/graph stream steps,
+emits `run_cancelled`, marks the run `cancelled`, and closes the stream. Partial assistant
+text is intentionally **not** persisted as an assistant message, and cancelled runs have no
+citations or completed run detail.
+
+The backend rejects new `/runs` and `/runs/stream` requests for the same conversation while
+a run is `running` or `cancelling`:
+
+```json
+{
+  "detail": "conversation run already active"
+}
+```
+
+Frontend send-immediately flow:
+
+1. Read `run_started.data.run_id` from the active stream.
+2. Call `POST /conversations/{conversation_id}/runs/{run_id}/cancel`.
+3. Wait for `run_cancelled` or stream close.
+4. Send the immediate message as a new run.
+5. Treat `409 conversation run already active` as a safe retry/backoff state.
+
+Guest prompt limits count persisted user messages, so an interrupted prompt still counts
+against the guest prompt cap; the replacement immediate message counts separately.
+
+Current limitation: this is cooperative cancellation, not provider-level hard abort. If the
+underlying graph/provider is blocked and emits no stream step, cancellation may not be
+observed until that call returns or yields.
 
 ## Frontend contract guidance
 
@@ -136,7 +199,7 @@ prompts, private provider exceptions, chain-of-thought, or document content.
   compatibility source of truth for the persisted answer.
 - Deterministic fallback may chunk the final local reply immediately before completion when
   the graph provider does not emit token chunks.
-- Run cancellation and retry endpoints are not implemented yet.
+- Cancellation is cooperative and does not hard-abort a blocked provider call yet.
 - Long-running jobs still execute inside the request; background queues remain a later milestone.
 - CORS must be configured when a real frontend origin is chosen.
 
@@ -144,3 +207,4 @@ prompts, private provider exceptions, chain-of-thought, or document content.
 
 - 2026-05-19: Created after adding the SSE conversation-run stream endpoint.
 - 2026-05-19: Added `answer_delta` events for incremental assistant text streaming.
+- 2026-05-21: Added early `run_started`, cooperative run cancellation, and active-run rejection for send-immediately steering.

@@ -11,7 +11,7 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from my_agents.agents.general_assistant.classifier import classify_messages
@@ -38,6 +38,7 @@ from my_agents.conversations.schemas import (
     AgentRunSummaryResponse,
     ConversationCreateRequest,
     ConversationResponse,
+    ConversationRunCancelResponse,
     ConversationRunRequest,
     ConversationRunResponse,
     MessageCreateRequest,
@@ -61,6 +62,7 @@ from my_agents.settings import Settings, get_settings
 conversations_router = APIRouter(prefix="/conversations", tags=["conversations"])
 
 GraphStreamItemKind = Literal["delta", "result"]
+ACTIVE_RUN_STATUSES = (RunStatus.RUNNING.value, RunStatus.CANCELLING.value)
 
 
 @dataclass(frozen=True)
@@ -189,7 +191,15 @@ def run_conversation(
 ) -> ConversationRunResponse:
     assert_guest_can_send_prompt(db, principal, settings)
     _get_authorized_conversation(db, conversation_id, principal.user_id)
+    _assert_no_active_run(db, conversation_id)
     user_message = _store_user_message(db, conversation_id, request.message)
+    run = _start_run(
+        db=db,
+        conversation_id=conversation_id,
+        user_id=principal.user_id,
+        user_message_id=user_message.id,
+        message_content_length=len(request.message.strip()),
+    )
 
     messages = _messages_for_conversation(db, conversation_id)
     retrieval_context = _prepare_retrieval_context(
@@ -198,22 +208,34 @@ def run_conversation(
         message=request.message,
         messages=messages,
     )
+    _record_run_retrieval_metadata(
+        db,
+        run.id,
+        retrieval_decision=retrieval_context.decision,
+        answer_mode=retrieval_context.answer_mode,
+    )
+    _append_run_event(
+        db,
+        run.id,
+        AgentEventType.RETRIEVAL_COMPLETED,
+        _retrieval_completed_payload(
+            retrieved_chunks=retrieval_context.retrieved_chunks,
+            retrieval_latency_ms=retrieval_context.retrieval_latency_ms,
+            retrieval_decision=retrieval_context.decision,
+            answer_mode=retrieval_context.answer_mode,
+        ),
+    )
     if retrieval_context.decision.route == "clarification_required":
         route = classify_messages(messages)
         return _persist_completed_run(
             db=db,
+            run_id=run.id,
             conversation_id=conversation_id,
-            user_id=principal.user_id,
-            user_message_id=user_message.id,
-            message_content_length=len(request.message.strip()),
-            messages=messages,
             retrieved_chunks=[],
-            retrieval_latency_ms=retrieval_context.retrieval_latency_ms,
             route=route,
             reply=_clarification_reply(retrieval_context.decision),
             retrieval_decision=retrieval_context.decision,
             answer_mode=retrieval_context.answer_mode,
-            graph_invoked=False,
         )
     graph_input = _graph_input_for_run(
         messages=messages,
@@ -221,48 +243,47 @@ def run_conversation(
         conversation_id=conversation_id,
         retrieval_context=retrieval_context,
     )
+    _append_run_event(
+        db,
+        run.id,
+        AgentEventType.GRAPH_INVOKED,
+        _graph_invoked_payload(
+            route=classify_messages(messages),
+            messages=messages,
+            retrieved_chunks=retrieval_context.retrieved_chunks,
+            retrieval_decision=retrieval_context.decision,
+            answer_mode=retrieval_context.answer_mode,
+        ),
+    )
     try:
         result = graph_runner.invoke(graph_input)
     except ResponseProviderConfigurationError as exc:
         _persist_failed_run(
             db=db,
+            run_id=run.id,
             conversation_id=conversation_id,
-            user_id=principal.user_id,
-            user_message_id=user_message.id,
-            message_content_length=len(request.message.strip()),
-            retrieved_chunks=retrieval_context.retrieved_chunks,
-            retrieval_latency_ms=retrieval_context.retrieval_latency_ms,
-            retrieval_decision=retrieval_context.decision,
-            answer_mode=retrieval_context.answer_mode,
             error_type=type(exc).__name__,
         )
         raise HTTPException(status_code=503, detail="conversation run failed") from exc
     except Exception as exc:
         _persist_failed_run(
             db=db,
+            run_id=run.id,
             conversation_id=conversation_id,
-            user_id=principal.user_id,
-            user_message_id=user_message.id,
-            message_content_length=len(request.message.strip()),
-            retrieved_chunks=retrieval_context.retrieved_chunks,
-            retrieval_latency_ms=retrieval_context.retrieval_latency_ms,
-            retrieval_decision=retrieval_context.decision,
-            answer_mode=retrieval_context.answer_mode,
             error_type=type(exc).__name__,
         )
         raise HTTPException(status_code=502, detail="conversation run failed") from exc
     route = _coerce_route(result["route"])
     used_chunks = _chunks_used_for_answer(retrieval_context)
     reply = _compose_rag_reply(result["reply"], used_chunks, retrieval_context.answer_mode)
+    if _is_run_cancelling(db, run.id):
+        _mark_run_cancelled(db, run.id)
+        raise HTTPException(status_code=409, detail="conversation run cancelled")
     return _persist_completed_run(
         db=db,
+        run_id=run.id,
         conversation_id=conversation_id,
-        user_id=principal.user_id,
-        user_message_id=user_message.id,
-        message_content_length=len(request.message.strip()),
-        messages=messages,
         retrieved_chunks=used_chunks,
-        retrieval_latency_ms=retrieval_context.retrieval_latency_ms,
         route=route,
         reply=reply,
         retrieval_decision=retrieval_context.decision,
@@ -309,6 +330,7 @@ def stream_conversation_run(
     """
     assert_guest_can_send_prompt(db, principal, settings)
     _get_authorized_conversation(db, conversation_id, principal.user_id)
+    _assert_no_active_run(db, conversation_id)
     return StreamingResponse(
         _conversation_run_events(
             db=db,
@@ -331,6 +353,17 @@ def _conversation_run_events(
 ) -> Iterator[str]:
     user_message = _store_user_message(db, conversation_id, request.message)
     message_content_length = len(request.message.strip())
+    run = _start_run(
+        db=db,
+        conversation_id=conversation_id,
+        user_id=user_id,
+        user_message_id=user_message.id,
+        message_content_length=message_content_length,
+    )
+    yield _sse_event(
+        AgentEventType.RUN_STARTED.value,
+        {"run_id": run.id, "conversation_id": conversation_id, "status": run.status},
+    )
     user_message_payload = _user_message_stored_payload(
         message_id=user_message.id,
         content_length=message_content_length,
@@ -344,30 +377,35 @@ def _conversation_run_events(
         message=request.message,
         messages=messages,
     )
+    _record_run_retrieval_metadata(
+        db,
+        run.id,
+        retrieval_decision=retrieval_context.decision,
+        answer_mode=retrieval_context.answer_mode,
+    )
     retrieval_payload = _retrieval_completed_payload(
         retrieved_chunks=retrieval_context.retrieved_chunks,
         retrieval_latency_ms=retrieval_context.retrieval_latency_ms,
         retrieval_decision=retrieval_context.decision,
         answer_mode=retrieval_context.answer_mode,
     )
+    _append_run_event(db, run.id, AgentEventType.RETRIEVAL_COMPLETED, retrieval_payload)
     yield _sse_event(AgentEventType.RETRIEVAL_COMPLETED.value, retrieval_payload)
+    if _is_run_cancelling(db, run.id):
+        yield _cancelled_sse_event(db, run.id)
+        return
 
     if retrieval_context.decision.route == "clarification_required":
         route = classify_messages(messages)
         response = _persist_completed_run(
             db=db,
+            run_id=run.id,
             conversation_id=conversation_id,
-            user_id=user_id,
-            user_message_id=user_message.id,
-            message_content_length=message_content_length,
-            messages=messages,
             retrieved_chunks=[],
-            retrieval_latency_ms=retrieval_context.retrieval_latency_ms,
             route=route,
             reply=_clarification_reply(retrieval_context.decision),
             retrieval_decision=retrieval_context.decision,
             answer_mode=retrieval_context.answer_mode,
-            graph_invoked=False,
         )
         yield _sse_event(
             AgentEventType.ANSWER_COMPOSED.value,
@@ -395,17 +433,22 @@ def _conversation_run_events(
     try:
         for item in _stream_graph_items(graph_runner=graph_runner, graph_input=graph_input):
             if not graph_invoked:
+                graph_payload = _graph_invoked_payload(
+                    route=stream_route,
+                    messages=messages,
+                    retrieved_chunks=retrieval_context.retrieved_chunks,
+                    retrieval_decision=retrieval_context.decision,
+                    answer_mode=retrieval_context.answer_mode,
+                )
+                _append_run_event(db, run.id, AgentEventType.GRAPH_INVOKED, graph_payload)
                 yield _sse_event(
                     AgentEventType.GRAPH_INVOKED.value,
-                    _graph_invoked_payload(
-                        route=stream_route,
-                        messages=messages,
-                        retrieved_chunks=retrieval_context.retrieved_chunks,
-                        retrieval_decision=retrieval_context.decision,
-                        answer_mode=retrieval_context.answer_mode,
-                    ),
+                    graph_payload,
                 )
                 graph_invoked = True
+            if _is_run_cancelling(db, run.id):
+                yield _cancelled_sse_event(db, run.id)
+                return
             if item.kind == "delta":
                 delta_sequence += 1
                 streamed_base_reply_parts.append(item.delta)
@@ -418,14 +461,8 @@ def _conversation_run_events(
     except ResponseProviderConfigurationError as exc:
         run_id = _persist_failed_run(
             db=db,
+            run_id=run.id,
             conversation_id=conversation_id,
-            user_id=user_id,
-            user_message_id=user_message.id,
-            message_content_length=message_content_length,
-            retrieved_chunks=retrieval_context.retrieved_chunks,
-            retrieval_latency_ms=retrieval_context.retrieval_latency_ms,
-            retrieval_decision=retrieval_context.decision,
-            answer_mode=retrieval_context.answer_mode,
             error_type=type(exc).__name__,
         )
         yield _sse_event(
@@ -437,14 +474,8 @@ def _conversation_run_events(
     except Exception as exc:
         run_id = _persist_failed_run(
             db=db,
+            run_id=run.id,
             conversation_id=conversation_id,
-            user_id=user_id,
-            user_message_id=user_message.id,
-            message_content_length=message_content_length,
-            retrieved_chunks=retrieval_context.retrieved_chunks,
-            retrieval_latency_ms=retrieval_context.retrieval_latency_ms,
-            retrieval_decision=retrieval_context.decision,
-            answer_mode=retrieval_context.answer_mode,
             error_type=type(exc).__name__,
         )
         yield _sse_event(
@@ -461,29 +492,33 @@ def _conversation_run_events(
     used_chunks = _chunks_used_for_answer(retrieval_context)
     reply = _compose_rag_reply(base_reply, used_chunks, retrieval_context.answer_mode)
     if not graph_invoked:
+        graph_payload = _graph_invoked_payload(
+            route=route,
+            messages=messages,
+            retrieved_chunks=retrieval_context.retrieved_chunks,
+            retrieval_decision=retrieval_context.decision,
+            answer_mode=retrieval_context.answer_mode,
+        )
+        _append_run_event(db, run.id, AgentEventType.GRAPH_INVOKED, graph_payload)
         yield _sse_event(
             AgentEventType.GRAPH_INVOKED.value,
-            _graph_invoked_payload(
-                route=route,
-                messages=messages,
-                retrieved_chunks=retrieval_context.retrieved_chunks,
-                retrieval_decision=retrieval_context.decision,
-                answer_mode=retrieval_context.answer_mode,
-            ),
+            graph_payload,
         )
     if not streamed_base_reply_parts:
         for delta in _fallback_answer_deltas(base_reply):
+            if _is_run_cancelling(db, run.id):
+                yield _cancelled_sse_event(db, run.id)
+                return
             delta_sequence += 1
             yield _sse_event("answer_delta", {"delta": delta, "sequence": delta_sequence})
+    if _is_run_cancelling(db, run.id):
+        yield _cancelled_sse_event(db, run.id)
+        return
     response = _persist_completed_run(
         db=db,
+        run_id=run.id,
         conversation_id=conversation_id,
-        user_id=user_id,
-        user_message_id=user_message.id,
-        message_content_length=message_content_length,
-        messages=messages,
         retrieved_chunks=used_chunks,
-        retrieval_latency_ms=retrieval_context.retrieval_latency_ms,
         route=route,
         reply=reply,
         retrieval_decision=retrieval_context.decision,
@@ -504,18 +539,13 @@ def _conversation_run_events(
 def _persist_completed_run(
     *,
     db: Session,
+    run_id: str,
     conversation_id: str,
-    user_id: str,
-    user_message_id: str,
-    message_content_length: int,
-    messages: list[BaseMessage],
     retrieved_chunks: list[RetrievedChunk],
-    retrieval_latency_ms: float,
     route: RouteDecision,
     reply: str,
     retrieval_decision: RetrievalRoutingDecision,
     answer_mode: AnswerMode,
-    graph_invoked: bool = True,
 ) -> ConversationRunResponse:
     assistant_message = MessageModel(
         conversation_id=conversation_id,
@@ -524,81 +554,39 @@ def _persist_completed_run(
     )
     db.add(assistant_message)
     db.flush()
-    run = AgentRunModel(
-        conversation_id=conversation_id,
-        user_id=user_id,
-        status=RunStatus.COMPLETED.value,
-        route_label=route.label,
-        route_explanation=route.explanation,
-        retrieval_route=retrieval_decision.route,
-        answer_mode=answer_mode,
-        document_scope=retrieval_decision.document_scope,
-        assistant_message_id=assistant_message.id,
-    )
-    db.add(run)
+    run = db.get(AgentRunModel, run_id)
+    if run is None or run.conversation_id != conversation_id:
+        raise RuntimeError("started conversation run is unavailable")
+    run.status = RunStatus.COMPLETED.value
+    run.route_label = route.label
+    run.route_explanation = route.explanation
+    run.retrieval_route = retrieval_decision.route
+    run.answer_mode = answer_mode
+    run.document_scope = retrieval_decision.document_scope
+    run.assistant_message_id = assistant_message.id
     db.flush()
     citations = [
         CitationModel(
-            run_id=run.id,
+            run_id=run_id,
             document_id=item.document.id,
             chunk_id=item.chunk.id,
             snippet=item.chunk.content[:240],
         )
         for item in retrieved_chunks
     ]
-    events = [
-        _event(
-            run.id,
-            1,
-            AgentEventType.USER_MESSAGE_STORED,
-            _user_message_stored_payload(
-                message_id=user_message_id,
-                content_length=message_content_length,
-            ),
+    db.add_all(citations)
+    _append_run_event(
+        db,
+        run.id,
+        AgentEventType.ANSWER_COMPOSED,
+        _answer_composed_payload(
+            citation_count=len(citations),
+            reply=reply,
+            retrieval_decision=retrieval_decision,
+            answer_mode=answer_mode,
         ),
-        _event(
-            run.id,
-            2,
-            AgentEventType.RETRIEVAL_COMPLETED,
-            _retrieval_completed_payload(
-                retrieved_chunks=retrieved_chunks,
-                retrieval_latency_ms=retrieval_latency_ms,
-                retrieval_decision=retrieval_decision,
-                answer_mode=answer_mode,
-            ),
-        ),
-    ]
-    next_sequence = 3
-    if graph_invoked:
-        events.append(
-            _event(
-                run.id,
-                next_sequence,
-                AgentEventType.GRAPH_INVOKED,
-                _graph_invoked_payload(
-                    route=route,
-                    messages=messages,
-                    retrieved_chunks=retrieved_chunks,
-                    retrieval_decision=retrieval_decision,
-                    answer_mode=answer_mode,
-                ),
-            )
-        )
-        next_sequence += 1
-    events.append(
-        _event(
-            run.id,
-            next_sequence,
-            AgentEventType.ANSWER_COMPOSED,
-            _answer_composed_payload(
-                citation_count=len(citations),
-                reply=reply,
-                retrieval_decision=retrieval_decision,
-                answer_mode=answer_mode,
-            ),
-        )
+        commit=False,
     )
-    db.add_all([*citations, *events])
     db.commit()
     db.refresh(run)
     for citation in citations:
@@ -644,6 +632,40 @@ def list_runs(
         .order_by(AgentRunModel.created_at.desc(), AgentRunModel.id.desc())
     ).all()
     return [_run_summary_response(run) for run in runs]
+
+
+@conversations_router.post(
+    "/{conversation_id}/runs/{run_id}/cancel",
+    response_model=ConversationRunCancelResponse,
+)
+def cancel_run(
+    conversation_id: str,
+    run_id: str,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    db: Annotated[Session, Depends(get_database_session)],
+) -> ConversationRunCancelResponse:
+    """Request cooperative cancellation for the active run in an authorized conversation."""
+    assert_guest_access_active(db, principal)
+    _get_authorized_conversation(db, conversation_id, principal.user_id)
+    run = db.get(AgentRunModel, run_id)
+    if run is None or run.conversation_id != conversation_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="run not found")
+    if run.status == RunStatus.RUNNING.value:
+        run.status = RunStatus.CANCELLING.value
+        _append_run_event(
+            db,
+            run.id,
+            AgentEventType.RUN_CANCEL_REQUESTED,
+            {"run_id": run.id, "status": RunStatus.CANCELLING.value},
+            commit=False,
+        )
+        db.commit()
+        db.refresh(run)
+    return ConversationRunCancelResponse(
+        run_id=run.id,
+        conversation_id=run.conversation_id,
+        status=run.status,
+    )
 
 
 @conversations_router.get(
@@ -1035,59 +1057,158 @@ def _answer_composed_payload(
 def _persist_failed_run(
     *,
     db: Session,
+    run_id: str,
+    conversation_id: str,
+    error_type: str,
+) -> str:
+    run = db.get(AgentRunModel, run_id)
+    if run is None or run.conversation_id != conversation_id:
+        raise RuntimeError("started conversation run is unavailable")
+    run.status = RunStatus.FAILED.value
+    _append_run_event(
+        db,
+        run.id,
+        AgentEventType.RUN_FAILED,
+        {"safe_error_type": error_type},
+        commit=False,
+    )
+    db.commit()
+    return run.id
+
+
+def _assert_no_active_run(db: Session, conversation_id: str) -> None:
+    active_run = db.scalar(
+        select(AgentRunModel.id)
+        .where(
+            AgentRunModel.conversation_id == conversation_id,
+            AgentRunModel.status.in_(ACTIVE_RUN_STATUSES),
+        )
+        .limit(1)
+    )
+    if active_run is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="conversation run already active",
+        )
+
+
+def _start_run(
+    *,
+    db: Session,
     conversation_id: str,
     user_id: str,
     user_message_id: str,
     message_content_length: int,
-    retrieved_chunks: list[RetrievedChunk],
-    retrieval_latency_ms: float,
-    retrieval_decision: RetrievalRoutingDecision,
-    answer_mode: AnswerMode,
-    error_type: str,
-) -> str:
+) -> AgentRunModel:
     run = AgentRunModel(
         conversation_id=conversation_id,
         user_id=user_id,
-        status=RunStatus.FAILED.value,
-        route_label=None,
-        retrieval_route=retrieval_decision.route,
-        answer_mode=answer_mode,
-        document_scope=retrieval_decision.document_scope,
+        status=RunStatus.RUNNING.value,
     )
     db.add(run)
     db.flush()
-    db.add_all(
-        [
-            _event(
-                run.id,
-                1,
-                AgentEventType.USER_MESSAGE_STORED,
-                _user_message_stored_payload(
-                    message_id=user_message_id,
-                    content_length=message_content_length,
-                ),
-            ),
-            _event(
-                run.id,
-                2,
-                AgentEventType.RETRIEVAL_COMPLETED,
-                _retrieval_completed_payload(
-                    retrieved_chunks=retrieved_chunks,
-                    retrieval_latency_ms=retrieval_latency_ms,
-                    retrieval_decision=retrieval_decision,
-                    answer_mode=answer_mode,
-                ),
-            ),
-            _event(
-                run.id,
-                3,
-                AgentEventType.RUN_FAILED,
-                {"safe_error_type": error_type},
-            ),
-        ]
+    _append_run_event(
+        db,
+        run.id,
+        AgentEventType.RUN_STARTED,
+        {"run_id": run.id, "conversation_id": conversation_id, "status": run.status},
+        commit=False,
+    )
+    _append_run_event(
+        db,
+        run.id,
+        AgentEventType.USER_MESSAGE_STORED,
+        _user_message_stored_payload(
+            message_id=user_message_id,
+            content_length=message_content_length,
+        ),
+        commit=False,
     )
     db.commit()
-    return run.id
+    db.refresh(run)
+    return run
+
+
+def _append_run_event(
+    db: Session,
+    run_id: str,
+    event_type: AgentEventType,
+    payload: dict,
+    *,
+    commit: bool = True,
+) -> AgentEventModel:
+    next_sequence = (
+        db.scalar(
+            select(func.coalesce(func.max(AgentEventModel.sequence), 0)).where(
+                AgentEventModel.run_id == run_id
+            )
+        )
+        or 0
+    ) + 1
+    event = _event(run_id, next_sequence, event_type, payload)
+    db.add(event)
+    if commit:
+        db.commit()
+    else:
+        db.flush()
+    return event
+
+
+def _record_run_retrieval_metadata(
+    db: Session,
+    run_id: str,
+    *,
+    retrieval_decision: RetrievalRoutingDecision,
+    answer_mode: AnswerMode,
+) -> None:
+    run = db.get(AgentRunModel, run_id)
+    if run is None:
+        raise RuntimeError("started conversation run is unavailable")
+    run.retrieval_route = retrieval_decision.route
+    run.answer_mode = answer_mode
+    run.document_scope = retrieval_decision.document_scope
+    db.commit()
+
+
+def _is_run_cancelling(db: Session, run_id: str) -> bool:
+    run = db.get(AgentRunModel, run_id, populate_existing=True)
+    return run is not None and run.status == RunStatus.CANCELLING.value
+
+
+def _mark_run_cancelled(db: Session, run_id: str) -> AgentRunModel:
+    run = db.get(AgentRunModel, run_id, populate_existing=True)
+    if run is None:
+        raise RuntimeError("started conversation run is unavailable")
+    if run.status != RunStatus.CANCELLED.value:
+        run.status = RunStatus.CANCELLED.value
+        _append_run_event(
+            db,
+            run.id,
+            AgentEventType.RUN_CANCELLED,
+            {
+                "run_id": run.id,
+                "conversation_id": run.conversation_id,
+                "status": RunStatus.CANCELLED.value,
+                "partial_reply_persisted": False,
+            },
+            commit=False,
+        )
+        db.commit()
+        db.refresh(run)
+    return run
+
+
+def _cancelled_sse_event(db: Session, run_id: str) -> str:
+    run = _mark_run_cancelled(db, run_id)
+    return _sse_event(
+        AgentEventType.RUN_CANCELLED.value,
+        {
+            "run_id": run.id,
+            "conversation_id": run.conversation_id,
+            "status": run.status,
+            "partial_reply_persisted": False,
+        },
+    )
 
 
 def _event(

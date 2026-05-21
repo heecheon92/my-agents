@@ -531,15 +531,23 @@ entity mention으로 연결된 권한 내 관련 chunk를 확장합니다. 응�
 KB 접근을 위한 제품용 chat surface가 되어서는 안 됩니다.
 
 `/conversations/{conversation_id}/runs/stream`은 같은 product run을
-`text/event-stream` Server-Sent Events로 노출합니다. `user_message_stored`,
-`retrieval_completed`, `graph_invoked`, `answer_composed` 같은 redacted progress event를
-보내고, assistant text는 `answer_delta` event로 점진적으로 보낸 뒤, `/runs`와 같은 응답
-shape를 담은 최종 `run_completed` event를 보냅니다. stream 시작 후 graph 실행이 실패하면
-failed run을 저장하고 raw prompt나 provider exception text를 노출하지 않는 `run_failed`
-및 `run_error` event를 보냅니다.
+`text/event-stream` Server-Sent Events로 노출합니다. 먼저 server `run_id`를 담은
+`run_started`를 보내고, `user_message_stored`, `retrieval_completed`, `graph_invoked`,
+`answer_composed` 같은 redacted progress event를 보냅니다. assistant text는
+`answer_delta` event로 점진적으로 보낸 뒤, `/runs`와 같은 응답 shape를 담은 최종
+`run_completed` event를 보냅니다. stream 시작 후 graph 실행이 실패하면 failed run을
+저장하고 raw prompt나 provider exception text를 노출하지 않는 `run_failed` 및
+`run_error` event를 보냅니다.
 프론트엔드는 `GET /conversations/{conversation_id}/messages`로 서버가 저장한 transcript를
-권한 확인 후 다시 읽고, `GET /conversations/{conversation_id}/runs`로 completed/failed run
-history를 확인할 수 있습니다.
+권한 확인 후 다시 읽고, `GET /conversations/{conversation_id}/runs`로 completed/failed/cancelled
+run history를 확인할 수 있습니다.
+
+명시적인 send-immediately steering은 `run_started`의 `run_id`로
+`POST /conversations/{conversation_id}/runs/{run_id}/cancel`을 호출하고, `run_cancelled` 또는
+stream 종료를 기다린 뒤 새 message를 제출합니다. 백엔드는 같은 conversation의 parallel active
+run을 `409` 및 `detail: "conversation run already active"`로 거부합니다. cancelled run은 partial
+assistant text나 citation을 저장하지 않으며, 중단된 user prompt는 guest prompt limit에 그대로
+포함됩니다.
 
 ### Knowledge-base ingestion 기반
 
@@ -609,16 +617,18 @@ activity event를 저장합니다.
 - `GET /conversations/{conversation_id}/runs/{run_id}/events`
 - `GET /conversations/{conversation_id}/runs/{run_id}`
 
-현재 이벤트는 user message 저장, permission-aware retrieval 완료, graph invoke, answer
-composition 단계를 순서대로 보여줍니다. streaming endpoint는 request 중에도 같은 high-level
-event vocabulary와 점진적인 assistant text용 `answer_delta` chunk를 전송합니다. graph 실행이 실패하면 failed run과 `run_failed`
-event를 저장하되, payload에는 safe error type만 남깁니다. payload에는 raw message,
+현재 이벤트는 run start, user message 저장, permission-aware retrieval 완료, graph invoke,
+answer composition 단계를 순서대로 보여줍니다. streaming endpoint는 request 중에도 같은
+high-level event vocabulary와 점진적인 assistant text용 `answer_delta` chunk를 전송합니다.
+graph 실행이 실패하면 failed run과 `run_failed` event를 저장하되, payload에는 safe error type만
+남깁니다. 프론트엔드가 streaming run을 명시적으로 cancel하면 `run_cancel_requested`/
+`run_cancelled` event를 저장하고 partial assistant text는 저장하지 않습니다. payload에는 raw message,
 document content, secret token을 넣지 않고 count, route label, latency 같은 redacted
 metadata만 둡니다.
 
 완료된 run detail은 refresh-safe입니다. `GET /conversations/{id}/runs/{run_id}`는 완료된
-run의 persisted reply, route, citations를 반환합니다. 실패한 run은 완료된 reply/citation
-payload가 없으므로 conflict를 반환합니다.
+run의 persisted reply, route, citations를 반환합니다. 실패하거나 취소된 run은 완료된
+reply/citation payload가 없으므로 conflict를 반환합니다.
 
 또한 `my_agents/agent_runtime/evals.py`에는 grounding/citation, permission leakage,
 event redaction, latency budget을 확인하는 deterministic eval helper가 있습니다. 이 eval은

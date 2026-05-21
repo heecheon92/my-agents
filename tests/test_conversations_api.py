@@ -6,10 +6,13 @@ import json
 from typing import Any
 
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from my_agents.api import create_app
 from my_agents.api.assistant import get_graph_runner
+from my_agents.conversations.models import AgentRunModel, RunStatus
 from my_agents.knowledge.retrieval import RetrievalService
+from my_agents.persistence.database import get_database_session
 from my_agents.schemas import RouteDecision
 
 from .conftest import verify_latest_auth_email
@@ -57,6 +60,17 @@ class StreamingSpyGraph:
                 "respond_general": {"reply": "streamed answer"},
             },
         }
+
+
+class CancellingStreamingGraph:
+    """Graph spy that simulates a cancel request while the stream is active."""
+
+    def invoke(self, input: dict) -> dict:  # noqa: A002, ARG002 - matches LangGraph API
+        raise AssertionError("streaming endpoint should use graph.stream when available")
+
+    def stream(self, input: dict, **kwargs: Any):  # noqa: A002, ARG002 - matches LangGraph API
+        _mark_latest_running_run_cancelling(input["conversation_id"])
+        yield {"type": "messages", "data": (_TextChunk("cancelled text"), {})}
 
 
 class FailingGraph:
@@ -353,6 +367,7 @@ def test_streaming_conversation_run_emits_events_and_persists_result(monkeypatch
         events = _parse_sse(response.read().decode())
 
     assert [event["event"] for event in events] == [
+        "run_started",
         "user_message_stored",
         "retrieval_completed",
         "graph_invoked",
@@ -377,6 +392,7 @@ def test_streaming_conversation_run_emits_events_and_persists_result(monkeypatch
         ("assistant", "saw 1 messages"),
     ]
     assert [event["event_type"] for event in run_events.json()] == [
+        "run_started",
         "user_message_stored",
         "retrieval_completed",
         "graph_invoked",
@@ -403,6 +419,7 @@ def test_streaming_conversation_run_emits_answer_deltas_before_completion(monkey
     completed = events[-1]["data"]
 
     assert event_names == [
+        "run_started",
         "user_message_stored",
         "retrieval_completed",
         "graph_invoked",
@@ -444,6 +461,7 @@ def test_failed_streaming_conversation_run_persists_redacted_error(monkeypatch) 
         events = _parse_sse(body)
 
     assert [event["event"] for event in events] == [
+        "run_started",
         "user_message_stored",
         "retrieval_completed",
         "run_failed",
@@ -460,6 +478,7 @@ def test_failed_streaming_conversation_run_persists_redacted_error(monkeypatch) 
 
     assert failed_run["status"] == "failed"
     assert [event["event_type"] for event in run_events.json()] == [
+        "run_started",
         "user_message_stored",
         "retrieval_completed",
         "run_failed",
@@ -495,13 +514,95 @@ def test_failed_conversation_run_is_persisted_with_redacted_event(monkeypatch) -
     assert events.status_code == 200
     event_payload = events.json()
     assert [event["event_type"] for event in event_payload] == [
+        "run_started",
         "user_message_stored",
         "retrieval_completed",
+        "graph_invoked",
         "run_failed",
     ]
     assert event_payload[-1]["payload"] == {"safe_error_type": "RuntimeError"}
     assert "Do not leak this user text" not in events.text
     assert "private provider failure" not in events.text
+
+
+def test_cancel_run_endpoint_marks_running_run_cancelling(monkeypatch) -> None:  # noqa: ANN001
+    client = _client(monkeypatch)
+    user_id = _signup_login(client, "cancel-endpoint@example.com")
+    conversation_id = client.post("/conversations", json={"title": "Cancel endpoint"}).json()["id"]
+    run_id = _create_running_run(conversation_id=conversation_id, user_id=user_id)
+
+    response = client.post(f"/conversations/{conversation_id}/runs/{run_id}/cancel")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "run_id": run_id,
+        "conversation_id": conversation_id,
+        "status": "cancelling",
+    }
+    events = client.get(f"/conversations/{conversation_id}/runs/{run_id}/events")
+    assert events.status_code == 200
+    assert events.json()[-1]["event_type"] == "run_cancel_requested"
+
+
+def test_active_run_rejects_parallel_conversation_run(monkeypatch) -> None:  # noqa: ANN001
+    graph = SpyGraph()
+    client = _client(monkeypatch, graph)
+    user_id = _signup_login(client, "active-run@example.com")
+    conversation_id = client.post("/conversations", json={"title": "Active run"}).json()["id"]
+    _create_running_run(conversation_id=conversation_id, user_id=user_id)
+
+    response = client.post(f"/conversations/{conversation_id}/runs", json={"message": "Second"})
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "conversation run already active"}
+    assert graph.calls == []
+
+
+def test_streaming_cancelled_run_does_not_persist_partial_assistant(monkeypatch) -> None:  # noqa: ANN001
+    client = _client(monkeypatch, CancellingStreamingGraph())
+    _signup_login(client, "stream-cancel@example.com")
+    conversation_id = client.post("/conversations", json={"title": "Stream cancel"}).json()["id"]
+
+    with client.stream(
+        "POST",
+        f"/conversations/{conversation_id}/runs/stream",
+        json={"message": "Cancel this stream"},
+    ) as response:
+        assert response.status_code == 200
+        events = _parse_sse(response.read().decode())
+
+    assert [event["event"] for event in events] == [
+        "run_started",
+        "user_message_stored",
+        "retrieval_completed",
+        "graph_invoked",
+        "run_cancelled",
+    ]
+    run_id = events[0]["data"]["run_id"]
+    assert events[-1]["data"] == {
+        "run_id": run_id,
+        "conversation_id": conversation_id,
+        "status": "cancelled",
+        "partial_reply_persisted": False,
+    }
+
+    transcript = client.get(f"/conversations/{conversation_id}/messages").json()
+    runs = client.get(f"/conversations/{conversation_id}/runs").json()
+    run_events = client.get(f"/conversations/{conversation_id}/runs/{run_id}/events").json()
+
+    assert [(message["role"], message["content"]) for message in transcript] == [
+        ("user", "Cancel this stream"),
+    ]
+    assert runs[0]["status"] == "cancelled"
+    assert [event["event_type"] for event in run_events] == [
+        "run_started",
+        "user_message_stored",
+        "retrieval_completed",
+        "graph_invoked",
+        "run_cancelled",
+    ]
+    detail = client.get(f"/conversations/{conversation_id}/runs/{run_id}")
+    assert detail.status_code == 409
 
 
 def test_legacy_assistant_chat_remains_dev_surface_without_product_run_fields(monkeypatch) -> None:  # noqa: ANN001
@@ -514,6 +615,42 @@ def test_legacy_assistant_chat_remains_dev_surface_without_product_run_fields(mo
     assert payload["handled_by"] == "personal_assistant_graph"
     assert "run_id" not in payload
     assert "citations" not in payload
+
+
+def _create_running_run(*, conversation_id: str, user_id: str) -> str:
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        run = AgentRunModel(
+            conversation_id=conversation_id,
+            user_id=user_id,
+            status=RunStatus.RUNNING.value,
+        )
+        db.add(run)
+        db.commit()
+        db.refresh(run)
+        return run.id
+    finally:
+        session_generator.close()
+
+
+def _mark_latest_running_run_cancelling(conversation_id: str) -> None:
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        run = db.scalar(
+            select(AgentRunModel)
+            .where(
+                AgentRunModel.conversation_id == conversation_id,
+                AgentRunModel.status == RunStatus.RUNNING.value,
+            )
+            .order_by(AgentRunModel.created_at.desc())
+        )
+        assert run is not None
+        run.status = RunStatus.CANCELLING.value
+        db.commit()
+    finally:
+        session_generator.close()
 
 
 def _parse_sse(body: str) -> list[dict[str, Any]]:

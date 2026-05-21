@@ -31,16 +31,19 @@ GET /conversations/{conversation_id}/runs/{run_id}/events
 
 The current events are intentionally high-level:
 
-1. `user_message_stored`
-2. `retrieval_completed`
-3. `graph_invoked`
-4. `answer_composed`
+1. `run_started`
+2. `user_message_stored`
+3. `retrieval_completed`
+4. `graph_invoked`
+5. `answer_composed`
 
-They are enough to show a visible service surface: the UI can say that the backend stored
+They are enough to show a visible service surface: the UI can say that the backend opened a run, stored
 the message, made a retrieval-routing decision, retrieved authorized context when needed,
 invoked the graph when appropriate, and composed a cited or general answer.
 If graph invocation fails, the service stores a failed run and emits `run_failed` with only
-safe error metadata before returning a client-safe error response.
+safe error metadata before returning a client-safe error response. If a streaming run is
+cooperatively cancelled, the service emits `run_cancel_requested`/`run_cancelled` without
+persisting partial assistant text.
 
 ## Redaction boundary
 

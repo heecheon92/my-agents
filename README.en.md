@@ -534,16 +534,24 @@ legacy/dev smoke surface and should not become the product chat surface for pers
 KB access.
 
 `/conversations/{conversation_id}/runs/stream` exposes the same product run as
-`text/event-stream` Server-Sent Events. It emits redacted progress events
-(`user_message_stored`, `retrieval_completed`, `graph_invoked`, `answer_composed`),
-incremental assistant text as `answer_delta` events, and a final `run_completed` event
-with the same response shape as `/runs`. If graph execution fails after the stream starts,
-the backend persists a failed run and emits `run_failed` plus `run_error` without leaking
-raw prompts or provider exception text.
+`text/event-stream` Server-Sent Events. It first emits `run_started` with the server
+`run_id`, then redacted progress events (`user_message_stored`, `retrieval_completed`,
+`graph_invoked`, `answer_composed`), incremental assistant text as `answer_delta` events,
+and a final `run_completed` event with the same response shape as `/runs`. If graph
+execution fails after the stream starts, the backend persists a failed run and emits
+`run_failed` plus `run_error` without leaking raw prompts or provider exception text.
 Frontend clients can read the stored transcript through
 `GET /conversations/{conversation_id}/messages` after the same conversation access check,
-and can inspect completed/failed run history through
+and can inspect completed/failed/cancelled run history through
 `GET /conversations/{conversation_id}/runs`.
+
+For explicit send-immediately steering, call
+`POST /conversations/{conversation_id}/runs/{run_id}/cancel` using the `run_id` from
+`run_started`, wait for `run_cancelled` or stream close, then submit the new message. The
+backend rejects parallel active runs in one conversation with `409` and
+`detail: "conversation run already active"`. Cancelled runs do not persist partial
+assistant text or citations; the interrupted user prompt still counts toward guest prompt
+limits.
 
 ### Knowledge-base ingestion foundation
 
@@ -615,17 +623,19 @@ exposing hidden chain-of-thought.
 - `GET /conversations/{conversation_id}/runs/{run_id}/events`
 - `GET /conversations/{conversation_id}/runs/{run_id}`
 
-The current events show user-message storage, permission-aware retrieval completion, graph
-invocation, and answer composition in order. The streaming endpoint emits the same
-high-level event vocabulary during the request plus `answer_delta` chunks for incremental
-assistant text. If graph execution fails, the service stores a failed run plus a
-`run_failed` event with only a safe error type. Payloads avoid raw messages,
+The current events show run start, user-message storage, permission-aware retrieval
+completion, graph invocation, and answer composition in order. The streaming endpoint
+emits the same high-level event vocabulary during the request plus `answer_delta` chunks
+for incremental assistant text. If graph execution fails, the service stores a failed run
+plus a `run_failed` event with only a safe error type. If the frontend explicitly cancels
+a streaming run, the service stores `run_cancel_requested`/`run_cancelled` events and does
+not persist partial assistant text. Payloads avoid raw messages,
 document content, and secret tokens; they contain redacted metadata such as counts, route
 labels, and latency.
 
 Completed run detail is refresh-safe: `GET /conversations/{id}/runs/{run_id}` returns the
-persisted reply, route, and citations for completed runs. Failed runs return a conflict
-because they do not have a completed reply/citation payload.
+persisted reply, route, and citations for completed runs. Failed and cancelled runs return
+a conflict because they do not have a completed reply/citation payload.
 
 `my_agents/agent_runtime/evals.py` also provides deterministic eval helpers for
 grounding/citations, permission leakage, event redaction, and latency budgets. These are
