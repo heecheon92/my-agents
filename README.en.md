@@ -524,11 +524,14 @@ runs. The current conversation surface includes:
 
 `/conversations/{conversation_id}/runs` persists the user message and invokes the
 current LangGraph assistant with server-owned conversation history plus
-principal/conversation context. It then retrieves only authorized document chunks,
-expands related authorized chunks through entity mentions, stores the assistant reply
-and citations, and returns a `run_id`. The older `/assistant/chat` endpoint remains as a
-legacy/dev smoke surface and should not become the product chat surface for
-personal/group KB access.
+principal/conversation context. A deterministic retrieval-routing policy first chooses
+`no_retrieval`, `retrieval_required`, `retrieval_optional`, or `clarification_required`.
+Only when retrieval is needed does `RetrievalService` search authorized document chunks
+and expand related authorized chunks through entity mentions. Responses persist and return
+`answer_mode` (`general_knowledge`, `document_grounded`, or `mixed`) plus citations when
+authorized context is actually used. The older `/assistant/chat` endpoint remains as a
+legacy/dev smoke surface and should not become the product chat surface for personal/group
+KB access.
 
 `/conversations/{conversation_id}/runs/stream` exposes the same product run as
 `text/event-stream` Server-Sent Events. It emits redacted progress events
@@ -567,13 +570,16 @@ calls plus pgvector similarity ranking are still future work.
 
 ### Permission-aware RAG and citation-backed answers
 
-The product conversation run includes the first permission-aware RAG slice.
+The product conversation run includes a permission-aware RAG slice with retrieval routing.
 
-1. It first selects only document chunks the current user can read.
-2. It finds direct matches inside that authorized candidate set using deterministic term scoring.
-3. If the user asks a broad personal-document question such as “tell me about me,” “my resume,” or “my uploaded document” and no direct term match exists, it falls back to the most recent authorized chunks. This keeps resume/profile demos useful without trusting client-provided user IDs or leaking other users' documents.
-4. It expands through entity mentions to related chunks that are still inside the authorized set.
-5. It passes an authorized context payload into the `general_assistant` graph/provider prompt and returns `citations` in the response payload.
+1. `my_agents/knowledge/routing.py` classifies each prompt as `no_retrieval`,
+   `retrieval_required`, `retrieval_optional`, or `clarification_required`.
+2. `no_retrieval` skips `RetrievalService` and answers with `answer_mode=general_knowledge`.
+3. Only `retrieval_required` and `retrieval_optional` call `RetrievalService`; the service first selects only document chunks the current user can read.
+4. It finds direct matches inside that authorized candidate set using deterministic term scoring, and personal-document prompts may fall back to recent authorized chunks.
+5. It expands through entity mentions to related chunks that are still inside the authorized set.
+6. Optional retrieval with relevant context uses `answer_mode=mixed`; required retrieval with relevant context uses `answer_mode=document_grounded`. If no relevant context is found, the response stays general and creates no citations.
+7. It passes only compact authorized context into the `general_assistant` graph/provider prompt and returns `retrieval_route`, `answer_mode`, `document_scope`, and `citations` in the response payload.
 
 Example response excerpt:
 
@@ -582,6 +588,9 @@ Example response excerpt:
   "run_id": "...",
   "reply": "Based on authorized knowledge context:\n- Private RAG Plan: ...",
   "handled_by": "personal_assistant_graph",
+  "retrieval_route": "retrieval_required",
+  "answer_mode": "document_grounded",
+  "document_scope": "unknown",
   "citations": [
     {
       "id": "...",

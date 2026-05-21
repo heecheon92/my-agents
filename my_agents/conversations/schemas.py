@@ -6,6 +6,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from my_agents.knowledge.routing import AnswerMode, DocumentScope, RetrievalRoute
 from my_agents.knowledge.schemas import CitationResponse
 from my_agents.schemas import RouteDecision
 
@@ -55,6 +56,9 @@ class ConversationRunResponse(BaseModel):
     reply: str
     route: RouteDecision
     handled_by: str
+    retrieval_route: RetrievalRoute
+    answer_mode: AnswerMode
+    document_scope: DocumentScope
     citations: list[CitationResponse] = Field(default_factory=list)
 
 

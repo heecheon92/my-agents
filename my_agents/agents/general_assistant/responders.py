@@ -12,6 +12,7 @@ from langchain_openai import ChatOpenAI
 from pydantic import ValidationError
 
 from my_agents.agents.capabilities import AgentCapability
+from my_agents.knowledge.routing import AnswerMode
 from my_agents.schemas import RouteDecision
 from my_agents.settings import Settings, get_settings
 
@@ -70,6 +71,7 @@ class ResponseProvider(Protocol):
         guidance: str,
         capability: AgentCapability | None = None,
         retrieved_context: Sequence[dict[str, Any]] = (),
+        answer_mode: AnswerMode = "general_knowledge",
         debug_empty_response: bool = False,
     ) -> str:
         """Return a user-facing reply for the classified request."""
@@ -87,11 +89,12 @@ class DeterministicResponseProvider:
         guidance: str,
         capability: AgentCapability | None = None,
         retrieved_context: Sequence[dict[str, Any]] = (),
+        answer_mode: AnswerMode = "general_knowledge",
         debug_empty_response: bool = False,
     ) -> str:
         _ = debug_empty_response
         _ = messages
-        context_sentence = _deterministic_context_sentence(retrieved_context)
+        context_sentence = _deterministic_context_sentence(retrieved_context, answer_mode)
         capability_sentence = _deterministic_capability_sentence(capability)
         return (
             f"Classified as route label `{route.label}`. {capability_sentence}"
@@ -120,6 +123,7 @@ class OpenAIResponseProvider:
         guidance: str,
         capability: AgentCapability | None = None,
         retrieved_context: Sequence[dict[str, Any]] = (),
+        answer_mode: AnswerMode = "general_knowledge",
         debug_empty_response: bool = False,
     ) -> str:
         model = self._chat_model
@@ -135,6 +139,7 @@ class OpenAIResponseProvider:
                 guidance=guidance,
                 capability=capability,
                 retrieved_context=retrieved_context,
+                answer_mode=answer_mode,
             )
         )
         return _extract_message_content(
@@ -168,6 +173,7 @@ def _build_input_messages(
     guidance: str,
     capability: AgentCapability | None = None,
     retrieved_context: Sequence[dict[str, Any]] = (),
+    answer_mode: AnswerMode = "general_knowledge",
 ) -> list[BaseMessage]:
     recent_context = list(messages[-6:])
     latest_user_message = _latest_human_text(recent_context)
@@ -181,13 +187,17 @@ def _build_input_messages(
                 f"Route explanation: {route.explanation}\n"
                 f"{_capability_guidance(capability)}\n"
                 f"Local guidance: {guidance}\n\n"
+                f"Answer mode: {answer_mode}\n"
                 f"Authorized document context: {_format_retrieved_context(retrieved_context)}\n\n"
                 f"User message: {latest_user_message}\n\n"
-                "Write one concise, actionable reply. If authorized document context is present "
-                "and relevant, answer from it instead of saying you cannot access uploaded "
-                "documents. If the user asks about themself, their resume, or an uploaded "
-                "document, summarize only from the authorized context. If the context is "
-                "insufficient, say what is missing. If capability mode is simulation, "
+                "Write one concise, actionable reply. In document_grounded mode, use "
+                "authorized document context as the primary source. In mixed mode, use "
+                "document context where relevant and supplement with general guidance. In "
+                "general_knowledge mode, answer generally without claiming document grounding. "
+                "When authorized document context is present and relevant, use it instead "
+                "of saying you cannot access uploaded documents. "
+                "If authorized context is insufficient for a document-grounded request, say "
+                "what is missing. If capability mode is simulation, "
                 "be honest that it is an experimental or placeholder capability when that "
                 "affects the answer. Do not invent completed actions, persistent memory, "
                 "hidden tools, real-world side effects, or a frontend."
@@ -215,11 +225,13 @@ def _format_retrieved_context(retrieved_context: Sequence[dict[str, Any]]) -> st
     return "\n".join(lines)
 
 
-def _deterministic_context_sentence(retrieved_context: Sequence[dict[str, Any]]) -> str:
+def _deterministic_context_sentence(
+    retrieved_context: Sequence[dict[str, Any]], answer_mode: AnswerMode
+) -> str:
     if not retrieved_context:
-        return ""
+        return f"Answer mode `{answer_mode}`. "
     count = len(retrieved_context)
-    return f"Authorized document context available: {count} chunk(s). "
+    return f"Answer mode `{answer_mode}` with {count} authorized document chunk(s). "
 
 
 def _capability_guidance(capability: AgentCapability | None) -> str:

@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from sqlalchemy import desc, or_, select
+from sqlalchemy import desc, func, or_, select
 from sqlalchemy.orm import Session
 
 from my_agents.groups.models import MembershipModel
@@ -43,6 +43,26 @@ class RetrievalService:
         if not combined and _needs_personal_document_fallback(query):
             return self._recent_authorized_chunks(user_id=user_id, limit=limit)
         return sorted(combined.values(), key=lambda item: (-item.score, item.chunk.ordinal))[:limit]
+
+    def authorized_document_count(self, *, user_id: str) -> int:
+        """Return how many distinct documents the user can read."""
+        group_ids = select(MembershipModel.group_id).where(MembershipModel.user_id == user_id)
+        explicit_doc_ids = select(DocumentPermissionModel.document_id).where(
+            DocumentPermissionModel.user_id == user_id,
+            DocumentPermissionModel.can_read.is_(True),
+        )
+        return (
+            self._db.scalar(
+                select(func.count(DocumentModel.id.distinct())).where(
+                    or_(
+                        DocumentModel.owner_user_id == user_id,
+                        DocumentModel.group_id.in_(group_ids),
+                        DocumentModel.id.in_(explicit_doc_ids),
+                    )
+                )
+            )
+            or 0
+        )
 
     def _direct_authorized_matches(self, *, user_id: str, terms: set[str]) -> list[RetrievedChunk]:
         rows = self._authorized_chunk_rows(user_id)

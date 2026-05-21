@@ -9,6 +9,7 @@ from langgraph.graph.message import add_messages
 from my_agents.agents.capabilities import AgentCapability, get_capability_for_route
 from my_agents.agents.general_assistant.classifier import classify_messages
 from my_agents.agents.general_assistant.responders import get_response_provider
+from my_agents.knowledge.routing import AnswerMode, DocumentScope, RetrievalRoute
 from my_agents.schemas import RouteDecision
 
 HANDLED_BY = "personal_assistant_graph"
@@ -23,6 +24,9 @@ class AssistantState(TypedDict, total=False):
     reply: str
     handled_by: str
     retrieved_context: list[dict[str, object]]
+    retrieval_route: RetrievalRoute
+    answer_mode: AnswerMode
+    document_scope: DocumentScope
     debug_empty_openai_response: bool
 
 
@@ -101,6 +105,7 @@ def _compose_reply(state: AssistantState, guidance: str) -> str:
         capability=state["capability"],
         guidance=guidance,
         retrieved_context=state.get("retrieved_context", []),
+        answer_mode=state.get("answer_mode", "general_knowledge"),
         debug_empty_response=state.get("debug_empty_openai_response", False),
     )
 

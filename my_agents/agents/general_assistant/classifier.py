@@ -86,8 +86,9 @@ _GENERAL_EXPLANATION = (
 def classify_message(message: str, history: Iterable[BaseMessage] | None = None) -> RouteDecision:
     """Classify a request into a future-agent route label.
 
-    The classifier is intentionally local, deterministic, and credential-free. History is included
-    only as extra context for classification; it does not represent persistent memory.
+    The classifier is intentionally local, deterministic, and credential-free. Product route labels
+    are based on the current user turn so prior assistant/project-planning text cannot pollute
+    later document or general questions. History is accepted for API compatibility only.
     """
     text = _classification_text(message, history)
     for label, keywords, explanation in _LABEL_KEYWORDS:
@@ -97,15 +98,15 @@ def classify_message(message: str, history: Iterable[BaseMessage] | None = None)
 
 
 def classify_messages(messages: Iterable[BaseMessage]) -> RouteDecision:
-    """Classify a LangChain message list by its latest human message plus prior context."""
+    """Classify a LangChain message list by its latest human message only."""
     message_list = list(messages)
     latest_user_message = _latest_human_text(message_list)
     return classify_message(latest_user_message, message_list[:-1])
 
 
 def _classification_text(message: str, history: Iterable[BaseMessage] | None) -> str:
-    history_text = " ".join(_message_text(item) for item in history or ())
-    return f"{message} {history_text}".casefold()
+    _ = history
+    return message.casefold()
 
 
 def _latest_human_text(messages: list[BaseMessage]) -> str:

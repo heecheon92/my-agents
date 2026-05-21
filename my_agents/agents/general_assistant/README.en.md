@@ -63,17 +63,22 @@ This keeps the API honest: a `learning_coach` route may be useful for study guid
 
 The `general_assistant` folder owns the graph/classifier/responder boundary. Auth, group/document permissions, server-owned conversations, knowledge ingestion, retrieval selection, citations, and agent events are owned by service-layer modules such as `my_agents/api/`, `my_agents/knowledge/`, and `my_agents/conversations/`.
 
-Product conversation runs now pass a compact, already-authorized `retrieved_context` payload into the graph/provider prompt. This lets the OpenAI response answer broad resume/profile questions from uploaded documents while keeping the security decision in the service layer.
+Product conversation runs now execute a deterministic retrieval-routing policy in the service layer first. `general_assistant` receives only `retrieval_route`, `answer_mode`, `document_scope`, and compact `retrieved_context` that has already passed authorization. The graph/provider can adjust answer framing from that metadata, but it does not query vector or document storage directly. Permission decisions remain inside `RetrievalService` and the API/service layer.
 
 ```mermaid
 flowchart LR
-    RunAPI["conversation run API"] --> Retrieval["authorized retrieval + personal-doc fallback"]
-    Retrieval --> Graph["general_assistant graph with retrieved_context"]
+    RunAPI["conversation run API"] --> Router["retrieval routing policy"]
+    Router -->|no_retrieval| Graph["general_assistant graph"]
+    Router -->|required/optional| Retrieval["RetrievalService permission + metadata filters"]
+    Retrieval --> GraphCtx["authorized compact context"]
+    GraphCtx --> Graph
     RunAPI --> Citations["citations/events"]
-    Graph --> Provider["response provider"]
+    Graph --> Provider["response provider with answer_mode"]
 ```
 
-This separation matters for the portfolio: LangGraph demonstrates AI reply flow, while the service layer demonstrates production boundaries such as auth, permissions, and provenance.
+This separation matters for the portfolio: LangGraph demonstrates AI reply flow, while the RetrievalService/API layer demonstrates production boundaries such as auth, permissions, and provenance. Ingestion (upload/parse/chunk/embed) remains a separate pipeline from retrieval routing.
+
+A future `RetrievalGraph` can be added when retrieval becomes a multi-step workflow such as query rewrite, metadata planning, hybrid/vector search, reranking, or context compression. Even then, the hard authorization filter should remain inside `RetrievalService`, not in graph prompts.
 
 ## Where to add OpenAI hosted tools
 

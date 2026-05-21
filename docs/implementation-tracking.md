@@ -80,8 +80,8 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 
 - Server-owned conversations.
 - Persisted user and assistant messages.
-- Conversation run endpoint invokes the current graph.
-- SSE conversation-run stream emits redacted progress events, `answer_delta` assistant text chunks, and a final run response.
+- Conversation run endpoint applies deterministic retrieval routing before invoking the current graph.
+- SSE conversation-run stream emits redacted progress events, retrieval-route/answer-mode metadata, `answer_delta` assistant text chunks, and a final run response.
 - Run summaries and run activity events are persisted and readable.
 - Failure path records a failed run with redacted event metadata.
 
@@ -91,14 +91,15 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 - Text document ingestion remains compatible.
 - PDF-first upload path with safe metadata persistence, page provenance, and FlateDecode text-stream support.
 - Deterministic chunks, embedding fixtures, entity mentions, and co-occurrence relationships.
+- Deterministic retrieval routing supports `no_retrieval`, `retrieval_required`, `retrieval_optional`, and `clarification_required`.
 - Permission-aware retrieval filters candidate chunks before ranking/expansion/composition.
 - Broad personal-document fallback now retrieves recent authorized chunks for resume/profile/uploaded-document questions when exact term matching returns nothing.
-- Authorized retrieved context is passed into the general assistant graph/provider prompt, then citation-backed replies are persisted.
+- Authorized retrieved context plus `answer_mode` is passed into the general assistant graph/provider prompt, then citation-backed replies are persisted only when context is used.
 
 ### Persistence and migrations
 
 - SQLAlchemy models cover auth, auth lifecycle tokens, sessions, groups, documents, knowledge artifacts, conversations, runs, events, and citations.
-- Alembic migrations cover the initial service schema, auth lifecycle, run detail refresh fields, PDF upload provenance fields, and guest access state.
+- Alembic migrations cover the initial service schema, auth lifecycle, run detail refresh fields, PDF upload provenance fields, guest access state, and retrieval-routing run metadata.
 - SQLite in-memory auto-create supports offline tests.
 - Postgres/Neon readiness is documented, with external DB tests skipped unless configured.
 
@@ -116,13 +117,13 @@ Last full local verification run: 2026-05-21
 
 ```text
 uv run pytest -q
-147 passed, 1 skipped in 5.96s
+156 passed, 1 skipped in 6.54s
 
 uv run ruff check . --no-cache
 All checks passed!
 
 uv run ruff format --check .
-110 files already formatted
+113 files already formatted
 
 git diff --check
 passed
@@ -137,7 +138,7 @@ The test harness sets `MY_AGENTS_ENV_FILE=` so a developer's local `.env` file c
 - Generic SMTP auth email delivery is implemented for preview/public visitor verification and reset, but no live provider secrets or hosted smoke have been configured yet.
 - Auth abuse protection is local/in-process by explicit Phase 1 decision; it is acceptable only for single-process public demos and is not a shared Redis/gateway limiter for multi-worker public deployment.
 - No account deletion or profile management surface yet.
-- Guest mode is deferred; no anonymous daily quota or restricted public-demo mode yet.
+- Guest mode is implemented only as an env-gated public-demo path; no durable anonymous daily quota, self-service account deletion, or profile-management surface yet.
 
 ### Security and production hardening
 
@@ -153,7 +154,8 @@ The test harness sets `MY_AGENTS_ENV_FILE=` so a developer's local `.env` file c
 - No docx/HTML parsing pipeline yet.
 - No background ingestion jobs yet.
 - Embeddings are 32-dimensional deterministic lexical-hash fixtures, not provider-backed semantic vectors.
-- Retrieval is deterministic term scoring plus entity expansion and a narrow personal-document fallback, not pgvector similarity search.
+- Retrieval routing/scoring is deterministic term scoring plus entity expansion and a narrow personal-document fallback, not LLM query rewrite/rerank or pgvector similarity search.
+- A dedicated RetrievalGraph is intentionally deferred until retrieval needs query rewrite, metadata planning, hybrid/vector search, reranking, context compression, or branch-level retrieval observability; hard authorization should remain in `RetrievalService` even then.
 - Entity extraction is deterministic regex/technical-term extraction, not production NLP/LLM extraction.
 
 ### Agent/product behavior
@@ -225,6 +227,7 @@ limits.
 
 | Date | Milestone | Evidence |
 | --- | --- | --- |
+| 2026-05-21 | Retrieval routing and answer-mode metadata added before graph invocation. | `my_agents/knowledge/routing.py`; `my_agents/knowledge/retrieval.py`; `my_agents/api/conversations.py`; `my_agents/conversations/models.py`; `alembic/versions/20260521_0006_retrieval_routing_metadata.py`; `tests/test_retrieval_routing.py`; `tests/test_conversations_api.py`; `tests/test_permission_aware_rag.py`; README pair; general assistant README pair; `docs/portfolio-chat-service/06-permission-aware-rag.md`. |
 | 2026-05-21 | PDF/text ingestion sophistication improved with `pypdf`, better chunking/entity extraction, and 32-d deterministic embedding fixtures. | `pyproject.toml`; `uv.lock`; `my_agents/knowledge/pdf_uploads.py`; `my_agents/knowledge/extraction.py`; `tests/test_knowledge_ingestion.py`; README pair; `docs/portfolio-chat-service/05-knowledge-ingestion-extraction.md`. |
 | 2026-05-21 | Provider-free public-demo guest access added with one-time codes, guest sessions, and backend limits. | `my_agents/auth/service.py`; `my_agents/api/auth.py`; `my_agents/auth/guest_limits.py`; `alembic/versions/20260521_0005_guest_access.py`; `tests/test_guest_access_api.py`; README pair; `docs/portfolio-chat-service/02-first-party-auth-sessions.md`. |
 | 2026-05-21 | Generic container deployment path and backend signup disable switch added for public portfolio demos. | `Dockerfile`; `.dockerignore`; `my_agents/settings.py`; `my_agents/api/auth.py`; `tests/test_auth_api.py`; README pair; `docs/portfolio-chat-service/13-generic-container-deployment-path.md`. |

@@ -1,6 +1,6 @@
 ---
 created: 2026-05-17
-updated: 2026-05-17
+updated: 2026-05-21
 status: active
 topics:
   - conversations
@@ -37,8 +37,9 @@ sequenceDiagram
     API->>DB: verify conversation access
     API->>DB: persist user message
     API->>DB: load server-owned message history
-    API->>DB: retrieve authorized knowledge context
-    API->>G: invoke messages + principal_id + conversation_id + retrieved_chunk_ids
+    API->>API: decide retrieval route and answer mode
+    API->>DB: retrieve authorized knowledge context only when needed
+    API->>G: invoke messages + principal_id + conversation_id + retrieval metadata/context
     G-->>API: reply + route
     API->>DB: persist assistant message + AgentRun + citations + events
     API-->>C: run_id + reply + route + citations
@@ -50,9 +51,9 @@ sequenceDiagram
 - `MessageModel` stores user and assistant messages.
 - `AgentRunModel` stores the first durable run boundary.
 - `/conversations/{id}/messages` returns the authorized server-owned transcript for frontend display.
-- `/conversations/{id}/runs` invokes the existing LangGraph assistant with server-owned history.
+- `/conversations/{id}/runs` applies retrieval routing, then invokes the existing LangGraph assistant with server-owned history.
 - `/conversations/{id}/runs` also supports `GET` so a frontend can list completed and failed runs.
-- Runs now include permission-aware retrieval context IDs, citations, and redacted events.
+- Runs now include retrieval route, answer mode, permission-aware retrieval context IDs, citations, and redacted events.
 - Failed graph invocations persist a failed run and redacted `run_failed` event before returning a client-safe error.
 - Group conversations are visible to group members.
 - Outsiders receive safe denial.
@@ -65,12 +66,12 @@ Frontend work should use conversation/run endpoints for product chat.
 
 ## Current limitations
 
-- no streaming transport yet;
+- streaming transport exists for run progress and answer deltas;
 - no run failure table details beyond the basic status field;
 - no LangGraph checkpointer yet;
 - no background job queue for long-running ingestion or agent work yet.
 
-Retrieval, citations, and redacted events now exist as later learning notes.
+Retrieval routing, citations, streaming, and redacted events now exist as later learning notes.
 
 ## Testing evidence
 
@@ -80,13 +81,14 @@ Retrieval, citations, and redacted events now exist as later learning notes.
 - message listing returns the stored transcript in server-owned order;
 - run listing returns frontend-safe run summaries without reply or event payloads;
 - failed graph invocation stores `status=failed` and a redacted `run_failed` event;
-- graph invocation receives `principal_id` and `conversation_id`;
+- graph invocation receives `principal_id`, `conversation_id`, retrieval route, answer mode, and authorized context;
 - group members can read group conversations;
 - outsiders cannot read group conversations or message transcripts;
 - legacy `/assistant/chat` does not return product run fields.
 
 ## Revision history
 
+- 2026-05-21: Updated run flow for retrieval routing, answer modes, and streaming-era metadata.
 - 2026-05-17: Added run history and redacted failed-run persistence.
 - 2026-05-17: Added authorized conversation transcript listing for frontend display.
 - 2026-05-17: Updated after adding citations and redacted run events.

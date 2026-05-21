@@ -522,10 +522,13 @@ conversation run으로 이동하고 있습니다. 현재 conversation surface는
 
 `/conversations/{conversation_id}/runs`는 user message를 저장하고, 서버가 소유하는
 conversation history와 principal/conversation context를 현재 LangGraph assistant에
-전달합니다. 이후 권한이 확인된 document chunk만 검색하고, entity mention으로 연결된
-권한 내 관련 chunk를 확장한 뒤, assistant reply와 citation을 저장하고 `run_id`를
-반환합니다. 기존 `/assistant/chat` endpoint는 legacy/dev smoke surface로 남아 있으며,
-personal/group KB 접근을 위한 제품용 chat surface가 되어서는 안 됩니다.
+전달합니다. 먼저 deterministic retrieval routing policy가 `no_retrieval`,
+`retrieval_required`, `retrieval_optional`, `clarification_required` 중 하나를 선택합니다.
+검색이 필요한 경우에만 `RetrievalService`가 권한이 확인된 document chunk를 검색하고,
+entity mention으로 연결된 권한 내 관련 chunk를 확장합니다. 응답은 `answer_mode`
+(`general_knowledge`, `document_grounded`, `mixed`)와 citation을 함께 저장/반환합니다.
+기존 `/assistant/chat` endpoint는 legacy/dev smoke surface로 남아 있으며, personal/group
+KB 접근을 위한 제품용 chat surface가 되어서는 안 됩니다.
 
 `/conversations/{conversation_id}/runs/stream`은 같은 product run을
 `text/event-stream` Server-Sent Events로 노출합니다. `user_message_stored`,
@@ -562,14 +565,16 @@ lexical-hash embedding fixture를 생성합니다. 이 경로는 scanned/encrypt
 
 ### Permission-aware RAG 및 citation 기반 응답
 
-제품용 conversation run에는 첫 번째 permission-aware RAG slice가 포함되어 있습니다.
+제품용 conversation run에는 retrieval routing이 포함된 permission-aware RAG slice가 포함되어 있습니다.
 
-1. 현재 사용자에게 읽기 권한이 있는 document chunk 후보만 먼저 선택합니다.
-2. 그 후보 안에서 deterministic term score로 직접 관련 chunk를 찾습니다.
-3. “나에 대해 알려줘”, “내 이력서”, “업로드한 문서”처럼 넓은 personal-document 질문에서 직접 term match가 없으면, 최신 권한 내 chunk로 fallback합니다. 이 방식은 client가 보낸 user_id를 믿지 않으면서도 이력서/프로필 데모 질문이 빈 검색 결과로 끝나지 않게 합니다.
-4. 직접 검색된 chunk의 entity mention을 기준으로, 같은 entity를 공유하는 권한 내 chunk를
-   graph expansion context로 추가합니다.
-5. 권한이 확인된 context payload를 `general_assistant` graph/provider prompt에 전달하고, 응답 payload에는 `citations`를 함께 반환합니다.
+1. `my_agents/knowledge/routing.py`가 질문을 `no_retrieval`, `retrieval_required`,
+   `retrieval_optional`, `clarification_required`로 분류합니다.
+2. `no_retrieval`은 RetrievalService를 호출하지 않고 `answer_mode=general_knowledge`로 답합니다.
+3. `retrieval_required`/`retrieval_optional`만 `RetrievalService`를 호출하며, 서비스는 현재 사용자에게 읽기 권한이 있는 document chunk 후보만 먼저 선택합니다.
+4. 그 후보 안에서 deterministic term score로 직접 관련 chunk를 찾고, personal-document 질문은 최신 권한 내 chunk fallback을 사용할 수 있습니다.
+5. 직접 검색된 chunk의 entity mention을 기준으로, 같은 entity를 공유하는 권한 내 chunk를 graph expansion context로 추가합니다.
+6. optional 검색 결과가 관련 있으면 `answer_mode=mixed`, required 검색 결과가 관련 있으면 `answer_mode=document_grounded`가 됩니다. 관련 context가 없으면 일반 지식 답변으로 남고 citation을 만들지 않습니다.
+7. 권한이 확인된 compact context payload만 `general_assistant` graph/provider prompt에 전달하고, 응답 payload에는 `retrieval_route`, `answer_mode`, `document_scope`, `citations`를 함께 반환합니다.
 
 예시 응답 일부:
 
@@ -578,6 +583,9 @@ lexical-hash embedding fixture를 생성합니다. 이 경로는 scanned/encrypt
   "run_id": "...",
   "reply": "Based on authorized knowledge context:\n- Private RAG Plan: ...",
   "handled_by": "personal_assistant_graph",
+  "retrieval_route": "retrieval_required",
+  "answer_mode": "document_grounded",
+  "document_scope": "unknown",
   "citations": [
     {
       "id": "...",

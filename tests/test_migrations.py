@@ -97,6 +97,7 @@ def test_alembic_offline_sql_generation_covers_initial_schema(monkeypatch) -> No
     assert "20260520_0003" in sql
     assert "20260520_0004" in sql
     assert "20260521_0005" in sql
+    assert "20260521_0006" in sql
 
 
 def test_optional_external_test_database_runs_migrations(monkeypatch) -> None:

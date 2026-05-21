@@ -46,6 +46,13 @@ from my_agents.conversations.schemas import (
 from my_agents.groups.models import MembershipModel
 from my_agents.knowledge.models import CitationModel, DocumentChunkModel, DocumentModel
 from my_agents.knowledge.retrieval import RetrievalService, RetrievedChunk
+from my_agents.knowledge.routing import (
+    AnswerMode,
+    RetrievalRoutingDecision,
+    answer_mode_for_route,
+    is_relevant_retrieval_result,
+    route_retrieval,
+)
 from my_agents.knowledge.schemas import CitationResponse
 from my_agents.persistence.database import get_database_session
 from my_agents.schemas import RouteDecision
@@ -63,6 +70,16 @@ class GraphStreamItem:
     kind: GraphStreamItemKind
     delta: str = ""
     result: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class ConversationRetrievalContext:
+    """Shared retrieval-routing output for sync and streaming run paths."""
+
+    decision: RetrievalRoutingDecision
+    answer_mode: AnswerMode
+    retrieved_chunks: list[RetrievedChunk]
+    retrieval_latency_ms: float
 
 
 @conversations_router.post(
@@ -175,18 +192,35 @@ def run_conversation(
     user_message = _store_user_message(db, conversation_id, request.message)
 
     messages = _messages_for_conversation(db, conversation_id)
-    retrieved_chunks, retrieval_latency_ms = _retrieve_authorized_context(
+    retrieval_context = _prepare_retrieval_context(
         db=db,
         user_id=principal.user_id,
         message=request.message,
+        messages=messages,
     )
-    graph_input = {
-        "messages": messages,
-        "principal_id": principal.user_id,
-        "conversation_id": conversation_id,
-        "retrieved_chunk_ids": [item.chunk.id for item in retrieved_chunks],
-        "retrieved_context": _retrieved_context_for_graph(retrieved_chunks),
-    }
+    if retrieval_context.decision.route == "clarification_required":
+        route = classify_messages(messages)
+        return _persist_completed_run(
+            db=db,
+            conversation_id=conversation_id,
+            user_id=principal.user_id,
+            user_message_id=user_message.id,
+            message_content_length=len(request.message.strip()),
+            messages=messages,
+            retrieved_chunks=[],
+            retrieval_latency_ms=retrieval_context.retrieval_latency_ms,
+            route=route,
+            reply=_clarification_reply(retrieval_context.decision),
+            retrieval_decision=retrieval_context.decision,
+            answer_mode=retrieval_context.answer_mode,
+            graph_invoked=False,
+        )
+    graph_input = _graph_input_for_run(
+        messages=messages,
+        user_id=principal.user_id,
+        conversation_id=conversation_id,
+        retrieval_context=retrieval_context,
+    )
     try:
         result = graph_runner.invoke(graph_input)
     except ResponseProviderConfigurationError as exc:
@@ -196,8 +230,10 @@ def run_conversation(
             user_id=principal.user_id,
             user_message_id=user_message.id,
             message_content_length=len(request.message.strip()),
-            retrieved_chunks=retrieved_chunks,
-            retrieval_latency_ms=retrieval_latency_ms,
+            retrieved_chunks=retrieval_context.retrieved_chunks,
+            retrieval_latency_ms=retrieval_context.retrieval_latency_ms,
+            retrieval_decision=retrieval_context.decision,
+            answer_mode=retrieval_context.answer_mode,
             error_type=type(exc).__name__,
         )
         raise HTTPException(status_code=503, detail="conversation run failed") from exc
@@ -208,13 +244,16 @@ def run_conversation(
             user_id=principal.user_id,
             user_message_id=user_message.id,
             message_content_length=len(request.message.strip()),
-            retrieved_chunks=retrieved_chunks,
-            retrieval_latency_ms=retrieval_latency_ms,
+            retrieved_chunks=retrieval_context.retrieved_chunks,
+            retrieval_latency_ms=retrieval_context.retrieval_latency_ms,
+            retrieval_decision=retrieval_context.decision,
+            answer_mode=retrieval_context.answer_mode,
             error_type=type(exc).__name__,
         )
         raise HTTPException(status_code=502, detail="conversation run failed") from exc
     route = _coerce_route(result["route"])
-    reply = _compose_rag_reply(result["reply"], retrieved_chunks)
+    used_chunks = _chunks_used_for_answer(retrieval_context)
+    reply = _compose_rag_reply(result["reply"], used_chunks, retrieval_context.answer_mode)
     return _persist_completed_run(
         db=db,
         conversation_id=conversation_id,
@@ -222,10 +261,12 @@ def run_conversation(
         user_message_id=user_message.id,
         message_content_length=len(request.message.strip()),
         messages=messages,
-        retrieved_chunks=retrieved_chunks,
-        retrieval_latency_ms=retrieval_latency_ms,
+        retrieved_chunks=used_chunks,
+        retrieval_latency_ms=retrieval_context.retrieval_latency_ms,
         route=route,
         reply=reply,
+        retrieval_decision=retrieval_context.decision,
+        answer_mode=retrieval_context.answer_mode,
     )
 
 
@@ -297,24 +338,55 @@ def _conversation_run_events(
     yield _sse_event(AgentEventType.USER_MESSAGE_STORED.value, user_message_payload)
 
     messages = _messages_for_conversation(db, conversation_id)
-    retrieved_chunks, retrieval_latency_ms = _retrieve_authorized_context(
+    retrieval_context = _prepare_retrieval_context(
         db=db,
         user_id=user_id,
         message=request.message,
+        messages=messages,
     )
     retrieval_payload = _retrieval_completed_payload(
-        retrieved_chunks=retrieved_chunks,
-        retrieval_latency_ms=retrieval_latency_ms,
+        retrieved_chunks=retrieval_context.retrieved_chunks,
+        retrieval_latency_ms=retrieval_context.retrieval_latency_ms,
+        retrieval_decision=retrieval_context.decision,
+        answer_mode=retrieval_context.answer_mode,
     )
     yield _sse_event(AgentEventType.RETRIEVAL_COMPLETED.value, retrieval_payload)
 
-    graph_input = {
-        "messages": messages,
-        "principal_id": user_id,
-        "conversation_id": conversation_id,
-        "retrieved_chunk_ids": [item.chunk.id for item in retrieved_chunks],
-        "retrieved_context": _retrieved_context_for_graph(retrieved_chunks),
-    }
+    if retrieval_context.decision.route == "clarification_required":
+        route = classify_messages(messages)
+        response = _persist_completed_run(
+            db=db,
+            conversation_id=conversation_id,
+            user_id=user_id,
+            user_message_id=user_message.id,
+            message_content_length=message_content_length,
+            messages=messages,
+            retrieved_chunks=[],
+            retrieval_latency_ms=retrieval_context.retrieval_latency_ms,
+            route=route,
+            reply=_clarification_reply(retrieval_context.decision),
+            retrieval_decision=retrieval_context.decision,
+            answer_mode=retrieval_context.answer_mode,
+            graph_invoked=False,
+        )
+        yield _sse_event(
+            AgentEventType.ANSWER_COMPOSED.value,
+            _answer_composed_payload(
+                citation_count=0,
+                reply=response.reply,
+                retrieval_decision=retrieval_context.decision,
+                answer_mode=retrieval_context.answer_mode,
+            ),
+        )
+        yield _sse_event("run_completed", response.model_dump(mode="json"))
+        return
+
+    graph_input = _graph_input_for_run(
+        messages=messages,
+        user_id=user_id,
+        conversation_id=conversation_id,
+        retrieval_context=retrieval_context,
+    )
     stream_route = classify_messages(messages)
     graph_invoked = False
     delta_sequence = 0
@@ -328,7 +400,9 @@ def _conversation_run_events(
                     _graph_invoked_payload(
                         route=stream_route,
                         messages=messages,
-                        retrieved_chunks=retrieved_chunks,
+                        retrieved_chunks=retrieval_context.retrieved_chunks,
+                        retrieval_decision=retrieval_context.decision,
+                        answer_mode=retrieval_context.answer_mode,
                     ),
                 )
                 graph_invoked = True
@@ -348,8 +422,10 @@ def _conversation_run_events(
             user_id=user_id,
             user_message_id=user_message.id,
             message_content_length=message_content_length,
-            retrieved_chunks=retrieved_chunks,
-            retrieval_latency_ms=retrieval_latency_ms,
+            retrieved_chunks=retrieval_context.retrieved_chunks,
+            retrieval_latency_ms=retrieval_context.retrieval_latency_ms,
+            retrieval_decision=retrieval_context.decision,
+            answer_mode=retrieval_context.answer_mode,
             error_type=type(exc).__name__,
         )
         yield _sse_event(
@@ -365,8 +441,10 @@ def _conversation_run_events(
             user_id=user_id,
             user_message_id=user_message.id,
             message_content_length=message_content_length,
-            retrieved_chunks=retrieved_chunks,
-            retrieval_latency_ms=retrieval_latency_ms,
+            retrieved_chunks=retrieval_context.retrieved_chunks,
+            retrieval_latency_ms=retrieval_context.retrieval_latency_ms,
+            retrieval_decision=retrieval_context.decision,
+            answer_mode=retrieval_context.answer_mode,
             error_type=type(exc).__name__,
         )
         yield _sse_event(
@@ -380,14 +458,17 @@ def _conversation_run_events(
         raise RuntimeError("conversation graph stream ended without a final result")
     route = _coerce_route(result["route"])
     base_reply = result.get("reply") or "".join(streamed_base_reply_parts).strip()
-    reply = _compose_rag_reply(base_reply, retrieved_chunks)
+    used_chunks = _chunks_used_for_answer(retrieval_context)
+    reply = _compose_rag_reply(base_reply, used_chunks, retrieval_context.answer_mode)
     if not graph_invoked:
         yield _sse_event(
             AgentEventType.GRAPH_INVOKED.value,
             _graph_invoked_payload(
                 route=route,
                 messages=messages,
-                retrieved_chunks=retrieved_chunks,
+                retrieved_chunks=retrieval_context.retrieved_chunks,
+                retrieval_decision=retrieval_context.decision,
+                answer_mode=retrieval_context.answer_mode,
             ),
         )
     if not streamed_base_reply_parts:
@@ -401,14 +482,21 @@ def _conversation_run_events(
         user_message_id=user_message.id,
         message_content_length=message_content_length,
         messages=messages,
-        retrieved_chunks=retrieved_chunks,
-        retrieval_latency_ms=retrieval_latency_ms,
+        retrieved_chunks=used_chunks,
+        retrieval_latency_ms=retrieval_context.retrieval_latency_ms,
         route=route,
         reply=reply,
+        retrieval_decision=retrieval_context.decision,
+        answer_mode=retrieval_context.answer_mode,
     )
     yield _sse_event(
         AgentEventType.ANSWER_COMPOSED.value,
-        _answer_composed_payload(citation_count=len(response.citations), reply=reply),
+        _answer_composed_payload(
+            citation_count=len(response.citations),
+            reply=reply,
+            retrieval_decision=retrieval_context.decision,
+            answer_mode=retrieval_context.answer_mode,
+        ),
     )
     yield _sse_event("run_completed", response.model_dump(mode="json"))
 
@@ -425,6 +513,9 @@ def _persist_completed_run(
     retrieval_latency_ms: float,
     route: RouteDecision,
     reply: str,
+    retrieval_decision: RetrievalRoutingDecision,
+    answer_mode: AnswerMode,
+    graph_invoked: bool = True,
 ) -> ConversationRunResponse:
     assistant_message = MessageModel(
         conversation_id=conversation_id,
@@ -439,6 +530,9 @@ def _persist_completed_run(
         status=RunStatus.COMPLETED.value,
         route_label=route.label,
         route_explanation=route.explanation,
+        retrieval_route=retrieval_decision.route,
+        answer_mode=answer_mode,
+        document_scope=retrieval_decision.document_scope,
         assistant_message_id=assistant_message.id,
     )
     db.add(run)
@@ -469,25 +563,41 @@ def _persist_completed_run(
             _retrieval_completed_payload(
                 retrieved_chunks=retrieved_chunks,
                 retrieval_latency_ms=retrieval_latency_ms,
+                retrieval_decision=retrieval_decision,
+                answer_mode=answer_mode,
             ),
-        ),
-        _event(
-            run.id,
-            3,
-            AgentEventType.GRAPH_INVOKED,
-            _graph_invoked_payload(
-                route=route,
-                messages=messages,
-                retrieved_chunks=retrieved_chunks,
-            ),
-        ),
-        _event(
-            run.id,
-            4,
-            AgentEventType.ANSWER_COMPOSED,
-            _answer_composed_payload(citation_count=len(citations), reply=reply),
         ),
     ]
+    next_sequence = 3
+    if graph_invoked:
+        events.append(
+            _event(
+                run.id,
+                next_sequence,
+                AgentEventType.GRAPH_INVOKED,
+                _graph_invoked_payload(
+                    route=route,
+                    messages=messages,
+                    retrieved_chunks=retrieved_chunks,
+                    retrieval_decision=retrieval_decision,
+                    answer_mode=answer_mode,
+                ),
+            )
+        )
+        next_sequence += 1
+    events.append(
+        _event(
+            run.id,
+            next_sequence,
+            AgentEventType.ANSWER_COMPOSED,
+            _answer_composed_payload(
+                citation_count=len(citations),
+                reply=reply,
+                retrieval_decision=retrieval_decision,
+                answer_mode=answer_mode,
+            ),
+        )
+    )
     db.add_all([*citations, *events])
     db.commit()
     db.refresh(run)
@@ -499,6 +609,9 @@ def _persist_completed_run(
         reply=reply,
         route=route,
         handled_by="personal_assistant_graph",
+        retrieval_route=retrieval_decision.route,
+        answer_mode=answer_mode,
+        document_scope=retrieval_decision.document_scope,
         citations=[
             CitationResponse(
                 id=citation.id,
@@ -636,19 +749,83 @@ def _store_user_message(db: Session, conversation_id: str, message: str) -> Mess
     return user_message
 
 
-def _retrieve_authorized_context(
+def _prepare_retrieval_context(
     *,
     db: Session,
     user_id: str,
     message: str,
-) -> tuple[list[RetrievedChunk], float]:
-    retrieval_started = perf_counter()
-    retrieved_chunks = RetrievalService(db).retrieve(
-        user_id=user_id,
-        query=message,
+    messages: list[BaseMessage],
+) -> ConversationRetrievalContext:
+    service = RetrievalService(db)
+    document_count = service.authorized_document_count(user_id=user_id)
+    decision = route_retrieval(
+        message=message,
+        history=messages,
+        authorized_document_count=document_count,
     )
+    if decision.route in {"no_retrieval", "clarification_required"}:
+        return ConversationRetrievalContext(
+            decision=decision,
+            answer_mode=answer_mode_for_route(decision=decision, relevant_context_found=False),
+            retrieved_chunks=[],
+            retrieval_latency_ms=0.0,
+        )
+    retrieval_started = perf_counter()
+    retrieved_chunks = service.retrieve(user_id=user_id, query=decision.rewritten_query)
     retrieval_latency_ms = round((perf_counter() - retrieval_started) * 1000, 3)
-    return retrieved_chunks, retrieval_latency_ms
+    relevant_context_found = any(
+        is_relevant_retrieval_result(
+            route=decision.route,
+            source=item.source,
+            score=item.score,
+        )
+        for item in retrieved_chunks
+    )
+    return ConversationRetrievalContext(
+        decision=decision,
+        answer_mode=answer_mode_for_route(
+            decision=decision,
+            relevant_context_found=relevant_context_found,
+        ),
+        retrieved_chunks=retrieved_chunks,
+        retrieval_latency_ms=retrieval_latency_ms,
+    )
+
+
+def _graph_input_for_run(
+    *,
+    messages: list[BaseMessage],
+    user_id: str,
+    conversation_id: str,
+    retrieval_context: ConversationRetrievalContext,
+) -> dict[str, object]:
+    used_chunks = _chunks_used_for_answer(retrieval_context)
+    return {
+        "messages": messages,
+        "principal_id": user_id,
+        "conversation_id": conversation_id,
+        "retrieved_chunk_ids": [item.chunk.id for item in used_chunks],
+        "retrieved_context": _retrieved_context_for_graph(used_chunks),
+        "retrieval_route": retrieval_context.decision.route,
+        "answer_mode": retrieval_context.answer_mode,
+        "document_scope": retrieval_context.decision.document_scope,
+    }
+
+
+def _chunks_used_for_answer(
+    retrieval_context: ConversationRetrievalContext,
+) -> list[RetrievedChunk]:
+    if retrieval_context.answer_mode == "general_knowledge":
+        return []
+    return [
+        item
+        for item in retrieval_context.retrieved_chunks
+        if is_relevant_retrieval_result(
+            route=retrieval_context.decision.route,
+            source=item.source,
+            score=item.score,
+        )
+    ]
 
 
 def _retrieved_context_for_graph(retrieved_chunks: list[RetrievedChunk]) -> list[dict[str, object]]:
@@ -768,15 +945,30 @@ def _coerce_route(route: RouteDecision | dict) -> RouteDecision:
     return RouteDecision.model_validate(route)
 
 
-def _compose_rag_reply(base_reply: str, retrieved_chunks: list[RetrievedChunk]) -> str:
+def _clarification_reply(decision: RetrievalRoutingDecision) -> str:
+    return (
+        "I need one more detail before using uploaded documents: which document or file "
+        "should I use? I will only search documents you are authorized to access."
+        f" Retrieval route: `{decision.route}`."
+    )
+
+
+def _compose_rag_reply(
+    base_reply: str,
+    retrieved_chunks: list[RetrievedChunk],
+    answer_mode: AnswerMode,
+) -> str:
     if not retrieved_chunks:
         return base_reply
     context_lines = [
         f"- {item.document.title}: {item.chunk.content[:180]}" for item in retrieved_chunks[:3]
     ]
-    return (
-        "Based on authorized knowledge context:\n" + "\n".join(context_lines) + "\n\n" + base_reply
+    heading = (
+        "Based on authorized document context:"
+        if answer_mode == "document_grounded"
+        else "Using relevant authorized document context plus general guidance:"
     )
+    return heading + "\n" + "\n".join(context_lines) + "\n\n" + base_reply
 
 
 def _count_retrieval_source(retrieved_chunks: list[RetrievedChunk], source: str) -> int:
@@ -791,11 +983,17 @@ def _retrieval_completed_payload(
     *,
     retrieved_chunks: list[RetrievedChunk],
     retrieval_latency_ms: float,
+    retrieval_decision: RetrievalRoutingDecision,
+    answer_mode: AnswerMode,
 ) -> dict:
     return {
+        "retrieval_route": retrieval_decision.route,
+        "answer_mode": answer_mode,
+        "document_scope": retrieval_decision.document_scope,
         "authorized_context_count": len(retrieved_chunks),
         "direct_count": _count_retrieval_source(retrieved_chunks, "vector_fixture"),
         "graph_expansion_count": _count_retrieval_source(retrieved_chunks, "graph_expansion"),
+        "fallback_count": _count_retrieval_source(retrieved_chunks, "document_fallback"),
         "latency_ms": retrieval_latency_ms,
     }
 
@@ -805,16 +1003,33 @@ def _graph_invoked_payload(
     route: RouteDecision,
     messages: list[BaseMessage],
     retrieved_chunks: list[RetrievedChunk],
+    retrieval_decision: RetrievalRoutingDecision,
+    answer_mode: AnswerMode,
 ) -> dict:
     return {
         "route_label": route.label,
+        "retrieval_route": retrieval_decision.route,
+        "answer_mode": answer_mode,
+        "document_scope": retrieval_decision.document_scope,
         "message_count": len(messages),
         "retrieved_chunk_count": len(retrieved_chunks),
     }
 
 
-def _answer_composed_payload(*, citation_count: int, reply: str) -> dict:
-    return {"citation_count": citation_count, "reply_length": len(reply)}
+def _answer_composed_payload(
+    *,
+    citation_count: int,
+    reply: str,
+    retrieval_decision: RetrievalRoutingDecision,
+    answer_mode: AnswerMode,
+) -> dict:
+    return {
+        "citation_count": citation_count,
+        "reply_length": len(reply),
+        "retrieval_route": retrieval_decision.route,
+        "answer_mode": answer_mode,
+        "document_scope": retrieval_decision.document_scope,
+    }
 
 
 def _persist_failed_run(
@@ -826,6 +1041,8 @@ def _persist_failed_run(
     message_content_length: int,
     retrieved_chunks: list[RetrievedChunk],
     retrieval_latency_ms: float,
+    retrieval_decision: RetrievalRoutingDecision,
+    answer_mode: AnswerMode,
     error_type: str,
 ) -> str:
     run = AgentRunModel(
@@ -833,6 +1050,9 @@ def _persist_failed_run(
         user_id=user_id,
         status=RunStatus.FAILED.value,
         route_label=None,
+        retrieval_route=retrieval_decision.route,
+        answer_mode=answer_mode,
+        document_scope=retrieval_decision.document_scope,
     )
     db.add(run)
     db.flush()
@@ -854,6 +1074,8 @@ def _persist_failed_run(
                 _retrieval_completed_payload(
                     retrieved_chunks=retrieved_chunks,
                     retrieval_latency_ms=retrieval_latency_ms,
+                    retrieval_decision=retrieval_decision,
+                    answer_mode=answer_mode,
                 ),
             ),
             _event(
@@ -933,6 +1155,9 @@ def _run_detail_response(db: Session, run: AgentRunModel) -> ConversationRunResp
         reply=assistant_message.content,
         route=RouteDecision(label=run.route_label, explanation=run.route_explanation),
         handled_by="personal_assistant_graph",
+        retrieval_route=run.retrieval_route or "no_retrieval",
+        answer_mode=run.answer_mode or "general_knowledge",
+        document_scope=run.document_scope or "unknown",
         citations=[_citation_response(db, citation) for citation in citations],
     )
 

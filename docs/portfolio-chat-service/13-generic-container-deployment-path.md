@@ -163,6 +163,13 @@ docker run --rm \
 Do not run hosted DB migrations from an agent session unless the owner has
 explicitly provided the target, credentials, and approval for that environment.
 
+Local SQLite recovery note: a developer-only `local-demo.db` that was originally
+created by SQLAlchemy `create_all` may have tables but no useful Alembic revision.
+For that local-only case, stamp the existing schema at the last known matching
+revision before upgrading, for example `uv run alembic stamp 20260521_0005` then
+`uv run alembic upgrade head` for the retrieval-route metadata migration. Do not
+use stamping to bypass real preview/production migrations.
+
 ## Health and OpenAPI smoke
 
 After the service starts, verify the public metadata endpoints:

@@ -1,6 +1,6 @@
 ---
 created: 2026-05-17
-updated: 2026-05-17
+updated: 2026-05-21
 status: active
 topics:
   - observability
@@ -37,7 +37,8 @@ The current events are intentionally high-level:
 4. `answer_composed`
 
 They are enough to show a visible service surface: the UI can say that the backend stored
-the message, retrieved authorized context, invoked the graph, and composed a cited answer.
+the message, made a retrieval-routing decision, retrieved authorized context when needed,
+invoked the graph when appropriate, and composed a cited or general answer.
 If graph invocation fails, the service stores a failed run and emits `run_failed` with only
 safe error metadata before returning a client-safe error response.
 
@@ -45,7 +46,7 @@ safe error metadata before returning a client-safe error response.
 
 Agent transparency should not mean leaking chain-of-thought, raw prompts, document text,
 or secrets. Event payloads therefore contain metadata such as counts, route labels, and
-latency values rather than raw message or chunk content.
+latency values, retrieval route, answer mode, and document scope rather than raw message or chunk content.
 
 ```mermaid
 flowchart LR
@@ -74,7 +75,7 @@ claims testable: grounding, permission safety, redaction, and basic performance 
 `tests/test_agent_observability_evals.py` verifies:
 
 - event sequences are ordered and typed;
-- event payloads include retrieval counts, route label, citation count, and latency;
+- event payloads include retrieval route, answer mode, document scope, retrieval counts, route label, citation count, and latency;
 - raw private phrases and raw user questions do not appear in event payloads;
 - deterministic eval helpers pass for grounded authorized answers;
 - the permission leakage eval passes when an outsider receives no private context.
@@ -84,5 +85,6 @@ claims testable: grounding, permission safety, redaction, and basic performance 
 
 ## Revision history
 
+- 2026-05-21: Updated after adding retrieval-route and answer-mode event metadata.
 - 2026-05-17: Updated after adding failed-run event persistence.
 - 2026-05-17: Created after adding structured agent run events and deterministic eval fixtures.

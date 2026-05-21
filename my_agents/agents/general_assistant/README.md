@@ -63,17 +63,23 @@ flowchart TD
 
 `general_assistant` 폴더는 graph/classifier/responder 경계를 소유합니다. Auth, group/document permission, server-owned conversation, knowledge ingestion, retrieval selection, citation, agent event는 `my_agents/api/`, `my_agents/knowledge/`, `my_agents/conversations/` 같은 서비스 레이어에서 소유합니다.
 
-제품용 conversation run은 이미 권한 확인이 끝난 compact `retrieved_context` payload를 graph/provider prompt에 전달합니다. 덕분에 OpenAI 응답은 업로드한 문서 기반의 넓은 이력서/프로필 질문에 답할 수 있고, 보안 결정은 계속 서비스 레이어에 남습니다.
+제품용 conversation run은 먼저 서비스 레이어의 deterministic retrieval routing policy를 실행합니다.
+`general_assistant`는 `retrieval_route`, `answer_mode`, `document_scope`, 이미 권한 확인이 끝난 compact `retrieved_context` payload만 받습니다. Graph/provider는 이 metadata로 답변 방식을 조정하지만, vector/document storage를 직접 조회하지 않습니다. 보안 결정과 permission filter는 계속 `RetrievalService`와 API/service layer에 남습니다.
 
 ```mermaid
 flowchart LR
-    RunAPI["conversation run API"] --> Retrieval["authorized retrieval + personal-doc fallback"]
-    Retrieval --> Graph["general_assistant graph with retrieved_context"]
+    RunAPI["conversation run API"] --> Router["retrieval routing policy"]
+    Router -->|no_retrieval| Graph["general_assistant graph"]
+    Router -->|required/optional| Retrieval["RetrievalService permission + metadata filters"]
+    Retrieval --> GraphCtx["authorized compact context"]
+    GraphCtx --> Graph
     RunAPI --> Citations["citations/events"]
-    Graph --> Provider["response provider"]
+    Graph --> Provider["response provider with answer_mode"]
 ```
 
-이 분리는 포트폴리오에서 중요합니다. LangGraph는 AI 응답 흐름을 보여주고, 서비스 레이어는 실제 제품에 필요한 auth/permission/provenance 경계를 보여줍니다.
+이 분리는 포트폴리오에서 중요합니다. LangGraph는 AI 응답 흐름을 보여주고, RetrievalService/API 레이어는 실제 제품에 필요한 auth/permission/provenance 경계를 보여줍니다. Ingestion(upload/parse/chunk/embed)은 retrieval routing과 분리된 별도 pipeline입니다.
+
+향후 retrieval이 query rewrite, metadata planning, hybrid/vector search, reranking, context compression처럼 다단계 workflow가 되면 별도 `RetrievalGraph`를 추가할 수 있습니다. 다만 그 경우에도 hard authorization filter는 graph prompt가 아니라 `RetrievalService` 안에 남겨야 합니다.
 
 ## OpenAI hosted tools를 추가할 위치
 

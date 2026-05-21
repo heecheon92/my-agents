@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from my_agents.api import create_app
 from my_agents.api.assistant import get_graph_runner
+from my_agents.knowledge.retrieval import RetrievalService
 from my_agents.schemas import RouteDecision
 
 from .conftest import verify_latest_auth_email
@@ -111,6 +112,102 @@ def test_conversation_run_uses_server_owned_history(monkeypatch) -> None:  # noq
         "saw 1 messages",
         "Continue",
     ]
+    assert first.json()["retrieval_route"] == "no_retrieval"
+    assert first.json()["answer_mode"] == "general_knowledge"
+
+
+def test_general_prompt_skips_retrieval_service(monkeypatch) -> None:  # noqa: ANN001
+    graph = SpyGraph()
+    client = _client(monkeypatch, graph)
+    _signup_login(client, "no-retrieval@example.com")
+    conversation_id = client.post("/conversations", json={"title": "No retrieval"}).json()["id"]
+
+    def fail_retrieve(self, **kwargs):  # noqa: ANN001, ANN202, ARG001
+        raise AssertionError("general prompt should not call RetrievalService.retrieve")
+
+    monkeypatch.setattr(RetrievalService, "retrieve", fail_retrieve)
+
+    response = client.post(
+        f"/conversations/{conversation_id}/runs", json={"message": "RAG가 뭐야?"}
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["retrieval_route"] == "no_retrieval"
+    assert payload["answer_mode"] == "general_knowledge"
+    assert payload["citations"] == []
+    assert graph.calls[-1]["retrieved_context"] == []
+
+
+def test_optional_retrieval_without_context_answers_generally(monkeypatch) -> None:  # noqa: ANN001
+    graph = SpyGraph()
+    client = _client(monkeypatch, graph)
+    _signup_login(client, "optional-empty@example.com")
+    conversation_id = client.post("/conversations", json={"title": "Optional empty"}).json()["id"]
+
+    response = client.post(
+        f"/conversations/{conversation_id}/runs",
+        json={"message": "우리 서비스 인증 로직 어떻게 정리하면 좋을까?"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["retrieval_route"] == "retrieval_optional"
+    assert payload["answer_mode"] == "general_knowledge"
+    assert payload["citations"] == []
+    assert graph.calls[-1]["answer_mode"] == "general_knowledge"
+
+
+def test_optional_retrieval_with_relevant_context_uses_mixed_mode(monkeypatch) -> None:  # noqa: ANN001
+    graph = SpyGraph()
+    client = _client(monkeypatch, graph)
+    _signup_login(client, "optional-mixed@example.com")
+    document = client.post(
+        "/documents",
+        json={
+            "title": "Service Auth Notes",
+            "content": "우리 서비스 인증 로직은 세션 쿠키와 CSRF 토큰으로 정리합니다.",
+        },
+    )
+    assert document.status_code == 201
+    assert client.post(f"/documents/{document.json()['id']}/ingest").status_code == 200
+    conversation_id = client.post("/conversations", json={"title": "Optional mixed"}).json()["id"]
+
+    response = client.post(
+        f"/conversations/{conversation_id}/runs",
+        json={"message": "우리 서비스 인증 로직 어떻게 정리하면 좋을까?"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["retrieval_route"] == "retrieval_optional"
+    assert payload["answer_mode"] == "mixed"
+    assert payload["citations"]
+    assert graph.calls[-1]["answer_mode"] == "mixed"
+    assert graph.calls[-1]["retrieved_context"]
+
+
+def test_ambiguous_document_scope_returns_clarification_without_graph(monkeypatch) -> None:  # noqa: ANN001
+    graph = SpyGraph()
+    client = _client(monkeypatch, graph)
+    _signup_login(client, "clarify-docs@example.com")
+    for title in ("Doc A", "Doc B"):
+        response = client.post("/documents", json={"title": title, "content": f"{title} content"})
+        assert response.status_code == 201
+    conversation_id = client.post("/conversations", json={"title": "Clarify"}).json()["id"]
+
+    response = client.post(
+        f"/conversations/{conversation_id}/runs",
+        json={"message": "이 문서 기준으로 개선점을 알려줘"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["retrieval_route"] == "clarification_required"
+    assert payload["answer_mode"] == "general_knowledge"
+    assert payload["citations"] == []
+    assert "which document or file" in payload["reply"]
+    assert graph.calls == []
 
 
 def test_conversation_messages_can_be_listed_in_server_owned_order(monkeypatch) -> None:  # noqa: ANN001

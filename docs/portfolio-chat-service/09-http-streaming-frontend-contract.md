@@ -1,6 +1,6 @@
 ---
 created: 2026-05-19
-updated: 2026-05-19
+updated: 2026-05-21
 status: active
 topics:
   - streaming
@@ -49,9 +49,10 @@ sequenceDiagram
     UI->>API: POST /conversations/{id}/runs/stream
     API->>DB: store user message
     API-->>UI: event user_message_stored
-    API->>R: retrieve authorized chunks only
+    API->>API: decide retrieval route and answer mode
+    API->>R: retrieve authorized chunks only when required/optional
     API-->>UI: event retrieval_completed
-    API->>G: stream graph with server-owned history
+    API->>G: stream graph with server-owned history and authorized context
     API-->>UI: event graph_invoked
     G-->>API: assistant text chunk
     API-->>UI: event answer_delta
@@ -84,6 +85,9 @@ When the OpenAI-backed graph/provider yields token chunks, these deltas are emit
 the graph is still running. Deterministic/local graph spies can also emit multiple deltas
 so frontend tests can verify incremental rendering without real credentials.
 
+
+`retrieval_completed`, `graph_invoked`, and `answer_composed` payloads include redacted routing metadata: `retrieval_route`, `answer_mode`, and `document_scope`. A `clarification_required` route can complete without `graph_invoked` because the backend asks the user which document to use instead of broadly searching all accessible documents.
+
 The final `run_completed` event contains the same response shape as
 `POST /conversations/{conversation_id}/runs`:
 
@@ -94,6 +98,9 @@ The final `run_completed` event contains the same response shape as
   "reply": "...",
   "route": {"label": "general_assistant", "explanation": "..."},
   "handled_by": "personal_assistant_graph",
+  "retrieval_route": "no_retrieval",
+  "answer_mode": "general_knowledge",
+  "document_scope": "unknown",
   "citations": []
 }
 ```
