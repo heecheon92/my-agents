@@ -23,13 +23,17 @@ from my_agents.knowledge.models import (
     ExtractionRunModel,
     KnowledgeBaseModel,
 )
-from my_agents.knowledge.pdf_uploads import PdfUploadError, parse_uploaded_pdf
 from my_agents.knowledge.schemas import (
     DocumentCreateRequest,
     DocumentPermissionPatchRequest,
     DocumentPermissionResponse,
     DocumentResponse,
     ExtractionRunResponse,
+)
+from my_agents.knowledge.uploads import (
+    DocumentUploadError,
+    UnsupportedDocumentUploadError,
+    parse_uploaded_document,
 )
 from my_agents.permissions.contracts import DocumentOperation
 from my_agents.permissions.service import AuthorizationService
@@ -75,11 +79,14 @@ async def upload_document(
     db: Annotated[Session, Depends(get_database_session)],
     settings: Annotated[Settings, Depends(get_settings)],
     title: Annotated[str, Form(min_length=1, max_length=200)],
-    file: Annotated[UploadFile, File(description="PDF file; V1 supports text-based PDFs only.")],
+    file: Annotated[
+        UploadFile,
+        File(description="Supported file: text-based PDF, Markdown, or plain text."),
+    ],
     group_id: Annotated[str | None, Form()] = None,
     knowledge_base_id: Annotated[str | None, Form()] = None,
 ) -> DocumentResponse:
-    """Create a document from a safe PDF upload and persist parser metadata."""
+    """Create a document from a safe upload and persist parser metadata."""
     assert_guest_can_create_document(db, principal, settings)
     resolved_group_id = _resolve_document_group_id(
         db=db,
@@ -89,24 +96,24 @@ async def upload_document(
     )
     content = await file.read()
     try:
-        parsed = parse_uploaded_pdf(
+        parsed = parse_uploaded_document(
             filename=file.filename,
             content_type=file.content_type,
             content=content,
         )
-    except PdfUploadError as exc:
+    except DocumentUploadError as exc:
         status_code = (
             status.HTTP_415_UNSUPPORTED_MEDIA_TYPE
-            if "only" in str(exc) or "not a PDF" in str(exc)
+            if isinstance(exc, UnsupportedDocumentUploadError)
             else status.HTTP_400_BAD_REQUEST
         )
         raise HTTPException(status_code=status_code, detail=str(exc)) from exc
     document = DocumentModel(
         title=title.strip(),
         content=parsed.content,
-        source_type="pdf",
+        source_type=parsed.source_type,
         source_filename=file.filename.strip() if file.filename else None,
-        source_content_type="application/pdf",
+        source_content_type=parsed.source_content_type,
         source_byte_size=parsed.byte_size,
         source_sha256=parsed.sha256,
         source_page_count=parsed.page_count,

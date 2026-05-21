@@ -559,25 +559,27 @@ assistant text나 citation을 저장하지 않으며, 중단된 user prompt는 g
 
 ### Knowledge-base ingestion 기반
 
-PDF-first upload/ingestion slice가 추가되었습니다.
+텍스트 기반 upload/ingestion slice가 추가되었습니다.
 
 - `POST /knowledge-bases`
 - `GET /knowledge-bases`
 - `POST /documents` — 기존 JSON 텍스트 문서 생성 경로
-- `POST /documents/upload` — multipart PDF 업로드 생성 경로
+- `POST /documents/upload` — multipart PDF/Markdown/plain text 업로드 생성 경로
 - `POST /documents/{document_id}/ingest` — bodyless ingestion 실행 경로
 - `GET /documents/{document_id}/extraction-runs`
 
-텍스트 document 경로는 그대로 유지됩니다. PDF 경로는 `application/pdf` `.pdf` 파일만
-받고, 5 MiB 이하의 text-based PDF에서 `pypdf` 기반 page text를 추출합니다. 단순 literal/FlateDecode page stream은 deterministic fallback으로도 처리합니다. 업로드 metadata
+텍스트 document 경로는 그대로 유지됩니다. 업로드 경로는 5 MiB 이하의 `.pdf`, `.md`,
+`.markdown`, `.txt` 파일을 받습니다. PDF는 `application/pdf` text-based PDF에서 `pypdf`
+기반 page text를 추출하고, 단순 literal/FlateDecode page stream은 deterministic fallback으로도 처리합니다.
+Markdown/plain text는 UTF-8 텍스트로 decoding하며 구조적 Markdown parsing은 아직 하지 않습니다. 업로드 metadata
 (`source_filename`, content type, byte size, SHA-256, page count, parser name)는 document에
 저장되고, ingestion chunk에는 `source_page`가 기록되어 이후 citation provenance에 사용할 수
 있습니다. conversation citation 응답은 이미 가능한 경우 `source_page`와 `source_filename`을
 함께 반환합니다. ingestion은 paragraph/sentence 기반 chunk, entity mention, JSON-backed embedding을 생성합니다.
 기본값은 offline test용 32차원 deterministic lexical-hash vector이며,
 `MY_AGENTS_EMBEDDING_MODE=openai`일 때는 `langchain-openai`/OpenAI embedding
-(`text-embedding-3-small` 등)을 사용합니다. 이 경로는 scanned/encrypted/image-only PDF나 OCR을
-아직 지원하지 않으며, pgvector 가속과 OpenAI extraction 호출은 아직 수행하지 않습니다.
+(`text-embedding-3-small` 등)을 사용합니다. 이 경로는 scanned/encrypted/image-only PDF, OCR,
+DOCX, HTML, CSV/JSON structural parsing은 아직 지원하지 않으며, pgvector 가속과 OpenAI extraction 호출은 아직 수행하지 않습니다.
 
 
 ### Permission-aware RAG 및 citation 기반 응답

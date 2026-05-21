@@ -89,7 +89,7 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 
 - Knowledge-base create/list.
 - Text document ingestion remains compatible.
-- PDF-first upload path with safe metadata persistence, page provenance, and FlateDecode text-stream support.
+- Text-based upload path for PDF, Markdown, and plain text with safe metadata persistence; PDFs keep page provenance and FlateDecode text-stream fallback support.
 - Deterministic chunks, provider-backed JSON embeddings (deterministic by default, OpenAI opt-in), entity mentions, and co-occurrence relationships.
 - Deterministic retrieval routing supports `no_retrieval`, `retrieval_required`, `retrieval_optional`, and `clarification_required`.
 - Permission-aware retrieval filters candidate chunks before ranking/expansion/composition.
@@ -150,8 +150,8 @@ The test harness sets `MY_AGENTS_ENV_FILE=` so a developer's local `.env` file c
 
 ### Knowledge ingestion and retrieval
 
-- PDF-first upload and text extraction now use `pypdf_text_v2` for text-based PDFs, with a deterministic literal/FlateDecode stream fallback for simple PDFs; scanned/encrypted/image-only PDFs and OCR are intentionally unsupported.
-- No docx/HTML parsing pipeline yet.
+- Text-based upload and extraction supports text-based PDFs through `pypdf_text_v2`, Markdown through `utf8_markdown_v1`, and plain text through `utf8_text_v1`; simple PDFs keep a deterministic literal/FlateDecode stream fallback.
+- Scanned/encrypted/image-only PDFs, OCR, docx, HTML, and CSV/JSON structural parsing are intentionally unsupported.
 - No background ingestion jobs yet.
 - Embeddings use a provider boundary: deterministic 32-dimensional lexical-hash vectors by default, or opt-in OpenAI embeddings through `langchain-openai` when `MY_AGENTS_EMBEDDING_MODE=openai`.
 - Retrieval ranking is permission-first JSON cosine similarity blended with lexical score plus entity expansion and a narrow personal-document fallback; pgvector acceleration, LLM query rewrite, and cross-encoder reranking are still future work.
@@ -184,11 +184,11 @@ The test harness sets `MY_AGENTS_ENV_FILE=` so a developer's local `.env` file c
 
 ### Next milestone: strict V1 Phase 2 frontend gate, then Phase 3 citation/event contract
 
-Backend Phase 2 PDF-first upload/ingestion is now implemented in the backend. The immediate cross-repo gate is for the separate frontend to verify or minimally adapt to `POST /documents/upload`, preserve the bodyless `/documents/{id}/ingest` flow, and consume backend OpenAPI fields without inventing alternate upload contracts.
+Backend Phase 2 text-based upload/ingestion is now implemented in the backend. The immediate cross-repo gate is for the separate frontend to verify or minimally adapt to `POST /documents/upload`, preserve the bodyless `/documents/{id}/ingest` flow, and consume backend OpenAPI fields without inventing alternate upload contracts.
 
 Suggested order:
 
-1. Frontend verifies the PDF upload contract from backend OpenAPI: multipart `POST /documents/upload` with `title`, optional `group_id`/`knowledge_base_id`, and `file`.
+1. Frontend verifies the upload contract from backend OpenAPI: multipart `POST /documents/upload` with `title`, optional `group_id`/`knowledge_base_id`, and a `.pdf`, `.md`, `.markdown`, or `.txt` `file`.
 2. Frontend preserves the existing text seeded/demo path and bodyless `/documents/{id}/ingest` behavior.
 3. Backend starts strict V1 Phase 3 after frontend gate feedback is recorded: richer citation provenance and event contract hardening.
 
@@ -228,6 +228,7 @@ limits.
 
 | Date | Milestone | Evidence |
 | --- | --- | --- |
+| 2026-05-21 | Extended document upload beyond PDF to Markdown and plain text while preserving PDF provenance and retrieval behavior. | `my_agents/api/documents.py`; `my_agents/knowledge/uploads.py`; `tests/test_knowledge_ingestion.py`; README pair; `docs/portfolio-chat-service/05-knowledge-ingestion-extraction.md`. |
 | 2026-05-21 | Retrieval routing and answer-mode metadata added before graph invocation. | `my_agents/knowledge/routing.py`; `my_agents/knowledge/retrieval.py`; `my_agents/api/conversations.py`; `my_agents/conversations/models.py`; `alembic/versions/20260521_0006_retrieval_routing_metadata.py`; `tests/test_retrieval_routing.py`; `tests/test_conversations_api.py`; `tests/test_permission_aware_rag.py`; README pair; general assistant README pair; `docs/portfolio-chat-service/06-permission-aware-rag.md`. |
 | 2026-05-21 | PDF/text ingestion sophistication improved with `pypdf`, better chunking/entity extraction, and 32-d deterministic embedding fixtures. | `pyproject.toml`; `uv.lock`; `my_agents/knowledge/pdf_uploads.py`; `my_agents/knowledge/extraction.py`; `tests/test_knowledge_ingestion.py`; README pair; `docs/portfolio-chat-service/05-knowledge-ingestion-extraction.md`. |
 | 2026-05-21 | Added Slice A embedding provider boundary with deterministic default, optional OpenAI embeddings through `langchain-openai`, and permission-first JSON cosine retrieval ranking. | `my_agents/knowledge/embeddings.py`; `my_agents/knowledge/extraction.py`; `my_agents/knowledge/retrieval.py`; `.env.example`; README pair; permission/observability tests. |

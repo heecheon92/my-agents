@@ -297,6 +297,71 @@ def test_pdf_upload_persists_metadata_and_ingests_page_provenance(monkeypatch) -
     assert len(_deterministic_embedding(chunks[0].content)) == 32
 
 
+@pytest.mark.parametrize(
+    ("filename", "content_type", "source_type", "source_content_type", "parser_name"),
+    [
+        ("portfolio-notes.md", "text/markdown", "markdown", "text/markdown", "utf8_markdown_v1"),
+        ("portfolio-notes.txt", "text/plain", "text", "text/plain", "utf8_text_v1"),
+    ],
+)
+def test_text_upload_persists_metadata_and_ingests_for_retrieval(
+    monkeypatch,
+    filename: str,
+    content_type: str,
+    source_type: str,
+    source_content_type: str,
+    parser_name: str,
+) -> None:  # noqa: ANN001
+    client = _client(monkeypatch)
+    _signup_login(client, f"{source_type}-upload-owner@example.com")
+
+    phrase = f"TextUpload {source_type} source says Heecheon Park uses LangGraph retrieval"
+    document = client.post(
+        "/documents/upload",
+        data={"title": f"{source_type.title()} Upload"},
+        files={
+            "file": (
+                filename,
+                f"# Portfolio notes\r\n\r\n{phrase} with FastAPI citations.\n".encode(),
+                content_type,
+            )
+        },
+    )
+
+    assert document.status_code == 201
+    payload = document.json()
+    assert payload["source_type"] == source_type
+    assert payload["source_filename"] == filename
+    assert payload["source_content_type"] == source_content_type
+    assert payload["source_byte_size"] > 0
+    assert len(payload["source_sha256"]) == 64
+    assert payload["source_page_count"] is None
+    assert payload["parser_name"] == parser_name
+
+    persisted = _database_rows(select(DocumentModel).where(DocumentModel.id == payload["id"]))
+    assert "\r" not in persisted[0].content
+    assert phrase in persisted[0].content
+
+    ingest = client.post(f"/documents/{payload['id']}/ingest")
+    assert ingest.status_code == 200
+    assert ingest.json()["status"] == "completed"
+    assert ingest.json()["chunk_count"] >= 1
+
+    conversation = client.post("/conversations", json={"title": f"{source_type} RAG"})
+    assert conversation.status_code == 201
+    run = client.post(
+        f"/conversations/{conversation.json()['id']}/runs",
+        json={"message": f"What does my uploaded {source_type} file say about TextUpload?"},
+    )
+
+    assert run.status_code == 200
+    run_payload = run.json()
+    assert run_payload["citations"]
+    assert run_payload["citations"][0]["document_id"] == payload["id"]
+    assert run_payload["citations"][0]["source_filename"] == filename
+    assert phrase in run_payload["reply"]
+
+
 def test_langgraph_academy_pdf_regression_extracts_real_text_when_available() -> None:
     sample = (
         Path.home() / "Downloads/LangChain_Academy_-_Introduction_to_LangGraph_-_Motivation.pdf"
@@ -481,16 +546,23 @@ def test_non_owner_cannot_delete_document_without_manage_authorization(monkeypat
     assert owner.get(f"/documents/{document_id}").status_code == 200
 
 
-def test_pdf_upload_rejects_unsupported_or_unsafe_input(monkeypatch) -> None:  # noqa: ANN001
+def test_upload_rejects_unsupported_or_unsafe_input(monkeypatch) -> None:  # noqa: ANN001
     client = _client(monkeypatch)
     _signup_login(client, "pdf-safety@example.com")
 
     unsupported = client.post(
         "/documents/upload",
-        data={"title": "Plain text"},
-        files={"file": ("notes.txt", b"not a pdf", "text/plain")},
+        data={"title": "Docx"},
+        files={"file": ("notes.docx", b"not supported", "text/plain")},
     )
     assert unsupported.status_code == 415
+
+    binary_text = client.post(
+        "/documents/upload",
+        data={"title": "Binary text"},
+        files={"file": ("notes.txt", b"hello\x00not text", "text/plain")},
+    )
+    assert binary_text.status_code == 400
 
     unsafe_name = client.post(
         "/documents/upload",

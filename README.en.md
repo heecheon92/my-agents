@@ -564,18 +564,20 @@ limits.
 
 ### Knowledge-base ingestion foundation
 
-The PDF-first upload/ingestion slice is available:
+The text-based upload/ingestion slice is available:
 
 - `POST /knowledge-bases`
 - `GET /knowledge-bases`
 - `POST /documents` — existing JSON text-document creation path
-- `POST /documents/upload` — multipart PDF upload creation path
+- `POST /documents/upload` — multipart PDF/Markdown/plain-text upload creation path
 - `POST /documents/{document_id}/ingest` — bodyless ingestion execution path
 - `GET /documents/{document_id}/extraction-runs`
 
-The text-document path remains compatible. The PDF path accepts only `application/pdf`
-`.pdf` files up to 5 MiB and extracts page text from text-based PDFs with `pypdf`.
-Simple literal/FlateDecode page streams still have a deterministic fallback. Upload
+The text-document path remains compatible. The upload path accepts `.pdf`, `.md`,
+`.markdown`, and `.txt` files up to 5 MiB. PDFs use `pypdf` for page text from
+`application/pdf` text-based PDFs, while simple literal/FlateDecode page streams still
+have a deterministic fallback. Markdown/plain text is decoded as UTF-8 text; structural
+Markdown parsing is not implemented yet. Upload
 metadata (`source_filename`, content type, byte size, SHA-256, page count, parser name)
 is persisted on the document, and ingestion chunks record `source_page` for later citation
 provenance. Conversation citation responses now include `source_page` and `source_filename`
@@ -583,8 +585,8 @@ when known. Ingestion creates paragraph/sentence-aware chunks, entity mentions, 
 embeddings. By default those embeddings are 32-dimensional deterministic lexical-hash
 vectors for offline tests; when `MY_AGENTS_EMBEDDING_MODE=openai`, ingestion uses
 `langchain-openai`/OpenAI embeddings such as `text-embedding-3-small`. This path still
-does not support scanned/encrypted/image-only PDFs or OCR, and pgvector acceleration plus
-OpenAI extraction calls are still future work.
+does not support scanned/encrypted/image-only PDFs, OCR, DOCX, HTML, or CSV/JSON structural
+parsing, and pgvector acceleration plus OpenAI extraction calls are still future work.
 
 
 ### Permission-aware RAG and citation-backed answers

@@ -36,7 +36,7 @@ flowchart LR
 
 Current honest status:
 
-> The project is a strong **v1-draft backend foundation**: auth, permissions, server-owned conversations, text/PDF ingestion, permission-aware retrieval, citations, events, migrations, and SSE assistant streaming exist as a thin end-to-end slice. It is not yet a production-ready v1 because broad production ingestion, real vector retrieval, background jobs, stronger deployment-grade auth hardening, and operations remain.
+> The project is a strong **v1-draft backend foundation**: auth, permissions, server-owned conversations, text/PDF/Markdown ingestion, permission-aware retrieval, citations, events, migrations, and SSE assistant streaming exist as a thin end-to-end slice. It is not yet a production-ready v1 because broad production ingestion, real vector retrieval, background jobs, stronger deployment-grade auth hardening, and operations remain.
 
 ## 1. Backend foundation
 
@@ -125,9 +125,10 @@ Current honest status:
 - [x] Entity mentions and co-occurrence relationships.
 - [x] Extraction-run summaries.
 - [x] Text ingestion still supports text already stored in the document.
-- [x] PDF-first upload API: `POST /documents/upload`.
+- [x] Text-based upload API: `POST /documents/upload`.
 - [x] Deterministic text-based PDF parser with metadata persistence and chunk page provenance.
-- [ ] Production parsers for scanned/encrypted/compressed PDF, Markdown, DOCX, web pages, etc.
+- [x] UTF-8 Markdown and plain-text upload parser with metadata persistence.
+- [ ] Production parsers for scanned/encrypted/compressed PDF, DOCX, web pages, CSV/JSON structure, etc.
 - [ ] Object storage for uploaded source files.
 - [ ] Reingestion/versioning policy.
 - [ ] Ingestion failure recovery and partial-progress cleanup.
@@ -251,7 +252,7 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
 - [x] Ruff lint and format gates.
 - [~] Optional Postgres/Neon test is skipped unless `MY_AGENTS_TEST_DATABASE_URL` is set.
 - [x] Dedicated streaming endpoint tests.
-- [ ] Upload/parser tests once file ingestion exists.
+- [x] Upload/parser tests for supported PDF, Markdown, and plain-text ingestion.
 - [ ] Background job tests once queueing exists.
 - [ ] Load/performance smoke tests for larger fixture data.
 - [ ] Security regression tests for rate limits, CSRF coverage, and auth hardening.
@@ -307,7 +308,7 @@ The backend can be called v1 when all of the following are true:
 - [ ] Auth/session behavior is safe enough for a public portfolio demo, including rate limiting and clear cookie/CSRF handling.
 - [ ] Permission-aware retrieval uses a real retrieval path, not only deterministic fixtures.
 - [ ] Retrieval has a dedicated agent/service boundary with hybrid candidate generation, optional cross-encoder reranking, query expansion/HyDE seams, and retrieval-quality eval evidence.
-- [x] Document ingestion supports at least one realistic uploaded file type: text-based PDF upload with page provenance.
+- [x] Document ingestion supports realistic uploaded text-based file types: PDF with page provenance, Markdown, and plain text.
 - [ ] Citations include enough provenance for users to trust the answer.
 - [ ] Agent events are useful to the UI without exposing hidden chain-of-thought or unauthorized data.
 - [ ] Tests pass offline by default.
