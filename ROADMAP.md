@@ -158,7 +158,22 @@ Current honest status:
 - [ ] Citation UX metadata such as document title, offsets, page number, and source preview.
 - [later] Neo4j/Graphiti or dedicated graph database if graph traversal becomes core product behavior.
 
-## 7. Conversations, runs, events, and streaming
+## 7. Scoped instruction profiles
+
+This is the product-facing equivalent of repo-local `AGENTS.md`: durable Markdown instructions that shape how the assistant and future agents should behave for a user, group, or conversation. See [`docs/idea/scoped-agent-instructions.md`](./docs/idea/scoped-agent-instructions.md) for the motivating product idea and terminology notes. These instructions guide tone, format, domain assumptions, and workflow, but they must never bypass authorization, reveal hidden prompts, override safety rules, or grant access to documents/tools.
+
+- [ ] Instruction profile model with scoped ownership: `user`, `group`, and optionally `conversation`.
+- [ ] Precedence contract: application/developer safety rules > group/workspace instructions > personal user instructions > conversation-local instructions > current user message.
+- [ ] Group instructions override personal instructions when they conflict, while personal instructions can still fill in non-conflicting style preferences.
+- [ ] Markdown instruction body with safe length limits, version metadata, creator/updater audit fields, and enabled/disabled status.
+- [ ] API endpoints to read/update the current user's personal instructions.
+- [ ] Group admin endpoints to read/update group/workspace instructions.
+- [ ] Instruction assembler that produces an explicit ordered instruction stack for conversation runs and future retrieval-agent calls.
+- [ ] Tests proving instruction precedence, group membership authorization, disabled-profile behavior, and prompt-injection resistance for attempts to override app safety or document permissions.
+- [ ] Redacted observability event that records which instruction profile IDs/versions influenced a run without exposing private instruction text to unauthorized users.
+- [ ] Frontend contract for editing personal and group/workspace instructions.
+
+## 8. Conversations, runs, events, and streaming
 
 - [x] Create/list/read server-owned conversations.
 - [x] Add/list conversation messages.
@@ -180,7 +195,7 @@ Current honest status:
 - [ ] Rich failed-run detail table/model.
 - [ ] Polling-friendly run status transitions for pending/running/completed/failed.
 
-## 8. Persistence, migrations, and database operations
+## 9. Persistence, migrations, and database operations
 
 - [x] SQLAlchemy database boundary.
 - [x] Central model import helper.
@@ -204,7 +219,7 @@ Current honest status:
 - [x] Backend-only V1 API smoke command for the seeded local demo path.
 - [ ] Automated migration step in deployment pipeline.
 
-## 9. Observability, evals, and safety
+## 10. Observability, evals, and safety
 
 - [x] Agent activity event table.
 - [x] Redacted event payloads for frontend-safe activity display.
@@ -219,7 +234,7 @@ Current honest status:
 - [ ] Cost monitoring and quotas for OpenAI-backed paths.
 - [ ] Production safety review for auth, permissions, logging, and prompts.
 
-## 10. Frontend integration contract
+## 11. Frontend integration contract
 
 This repo remains backend-only. Frontend work belongs in a separate repository.
 
@@ -238,7 +253,7 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
 - [x] Add streaming contract for chat UX.
 - [ ] Add OpenAPI/client generation workflow if useful.
 
-## 11. Testing and quality gates
+## 12. Testing and quality gates
 
 - [x] Offline default test suite.
 - [x] Auth/session tests.
@@ -257,7 +272,7 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
 - [ ] Load/performance smoke tests for larger fixture data.
 - [ ] Security regression tests for rate limits, CSRF coverage, and auth hardening.
 
-## 12. Near-term recommended sequence
+## 13. Near-term recommended sequence
 
 1. **Seeded frontend integration verification**
    - Confirm frontend uses product endpoints, not legacy `/assistant/chat`.
@@ -281,23 +296,28 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
    - Keep the offline/local auth email boundary testable.
    - Prepare real email-provider integration notes before public demo exposure.
 
-5. **Real retrieval upgrade / retrieval-agent track**
+5. **Scoped instruction profiles**
+   - Add user and group/workspace instruction profiles as durable Markdown guidance for assistant and future agent behavior.
+   - Enforce precedence explicitly: group/workspace instructions override personal instructions, but neither can override app safety, security, or document-permission rules.
+   - Propagate the assembled instruction stack into conversation runs, retrieval-agent planning, and observability metadata.
+
+6. **Real retrieval upgrade / retrieval-agent track**
    - Land the embedding provider boundary and JSON-backed semantic ranking first so the current service stops being fixture-only.
    - Treat pgvector as the first-stage candidate retrieval accelerator, not the final relevance judge.
    - Keep permission filtering before every retrieval/reranking step.
    - Promote retrieval into a dedicated retrieval-agent/service boundary once hybrid search needs more than a thin service call: vector + keyword/full-text + graph expansion, top-k candidate fusion, cross-encoder reranking, query expansion, HyDE, context packing, and retrieval eval reporting.
    - Add pgvector schema and migrations only after real embedding retrieval is implemented and the JSON fallback remains testable.
 
-6. **Production ingestion upgrade**
+7. **Production ingestion upgrade**
    - Add file upload and parser pipeline.
    - Move long ingestion to a background job model.
    - Store source provenance and parser errors safely.
 
-## 13. Strict v1 phase gates
+## 14. Strict v1 phase gates
 
 Phase 0 contract/evidence mapping is tracked in [`docs/portfolio-chat-service/11-v1-phase-0-contract-freeze-evidence-map.md`](./docs/portfolio-chat-service/11-v1-phase-0-contract-freeze-evidence-map.md). Use that map before starting the next strict v1 phase so backend evidence, frontend gates, docs evidence, owner repo, and known contract gaps stay aligned.
 
-## 14. Definition of done for v1
+## 15. Definition of done for v1
 
 The backend can be called v1 when all of the following are true:
 
@@ -308,6 +328,7 @@ The backend can be called v1 when all of the following are true:
 - [ ] Auth/session behavior is safe enough for a public portfolio demo, including rate limiting and clear cookie/CSRF handling.
 - [ ] Permission-aware retrieval uses a real retrieval path, not only deterministic fixtures.
 - [ ] Retrieval has a dedicated agent/service boundary with hybrid candidate generation, optional cross-encoder reranking, query expansion/HyDE seams, and retrieval-quality eval evidence.
+- [ ] Scoped instruction profiles exist for users and groups/workspaces, with group-over-personal precedence and safe propagation into assistant/retrieval-agent runs.
 - [x] Document ingestion supports realistic uploaded text-based file types: PDF with page provenance, Markdown, and plain text.
 - [ ] Citations include enough provenance for users to trust the answer.
 - [ ] Agent events are useful to the UI without exposing hidden chain-of-thought or unauthorized data.
