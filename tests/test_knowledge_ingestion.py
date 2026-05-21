@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+import my_agents.knowledge.extraction as extraction_module
 from my_agents.knowledge.extraction import (
     _chunk_pdf_text,
     _deterministic_embedding,
@@ -27,6 +28,18 @@ from my_agents.knowledge.pdf_uploads import PdfUploadError, parse_uploaded_pdf
 from my_agents.persistence.database import get_database_session
 
 from .conftest import load_app, verify_latest_auth_email
+
+
+class FakeEmbeddingProvider:
+    provider = "fake"
+    model = "fake-embedding-model"
+    dimensions = 3
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return [[float(index), float(len(text)), 1.0] for index, text in enumerate(texts)]
+
+    def embed_query(self, text: str) -> list[float]:
+        return [1.0, 0.0, 0.0]
 
 
 def _client(monkeypatch) -> TestClient:  # noqa: ANN001 - pytest monkeypatch fixture
@@ -170,6 +183,38 @@ def test_personal_knowledge_base_document_ingestion_creates_extraction_artifacts
         select(DocumentChunkModel).where(DocumentChunkModel.document_id == document.json()["id"])
     )
     assert {chunk.source_page for chunk in chunks} == {None}
+
+
+def test_ingestion_uses_configured_embedding_provider(monkeypatch) -> None:  # noqa: ANN001
+    monkeypatch.setattr(
+        extraction_module,
+        "get_embedding_provider",
+        lambda: FakeEmbeddingProvider(),
+    )
+    client = _client(monkeypatch)
+    _signup_login(client, "provider-ingest@example.com")
+
+    document = client.post(
+        "/documents",
+        json={
+            "title": "Provider Embeddings",
+            "content": "First provider chunk.\n\nSecond provider chunk.",
+        },
+    )
+    assert document.status_code == 201
+
+    ingest = client.post(f"/documents/{document.json()['id']}/ingest")
+
+    assert ingest.status_code == 200
+    chunks = _database_rows(
+        select(DocumentChunkModel)
+        .where(DocumentChunkModel.document_id == document.json()["id"])
+        .order_by(DocumentChunkModel.ordinal)
+    )
+    assert [chunk.embedding_json for chunk in chunks] == [
+        "[0.0, 21.0, 1.0]",
+        "[1.0, 22.0, 1.0]",
+    ]
 
 
 def test_pdf_parser_tolerates_invalid_octal_like_literal_escape() -> None:

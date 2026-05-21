@@ -27,7 +27,7 @@ A user can create a personal or group knowledge base, attach either a JSON text 
 The ingestion pass creates:
 
 - chunks;
-- deterministic embedding fixtures;
+- JSON-backed embeddings through a provider boundary;
 - extraction run records;
 - entities;
 - entity mentions;
@@ -50,7 +50,9 @@ flowchart TD
     Content --> Run[POST /documents/{id}/ingest]
     Run --> Chunks[DocumentChunk rows]
     Chunks --> Page[PDF source_page when available]
-    Chunks --> Embeddings[32-d deterministic lexical-hash embedding_json]
+    Chunks --> Provider{Embedding mode}
+    Provider -->|deterministic default| Embeddings[32-d lexical-hash embedding_json]
+    Provider -->|openai opt-in| OpenAI[langchain-openai JSON embedding_json]
     Chunks --> Entities[Entity extraction]
     Entities --> Mentions[EntityMention provenance]
     Mentions --> Relationships[EntityRelationship co_occurs_with]
@@ -60,8 +62,9 @@ flowchart TD
 
 The project must keep tests offline and credential-free. The backend now uses `pypdf`
 for normal text-based PDF extraction and keeps a deterministic stream fallback for simple
-fixtures. Chunking, entity extraction, and embedding fixtures remain deterministic so the
-service can prove the data lifecycle before adding provider-backed embeddings or OCR.
+fixtures. Chunking and entity extraction remain deterministic, while embeddings now use
+a provider boundary: deterministic lexical-hash vectors by default, or OpenAI embeddings
+through `langchain-openai` when `MY_AGENTS_EMBEDDING_MODE=openai`.
 
 This is a scaffold for portfolio-visible architecture, not a claim of production extraction quality.
 
@@ -70,8 +73,8 @@ This is a scaffold for portfolio-visible architecture, not a claim of production
 - PDF support is text-first through `pypdf`, with a legacy literal/FlateDecode stream fallback for simple PDFs;
 - no scanned PDF OCR, docx, or HTML ingestion yet;
 - no cloud object storage adapter yet;
-- no OpenAI embedding/extraction provider call yet;
-- no production vector similarity ranking yet.
+- OpenAI embeddings are opt-in and require `OPENAI_API_KEY`; OpenAI extraction calls are not implemented yet;
+- no pgvector acceleration yet; Slice A ranks JSON embeddings in Python after permission filtering.
 
 Thin permission-aware RAG and graph expansion now live in the next learning note.
 
@@ -93,6 +96,7 @@ Thin permission-aware RAG and graph expansion now live in the next learning note
 ## Revision history
 
 - 2026-05-21: Upgraded PDF extraction to `pypdf_text_v2`, added legacy fallback documentation, 32-d lexical-hash embedding fixtures, and local LangGraph PDF regression coverage.
+- 2026-05-21: Added embedding provider boundary with deterministic default and optional OpenAI JSON-backed embeddings via `langchain-openai`.
 - 2026-05-20: Updated for strict V1 Phase 2 PDF upload, metadata persistence, and chunk page provenance.
 - 2026-05-17: Updated limitations after adding thin permission-aware RAG in the next slice.
 - 2026-05-17: Created after adding thin end-to-end knowledge-base ingestion and deterministic extraction.

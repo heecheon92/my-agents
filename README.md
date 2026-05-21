@@ -188,6 +188,14 @@ MY_AGENTS_OPENAI_TIMEOUT_SECONDS=30
 # GPT-5 계열 튜닝, 선택 사항:
 # MY_AGENTS_OPENAI_REASONING_EFFORT=low
 # MY_AGENTS_OPENAI_VERBOSITY=low
+
+# 문서 embedding은 기본적으로 deterministic/offline입니다.
+# provider-backed JSON embedding이 필요할 때만 MY_AGENTS_EMBEDDING_MODE=openai로 설정합니다.
+MY_AGENTS_EMBEDDING_MODE=deterministic
+MY_AGENTS_OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+# MY_AGENTS_OPENAI_EMBEDDING_DIMENSIONS=
+MY_AGENTS_EMBEDDING_BATCH_SIZE=32
+MY_AGENTS_OPENAI_EMBEDDING_TIMEOUT_SECONDS=30
 ```
 
 포트폴리오용 채팅 서비스 로드맵을 위한 서비스 기반 설정도 포함되어 있습니다.
@@ -404,9 +412,9 @@ password reset request/confirm endpoint, 그리고 signup/login/verification-tok
 
 이것이 전체 production-grade RAG 서비스가 완성되었다는 뜻은 아닙니다.
 하지만 auth, group/document permission, server-owned conversation, text KB ingestion,
-permission-aware retrieval, citation-backed answer composition, structured agent activity
-event, SSE conversation-run stream의 얇은 end-to-end 흐름은 구현되어 있습니다.
-production parser와 pgvector ranking은 이후 마일스톤입니다.
+permission-aware retrieval, JSON-backed semantic embedding ranking, citation-backed answer
+composition, structured agent activity event, SSE conversation-run stream의 얇은 end-to-end
+흐름은 구현되어 있습니다. production parser와 pgvector 가속은 이후 마일스톤입니다.
 
 구현된 auth endpoint:
 
@@ -565,10 +573,11 @@ PDF-first upload/ingestion slice가 추가되었습니다.
 (`source_filename`, content type, byte size, SHA-256, page count, parser name)는 document에
 저장되고, ingestion chunk에는 `source_page`가 기록되어 이후 citation provenance에 사용할 수
 있습니다. conversation citation 응답은 이미 가능한 경우 `source_page`와 `source_filename`을
-함께 반환합니다. ingestion은 paragraph/sentence 기반 chunk, entity mention, 32차원 deterministic
-lexical-hash embedding fixture를 생성합니다. 이 경로는 scanned/encrypted/image-only PDF나 OCR을
-아직 지원하지 않으며, OpenAI embedding/extraction provider 호출과 pgvector similarity ranking은
-아직 수행하지 않습니다.
+함께 반환합니다. ingestion은 paragraph/sentence 기반 chunk, entity mention, JSON-backed embedding을 생성합니다.
+기본값은 offline test용 32차원 deterministic lexical-hash vector이며,
+`MY_AGENTS_EMBEDDING_MODE=openai`일 때는 `langchain-openai`/OpenAI embedding
+(`text-embedding-3-small` 등)을 사용합니다. 이 경로는 scanned/encrypted/image-only PDF나 OCR을
+아직 지원하지 않으며, pgvector 가속과 OpenAI extraction 호출은 아직 수행하지 않습니다.
 
 
 ### Permission-aware RAG 및 citation 기반 응답
@@ -579,7 +588,7 @@ lexical-hash embedding fixture를 생성합니다. 이 경로는 scanned/encrypt
    `retrieval_optional`, `clarification_required`로 분류합니다.
 2. `no_retrieval`은 RetrievalService를 호출하지 않고 `answer_mode=general_knowledge`로 답합니다.
 3. `retrieval_required`/`retrieval_optional`만 `RetrievalService`를 호출하며, 서비스는 현재 사용자에게 읽기 권한이 있는 document chunk 후보만 먼저 선택합니다.
-4. 그 후보 안에서 deterministic term score로 직접 관련 chunk를 찾고, personal-document 질문은 최신 권한 내 chunk fallback을 사용할 수 있습니다.
+4. 설정된 provider로 query embedding을 만들고, 권한이 확인된 후보 안에서만 JSON-backed cosine similarity와 lexical score를 섞어 ranking합니다. personal-document 질문은 최신 권한 내 chunk fallback을 사용할 수 있습니다.
 5. 직접 검색된 chunk의 entity mention을 기준으로, 같은 entity를 공유하는 권한 내 chunk를 graph expansion context로 추가합니다.
 6. optional 검색 결과가 관련 있으면 `answer_mode=mixed`, required 검색 결과가 관련 있으면 `answer_mode=document_grounded`가 됩니다. 관련 context가 없으면 일반 지식 답변으로 남고 citation을 만들지 않습니다.
 7. 권한이 확인된 compact context payload만 `general_assistant` graph/provider prompt에 전달하고, 응답 payload에는 `retrieval_route`, `answer_mode`, `document_scope`, `citations`를 함께 반환합니다.

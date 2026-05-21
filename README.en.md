@@ -188,6 +188,14 @@ MY_AGENTS_OPENAI_TIMEOUT_SECONDS=30
 # GPT-5-series tuning, optional:
 # MY_AGENTS_OPENAI_REASONING_EFFORT=low
 # MY_AGENTS_OPENAI_VERBOSITY=low
+
+# Document embeddings default to deterministic/offline.
+# Set MY_AGENTS_EMBEDDING_MODE=openai only when provider-backed JSON embeddings are desired.
+MY_AGENTS_EMBEDDING_MODE=deterministic
+MY_AGENTS_OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+# MY_AGENTS_OPENAI_EMBEDDING_DIMENSIONS=
+MY_AGENTS_EMBEDDING_BATCH_SIZE=32
+MY_AGENTS_OPENAI_EMBEDDING_TIMEOUT_SECONDS=30
 ```
 
 Service-foundation knobs are present for the portfolio chat-service roadmap. SQLite is
@@ -406,8 +414,9 @@ attempt limiter for signup, login, verification-token, and password-reset abuse.
 This does **not** yet mean the production-grade RAG service is complete.
 However, the thin end-to-end path now covers auth, groups/document permissions,
 server-owned conversations, text KB ingestion, permission-aware retrieval,
-citation-backed answer composition, structured agent activity events, and an SSE
-conversation-run stream. Production parsers and pgvector ranking remain later milestones.
+JSON-backed semantic embedding ranking, citation-backed answer composition, structured
+agent activity events, and an SSE conversation-run stream. Production parsers and
+pgvector acceleration remain later milestones.
 
 Implemented auth endpoints:
 
@@ -570,10 +579,12 @@ Simple literal/FlateDecode page streams still have a deterministic fallback. Upl
 metadata (`source_filename`, content type, byte size, SHA-256, page count, parser name)
 is persisted on the document, and ingestion chunks record `source_page` for later citation
 provenance. Conversation citation responses now include `source_page` and `source_filename`
-when known. Ingestion creates paragraph/sentence-aware chunks, entity mentions, and a
-32-dimensional deterministic lexical-hash embedding fixture. This path still does not
-support scanned/encrypted/image-only PDFs or OCR, and OpenAI embedding/extraction provider
-calls plus pgvector similarity ranking are still future work.
+when known. Ingestion creates paragraph/sentence-aware chunks, entity mentions, and JSON-backed
+embeddings. By default those embeddings are 32-dimensional deterministic lexical-hash
+vectors for offline tests; when `MY_AGENTS_EMBEDDING_MODE=openai`, ingestion uses
+`langchain-openai`/OpenAI embeddings such as `text-embedding-3-small`. This path still
+does not support scanned/encrypted/image-only PDFs or OCR, and pgvector acceleration plus
+OpenAI extraction calls are still future work.
 
 
 ### Permission-aware RAG and citation-backed answers
@@ -584,7 +595,7 @@ The product conversation run includes a permission-aware RAG slice with retrieva
    `retrieval_required`, `retrieval_optional`, or `clarification_required`.
 2. `no_retrieval` skips `RetrievalService` and answers with `answer_mode=general_knowledge`.
 3. Only `retrieval_required` and `retrieval_optional` call `RetrievalService`; the service first selects only document chunks the current user can read.
-4. It finds direct matches inside that authorized candidate set using deterministic term scoring, and personal-document prompts may fall back to recent authorized chunks.
+4. It embeds the query with the configured provider, ranks only those authorized chunks by JSON-backed cosine similarity blended with lexical score, and personal-document prompts may fall back to recent authorized chunks.
 5. It expands through entity mentions to related chunks that are still inside the authorized set.
 6. Optional retrieval with relevant context uses `answer_mode=mixed`; required retrieval with relevant context uses `answer_mode=document_grounded`. If no relevant context is found, the response stays general and creates no citations.
 7. It passes only compact authorized context into the `general_assistant` graph/provider prompt and returns `retrieval_route`, `answer_mode`, `document_scope`, and `citations` in the response payload.

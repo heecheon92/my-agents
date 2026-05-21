@@ -78,6 +78,48 @@ def test_openai_settings_accept_model_and_tuning_overrides(
     assert settings.openai_verbosity == "low"
 
 
+def test_embedding_settings_default_to_deterministic(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
+    monkeypatch.delenv("MY_AGENTS_EMBEDDING_MODE", raising=False)
+    monkeypatch.delenv("MY_AGENTS_OPENAI_EMBEDDING_DIMENSIONS", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.embedding_mode == "deterministic"
+    assert settings.openai_embedding_model == "text-embedding-3-small"
+    assert settings.openai_embedding_dimensions is None
+    assert settings.embedding_batch_size == 32
+    assert settings.openai_embedding_timeout_seconds == 30
+
+
+def test_openai_embedding_mode_requires_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
+    monkeypatch.setenv("MY_AGENTS_EMBEDDING_MODE", "openai")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("MY_AGENTS_OPENAI_API_KEY", raising=False)
+
+    with pytest.raises(ValidationError, match="MY_AGENTS_EMBEDDING_MODE=openai"):
+        Settings(_env_file=None)
+
+
+def test_openai_embedding_settings_accept_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
+    monkeypatch.setenv("MY_AGENTS_EMBEDDING_MODE", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("MY_AGENTS_OPENAI_EMBEDDING_MODEL", "text-embedding-3-large")
+    monkeypatch.setenv("MY_AGENTS_OPENAI_EMBEDDING_DIMENSIONS", "256")
+    monkeypatch.setenv("MY_AGENTS_EMBEDDING_BATCH_SIZE", "8")
+    monkeypatch.setenv("MY_AGENTS_OPENAI_EMBEDDING_TIMEOUT_SECONDS", "12")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.embedding_mode == "openai"
+    assert settings.openai_embedding_model == "text-embedding-3-large"
+    assert settings.openai_embedding_dimensions == 256
+    assert settings.embedding_batch_size == 8
+    assert settings.openai_embedding_timeout_seconds == 12
+
+
 def test_service_foundation_settings_have_safe_defaults(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

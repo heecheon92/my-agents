@@ -85,7 +85,7 @@ def test_chat_run_events_are_ordered_structured_and_redacted(monkeypatch) -> Non
     ]
     payloads = [event["payload"] for event in event_payload]
     assert payloads[2]["authorized_context_count"] == 1
-    assert payloads[2]["direct_count"] == 1
+    assert payloads[2]["semantic_vector_count"] == 1
     assert payloads[3]["route_label"] == "general_assistant"
     assert payloads[4]["citation_count"] == 1
     assert private_phrase not in str(payloads)

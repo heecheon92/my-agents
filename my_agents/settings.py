@@ -15,6 +15,7 @@ TextVerbosity = Literal["low", "medium", "high"]
 SameSitePolicy = Literal["lax", "strict", "none"]
 DeploymentEnvironment = Literal["local", "preview", "production"]
 AuthEmailMode = Literal["local", "smtp"]
+EmbeddingMode = Literal["deterministic", "openai"]
 
 
 class Settings(BaseSettings):
@@ -63,6 +64,33 @@ class Settings(BaseSettings):
     openai_verbosity: TextVerbosity | None = Field(
         default=None,
         validation_alias=AliasChoices("MY_AGENTS_OPENAI_VERBOSITY"),
+    )
+    embedding_mode: EmbeddingMode = Field(
+        default="deterministic",
+        validation_alias=AliasChoices("MY_AGENTS_EMBEDDING_MODE"),
+    )
+    openai_embedding_model: str = Field(
+        default="text-embedding-3-small",
+        min_length=1,
+        validation_alias=AliasChoices("MY_AGENTS_OPENAI_EMBEDDING_MODEL"),
+    )
+    openai_embedding_dimensions: int | None = Field(
+        default=None,
+        ge=1,
+        le=3072,
+        validation_alias=AliasChoices("MY_AGENTS_OPENAI_EMBEDDING_DIMENSIONS"),
+    )
+    embedding_batch_size: int = Field(
+        default=32,
+        ge=1,
+        le=1000,
+        validation_alias=AliasChoices("MY_AGENTS_EMBEDDING_BATCH_SIZE"),
+    )
+    openai_embedding_timeout_seconds: float = Field(
+        default=30.0,
+        gt=0,
+        le=120,
+        validation_alias=AliasChoices("MY_AGENTS_OPENAI_EMBEDDING_TIMEOUT_SECONDS"),
     )
     database_url: str = Field(
         default="sqlite+pysqlite:///:memory:",
@@ -205,7 +233,7 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("MY_AGENTS_AUTH_ABUSE_WINDOW_SECONDS"),
     )
 
-    @field_validator("openai_model")
+    @field_validator("openai_model", "openai_embedding_model")
     @classmethod
     def openai_model_must_not_be_blank(cls, value: str) -> str:
         """Keep model selection env-driven without accepting empty model slugs."""
@@ -250,6 +278,7 @@ class Settings(BaseSettings):
     @field_validator(
         "test_database_url",
         "auto_create_tables",
+        "openai_embedding_dimensions",
         "auth_public_app_base_url",
         "auth_smtp_host",
         "auth_smtp_username",
@@ -311,6 +340,8 @@ class Settings(BaseSettings):
         """Fail fast when runtime settings would make auth/session behavior unsafe."""
         if self.response_mode == "openai" and self.openai_api_key is None:
             raise ValueError("OPENAI_API_KEY is required when MY_AGENTS_RESPONSE_MODE=openai")
+        if self.embedding_mode == "openai" and self.openai_api_key is None:
+            raise ValueError("OPENAI_API_KEY is required when MY_AGENTS_EMBEDDING_MODE=openai")
         if self.session_cookie_samesite == "none" and not self.session_cookie_secure:
             raise ValueError(
                 "MY_AGENTS_SESSION_COOKIE_SECURE=true is required when "

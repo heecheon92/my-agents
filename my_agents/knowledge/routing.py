@@ -183,7 +183,7 @@ def answer_mode_for_route(
     return "general_knowledge"
 
 
-def is_relevant_retrieval_result(*, route: RetrievalRoute, source: str, score: int) -> bool:
+def is_relevant_retrieval_result(*, route: RetrievalRoute, source: str, score: float) -> bool:
     """Return whether one retrieved chunk should affect answer grounding."""
     if score <= 0:
         return False

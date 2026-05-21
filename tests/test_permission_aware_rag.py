@@ -6,6 +6,8 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
+import my_agents.knowledge.extraction as extraction_module
+import my_agents.knowledge.retrieval as retrieval_module
 from my_agents.api import create_app
 from my_agents.api.assistant import get_graph_runner
 from my_agents.schemas import RouteDecision
@@ -25,6 +27,26 @@ class RagSpyGraph:
             "reply": "graph reply without hidden document text",
             "route": RouteDecision(label="general_assistant", explanation="spy route"),
         }
+
+
+class SemanticFakeEmbeddingProvider:
+    provider = "fake"
+    model = "semantic-fake-v1"
+    dimensions = 2
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return [self._vector(text) for text in texts]
+
+    def embed_query(self, text: str) -> list[float]:
+        return self._vector(text)
+
+    def _vector(self, text: str) -> list[float]:
+        normalized = text.casefold()
+        if any(term in normalized for term in ("automobile", "vehicle", "car", "cars")):
+            return [1.0, 0.0]
+        if any(term in normalized for term in ("pastry", "baking", "bread")):
+            return [0.0, 1.0]
+        return [0.5, 0.5]
 
 
 def _client(monkeypatch, graph: RagSpyGraph | None = None) -> TestClient:  # noqa: ANN001
@@ -145,6 +167,59 @@ def test_broad_resume_question_uses_recent_authorized_document(monkeypatch) -> N
     assert outsider_payload["citations"] == []
     assert resume_phrase not in outsider_payload["reply"]
     assert graph.calls[-1]["retrieved_chunk_ids"] == []
+    assert graph.calls[-1]["retrieved_context"] == []
+
+
+def test_semantic_vector_retrieval_after_permission_filtering(monkeypatch) -> None:  # noqa: ANN001
+    fake_embeddings = SemanticFakeEmbeddingProvider()
+    monkeypatch.setattr(extraction_module, "get_embedding_provider", lambda: fake_embeddings)
+    monkeypatch.setattr(retrieval_module, "get_embedding_provider", lambda: fake_embeddings)
+    graph = RagSpyGraph()
+    owner = _client(monkeypatch, graph)
+    outsider = _client(monkeypatch, graph)
+    _signup_login(owner, "semantic-owner@example.com")
+    _signup_login(outsider, "semantic-outsider@example.com")
+
+    vehicle_doc = owner.post(
+        "/documents",
+        json={
+            "title": "Vehicle Notes",
+            "content": "Automobile maintenance schedule uses quarterly inspections.",
+        },
+    )
+    pastry_doc = owner.post(
+        "/documents",
+        json={
+            "title": "Pastry Notes",
+            "content": "Pastry dough proofing depends on warm kitchen timing.",
+        },
+    )
+    assert vehicle_doc.status_code == 201
+    assert pastry_doc.status_code == 201
+    assert owner.post(f"/documents/{vehicle_doc.json()['id']}/ingest").status_code == 200
+    assert owner.post(f"/documents/{pastry_doc.json()['id']}/ingest").status_code == 200
+
+    owner_conversation_id = _create_conversation(owner, "Semantic owner")
+    owner_run = owner.post(
+        f"/conversations/{owner_conversation_id}/runs",
+        json={"message": "What does my uploaded document say about cars?"},
+    )
+
+    assert owner_run.status_code == 200
+    owner_payload = owner_run.json()
+    assert owner_payload["citations"]
+    assert owner_payload["citations"][0]["document_id"] == vehicle_doc.json()["id"]
+    assert "Automobile maintenance" in owner_payload["reply"]
+    assert graph.calls[-1]["retrieved_context"][0]["title"] == "Vehicle Notes"
+
+    outsider_conversation_id = _create_conversation(outsider, "Semantic outsider")
+    outsider_run = outsider.post(
+        f"/conversations/{outsider_conversation_id}/runs",
+        json={"message": "What does my uploaded document say about cars?"},
+    )
+
+    assert outsider_run.status_code == 200
+    assert outsider_run.json()["citations"] == []
     assert graph.calls[-1]["retrieved_context"] == []
 
 

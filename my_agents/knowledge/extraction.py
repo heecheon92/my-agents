@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 from dataclasses import dataclass
@@ -10,6 +9,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from my_agents.knowledge.embeddings import deterministic_embedding, get_embedding_provider
 from my_agents.knowledge.models import (
     DocumentChunkModel,
     DocumentModel,
@@ -28,7 +28,6 @@ _ENTITY_PATTERN = re.compile(
 _TECH_TERM_PATTERN = re.compile(r"\b[A-Za-z][A-Za-z0-9]*(?:Graph|Chain|Lang|API|SQL|DB)\b")
 _CHUNK_TARGET_CHARS = 900
 _CHUNK_OVERLAP_CHARS = 120
-_EMBEDDING_DIMENSIONS = 32
 
 
 @dataclass(frozen=True)
@@ -42,10 +41,11 @@ class ExtractionSummary:
 
 
 class KnowledgeExtractionService:
-    """Create chunks, deterministic embeddings, entities, and relationships."""
+    """Create chunks, embeddings, entities, and relationships."""
 
     def __init__(self, db: Session) -> None:
         self._db = db
+        self._embedding_provider = get_embedding_provider()
 
     def ingest_document(self, document: DocumentModel) -> ExtractionSummary:
         run = ExtractionRunModel(document_id=document.id, status=ExtractionStatus.COMPLETED.value)
@@ -53,9 +53,12 @@ class KnowledgeExtractionService:
         self._db.flush()
 
         chunks = list(_chunk_document_text(document))
+        embeddings = self._embedding_provider.embed_documents([content for content, *_ in chunks])
         entity_ids: set[str] = set()
         relationship_count = 0
-        for ordinal, (content, start, end, source_page) in enumerate(chunks):
+        for ordinal, ((content, start, end, source_page), embedding) in enumerate(
+            zip(chunks, embeddings, strict=True)
+        ):
             chunk = DocumentChunkModel(
                 document_id=document.id,
                 extraction_run_id=run.id,
@@ -64,7 +67,7 @@ class KnowledgeExtractionService:
                 start_offset=start,
                 end_offset=end,
                 source_page=source_page,
-                embedding_json=json.dumps(_deterministic_embedding(content)),
+                embedding_json=json.dumps(embedding),
             )
             self._db.add(chunk)
             self._db.flush()
@@ -163,24 +166,9 @@ def _extract_entity_names(text: str) -> list[str]:
     return entities
 
 
-def _deterministic_embedding(text: str, dimensions: int = _EMBEDDING_DIMENSIONS) -> list[float]:
-    """Return a deterministic lexical-hash embedding fixture for offline tests.
-
-    This remains provider-free, but it is closer to a production embedding boundary than
-    hashing the whole chunk once: each normalized token contributes to a stable vector
-    bucket, and the vector is L2-normalized for future similarity-search replacement.
-    """
-    vector = [0.0] * dimensions
-    tokens = re.findall(r"[A-Za-z0-9가-힣]+", text.casefold())
-    for token in tokens:
-        digest = hashlib.sha256(token.encode("utf-8")).digest()
-        bucket = int.from_bytes(digest[:2], "big") % dimensions
-        sign = 1 if digest[2] % 2 == 0 else -1
-        vector[bucket] += sign * (1.0 + min(len(token), 12) / 12)
-    norm = sum(value * value for value in vector) ** 0.5
-    if norm == 0:
-        return vector
-    return [round(value / norm, 6) for value in vector]
+def _deterministic_embedding(text: str, dimensions: int = 32) -> list[float]:
+    """Backward-compatible wrapper around the deterministic embedding provider."""
+    return deterministic_embedding(text, dimensions=dimensions)
 
 
 def _semantic_units(text: str) -> list[tuple[str, int, int]]:

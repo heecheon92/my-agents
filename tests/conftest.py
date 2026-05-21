@@ -188,6 +188,7 @@ def _clear_runtime_caches() -> None:
         "my_agents.settings": ("get_settings",),
         "my_agents.agents.general_assistant.responders": ("get_response_provider",),
         "my_agents.persistence.database": ("reset_database_caches",),
+        "my_agents.knowledge.embeddings": ("get_embedding_provider",),
         "my_agents.auth.abuse": ("reset_auth_abuse_protector",),
         "my_agents.auth.email": ("reset_local_auth_email_outbox",),
     }.items():

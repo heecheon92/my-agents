@@ -69,7 +69,8 @@ This project uses a safer order:
 ```mermaid
 flowchart LR
     Query[User query] --> AuthRows[Authorized document chunks]
-    AuthRows --> Direct[Direct deterministic matches]
+    AuthRows --> QueryEmbedding[Configured query embedding]
+    QueryEmbedding --> Direct[JSON cosine + lexical blended ranking]
     Direct --> Entities[Entity IDs from matched chunks]
     Entities --> Expansion[Related authorized chunks]
     Expansion --> Compose[Citation-backed reply]
@@ -81,7 +82,7 @@ an entity with an authorized chunk.
 
 ## Current limitations
 
-- Retrieval routing and scoring are deterministic fixtures, not LLM query planning or pgvector ranking.
+- Retrieval routing is deterministic; ranking now uses JSON-backed cosine similarity from the configured embedding provider blended with lexical scoring, but not LLM query planning/reranking or pgvector acceleration.
 - The reply composition is a thin service-layer scaffold, not a polished answer synthesis prompt.
 - Citations include snippets but not character offsets in the API response yet.
 - Streaming exists, but frontend display of retrieval route/answer mode still belongs to the separate frontend repository.
@@ -102,13 +103,14 @@ justify graph orchestration, for example:
 
 - query rewrite;
 - metadata/scope planning;
-- hybrid or vector search behind the same permission boundary;
+- hybrid search or pgvector acceleration as first-stage candidate retrieval behind the same permission boundary;
+- cross-encoder reranking as a second-stage pass over top-k already-authorized candidates;
 - reranking;
 - context compression/packaging;
 - clarification/fallback branches that need their own observability.
 
-Even then, hard authorization should remain in `RetrievalService`, not in graph prompts or
-agent reasoning. A future shape can be:
+Even then, hard authorization should remain in `RetrievalService`, not in graph prompts,
+agent reasoning, vector-store configuration, or cross-encoder prompts. A future shape can be:
 
 ```mermaid
 flowchart LR

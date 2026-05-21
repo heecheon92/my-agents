@@ -20,6 +20,10 @@ flowchart LR
     V07 --> V1["v1 portfolio chat service"]
     V1 --> V11["v1.1 production-like DB/deploy path"]
     V11 --> V12["v1.2 ECS-lite portfolio deployment"]
+    V1 --> R1["retrieval agent track"]
+    R1 --> R1A["embedding + hybrid retrieval"]
+    R1A --> R1B["reranking + query expansion"]
+    R1B --> R1C["retrieval eval loop"]
 
     V0 --> V0Done["Done"]
     V05 --> V05Done["Done"]
@@ -27,6 +31,7 @@ flowchart LR
     V1 --> V1Wip["In progress"]
     V11 --> V11Wip["Partially done"]
     V12 --> V12Todo["Planned"]
+    R1 --> R1Todo["Planned"]
 ```
 
 Current honest status:
@@ -140,10 +145,15 @@ Current honest status:
 - [x] Redacted event payloads avoid raw private content.
 - [~] Current retrieval is a deterministic local fixture, not real vector search.
 - [ ] Real embedding generation provider boundary.
+- [ ] JSON-backed semantic cosine ranking over authorized chunks as the first real-embedding slice.
 - [ ] pgvector schema columns and extension usage.
 - [ ] Permission-filtered SQL vector search before ranking enters app memory.
-- [ ] Hybrid retrieval strategy: vector + keyword + graph expansion.
-- [ ] Retrieval-quality eval set.
+- [ ] Hybrid retrieval strategy: vector + keyword/full-text + graph/entity expansion, with tunable weights guided by [`docs/portfolio-chat-service/12-retrieval-agent-hybrid-reference.md`](./docs/portfolio-chat-service/12-retrieval-agent-hybrid-reference.md).
+- [ ] Dedicated retrieval-agent/service boundary that owns query planning, retrieval routing, hybrid candidate generation, reranking, context packing, and retrieval observability before the general assistant composes an answer.
+- [ ] Cross-encoder reranker stage over top-k authorized candidates after vector/full-text retrieval; keep it behind a provider/interface flag so local tests remain offline.
+- [ ] Query expansion stage for synonyms/related concepts while preserving original user intent.
+- [ ] HyDE-style hypothetical-document retrieval path for broad conceptual questions when normal hybrid search under-recovers.
+- [ ] Retrieval-quality eval set with precision/recall-style fixtures and before/after comparison for hybrid, reranked, and HyDE paths.
 - [ ] Citation UX metadata such as document title, offsets, page number, and source preview.
 - [later] Neo4j/Graphiti or dedicated graph database if graph traversal becomes core product behavior.
 
@@ -270,10 +280,12 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
    - Keep the offline/local auth email boundary testable.
    - Prepare real email-provider integration notes before public demo exposure.
 
-5. **Real retrieval upgrade**
-   - Add embedding provider boundary.
-   - Add pgvector schema and migrations only when real embedding retrieval is implemented.
-   - Keep permission filtering inside query construction.
+5. **Real retrieval upgrade / retrieval-agent track**
+   - Land the embedding provider boundary and JSON-backed semantic ranking first so the current service stops being fixture-only.
+   - Treat pgvector as the first-stage candidate retrieval accelerator, not the final relevance judge.
+   - Keep permission filtering before every retrieval/reranking step.
+   - Promote retrieval into a dedicated retrieval-agent/service boundary once hybrid search needs more than a thin service call: vector + keyword/full-text + graph expansion, top-k candidate fusion, cross-encoder reranking, query expansion, HyDE, context packing, and retrieval eval reporting.
+   - Add pgvector schema and migrations only after real embedding retrieval is implemented and the JSON fallback remains testable.
 
 6. **Production ingestion upgrade**
    - Add file upload and parser pipeline.
@@ -294,6 +306,7 @@ The backend can be called v1 when all of the following are true:
 - [ ] Backend has a documented ECS-lite deployment path with Docker image build, ECR publish, ECS Fargate service update, health smoke, env/secret handling, migration step, and rollback note.
 - [ ] Auth/session behavior is safe enough for a public portfolio demo, including rate limiting and clear cookie/CSRF handling.
 - [ ] Permission-aware retrieval uses a real retrieval path, not only deterministic fixtures.
+- [ ] Retrieval has a dedicated agent/service boundary with hybrid candidate generation, optional cross-encoder reranking, query expansion/HyDE seams, and retrieval-quality eval evidence.
 - [x] Document ingestion supports at least one realistic uploaded file type: text-based PDF upload with page provenance.
 - [ ] Citations include enough provenance for users to trust the answer.
 - [ ] Agent events are useful to the UI without exposing hidden chain-of-thought or unauthorized data.

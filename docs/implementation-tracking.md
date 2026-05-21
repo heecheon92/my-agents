@@ -90,7 +90,7 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 - Knowledge-base create/list.
 - Text document ingestion remains compatible.
 - PDF-first upload path with safe metadata persistence, page provenance, and FlateDecode text-stream support.
-- Deterministic chunks, embedding fixtures, entity mentions, and co-occurrence relationships.
+- Deterministic chunks, provider-backed JSON embeddings (deterministic by default, OpenAI opt-in), entity mentions, and co-occurrence relationships.
 - Deterministic retrieval routing supports `no_retrieval`, `retrieval_required`, `retrieval_optional`, and `clarification_required`.
 - Permission-aware retrieval filters candidate chunks before ranking/expansion/composition.
 - Broad personal-document fallback now retrieves recent authorized chunks for resume/profile/uploaded-document questions when exact term matching returns nothing.
@@ -153,8 +153,8 @@ The test harness sets `MY_AGENTS_ENV_FILE=` so a developer's local `.env` file c
 - PDF-first upload and text extraction now use `pypdf_text_v2` for text-based PDFs, with a deterministic literal/FlateDecode stream fallback for simple PDFs; scanned/encrypted/image-only PDFs and OCR are intentionally unsupported.
 - No docx/HTML parsing pipeline yet.
 - No background ingestion jobs yet.
-- Embeddings are 32-dimensional deterministic lexical-hash fixtures, not provider-backed semantic vectors.
-- Retrieval routing/scoring is deterministic term scoring plus entity expansion and a narrow personal-document fallback, not LLM query rewrite/rerank or pgvector similarity search.
+- Embeddings use a provider boundary: deterministic 32-dimensional lexical-hash vectors by default, or opt-in OpenAI embeddings through `langchain-openai` when `MY_AGENTS_EMBEDDING_MODE=openai`.
+- Retrieval ranking is permission-first JSON cosine similarity blended with lexical score plus entity expansion and a narrow personal-document fallback; pgvector acceleration, LLM query rewrite, and cross-encoder reranking are still future work.
 - A dedicated RetrievalGraph is intentionally deferred until retrieval needs query rewrite, metadata planning, hybrid/vector search, reranking, context compression, or branch-level retrieval observability; hard authorization should remain in `RetrievalService` even then.
 - Entity extraction is deterministic regex/technical-term extraction, not production NLP/LLM extraction.
 
@@ -206,8 +206,9 @@ Suggested order:
 
 1. Add file-upload metadata and text extraction boundaries.
 2. Keep parsers local/deterministic first.
-3. Replace embedding fixtures with a provider boundary that can be mocked in tests.
-4. Add pgvector-backed ranking behind the existing permission filter.
+3. Add pgvector-backed ranking behind the existing permission filter.
+4. Add cross-encoder reranking only as a second-stage pass over top-k authorized candidates; do not let a reranker see unauthorized chunks.
+5. Add LLM query rewrite or context compression only after measuring retrieval quality.
 5. Add ingestion status transitions for queued/running/completed/failed.
 6. Add tests proving unauthorized chunks never enter ranking, context, citations, or events.
 
@@ -229,6 +230,7 @@ limits.
 | --- | --- | --- |
 | 2026-05-21 | Retrieval routing and answer-mode metadata added before graph invocation. | `my_agents/knowledge/routing.py`; `my_agents/knowledge/retrieval.py`; `my_agents/api/conversations.py`; `my_agents/conversations/models.py`; `alembic/versions/20260521_0006_retrieval_routing_metadata.py`; `tests/test_retrieval_routing.py`; `tests/test_conversations_api.py`; `tests/test_permission_aware_rag.py`; README pair; general assistant README pair; `docs/portfolio-chat-service/06-permission-aware-rag.md`. |
 | 2026-05-21 | PDF/text ingestion sophistication improved with `pypdf`, better chunking/entity extraction, and 32-d deterministic embedding fixtures. | `pyproject.toml`; `uv.lock`; `my_agents/knowledge/pdf_uploads.py`; `my_agents/knowledge/extraction.py`; `tests/test_knowledge_ingestion.py`; README pair; `docs/portfolio-chat-service/05-knowledge-ingestion-extraction.md`. |
+| 2026-05-21 | Added Slice A embedding provider boundary with deterministic default, optional OpenAI embeddings through `langchain-openai`, and permission-first JSON cosine retrieval ranking. | `my_agents/knowledge/embeddings.py`; `my_agents/knowledge/extraction.py`; `my_agents/knowledge/retrieval.py`; `.env.example`; README pair; permission/observability tests. |
 | 2026-05-21 | Provider-free public-demo guest access added with one-time codes, guest sessions, and backend limits. | `my_agents/auth/service.py`; `my_agents/api/auth.py`; `my_agents/auth/guest_limits.py`; `alembic/versions/20260521_0005_guest_access.py`; `tests/test_guest_access_api.py`; README pair; `docs/portfolio-chat-service/02-first-party-auth-sessions.md`. |
 | 2026-05-21 | Generic container deployment path and backend signup disable switch added for public portfolio demos. | `Dockerfile`; `.dockerignore`; `my_agents/settings.py`; `my_agents/api/auth.py`; `tests/test_auth_api.py`; README pair; `docs/portfolio-chat-service/13-generic-container-deployment-path.md`. |
 | 2026-05-20 | PDF parser rejects corrupted binary text and supports FlateDecode resume retrieval smoke. | `my_agents/knowledge/pdf_uploads.py`; `tests/test_knowledge_ingestion.py`; README pair; `docs/portfolio-chat-service/05-knowledge-ingestion-extraction.md`. |
