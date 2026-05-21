@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from my_agents.auth.contracts import Principal
 from my_agents.auth.dependencies import get_current_principal
+from my_agents.auth.guest_limits import assert_guest_access_active, assert_guest_can_create_document
 from my_agents.groups.models import MembershipModel, MembershipRole
 from my_agents.knowledge.extraction import KnowledgeExtractionService
 from my_agents.knowledge.models import (
@@ -33,6 +34,7 @@ from my_agents.knowledge.schemas import (
 from my_agents.permissions.contracts import DocumentOperation
 from my_agents.permissions.service import AuthorizationService
 from my_agents.persistence.database import get_database_session
+from my_agents.settings import Settings, get_settings
 
 documents_router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -42,7 +44,9 @@ def create_document(
     request: DocumentCreateRequest,
     principal: Annotated[Principal, Depends(get_current_principal)],
     db: Annotated[Session, Depends(get_database_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> DocumentResponse:
+    assert_guest_can_create_document(db, principal, settings)
     group_id = _resolve_document_group_id(
         db=db,
         requested_group_id=request.group_id,
@@ -69,12 +73,14 @@ def create_document(
 async def upload_document(
     principal: Annotated[Principal, Depends(get_current_principal)],
     db: Annotated[Session, Depends(get_database_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
     title: Annotated[str, Form(min_length=1, max_length=200)],
     file: Annotated[UploadFile, File(description="PDF file; V1 supports text-based PDFs only.")],
     group_id: Annotated[str | None, Form()] = None,
     knowledge_base_id: Annotated[str | None, Form()] = None,
 ) -> DocumentResponse:
     """Create a document from a safe PDF upload and persist parser metadata."""
+    assert_guest_can_create_document(db, principal, settings)
     resolved_group_id = _resolve_document_group_id(
         db=db,
         requested_group_id=group_id,
@@ -120,6 +126,7 @@ def list_documents(
     principal: Annotated[Principal, Depends(get_current_principal)],
     db: Annotated[Session, Depends(get_database_session)],
 ) -> list[DocumentResponse]:
+    assert_guest_access_active(db, principal)
     group_ids = select(MembershipModel.group_id).where(MembershipModel.user_id == principal.user_id)
     explicit_ids = select(DocumentPermissionModel.document_id).where(
         DocumentPermissionModel.user_id == principal.user_id,
@@ -143,6 +150,7 @@ def get_document(
     principal: Annotated[Principal, Depends(get_current_principal)],
     db: Annotated[Session, Depends(get_database_session)],
 ) -> DocumentResponse:
+    assert_guest_access_active(db, principal)
     document = _get_document_or_404(db, document_id)
     if not AuthorizationService(db).can(
         user_id=principal.user_id,
@@ -160,6 +168,7 @@ def delete_document(
     db: Annotated[Session, Depends(get_database_session)],
 ) -> Response:
     """Delete an authorized document and dependent extraction/retrieval artifacts."""
+    assert_guest_access_active(db, principal)
     document = _get_document_or_404(db, document_id)
     if not AuthorizationService(db).can(
         user_id=principal.user_id,
@@ -180,6 +189,7 @@ def patch_document_permission(
     principal: Annotated[Principal, Depends(get_current_principal)],
     db: Annotated[Session, Depends(get_database_session)],
 ) -> DocumentPermissionResponse:
+    assert_guest_access_active(db, principal)
     document = _get_document_or_404(db, document_id)
     if not AuthorizationService(db).can(
         user_id=principal.user_id,
@@ -219,6 +229,7 @@ def ingest_document(
     db: Annotated[Session, Depends(get_database_session)],
 ) -> ExtractionRunResponse:
     """Run deterministic thin extraction over an authorized document."""
+    assert_guest_access_active(db, principal)
     document = _get_document_or_404(db, document_id)
     if not AuthorizationService(db).can(
         user_id=principal.user_id,
@@ -244,6 +255,7 @@ def list_extraction_runs(
     db: Annotated[Session, Depends(get_database_session)],
 ) -> list[ExtractionRunResponse]:
     """Return extraction runs for a readable document."""
+    assert_guest_access_active(db, principal)
     document = _get_document_or_404(db, document_id)
     if not AuthorizationService(db).can(
         user_id=principal.user_id,

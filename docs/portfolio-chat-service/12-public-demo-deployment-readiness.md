@@ -122,6 +122,9 @@ Before preview smoke, document or implement each guardrail:
 - Signup-disable or fallback path: set `MY_AGENTS_AUTH_SIGNUP_ENABLED=false` to
   block new backend signups, document how to revoke provider credentials, and
   fall back to a seeded/invite-only demo if abuse or email deliverability fails.
+- Provider-free guest access: if enabled, assert `MY_AGENTS_GUEST_ACCESS_ENABLED=true`
+  intentionally and keep the backend-owned defaults or stricter values for 24-hour
+  access, one conversation, five prompts, and three document creates/uploads.
 - Upload limits: record accepted file types, size limits, and unsupported PDFs
   such as scanned, encrypted, unsupported encoded, huge, or non-text PDFs.
 - Run and cost limits: record response mode, model, timeout, max output tokens,

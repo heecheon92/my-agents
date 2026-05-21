@@ -9,6 +9,7 @@ topics:
   - password-hashing
   - email-verification
   - password-reset
+  - guest-access
 related_code:
   - my_agents/api/auth.py
   - my_agents/auth/email.py
@@ -39,6 +40,8 @@ The backend owns a first-party auth/session path:
 9. `GET /auth/me` resolves the current `Principal` from the session cookie.
 10. `POST /auth/password-reset/request` sends a reset token without revealing whether the account exists.
 11. `POST /auth/password-reset/confirm` consumes the reset token, changes the password, and revokes existing sessions.
+12. `POST /auth/guest/request` creates a short-lived one-time provider-free guest code when guest access is enabled.
+13. `POST /auth/guest/login` redeems that code once and issues the normal app session cookie plus CSRF token for an explicit guest identity.
 
 The default email sender is intentionally local/offline. It records verification and
 reset emails in process memory for tests and local development. Preview/public demos
@@ -103,6 +106,16 @@ The Phase 1 public-demo boundary is intentionally explicit:
 - `MY_AGENTS_CORS_ALLOWED_ORIGINS` must list exact frontend origins for credentialed browser requests; wildcard origins are rejected.
 - `MY_AGENTS_AUTH_SIGNUP_ENABLED=false` blocks new backend signups as a public-demo
   kill switch while preserving existing verified-user login/session behavior.
+- `MY_AGENTS_GUEST_ACCESS_ENABLED=true` opens provider-free guest access for the
+  public demo. Guest codes are one-time, guest sessions expire after
+  `MY_AGENTS_GUEST_ACCESS_TTL_SECONDS` (default 24 hours), and guest responses use
+  `email: null`, `is_guest: true`, and `guest_expires_at` instead of presenting a
+  fake visitor email as a real account.
+- Guest public-demo limits are server-owned: `MY_AGENTS_GUEST_MAX_CONVERSATIONS=1`,
+  `MY_AGENTS_GUEST_MAX_PROMPTS=5`, and `MY_AGENTS_GUEST_MAX_DOCUMENT_UPLOADS=3`.
+  Limit failures return safe `429` details; expired guest access returns a safe
+  auth failure. Guests cannot create password-reset/email-verification tokens and
+  are blocked from the dev auth outbox even if that local-only endpoint is enabled.
 - Auth abuse protection is implemented as an in-process, digest-keyed attempt limiter for signup, login, verification-token, and password-reset flows. This is acceptable only for local/single-process public-demo topology. Do not claim multi-worker or distributed rate-limit protection until this boundary is moved to a shared store or gateway.
 
 ## What is intentionally not implemented yet
@@ -112,7 +125,7 @@ The Phase 1 public-demo boundary is intentionally explicit:
 - OAuth account linking;
 - shared/distributed auth rate limiting for multi-worker deployments;
 - account deletion/profile management;
-- guest mode / anonymous quotas.
+- durable anonymous quota storage beyond the single-session public-demo guest limits.
 
 Those are later milestones or explicit non-goals for v0.
 
@@ -133,6 +146,13 @@ Those are later milestones or explicit non-goals for v0.
 - duplicate signup fails safely;
 - disabled signup fails safely without creating users, tokens, emails, or sessions;
 - disabling signup does not block existing verified-user login;
+- guest access is disabled by default;
+- guest codes redeem once, create a guest session, and make `/auth/me` return an
+  explicit guest shape;
+- expired guest codes/sessions are rejected;
+- guests are capped at one conversation, five prompts, and three documents/uploads;
+- guests do not create password-reset/email-verification tokens and cannot use the
+  local dev auth outbox;
 - invalid login does not create an authenticated session;
 - password reset requests do not enumerate unknown accounts;
 - password reset changes the password and revokes old sessions;
@@ -148,6 +168,7 @@ Explain this in an interview:
 
 ## Revision history
 
+- 2026-05-21: Added provider-free public-demo guest access contract and limits.
 - 2026-05-21: Documented the backend-owned signup disable switch for public-demo rollback.
 - 2026-05-20: Documented Phase 1 public-demo auth/session boundary, CSRF/CORS/cookie tests, and single-process rate-limit limitation.
 - 2026-05-18: Added email verification, local auth email boundary, password reset tokens, and session revocation after reset.

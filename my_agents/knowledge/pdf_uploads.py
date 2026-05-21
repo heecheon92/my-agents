@@ -1,4 +1,4 @@
-"""Safe, deterministic PDF upload parsing for the strict V1 ingestion path."""
+"""Safe PDF upload parsing for the strict V1 ingestion path."""
 
 from __future__ import annotations
 
@@ -6,12 +6,18 @@ import hashlib
 import re
 import zlib
 from dataclasses import dataclass
+from io import BytesIO
+
+from pypdf import PdfReader
+from pypdf.errors import PdfReadError
 
 MAX_PDF_UPLOAD_BYTES = 5 * 1024 * 1024
 PDF_CONTENT_TYPES = frozenset({"application/pdf", "application/octet-stream"})
-PDF_PARSER_NAME = "deterministic_pdf_text_v1"
+PDF_PARSER_NAME = "pypdf_text_v2"
+LEGACY_STREAM_PARSER_NAME = "deterministic_stream_fallback_v1"
 PDF_PAGE_SEPARATOR = "\n\n\f\n\n"
 _SAFE_PUNCTUATION = set(".,;:!?@#%&/\\-_'\"+()[]{}<>|•·$€£₩")
+_BOILERPLATE_TEXT = {"adobe ucs"}
 
 
 class PdfUploadError(ValueError):
@@ -35,12 +41,11 @@ def parse_uploaded_pdf(
     content_type: str | None,
     content: bytes,
 ) -> ParsedPdf:
-    """Validate and extract deterministic text from a V1 PDF upload.
+    """Validate and extract text from a V1 PDF upload.
 
-    This intentionally small parser supports text-based PDFs that expose literal text
-    operators in page streams, including common FlateDecode-compressed streams.
-    Scanned/encrypted/unsupported encoded PDFs are rejected instead of being accepted
-    with misleading empty or corrupted provenance.
+    The primary extractor uses pypdf for text-based PDFs, with a deterministic
+    literal-stream fallback for simple legacy fixtures. Scanned/encrypted/image-only
+    PDFs are rejected instead of being accepted with misleading empty provenance.
     """
     safe_filename = _validate_pdf_filename(filename)
     _validate_pdf_content_type(content_type)
@@ -52,15 +57,20 @@ def parse_uploaded_pdf(
         raise PdfUploadError("uploaded file is not a PDF")
 
     pages = _extract_page_texts(content)
+    parser_name = PDF_PARSER_NAME
+    if not _has_enough_extractable_text(pages):
+        pages = _legacy_extract_page_texts(content)
+        parser_name = LEGACY_STREAM_PARSER_NAME
     if not pages:
         raise PdfUploadError(
-            f"{safe_filename} does not contain extractable text supported by the V1 parser"
+            f"{safe_filename} does not contain extractable text supported by the PDF parser"
         )
     return ParsedPdf(
         content=PDF_PAGE_SEPARATOR.join(pages),
         page_count=len(pages),
         sha256=hashlib.sha256(content).hexdigest(),
         byte_size=len(content),
+        parser_name=parser_name,
     )
 
 
@@ -82,6 +92,25 @@ def _validate_pdf_content_type(content_type: str | None) -> None:
 
 
 def _extract_page_texts(content: bytes) -> list[str]:
+    try:
+        reader = PdfReader(BytesIO(content), strict=False)
+    except PdfReadError:
+        return []
+    if reader.is_encrypted:
+        raise PdfUploadError("encrypted PDFs are not supported")
+    pages: list[str] = []
+    for page in reader.pages:
+        try:
+            text = page.extract_text() or ""
+        except PdfReadError, KeyError, TypeError, ValueError:
+            text = ""
+        normalized = _normalize_page_text(text)
+        if normalized:
+            pages.append(normalized)
+    return pages
+
+
+def _legacy_extract_page_texts(content: bytes) -> list[str]:
     pages: list[str] = []
     for stream in _all_streams(content):
         text = _extract_literal_text(stream)
@@ -176,6 +205,25 @@ def _decode_pdf_literal(value: str) -> str:
 
 def _normalize_text(value: str) -> str:
     return re.sub(r"\s+", " ", value).strip()
+
+
+def _normalize_page_text(value: str) -> str:
+    lines = [_normalize_text(line) for line in value.replace("\x00", "").splitlines()]
+    collapsed = "\n".join(line for line in lines if line)
+    return _remove_boilerplate_text(collapsed)
+
+
+def _remove_boilerplate_text(value: str) -> str:
+    lines = [
+        line for line in value.splitlines() if line.strip().casefold() not in _BOILERPLATE_TEXT
+    ]
+    return "\n".join(lines).strip()
+
+
+def _has_enough_extractable_text(pages: list[str]) -> bool:
+    meaningful_text = "\n".join(_remove_boilerplate_text(page) for page in pages)
+    meaningful_chars = sum(1 for char in meaningful_text if char.isalnum())
+    return meaningful_chars >= 3
 
 
 def _looks_like_human_text(value: str) -> bool:

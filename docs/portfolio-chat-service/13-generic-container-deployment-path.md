@@ -13,6 +13,7 @@ related_code:
   - main.py
   - my_agents/settings.py
   - my_agents/api/auth.py
+  - my_agents/auth/guest_limits.py
   - alembic
   - .env.example
 ---
@@ -102,6 +103,12 @@ Required for a reviewer-facing preview/public demo:
 - `MY_AGENTS_CORS_ALLOWED_ORIGINS`
 - `MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED`
 - `MY_AGENTS_AUTH_SIGNUP_ENABLED`
+- `MY_AGENTS_GUEST_ACCESS_ENABLED`
+- `MY_AGENTS_GUEST_CODE_TTL_SECONDS`
+- `MY_AGENTS_GUEST_ACCESS_TTL_SECONDS`
+- `MY_AGENTS_GUEST_MAX_CONVERSATIONS`
+- `MY_AGENTS_GUEST_MAX_PROMPTS`
+- `MY_AGENTS_GUEST_MAX_DOCUMENT_UPLOADS`
 - `MY_AGENTS_AUTH_EMAIL_MODE`
 - `MY_AGENTS_AUTH_PUBLIC_APP_BASE_URL`
 - `MY_AGENTS_AUTH_SMTP_HOST`
@@ -123,6 +130,10 @@ Preview/public guardrail expectations:
 - `MY_AGENTS_AUTH_SIGNUP_ENABLED=true` only while public reviewer signup is
   intentionally open; set it to `false` to stop new backend signups while
   preserving existing verified-user login/session behavior.
+- `MY_AGENTS_GUEST_ACCESS_ENABLED=false` unless the reviewer-facing provider-free
+  guest flow is intentionally open. When enabled, the defaults are 15-minute
+  one-time code TTL, 24-hour guest access/session TTL, one conversation, five
+  prompts, and three document creates/uploads.
 - `MY_AGENTS_AUTH_EMAIL_MODE=smtp`.
 - `MY_AGENTS_SESSION_COOKIE_SECURE=true` for HTTPS.
 - `MY_AGENTS_CORS_ALLOWED_ORIGINS` must be exact HTTPS frontend origins; wildcard

@@ -21,6 +21,10 @@ class UserModel(Base):
     email_verified_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    account_type: Mapped[str] = mapped_column(String(20), default="registered", nullable=False)
+    guest_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )
@@ -52,6 +56,7 @@ class SessionModel(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     user: Mapped[UserModel] = relationship(back_populates="sessions")
@@ -74,3 +79,21 @@ class AuthTokenModel(Base):
     )
 
     user: Mapped[UserModel] = relationship(back_populates="auth_tokens")
+
+
+class GuestAccessCodeModel(Base):
+    """One-time provider-free guest access code stored by digest only."""
+
+    __tablename__ = "guest_access_codes"
+    __table_args__ = (UniqueConstraint("code_hash", name="uq_guest_access_codes_code_hash"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    code_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    guest_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )

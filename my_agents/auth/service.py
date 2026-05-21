@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from my_agents.auth.contracts import Principal
 from my_agents.auth.email import AuthEmailSender, get_auth_email_sender
-from my_agents.auth.models import AuthTokenModel, SessionModel, UserModel
+from my_agents.auth.models import AuthTokenModel, GuestAccessCodeModel, SessionModel, UserModel
 
 AuthTokenPurpose = Literal["email_verification", "password_reset"]
 EMAIL_VERIFICATION_TOKEN_TTL = timedelta(hours=24)
@@ -69,6 +69,14 @@ class SignupResult:
     verification_email_sent: bool
 
 
+@dataclass(frozen=True)
+class GuestAccessCodeResult:
+    """One-time guest access code result."""
+
+    code: str
+    expires_at: datetime
+
+
 class AuthService:
     """Own first-party users, password hashes, sessions, and account lifecycle tokens."""
 
@@ -91,6 +99,7 @@ class AuthService:
             id=str(uuid.uuid4()),
             email=normalized_email,
             password_hash=self._password_hasher.hash(password),
+            account_type="registered",
         )
         self._db.add(user)
         self._db.flush()
@@ -108,6 +117,8 @@ class AuthService:
         normalized_email = _normalize_email(email)
         user = self._db.scalar(select(UserModel).where(UserModel.email == normalized_email))
         if user is None:
+            raise InvalidCredentialsError("invalid email or password")
+        if user.account_type != "registered":
             raise InvalidCredentialsError("invalid email or password")
         try:
             is_valid = self._password_hasher.verify(user.password_hash, password)
@@ -152,7 +163,7 @@ class AuthService:
         """Create a reset token for known users without revealing account existence."""
         normalized_email = _normalize_email(email)
         user = self._db.scalar(select(UserModel).where(UserModel.email == normalized_email))
-        if user is None:
+        if user is None or user.account_type != "registered":
             return
         token = self._create_token(
             user_id=user.id,
@@ -174,7 +185,15 @@ class AuthService:
 
     def authenticate_session(self, session_token: str | None) -> Principal:
         session = self._active_session(session_token)
-        return Principal(user_id=session.user_id, session_id=session.id)
+        user = self._db.get(UserModel, session.user_id)
+        if user is None:
+            raise InvalidSessionError("invalid session")
+        is_guest = user.account_type == "guest"
+        if is_guest and (
+            user.guest_expires_at is None or _as_utc(user.guest_expires_at) <= datetime.now(UTC)
+        ):
+            raise InvalidSessionError("guest access expired")
+        return Principal(user_id=session.user_id, session_id=session.id, is_guest=is_guest)
 
     def logout(self, *, session_token: str | None, csrf_token: str | None) -> None:
         session = self._active_session(session_token)
@@ -184,13 +203,81 @@ class AuthService:
         self._db.add(session)
         self._db.commit()
 
+    def create_guest_access_code(self, *, ttl: timedelta) -> GuestAccessCodeResult:
+        """Create a short-lived one-time guest access code without any provider dependency."""
+        code = secrets.token_urlsafe(18)
+        expires_at = datetime.now(UTC) + ttl
+        self._db.add(
+            GuestAccessCodeModel(
+                id=str(uuid.uuid4()),
+                code_hash=_digest(code),
+                expires_at=expires_at,
+            )
+        )
+        self._db.commit()
+        return GuestAccessCodeResult(code=code, expires_at=expires_at)
+
+    def redeem_guest_access_code(
+        self,
+        *,
+        code: str,
+        access_ttl: timedelta,
+    ) -> AuthenticatedSession:
+        """Redeem a one-time guest code and issue a normal app session cookie."""
+        if not code.strip():
+            raise InvalidAuthTokenError("invalid code")
+        guest_code = self._db.scalar(
+            select(GuestAccessCodeModel).where(GuestAccessCodeModel.code_hash == _digest(code))
+        )
+        if (
+            guest_code is None
+            or guest_code.consumed_at is not None
+            or _as_utc(guest_code.expires_at) <= datetime.now(UTC)
+        ):
+            raise InvalidAuthTokenError("invalid or expired code")
+
+        access_expires_at = datetime.now(UTC) + access_ttl
+        user = UserModel(
+            id=str(uuid.uuid4()),
+            email=f"guest-{uuid.uuid4().hex}@guest.example.com",
+            password_hash="guest-login-disabled",
+            email_verified_at=None,
+            account_type="guest",
+            guest_expires_at=access_expires_at,
+        )
+        session_token = secrets.token_urlsafe(32)
+        csrf_token = secrets.token_urlsafe(32)
+        session = SessionModel(
+            id=str(uuid.uuid4()),
+            user_id=user.id,
+            token_hash=_digest(session_token),
+            csrf_token_hash=_digest(csrf_token),
+            expires_at=access_expires_at,
+        )
+        guest_code.consumed_at = datetime.now(UTC)
+        guest_code.guest_user_id = user.id
+        self._db.add_all([user, session, guest_code])
+        self._db.commit()
+        self._db.refresh(user)
+        self._db.refresh(session)
+        return AuthenticatedSession(
+            user=user,
+            session=session,
+            session_token=session_token,
+            csrf_token=csrf_token,
+        )
+
     def _active_session(self, session_token: str | None) -> SessionModel:
         if not session_token:
             raise InvalidSessionError("missing session")
         session = self._db.scalar(
             select(SessionModel).where(SessionModel.token_hash == _digest(session_token))
         )
-        if session is None or session.revoked_at is not None:
+        if (
+            session is None
+            or session.revoked_at is not None
+            or (session.expires_at is not None and _as_utc(session.expires_at) <= datetime.now(UTC))
+        ):
             raise InvalidSessionError("invalid session")
         return session
 

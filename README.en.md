@@ -207,15 +207,23 @@ MY_AGENTS_CSRF_HEADER_NAME=X-CSRF-Token
 MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=false
 # Backend-owned public-demo signup kill switch. Existing login/session behavior remains.
 MY_AGENTS_AUTH_SIGNUP_ENABLED=true
+# Provider-free guest access is disabled by default and capped when enabled.
+MY_AGENTS_GUEST_ACCESS_ENABLED=false
+MY_AGENTS_GUEST_CODE_TTL_SECONDS=900
+MY_AGENTS_GUEST_ACCESS_TTL_SECONDS=86400
+MY_AGENTS_GUEST_MAX_CONVERSATIONS=1
+MY_AGENTS_GUEST_MAX_PROMPTS=5
+MY_AGENTS_GUEST_MAX_DOCUMENT_UPLOADS=3
 MY_AGENTS_DEPLOYMENT_ENVIRONMENT=local
-MY_AGENTS_AUTH_EMAIL_MODE=local
-# Required when MY_AGENTS_AUTH_EMAIL_MODE=smtp.
-# MY_AGENTS_AUTH_PUBLIC_APP_BASE_URL=https://portfolio.example.com
-# MY_AGENTS_AUTH_SMTP_HOST=smtp.example.com
-# MY_AGENTS_AUTH_SMTP_PORT=587
-# MY_AGENTS_AUTH_SMTP_USERNAME=smtp-user
-# MY_AGENTS_AUTH_SMTP_PASSWORD=replace-locally-only
-# MY_AGENTS_AUTH_SMTP_FROM_EMAIL=noreply@example.com
+MY_AGENTS_AUTH_EMAIL_MODE=smtp
+MY_AGENTS_AUTH_PUBLIC_APP_BASE_URL=http://localhost:3000
+MY_AGENTS_AUTH_SMTP_HOST=smtp.resend.com
+MY_AGENTS_AUTH_SMTP_PORT=587
+MY_AGENTS_AUTH_SMTP_USERNAME=resend
+MY_AGENTS_AUTH_SMTP_PASSWORD=REPLACE_WITH_RESEND_API_KEY
+MY_AGENTS_AUTH_SMTP_FROM_EMAIL=REPLACE_WITH_VERIFIED_RESEND_FROM_EMAIL
+MY_AGENTS_AUTH_SMTP_USE_STARTTLS=true
+MY_AGENTS_AUTH_SMTP_TIMEOUT_SECONDS=10
 # Comma-separated explicit frontend origins for credentialed browser requests.
 # MY_AGENTS_CORS_ALLOWED_ORIGINS=http://localhost:3000
 MY_AGENTS_AUTH_ABUSE_PROTECTION_ENABLED=true
@@ -410,6 +418,8 @@ Implemented auth endpoints:
 - `GET /auth/me`
 - `POST /auth/password-reset/request`
 - `POST /auth/password-reset/confirm`
+- `POST /auth/guest/request`
+- `POST /auth/guest/login`
 - `GET /auth/dev/outbox` only when `MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=true`
 
 Signup returns safe user data plus `verification_email_sent`. By default, auth email uses
@@ -423,6 +433,15 @@ Password reset requests return the same accepted response whether or not the ema
 so the API does not enumerate accounts.
 Set `MY_AGENTS_AUTH_SIGNUP_ENABLED=false` to disable new public signup from the backend
 without changing existing verified-user login/session behavior.
+
+Provider-free public-demo guest access is available only when
+`MY_AGENTS_GUEST_ACCESS_ENABLED=true`. `POST /auth/guest/request` returns a short-lived
+one-time code directly in JSON, and `POST /auth/guest/login` redeems it once for the
+normal app session cookie plus `csrf_token`. Guest users are explicit ephemeral
+identities: auth responses return `email: null`, `is_guest: true`, and
+`guest_expires_at`. Server-side guest limits default to 24-hour access, one
+conversation, five prompts, and three document creates/uploads. Limit failures return
+safe `403` or `429` JSON details.
 
 For deterministic local frontend demos, `MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=true` exposes
 the in-memory auth email outbox at `/auth/dev/outbox` so the UI can read verification and
@@ -535,13 +554,15 @@ The PDF-first upload/ingestion slice is available:
 - `GET /documents/{document_id}/extraction-runs`
 
 The text-document path remains compatible. The PDF path accepts only `application/pdf`
-`.pdf` files up to 5 MiB and extracts page text from text-based PDFs, including common
-FlateDecode-compressed page streams. Upload metadata (`source_filename`, content type,
-byte size, SHA-256, page count, parser name) is persisted on the document, and ingestion
-chunks record `source_page` for later citation provenance. Conversation citation responses
-now include `source_page` and `source_filename` when known. This is a deterministic V1
-portfolio-demo parser, not full production support for scanned, encrypted, image-only, or
-unsupported encoded PDFs; OpenAI extraction and pgvector ranking are still future work.
+`.pdf` files up to 5 MiB and extracts page text from text-based PDFs with `pypdf`.
+Simple literal/FlateDecode page streams still have a deterministic fallback. Upload
+metadata (`source_filename`, content type, byte size, SHA-256, page count, parser name)
+is persisted on the document, and ingestion chunks record `source_page` for later citation
+provenance. Conversation citation responses now include `source_page` and `source_filename`
+when known. Ingestion creates paragraph/sentence-aware chunks, entity mentions, and a
+32-dimensional deterministic lexical-hash embedding fixture. This path still does not
+support scanned/encrypted/image-only PDFs or OCR, and OpenAI embedding/extraction provider
+calls plus pgvector similarity ranking are still future work.
 
 
 ### Permission-aware RAG and citation-backed answers

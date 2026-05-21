@@ -207,15 +207,23 @@ MY_AGENTS_CSRF_HEADER_NAME=X-CSRF-Token
 MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=false
 # Backend-owned public-demo signup kill switch입니다. 기존 login/session 동작은 유지됩니다.
 MY_AGENTS_AUTH_SIGNUP_ENABLED=true
+# Provider-free guest access는 기본 비활성화이며, 활성화해도 server-side limit을 적용합니다.
+MY_AGENTS_GUEST_ACCESS_ENABLED=false
+MY_AGENTS_GUEST_CODE_TTL_SECONDS=900
+MY_AGENTS_GUEST_ACCESS_TTL_SECONDS=86400
+MY_AGENTS_GUEST_MAX_CONVERSATIONS=1
+MY_AGENTS_GUEST_MAX_PROMPTS=5
+MY_AGENTS_GUEST_MAX_DOCUMENT_UPLOADS=3
 MY_AGENTS_DEPLOYMENT_ENVIRONMENT=local
-MY_AGENTS_AUTH_EMAIL_MODE=local
-# MY_AGENTS_AUTH_EMAIL_MODE=smtp일 때 필요합니다.
-# MY_AGENTS_AUTH_PUBLIC_APP_BASE_URL=https://portfolio.example.com
-# MY_AGENTS_AUTH_SMTP_HOST=smtp.example.com
-# MY_AGENTS_AUTH_SMTP_PORT=587
-# MY_AGENTS_AUTH_SMTP_USERNAME=smtp-user
-# MY_AGENTS_AUTH_SMTP_PASSWORD=replace-locally-only
-# MY_AGENTS_AUTH_SMTP_FROM_EMAIL=noreply@example.com
+MY_AGENTS_AUTH_EMAIL_MODE=smtp
+MY_AGENTS_AUTH_PUBLIC_APP_BASE_URL=http://localhost:3000
+MY_AGENTS_AUTH_SMTP_HOST=smtp.resend.com
+MY_AGENTS_AUTH_SMTP_PORT=587
+MY_AGENTS_AUTH_SMTP_USERNAME=resend
+MY_AGENTS_AUTH_SMTP_PASSWORD=REPLACE_WITH_RESEND_API_KEY
+MY_AGENTS_AUTH_SMTP_FROM_EMAIL=REPLACE_WITH_VERIFIED_RESEND_FROM_EMAIL
+MY_AGENTS_AUTH_SMTP_USE_STARTTLS=true
+MY_AGENTS_AUTH_SMTP_TIMEOUT_SECONDS=10
 # browser cookie 요청을 허용할 frontend origin을 comma-separated로 명시합니다.
 # MY_AGENTS_CORS_ALLOWED_ORIGINS=http://localhost:3000
 MY_AGENTS_AUTH_ABUSE_PROTECTION_ENABLED=true
@@ -409,6 +417,8 @@ production parser와 pgvector ranking은 이후 마일스톤입니다.
 - `GET /auth/me`
 - `POST /auth/password-reset/request`
 - `POST /auth/password-reset/confirm`
+- `POST /auth/guest/request`
+- `POST /auth/guest/login`
 - `MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=true`일 때만 `GET /auth/dev/outbox`
 
 Signup은 안전한 user data와 `verification_email_sent`를 반환합니다. 기본 auth email sender는
@@ -422,6 +432,14 @@ boundary는 provider-specific SDK 없이 실제 verification/reset email을 보�
 response를 반환하므로 account enumeration을 피합니다.
 `MY_AGENTS_AUTH_SIGNUP_ENABLED=false`를 설정하면 기존 verified user의 login/session
 동작은 유지하면서 backend에서 새 public signup만 막을 수 있습니다.
+
+Provider-free public-demo guest access는 `MY_AGENTS_GUEST_ACCESS_ENABLED=true`일 때만
+사용할 수 있습니다. `POST /auth/guest/request`는 짧게 유효한 one-time code를 JSON으로
+직접 반환하고, `POST /auth/guest/login`은 그 code를 한 번만 사용해 일반 app session
+cookie와 `csrf_token`을 발급합니다. Guest user는 명시적인 ephemeral identity이며 auth
+응답에서 `email: null`, `is_guest: true`, `guest_expires_at`을 반환합니다. Guest limit
+기본값은 24시간 access, conversation 1개, prompt 5개, document create/upload 3개입니다.
+Limit 실패는 안전한 `403` 또는 `429` JSON detail로 반환합니다.
 
 deterministic local frontend demo에서는 `MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=true`로
 in-memory auth email outbox를 `/auth/dev/outbox`에 노출할 수 있습니다. UI가 verification/reset
@@ -532,13 +550,14 @@ PDF-first upload/ingestion slice가 추가되었습니다.
 - `GET /documents/{document_id}/extraction-runs`
 
 텍스트 document 경로는 그대로 유지됩니다. PDF 경로는 `application/pdf` `.pdf` 파일만
-받고, 5 MiB 이하의 text-based PDF에서 page text를 추출합니다. 일반적인 FlateDecode 압축 page stream도 지원합니다. 업로드 metadata
+받고, 5 MiB 이하의 text-based PDF에서 `pypdf` 기반 page text를 추출합니다. 단순 literal/FlateDecode page stream은 deterministic fallback으로도 처리합니다. 업로드 metadata
 (`source_filename`, content type, byte size, SHA-256, page count, parser name)는 document에
 저장되고, ingestion chunk에는 `source_page`가 기록되어 이후 citation provenance에 사용할 수
 있습니다. conversation citation 응답은 이미 가능한 경우 `source_page`와 `source_filename`을
-함께 반환합니다. 이 파서는 scanned/encrypted/image-only/unsupported encoded PDF를 완전 지원하는 production
-parser가 아니라 V1 portfolio demo용 deterministic parser이며, OpenAI extraction과 pgvector
-ranking은 아직 수행하지 않습니다.
+함께 반환합니다. ingestion은 paragraph/sentence 기반 chunk, entity mention, 32차원 deterministic
+lexical-hash embedding fixture를 생성합니다. 이 경로는 scanned/encrypted/image-only PDF나 OCR을
+아직 지원하지 않으며, OpenAI embedding/extraction provider 호출과 pgvector similarity ranking은
+아직 수행하지 않습니다.
 
 
 ### Permission-aware RAG 및 citation 기반 응답

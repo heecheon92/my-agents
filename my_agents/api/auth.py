@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -20,6 +21,8 @@ from my_agents.auth.models import UserModel
 from my_agents.auth.schemas import (
     AcceptedResponse,
     DevAuthEmailMessageResponse,
+    GuestAccessCodeResponse,
+    GuestLoginRequest,
     LoginRequest,
     LoginResponse,
     PasswordResetConfirmRequest,
@@ -74,6 +77,53 @@ def signup(
     return SignupResponse(
         user=_user_response(result.user),
         verification_email_sent=result.verification_email_sent,
+    )
+
+
+@auth_router.post("/guest/request", response_model=GuestAccessCodeResponse)
+def request_guest_access_code(
+    auth_service: Annotated[AuthService, Depends(get_auth_service)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> GuestAccessCodeResponse:
+    """Create a short-lived one-time guest code when public-demo guest access is enabled."""
+    if not settings.guest_access_enabled:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="guest access disabled")
+    result = auth_service.create_guest_access_code(
+        ttl=timedelta(seconds=settings.guest_code_ttl_seconds)
+    )
+    return GuestAccessCodeResponse(code=result.code, expires_at=result.expires_at)
+
+
+@auth_router.post("/guest/login", response_model=LoginResponse)
+def guest_login(
+    request: GuestLoginRequest,
+    response: Response,
+    auth_service: Annotated[AuthService, Depends(get_auth_service)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> LoginResponse:
+    """Redeem a one-time guest code and issue the normal app session cookie."""
+    if not settings.guest_access_enabled:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="guest access disabled")
+    try:
+        authenticated = auth_service.redeem_guest_access_code(
+            code=request.code,
+            access_ttl=timedelta(seconds=settings.guest_access_ttl_seconds),
+        )
+    except InvalidAuthTokenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="invalid or expired guest code",
+        ) from exc
+    response.set_cookie(
+        key=settings.session_cookie_name,
+        value=authenticated.session_token,
+        httponly=True,
+        secure=settings.session_cookie_secure,
+        samesite=settings.session_cookie_samesite,
+    )
+    return LoginResponse(
+        user=_user_response(authenticated.user),
+        csrf_token=authenticated.csrf_token,
     )
 
 
@@ -236,7 +286,9 @@ def me(
 
 @auth_router.get("/dev/outbox", response_model=list[DevAuthEmailMessageResponse])
 def dev_auth_outbox(
+    request: Request,
     settings: Annotated[Settings, Depends(get_settings)],
+    auth_service: Annotated[AuthService, Depends(get_auth_service)],
 ) -> list[DevAuthEmailMessageResponse]:
     """Return local auth emails only when explicitly enabled for local demos.
 
@@ -246,6 +298,14 @@ def dev_auth_outbox(
     """
     if not settings.auth_dev_outbox_enabled:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not found")
+    session_token = request.cookies.get(settings.session_cookie_name)
+    if session_token is not None:
+        try:
+            principal = auth_service.authenticate_session(session_token)
+        except InvalidSessionError:
+            principal = None
+        if principal is not None and principal.is_guest:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="not allowed")
     return [
         DevAuthEmailMessageResponse(
             recipient_email=message.recipient_email,
@@ -259,10 +319,13 @@ def dev_auth_outbox(
 
 
 def _user_response(user: UserModel) -> UserResponse:
+    is_guest = user.account_type == "guest"
     return UserResponse(
         id=user.id,
-        email=user.email,
+        email=None if is_guest else user.email,
         email_verified_at=user.email_verified_at,
+        is_guest=is_guest,
+        guest_expires_at=user.guest_expires_at if is_guest else None,
     )
 
 

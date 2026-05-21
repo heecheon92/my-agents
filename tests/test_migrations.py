@@ -21,6 +21,7 @@ EXPECTED_SERVICE_TABLES = {
     "users",
     "sessions",
     "auth_tokens",
+    "guest_access_codes",
     "groups",
     "memberships",
     "conversations",
@@ -94,6 +95,8 @@ def test_alembic_offline_sql_generation_covers_initial_schema(monkeypatch) -> No
     assert "20260517_0001" in sql
     assert "20260518_0002" in sql
     assert "20260520_0003" in sql
+    assert "20260520_0004" in sql
+    assert "20260521_0005" in sql
 
 
 def test_optional_external_test_database_runs_migrations(monkeypatch) -> None:

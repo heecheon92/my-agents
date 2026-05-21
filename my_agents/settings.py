@@ -103,6 +103,43 @@ class Settings(BaseSettings):
         default=True,
         validation_alias=AliasChoices("MY_AGENTS_AUTH_SIGNUP_ENABLED"),
     )
+    guest_access_enabled: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("MY_AGENTS_GUEST_ACCESS_ENABLED"),
+    )
+    guest_code_ttl_seconds: int = Field(
+        default=900,
+        ge=60,
+        le=86400,
+        validation_alias=AliasChoices("MY_AGENTS_GUEST_CODE_TTL_SECONDS"),
+    )
+    guest_access_ttl_seconds: int = Field(
+        default=86400,
+        ge=60,
+        le=604800,
+        validation_alias=AliasChoices("MY_AGENTS_GUEST_ACCESS_TTL_SECONDS"),
+    )
+    guest_max_conversations: int = Field(
+        default=1,
+        ge=1,
+        le=100,
+        validation_alias=AliasChoices("MY_AGENTS_GUEST_MAX_CONVERSATIONS"),
+    )
+    guest_max_prompts: int = Field(
+        default=5,
+        ge=1,
+        le=1000,
+        validation_alias=AliasChoices("MY_AGENTS_GUEST_MAX_PROMPTS"),
+    )
+    guest_max_document_uploads: int = Field(
+        default=3,
+        ge=1,
+        le=100,
+        validation_alias=AliasChoices(
+            "MY_AGENTS_GUEST_MAX_DOCUMENT_UPLOADS",
+            "MY_AGENTS_GUEST_MAX_DOCUMENTS",
+        ),
+    )
     deployment_environment: DeploymentEnvironment = Field(
         default="local",
         validation_alias=AliasChoices("MY_AGENTS_DEPLOYMENT_ENVIRONMENT"),

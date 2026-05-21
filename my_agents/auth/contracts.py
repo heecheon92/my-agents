@@ -14,3 +14,4 @@ class Principal:
 
     user_id: str
     session_id: str
+    is_guest: bool = False

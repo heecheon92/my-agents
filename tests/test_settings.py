@@ -104,6 +104,12 @@ def test_service_foundation_settings_have_safe_defaults(
     assert settings.auth_abuse_protection_enabled is True
     assert settings.auth_abuse_max_attempts == 20
     assert settings.auth_abuse_window_seconds == 900
+    assert settings.guest_access_enabled is False
+    assert settings.guest_code_ttl_seconds == 900
+    assert settings.guest_access_ttl_seconds == 86400
+    assert settings.guest_max_conversations == 1
+    assert settings.guest_max_prompts == 5
+    assert settings.guest_max_document_uploads == 3
 
 
 def test_service_foundation_settings_accept_overrides(
@@ -133,6 +139,12 @@ def test_service_foundation_settings_accept_overrides(
     monkeypatch.setenv("MY_AGENTS_AUTH_ABUSE_PROTECTION_ENABLED", "false")
     monkeypatch.setenv("MY_AGENTS_AUTH_ABUSE_MAX_ATTEMPTS", "5")
     monkeypatch.setenv("MY_AGENTS_AUTH_ABUSE_WINDOW_SECONDS", "120")
+    monkeypatch.setenv("MY_AGENTS_GUEST_ACCESS_ENABLED", "true")
+    monkeypatch.setenv("MY_AGENTS_GUEST_CODE_TTL_SECONDS", "600")
+    monkeypatch.setenv("MY_AGENTS_GUEST_ACCESS_TTL_SECONDS", "86400")
+    monkeypatch.setenv("MY_AGENTS_GUEST_MAX_CONVERSATIONS", "1")
+    monkeypatch.setenv("MY_AGENTS_GUEST_MAX_PROMPTS", "5")
+    monkeypatch.setenv("MY_AGENTS_GUEST_MAX_DOCUMENT_UPLOADS", "3")
 
     settings = Settings(_env_file=None)
 
@@ -159,6 +171,12 @@ def test_service_foundation_settings_accept_overrides(
     assert settings.auth_abuse_protection_enabled is False
     assert settings.auth_abuse_max_attempts == 5
     assert settings.auth_abuse_window_seconds == 120
+    assert settings.guest_access_enabled is True
+    assert settings.guest_code_ttl_seconds == 600
+    assert settings.guest_access_ttl_seconds == 86400
+    assert settings.guest_max_conversations == 1
+    assert settings.guest_max_prompts == 5
+    assert settings.guest_max_document_uploads == 3
 
 
 def test_samesite_none_requires_secure_cookie(

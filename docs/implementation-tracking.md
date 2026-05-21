@@ -63,6 +63,10 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 - Password hashes and raw token hashes are not returned by API responses.
 - Local in-process auth abuse protection covers repeated signup, bad login, reset request, and invalid lifecycle-token attempts.
 - `MY_AGENTS_AUTH_SIGNUP_ENABLED=false` blocks new public-demo signups without changing existing login/session behavior.
+- Provider-free guest access is env-gated by `MY_AGENTS_GUEST_ACCESS_ENABLED=false`
+  by default. When enabled, one-time guest codes create explicit ephemeral guest
+  identities with normal app session cookies, 24-hour expiry, one conversation,
+  five prompts, and three document creates/uploads.
 
 ### Groups, documents, permissions
 
@@ -94,7 +98,7 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 ### Persistence and migrations
 
 - SQLAlchemy models cover auth, auth lifecycle tokens, sessions, groups, documents, knowledge artifacts, conversations, runs, events, and citations.
-- Alembic migrations cover the initial service schema, auth lifecycle, run detail refresh fields, and PDF upload provenance fields.
+- Alembic migrations cover the initial service schema, auth lifecycle, run detail refresh fields, PDF upload provenance fields, and guest access state.
 - SQLite in-memory auto-create supports offline tests.
 - Postgres/Neon readiness is documented, with external DB tests skipped unless configured.
 
@@ -108,17 +112,20 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 
 ## Latest verification evidence
 
-Last full local verification run: 2026-05-20
+Last full local verification run: 2026-05-21
 
 ```text
 uv run pytest -q
-135 passed, 1 skipped in 9.19s
+147 passed, 1 skipped in 5.96s
 
 uv run ruff check . --no-cache
 All checks passed!
 
 uv run ruff format --check .
-107 files already formatted
+110 files already formatted
+
+git diff --check
+passed
 ```
 
 The test harness sets `MY_AGENTS_ENV_FILE=` so a developer's local `.env` file cannot leak file-backed SQLite, cookie, or provider settings into offline verification.
@@ -142,12 +149,12 @@ The test harness sets `MY_AGENTS_ENV_FILE=` so a developer's local `.env` file c
 
 ### Knowledge ingestion and retrieval
 
-- PDF-first upload and deterministic text extraction now exist for text-based PDFs, including common FlateDecode-compressed text streams; scanned/encrypted/image-only/unsupported encoded PDFs are intentionally rejected.
+- PDF-first upload and text extraction now use `pypdf_text_v2` for text-based PDFs, with a deterministic literal/FlateDecode stream fallback for simple PDFs; scanned/encrypted/image-only PDFs and OCR are intentionally unsupported.
 - No docx/HTML parsing pipeline yet.
 - No background ingestion jobs yet.
-- Embeddings are deterministic fixtures, not real embedding vectors.
+- Embeddings are 32-dimensional deterministic lexical-hash fixtures, not provider-backed semantic vectors.
 - Retrieval is deterministic term scoring plus entity expansion and a narrow personal-document fallback, not pgvector similarity search.
-- Entity extraction is deterministic/simple, not production NLP/LLM extraction.
+- Entity extraction is deterministic regex/technical-term extraction, not production NLP/LLM extraction.
 
 ### Agent/product behavior
 
@@ -206,14 +213,20 @@ Stop condition:
 
 - A demo can upload/ingest a realistic document and retrieve cited answers with permission safety preserved.
 
-### Deferred idea: guest mode
+### Public-demo guest mode boundary
 
-Guest mode should not be part of the current v0 implementation. A future guest mode may allow unauthenticated users to try a limited demo flow with a small daily quota and no private document access. It should require anonymous identity/session tracking, rate limits, quota persistence, and strict permission separation before implementation. Prefer a seeded demo account or deterministic demo script for v0 portfolio demos.
+Guest mode is now implemented only as a provider-free public-demo path. It is
+disabled by default, creates explicit ephemeral guest identities, and enforces
+single-session limits in backend state. It is not a durable anonymous quota
+system, a multi-device guest account model, or a replacement for shared rate
+limits.
 
 ## Completed milestone log
 
 | Date | Milestone | Evidence |
 | --- | --- | --- |
+| 2026-05-21 | PDF/text ingestion sophistication improved with `pypdf`, better chunking/entity extraction, and 32-d deterministic embedding fixtures. | `pyproject.toml`; `uv.lock`; `my_agents/knowledge/pdf_uploads.py`; `my_agents/knowledge/extraction.py`; `tests/test_knowledge_ingestion.py`; README pair; `docs/portfolio-chat-service/05-knowledge-ingestion-extraction.md`. |
+| 2026-05-21 | Provider-free public-demo guest access added with one-time codes, guest sessions, and backend limits. | `my_agents/auth/service.py`; `my_agents/api/auth.py`; `my_agents/auth/guest_limits.py`; `alembic/versions/20260521_0005_guest_access.py`; `tests/test_guest_access_api.py`; README pair; `docs/portfolio-chat-service/02-first-party-auth-sessions.md`. |
 | 2026-05-21 | Generic container deployment path and backend signup disable switch added for public portfolio demos. | `Dockerfile`; `.dockerignore`; `my_agents/settings.py`; `my_agents/api/auth.py`; `tests/test_auth_api.py`; README pair; `docs/portfolio-chat-service/13-generic-container-deployment-path.md`. |
 | 2026-05-20 | PDF parser rejects corrupted binary text and supports FlateDecode resume retrieval smoke. | `my_agents/knowledge/pdf_uploads.py`; `tests/test_knowledge_ingestion.py`; README pair; `docs/portfolio-chat-service/05-knowledge-ingestion-extraction.md`. |
 | 2026-05-20 | Resume/profile RAG fallback added for broad personal-document questions. | `my_agents/knowledge/retrieval.py`; `my_agents/api/conversations.py`; `my_agents/agents/general_assistant/graph.py`; `my_agents/agents/general_assistant/responders.py`; `tests/test_permission_aware_rag.py`; `tests/test_responders.py`; README pair; general assistant README pair; `docs/learning/05-resume-rag-fallback-after-broad-personal-questions.md`. |

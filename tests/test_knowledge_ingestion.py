@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 import zlib
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+from my_agents.knowledge.extraction import (
+    _chunk_pdf_text,
+    _deterministic_embedding,
+    _extract_entity_names,
+)
 from my_agents.knowledge.models import (
     CitationModel,
     DocumentChunkModel,
@@ -225,7 +231,7 @@ def test_pdf_upload_persists_metadata_and_ingests_page_provenance(monkeypatch) -
     assert payload["source_byte_size"] > 0
     assert len(payload["source_sha256"]) == 64
     assert payload["source_page_count"] == 2
-    assert payload["parser_name"] == "deterministic_pdf_text_v1"
+    assert payload["parser_name"] == "deterministic_stream_fallback_v1"
 
     persisted = _database_rows(select(DocumentModel).where(DocumentModel.id == payload["id"]))
     assert persisted[0].content.count("\f") == 1
@@ -243,6 +249,30 @@ def test_pdf_upload_persists_metadata_and_ingests_page_provenance(monkeypatch) -
     assert [chunk.source_page for chunk in chunks] == [1, 2]
     assert "LangGraph" in chunks[0].content
     assert "FastAPI" in chunks[1].content
+    assert len(_deterministic_embedding(chunks[0].content)) == 32
+
+
+def test_langgraph_academy_pdf_regression_extracts_real_text_when_available() -> None:
+    sample = (
+        Path.home() / "Downloads/LangChain_Academy_-_Introduction_to_LangGraph_-_Motivation.pdf"
+    )
+    if not sample.exists():
+        pytest.skip("local LangGraph Academy sample PDF is not available")
+
+    parsed = parse_uploaded_pdf(
+        filename=sample.name,
+        content_type="application/pdf",
+        content=sample.read_bytes(),
+    )
+    chunks = _chunk_pdf_text(parsed.content)
+    entities = {name for chunk, *_ in chunks for name in _extract_entity_names(chunk)}
+
+    assert parsed.parser_name == "pypdf_text_v2"
+    assert parsed.page_count == 17
+    assert "LangChain Academy" in parsed.content
+    assert "LangGraph" in parsed.content
+    assert len(chunks) >= 10
+    assert len(entities) >= 10
 
 
 def test_pdf_upload_ingest_and_conversation_retrieval_pipeline(monkeypatch) -> None:  # noqa: ANN001

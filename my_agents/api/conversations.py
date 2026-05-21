@@ -19,6 +19,11 @@ from my_agents.agents.general_assistant.responders import ResponseProviderConfig
 from my_agents.api.assistant import GraphRunner, get_graph_runner
 from my_agents.auth.contracts import Principal
 from my_agents.auth.dependencies import get_current_principal
+from my_agents.auth.guest_limits import (
+    assert_guest_access_active,
+    assert_guest_can_create_conversation,
+    assert_guest_can_send_prompt,
+)
 from my_agents.conversations.models import (
     AgentEventModel,
     AgentEventType,
@@ -44,6 +49,7 @@ from my_agents.knowledge.retrieval import RetrievalService, RetrievedChunk
 from my_agents.knowledge.schemas import CitationResponse
 from my_agents.persistence.database import get_database_session
 from my_agents.schemas import RouteDecision
+from my_agents.settings import Settings, get_settings
 
 conversations_router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -68,7 +74,9 @@ def create_conversation(
     request: ConversationCreateRequest,
     principal: Annotated[Principal, Depends(get_current_principal)],
     db: Annotated[Session, Depends(get_database_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> ConversationResponse:
+    assert_guest_can_create_conversation(db, principal, settings)
     if request.group_id is not None:
         _require_group_membership(db, request.group_id, principal.user_id)
     conversation = ConversationModel(
@@ -87,6 +95,7 @@ def list_conversations(
     principal: Annotated[Principal, Depends(get_current_principal)],
     db: Annotated[Session, Depends(get_database_session)],
 ) -> list[ConversationResponse]:
+    assert_guest_access_active(db, principal)
     group_ids = select(MembershipModel.group_id).where(MembershipModel.user_id == principal.user_id)
     conversations = db.scalars(
         select(ConversationModel).where(
@@ -105,6 +114,7 @@ def get_conversation(
     principal: Annotated[Principal, Depends(get_current_principal)],
     db: Annotated[Session, Depends(get_database_session)],
 ) -> ConversationResponse:
+    assert_guest_access_active(db, principal)
     conversation = _get_authorized_conversation(db, conversation_id, principal.user_id)
     return _conversation_response(conversation)
 
@@ -119,7 +129,9 @@ def add_message(
     request: MessageCreateRequest,
     principal: Annotated[Principal, Depends(get_current_principal)],
     db: Annotated[Session, Depends(get_database_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> MessageResponse:
+    assert_guest_can_send_prompt(db, principal, settings)
     _get_authorized_conversation(db, conversation_id, principal.user_id)
     message = MessageModel(
         conversation_id=conversation_id,
@@ -139,6 +151,7 @@ def list_messages(
     db: Annotated[Session, Depends(get_database_session)],
 ) -> list[MessageResponse]:
     """Return the authorized server-owned transcript for a conversation."""
+    assert_guest_access_active(db, principal)
     _get_authorized_conversation(db, conversation_id, principal.user_id)
     messages = db.scalars(
         select(MessageModel)
@@ -155,7 +168,9 @@ def run_conversation(
     principal: Annotated[Principal, Depends(get_current_principal)],
     db: Annotated[Session, Depends(get_database_session)],
     graph_runner: Annotated[GraphRunner, Depends(get_graph_runner)],
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> ConversationRunResponse:
+    assert_guest_can_send_prompt(db, principal, settings)
     _get_authorized_conversation(db, conversation_id, principal.user_id)
     user_message = _store_user_message(db, conversation_id, request.message)
 
@@ -240,6 +255,7 @@ def stream_conversation_run(
     principal: Annotated[Principal, Depends(get_current_principal)],
     db: Annotated[Session, Depends(get_database_session)],
     graph_runner: Annotated[GraphRunner, Depends(get_graph_runner)],
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> StreamingResponse:
     """Stream redacted conversation-run progress as Server-Sent Events.
 
@@ -250,6 +266,7 @@ def stream_conversation_run(
     `run_failed` plus `run_error` events instead of leaking raw prompts or provider
     exception text.
     """
+    assert_guest_can_send_prompt(db, principal, settings)
     _get_authorized_conversation(db, conversation_id, principal.user_id)
     return StreamingResponse(
         _conversation_run_events(
@@ -506,6 +523,7 @@ def list_runs(
     db: Annotated[Session, Depends(get_database_session)],
 ) -> list[AgentRunSummaryResponse]:
     """Return frontend-safe run history for an authorized conversation."""
+    assert_guest_access_active(db, principal)
     _get_authorized_conversation(db, conversation_id, principal.user_id)
     runs = db.scalars(
         select(AgentRunModel)
@@ -526,6 +544,7 @@ def get_run(
     db: Annotated[Session, Depends(get_database_session)],
 ) -> ConversationRunResponse:
     """Return a refresh-safe completed run with reply and persisted citations."""
+    assert_guest_access_active(db, principal)
     _get_authorized_conversation(db, conversation_id, principal.user_id)
     run = db.get(AgentRunModel, run_id)
     if run is None or run.conversation_id != conversation_id:
@@ -545,6 +564,7 @@ def list_run_events(
     principal: Annotated[Principal, Depends(get_current_principal)],
     db: Annotated[Session, Depends(get_database_session)],
 ) -> list[AgentEventResponse]:
+    assert_guest_access_active(db, principal)
     _get_authorized_conversation(db, conversation_id, principal.user_id)
     run = db.get(AgentRunModel, run_id)
     if run is None or run.conversation_id != conversation_id:

@@ -21,7 +21,14 @@ from my_agents.knowledge.models import (
 )
 from my_agents.knowledge.pdf_uploads import PDF_PAGE_SEPARATOR
 
-_ENTITY_PATTERN = re.compile(r"\b[A-Z][A-Za-z0-9]*(?:\s+[A-Z][A-Za-z0-9]*){0,2}\b")
+_ENTITY_PATTERN = re.compile(
+    r"\b(?:[A-Z][A-Za-z0-9]*(?:[-_][A-Za-z0-9]+)*|[A-Z]{2,})"
+    r"(?:\s+(?:[A-Z][A-Za-z0-9]*(?:[-_][A-Za-z0-9]+)*|[A-Z]{2,})){0,3}\b"
+)
+_TECH_TERM_PATTERN = re.compile(r"\b[A-Za-z][A-Za-z0-9]*(?:Graph|Chain|Lang|API|SQL|DB)\b")
+_CHUNK_TARGET_CHARS = 900
+_CHUNK_OVERLAP_CHARS = 120
+_EMBEDDING_DIMENSIONS = 32
 
 
 @dataclass(frozen=True)
@@ -124,41 +131,108 @@ def _chunk_pdf_text(text: str) -> list[tuple[str, int, int, int | None]]:
     return chunks or [("", 0, 0, None)]
 
 
-def _chunk_text(text: str, max_chars: int = 500) -> list[tuple[str, int, int]]:
+def _chunk_text(
+    text: str,
+    *,
+    max_chars: int = _CHUNK_TARGET_CHARS,
+) -> list[tuple[str, int, int]]:
     stripped = text.strip()
     if not stripped:
         return [("", 0, 0)]
     chunks: list[tuple[str, int, int]] = []
-    cursor = 0
-    for raw_part in re.split(r"\n\s*\n", stripped):
-        part = raw_part.strip()
-        if not part:
+    units = _semantic_units(stripped)
+    for unit, start, end in units:
+        if not unit:
             continue
-        start = stripped.find(part, cursor)
-        if start < 0:
-            start = cursor
-        while len(part) > max_chars:
-            segment = part[:max_chars]
-            chunks.append((segment, start, start + len(segment)))
-            part = part[max_chars:]
-            start += len(segment)
-        chunks.append((part, start, start + len(part)))
-        cursor = start + len(part)
+        if len(unit) <= max_chars:
+            chunks.append((unit, start, end))
+            continue
+        chunks.extend(_fixed_width_units(unit, base_offset=start))
     return chunks or [(stripped, 0, len(stripped))]
 
 
 def _extract_entity_names(text: str) -> list[str]:
     seen: set[str] = set()
     entities: list[str] = []
-    for match in _ENTITY_PATTERN.finditer(text):
+    for match in [*_ENTITY_PATTERN.finditer(text), *_TECH_TERM_PATTERN.finditer(text)]:
         name = match.group(0).strip()
-        if len(name) < 2 or name in seen:
+        if len(name) < 2 or name.casefold() in seen or _is_low_value_entity(name):
             continue
-        seen.add(name)
+        seen.add(name.casefold())
         entities.append(name)
     return entities
 
 
-def _deterministic_embedding(text: str, dimensions: int = 8) -> list[float]:
-    digest = hashlib.sha256(text.encode("utf-8")).digest()
-    return [round(byte / 255, 6) for byte in digest[:dimensions]]
+def _deterministic_embedding(text: str, dimensions: int = _EMBEDDING_DIMENSIONS) -> list[float]:
+    """Return a deterministic lexical-hash embedding fixture for offline tests.
+
+    This remains provider-free, but it is closer to a production embedding boundary than
+    hashing the whole chunk once: each normalized token contributes to a stable vector
+    bucket, and the vector is L2-normalized for future similarity-search replacement.
+    """
+    vector = [0.0] * dimensions
+    tokens = re.findall(r"[A-Za-z0-9가-힣]+", text.casefold())
+    for token in tokens:
+        digest = hashlib.sha256(token.encode("utf-8")).digest()
+        bucket = int.from_bytes(digest[:2], "big") % dimensions
+        sign = 1 if digest[2] % 2 == 0 else -1
+        vector[bucket] += sign * (1.0 + min(len(token), 12) / 12)
+    norm = sum(value * value for value in vector) ** 0.5
+    if norm == 0:
+        return vector
+    return [round(value / norm, 6) for value in vector]
+
+
+def _semantic_units(text: str) -> list[tuple[str, int, int]]:
+    units: list[tuple[str, int, int]] = []
+    for match in re.finditer(r"\S(?:.*?\S)?(?=\n{2,}|\Z)", text, flags=re.DOTALL):
+        paragraph = match.group(0).strip()
+        if not paragraph:
+            continue
+        if len(paragraph) <= _CHUNK_TARGET_CHARS:
+            units.append((paragraph, match.start(), match.end()))
+            continue
+        units.extend(_sentence_units(paragraph, base_offset=match.start()))
+    return units or [(text, 0, len(text))]
+
+
+def _sentence_units(text: str, *, base_offset: int) -> list[tuple[str, int, int]]:
+    units: list[tuple[str, int, int]] = []
+    cursor = 0
+    pattern = re.compile(r".+?(?:[.!?。！？]+[\"')\]]?\s+|\Z)", flags=re.DOTALL)
+    for match in pattern.finditer(text):
+        sentence = match.group(0).strip()
+        if not sentence:
+            continue
+        start = text.find(sentence, cursor)
+        if start < 0:
+            start = match.start()
+        cursor = start + len(sentence)
+        if len(sentence) <= _CHUNK_TARGET_CHARS:
+            units.append((sentence, base_offset + start, base_offset + start + len(sentence)))
+            continue
+        units.extend(_fixed_width_units(sentence, base_offset=base_offset + start))
+    return units
+
+
+def _fixed_width_units(text: str, *, base_offset: int) -> list[tuple[str, int, int]]:
+    units: list[tuple[str, int, int]] = []
+    start = 0
+    while start < len(text):
+        end = min(len(text), start + _CHUNK_TARGET_CHARS)
+        if end < len(text):
+            split = text.rfind(" ", start, end)
+            if split > start + 200:
+                end = split
+        segment = text[start:end].strip()
+        if segment:
+            segment_start = start + text[start:end].find(segment)
+            units.append((segment, base_offset + segment_start, base_offset + end))
+        if end >= len(text):
+            break
+        start = max(end - _CHUNK_OVERLAP_CHARS, start + 1)
+    return units
+
+
+def _is_low_value_entity(name: str) -> bool:
+    return name.casefold() in {"the", "and", "for", "this", "that", "with", "page"}

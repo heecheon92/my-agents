@@ -72,8 +72,10 @@ class UserResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: str
-    email: EmailStr
+    email: EmailStr | None
     email_verified_at: datetime | None
+    is_guest: bool = False
+    guest_expires_at: datetime | None = None
 
 
 class SignupResponse(BaseModel):
@@ -112,3 +114,20 @@ class DevAuthEmailMessageResponse(BaseModel):
     subject: str
     body: str
     token: str
+
+
+class GuestAccessCodeResponse(BaseModel):
+    """Provider-free guest access code returned only when guest access is enabled."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    code: str = Field(min_length=1)
+    expires_at: datetime
+
+
+class GuestLoginRequest(BaseModel):
+    """Redeem a one-time guest access code."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    code: str = Field(min_length=1, max_length=256)
