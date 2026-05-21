@@ -43,6 +43,7 @@ htmlcov/
 
 # Local logs and databases
 *.log
+*.db
 *.sqlite
 *.sqlite3
 
