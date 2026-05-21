@@ -8,6 +8,7 @@ import re
 from dataclasses import dataclass
 
 from sqlalchemy import desc, func, or_, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from my_agents.groups.models import MembershipModel
@@ -50,19 +51,10 @@ class RetrievalService:
 
     def authorized_document_count(self, *, user_id: str) -> int:
         """Return how many distinct documents the user can read."""
-        group_ids = select(MembershipModel.group_id).where(MembershipModel.user_id == user_id)
-        explicit_doc_ids = select(DocumentPermissionModel.document_id).where(
-            DocumentPermissionModel.user_id == user_id,
-            DocumentPermissionModel.can_read.is_(True),
-        )
         return (
             self._db.scalar(
                 select(func.count(DocumentModel.id.distinct())).where(
-                    or_(
-                        DocumentModel.owner_user_id == user_id,
-                        DocumentModel.group_id.in_(group_ids),
-                        DocumentModel.id.in_(explicit_doc_ids),
-                    )
+                    _authorized_document_filter(user_id)
                 )
             )
             or 0
@@ -71,10 +63,28 @@ class RetrievalService:
     def _direct_authorized_matches(
         self, *, user_id: str, query: str, terms: set[str]
     ) -> list[RetrievedChunk]:
+        query_embedding = self._embedding_provider.embed_query(query)
+        if _uses_postgres(self._db):
+            sql_matches = self._postgres_vector_authorized_matches(
+                user_id=user_id,
+                query_embedding=query_embedding,
+                terms=terms,
+                limit=20,
+            )
+            if sql_matches:
+                return sql_matches
+        return self._json_authorized_matches(
+            user_id=user_id,
+            query_embedding=query_embedding,
+            terms=terms,
+        )
+
+    def _json_authorized_matches(
+        self, *, user_id: str, query_embedding: list[float], terms: set[str]
+    ) -> list[RetrievedChunk]:
         rows = self._authorized_chunk_rows(user_id)
         if not rows:
             return []
-        query_embedding = self._embedding_provider.embed_query(query)
         matches: list[RetrievedChunk] = []
         for chunk, document in rows:
             keyword_score = _keyword_score(chunk.content, terms)
@@ -106,6 +116,52 @@ class RetrievalService:
         # Future seam: a cross-encoder reranker should run only here, after
         # `_authorized_chunk_rows(...)` has already enforced permission filtering and
         # after vector/keyword scoring has narrowed candidates to a small top-k set.
+        return sorted(matches, key=lambda item: (-item.score, item.chunk.ordinal))
+
+    def _postgres_vector_authorized_matches(
+        self,
+        *,
+        user_id: str,
+        query_embedding: list[float],
+        terms: set[str],
+        limit: int,
+    ) -> list[RetrievedChunk]:
+        if not query_embedding:
+            return []
+        try:
+            rows = self._db.execute(
+                _postgres_vector_authorized_statement(
+                    user_id=user_id,
+                    query_embedding=query_embedding,
+                    limit=limit,
+                )
+            ).all()
+        except SQLAlchemyError:
+            self._db.rollback()
+            return []
+
+        matches: list[RetrievedChunk] = []
+        for chunk, document, vector_distance in rows:
+            if vector_distance is None:
+                continue
+            cosine = 1 - float(vector_distance)
+            keyword_score = _keyword_score(chunk.content, terms)
+            keyword_rank = _normalized_keyword_score(keyword_score, terms)
+            positive_cosine = max(cosine, 0.0)
+            combined_score = (0.75 * positive_cosine) + (0.25 * keyword_rank)
+            if combined_score > 0:
+                matches.append(
+                    RetrievedChunk(
+                        chunk=chunk,
+                        document=document,
+                        score=round(combined_score, 6),
+                        source="semantic_vector",
+                    )
+                )
+        # Future seam: a cross-encoder reranker should run only here, after
+        # `_postgres_vector_authorized_statement(...)` has already enforced
+        # permission filtering in SQL and vector search has narrowed candidates
+        # to a small authorized top-k set.
         return sorted(matches, key=lambda item: (-item.score, item.chunk.ordinal))
 
     def _expand_authorized_related(
@@ -156,24 +212,52 @@ class RetrievalService:
     def _authorized_chunk_rows(
         self, user_id: str
     ) -> list[tuple[DocumentChunkModel, DocumentModel]]:
-        group_ids = select(MembershipModel.group_id).where(MembershipModel.user_id == user_id)
-        explicit_doc_ids = select(DocumentPermissionModel.document_id).where(
-            DocumentPermissionModel.user_id == user_id,
-            DocumentPermissionModel.can_read.is_(True),
-        )
         statement = (
             select(DocumentChunkModel, DocumentModel)
             .join(DocumentModel, DocumentChunkModel.document_id == DocumentModel.id)
-            .where(
-                or_(
-                    DocumentModel.owner_user_id == user_id,
-                    DocumentModel.group_id.in_(group_ids),
-                    DocumentModel.id.in_(explicit_doc_ids),
-                )
-            )
+            .where(_authorized_document_filter(user_id))
             .order_by(desc(DocumentModel.created_at), DocumentChunkModel.ordinal)
         )
         return list(self._db.execute(statement).all())
+
+
+def _postgres_vector_authorized_statement(
+    *, user_id: str, query_embedding: list[float], limit: int
+):
+    embedding_vector = _embedding_vector_column()
+    vector_distance = embedding_vector.cosine_distance(query_embedding).label("vector_distance")
+    return (
+        select(DocumentChunkModel, DocumentModel, vector_distance)
+        .join(DocumentModel, DocumentChunkModel.document_id == DocumentModel.id)
+        .where(
+            _authorized_document_filter(user_id),
+            embedding_vector.is_not(None),
+        )
+        .order_by(vector_distance, desc(DocumentModel.created_at), DocumentChunkModel.ordinal)
+        .limit(limit)
+    )
+
+
+def _authorized_document_filter(user_id: str):
+    group_ids = select(MembershipModel.group_id).where(MembershipModel.user_id == user_id)
+    explicit_doc_ids = select(DocumentPermissionModel.document_id).where(
+        DocumentPermissionModel.user_id == user_id,
+        DocumentPermissionModel.can_read.is_(True),
+    )
+    return or_(
+        DocumentModel.owner_user_id == user_id,
+        DocumentModel.group_id.in_(group_ids),
+        DocumentModel.id.in_(explicit_doc_ids),
+    )
+
+
+def _uses_postgres(db: Session) -> bool:
+    bind = db.get_bind()
+    return bind.dialect.name == "postgresql"
+
+
+def _embedding_vector_column():
+    return DocumentChunkModel.__table__.c.embedding_vector
 
 
 _PERSONAL_DOCUMENT_FALLBACK_HINTS = (

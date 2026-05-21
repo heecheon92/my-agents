@@ -135,6 +135,6 @@ Current Slice A should remain a foundation, not the final architecture:
 1. Add embedding provider boundary.
 2. Add real OpenAI embedding mode while keeping deterministic offline mode.
 3. Rank authorized chunks by JSON-backed cosine similarity.
-4. Keep event/source names truthful.
-5. Leave pgvector, full-text fusion, cross-encoder reranking, query expansion, and HyDE as explicit follow-up seams.
-
+4. Add pgvector storage/search on Postgres while keeping JSON/SQLite fallback.
+5. Keep event/source names truthful.
+6. Leave full-text fusion, ANN/vector index tuning, cross-encoder reranking, query expansion, and HyDE as explicit follow-up seams.

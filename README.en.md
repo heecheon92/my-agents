@@ -283,6 +283,27 @@ uv run pytest tests/test_migrations.py -q
 
 You do not need to run Neon's sample `playing_with_neon` table query for this app. This project's tables are created by Alembic migrations.
 
+For local pgvector testing without Neon, use the Docker helper. It pulls the DockerHub
+`pgvector/pgvector:pg17` image by default, starts Postgres on `127.0.0.1:5433`, writes an
+ignored `.env.pgvector.local`, and can run migrations against it. The generated local env
+file forces `MY_AGENTS_AUTH_EMAIL_MODE=local` and `MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=true`
+so signup verification uses the dev outbox instead of SMTP/Resend.
+VS Code also includes a `FastAPI: uvicorn main:app (local pgvector)` launch configuration
+that runs the same helper as a pre-launch task before starting the backend.
+
+```bash
+uv run python -m scripts.dev_pgvector up --migrate
+set -a; source .env.pgvector.local; set +a
+MY_AGENTS_RESPONSE_MODE=deterministic uv run uvicorn main:app --host 127.0.0.1 --port 8000
+```
+
+After switching to this local Postgres, re-ingest documents so `embedding_vector` is
+populated. You can verify the migrated pgvector schema with:
+
+```bash
+uv run python -m scripts.dev_pgvector test
+```
+
 In short:
 
 - **SQLAlchemy** is the Python ORM/database access layer for table and relationship code.
@@ -415,8 +436,9 @@ This does **not** yet mean the production-grade RAG service is complete.
 However, the thin end-to-end path now covers auth, groups/document permissions,
 server-owned conversations, text KB ingestion, permission-aware retrieval,
 JSON-backed semantic embedding ranking, citation-backed answer composition, structured
-agent activity events, and an SSE conversation-run stream. Production parsers and
-pgvector acceleration remain later milestones.
+agent activity events, pgvector-backed Postgres vector search with JSON/SQLite fallback,
+and an SSE conversation-run stream. Production parsers, ANN/vector index tuning, and
+cross-encoder reranking remain later milestones.
 
 Implemented auth endpoints:
 
@@ -582,11 +604,14 @@ metadata (`source_filename`, content type, byte size, SHA-256, page count, parse
 is persisted on the document, and ingestion chunks record `source_page` for later citation
 provenance. Conversation citation responses now include `source_page` and `source_filename`
 when known. Ingestion creates paragraph/sentence-aware chunks, entity mentions, and JSON-backed
-embeddings. By default those embeddings are 32-dimensional deterministic lexical-hash
-vectors for offline tests; when `MY_AGENTS_EMBEDDING_MODE=openai`, ingestion uses
+embeddings. On Postgres after Alembic migrations, chunks also persist a pgvector
+`embedding_vector` column so retrieval can run permission-filtered SQL vector search before
+falling back to JSON cosine ranking. By default embeddings are 32-dimensional deterministic
+lexical-hash vectors for offline tests; when `MY_AGENTS_EMBEDDING_MODE=openai`, ingestion uses
 `langchain-openai`/OpenAI embeddings such as `text-embedding-3-small`. This path still
 does not support scanned/encrypted/image-only PDFs, OCR, DOCX, HTML, or CSV/JSON structural
-parsing, and pgvector acceleration plus OpenAI extraction calls are still future work.
+parsing; OpenAI extraction calls, ANN/vector indexes, and cross-encoder reranking are still
+future work.
 
 
 ### Permission-aware RAG and citation-backed answers
@@ -597,7 +622,7 @@ The product conversation run includes a permission-aware RAG slice with retrieva
    `retrieval_required`, `retrieval_optional`, or `clarification_required`.
 2. `no_retrieval` skips `RetrievalService` and answers with `answer_mode=general_knowledge`.
 3. Only `retrieval_required` and `retrieval_optional` call `RetrievalService`; the service first selects only document chunks the current user can read.
-4. It embeds the query with the configured provider, ranks only those authorized chunks by JSON-backed cosine similarity blended with lexical score, and personal-document prompts may fall back to recent authorized chunks.
+4. It embeds the query with the configured provider. On Postgres, it first narrows authorized rows through pgvector SQL vector search; SQLite/tests and empty pgvector candidate sets fall back to JSON-backed cosine ranking. The final candidate list is blended with lexical score, and personal-document prompts may fall back to recent authorized chunks.
 5. It expands through entity mentions to related chunks that are still inside the authorized set.
 6. Optional retrieval with relevant context uses `answer_mode=mixed`; required retrieval with relevant context uses `answer_mode=document_grounded`. If no relevant context is found, the response stays general and creates no citations.
 7. It passes only compact authorized context into the `general_assistant` graph/provider prompt and returns `retrieval_route`, `answer_mode`, `document_scope`, and `citations` in the response payload.

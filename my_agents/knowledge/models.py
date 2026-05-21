@@ -6,10 +6,30 @@ import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from my_agents.persistence.database import Base
+
+
+def _embedding_vector_type() -> Vector:
+    """Return pgvector on Postgres and a harmless text column for SQLite tests."""
+    return Vector().with_variant(Text(), "sqlite")
+
+
+DOCUMENT_CHUNK_EMBEDDING_VECTOR_COLUMN = Column(
+    "embedding_vector", _embedding_vector_type(), nullable=True
+)
 
 
 class KnowledgeBaseScope(StrEnum):
@@ -102,6 +122,8 @@ class DocumentChunkModel(Base):
     """Chunk with deterministic embedding fixture and provenance offsets."""
 
     __tablename__ = "document_chunks"
+    __table_args__ = (DOCUMENT_CHUNK_EMBEDDING_VECTOR_COLUMN,)
+    __mapper_args__ = {"exclude_properties": ["embedding_vector"]}
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     document_id: Mapped[str] = mapped_column(ForeignKey("documents.id"), nullable=False, index=True)

@@ -1,0 +1,32 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "pgvector: up + migrate",
+      "type": "shell",
+      "command": "uv run python -m scripts.dev_pgvector up --migrate",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "pgvector: migration smoke",
+      "type": "shell",
+      "command": "uv run python -m scripts.dev_pgvector test",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "pgvector: stop",
+      "type": "shell",
+      "command": "uv run python -m scripts.dev_pgvector down",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    }
+  ]
+}

@@ -5,11 +5,13 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi.testclient import TestClient
+from sqlalchemy.dialects import postgresql
 
 import my_agents.knowledge.extraction as extraction_module
 import my_agents.knowledge.retrieval as retrieval_module
 from my_agents.api import create_app
 from my_agents.api.assistant import get_graph_runner
+from my_agents.knowledge.retrieval import _postgres_vector_authorized_statement
 from my_agents.schemas import RouteDecision
 
 from .conftest import verify_latest_auth_email
@@ -221,6 +223,23 @@ def test_semantic_vector_retrieval_after_permission_filtering(monkeypatch) -> No
     assert outsider_run.status_code == 200
     assert outsider_run.json()["citations"] == []
     assert graph.calls[-1]["retrieved_context"] == []
+
+
+def test_postgres_vector_statement_filters_permissions_before_vector_ordering() -> None:
+    statement = _postgres_vector_authorized_statement(
+        user_id="user-1",
+        query_embedding=[1.0, 0.0],
+        limit=10,
+    )
+
+    sql = str(statement.compile(dialect=postgresql.dialect()))
+
+    assert "document_chunks.embedding_vector <=>" in sql
+    assert "document_chunks.embedding_vector IS NOT NULL" in sql
+    assert "documents.owner_user_id" in sql
+    assert "memberships.user_id" in sql
+    assert "document_permissions.user_id" in sql
+    assert "ORDER BY vector_distance" in sql
 
 
 def test_graph_expansion_adds_authorized_related_chunks(monkeypatch) -> None:  # noqa: ANN001

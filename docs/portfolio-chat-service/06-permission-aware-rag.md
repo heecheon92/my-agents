@@ -70,7 +70,11 @@ This project uses a safer order:
 flowchart LR
     Query[User query] --> AuthRows[Authorized document chunks]
     AuthRows --> QueryEmbedding[Configured query embedding]
-    QueryEmbedding --> Direct[JSON cosine + lexical blended ranking]
+    QueryEmbedding --> Vector{Storage backend}
+    Vector -->|Postgres pgvector| SQL[Permission-filtered SQL vector top-k]
+    Vector -->|SQLite/tests fallback| JSON[JSON cosine ranking]
+    SQL --> Direct[Lexical blended ranking]
+    JSON --> Direct
     Direct --> Entities[Entity IDs from matched chunks]
     Entities --> Expansion[Related authorized chunks]
     Expansion --> Compose[Citation-backed reply]
@@ -82,7 +86,8 @@ an entity with an authorized chunk.
 
 ## Current limitations
 
-- Retrieval routing is deterministic; ranking now uses JSON-backed cosine similarity from the configured embedding provider blended with lexical scoring, but not LLM query planning/reranking or pgvector acceleration.
+- Retrieval routing is deterministic; Postgres ranking now uses pgvector SQL vector search after permission filtering, with JSON-backed cosine similarity as the SQLite/test fallback.
+- LLM query planning, full-text fusion, ANN/vector index tuning, and cross-encoder reranking are still future work.
 - The reply composition is a thin service-layer scaffold, not a polished answer synthesis prompt.
 - Citations include snippets but not character offsets in the API response yet.
 - Streaming exists, but frontend display of retrieval route/answer mode still belongs to the separate frontend repository.
@@ -103,7 +108,7 @@ justify graph orchestration, for example:
 
 - query rewrite;
 - metadata/scope planning;
-- hybrid search or pgvector acceleration as first-stage candidate retrieval behind the same permission boundary;
+- hybrid full-text/vector search, candidate fusion, or ANN tuning behind the same permission boundary;
 - cross-encoder reranking as a second-stage pass over top-k already-authorized candidates;
 - reranking;
 - context compression/packaging;

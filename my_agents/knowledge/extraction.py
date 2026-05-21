@@ -6,7 +6,7 @@ import json
 import re
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from my_agents.knowledge.embeddings import deterministic_embedding, get_embedding_provider
@@ -71,6 +71,8 @@ class KnowledgeExtractionService:
             )
             self._db.add(chunk)
             self._db.flush()
+            if _stores_sql_embedding_vector(self._db):
+                self._store_sql_embedding_vector(chunk_id=chunk.id, embedding=embedding)
             chunk_entity_ids = []
             for entity_name in _extract_entity_names(content):
                 entity = self._get_or_create_entity(entity_name)
@@ -114,11 +116,25 @@ class KnowledgeExtractionService:
         self._db.flush()
         return entity
 
+    def _store_sql_embedding_vector(self, *, chunk_id: str, embedding: list[float]) -> None:
+        embedding_vector = DocumentChunkModel.__table__.c.embedding_vector
+        self._db.execute(
+            update(DocumentChunkModel.__table__)
+            .where(DocumentChunkModel.__table__.c.id == chunk_id)
+            .values({embedding_vector: embedding})
+        )
+
 
 def _chunk_document_text(document: DocumentModel) -> list[tuple[str, int, int, int | None]]:
     if document.source_type == "pdf":
         return _chunk_pdf_text(document.content)
     return [(content, start, end, None) for content, start, end in _chunk_text(document.content)]
+
+
+def _stores_sql_embedding_vector(db: Session) -> bool:
+    """Return whether chunks should persist the pgvector column for SQL search."""
+    bind = db.get_bind()
+    return bind.dialect.name == "postgresql"
 
 
 def _chunk_pdf_text(text: str) -> list[tuple[str, int, int, int | None]]:

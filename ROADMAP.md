@@ -36,7 +36,7 @@ flowchart LR
 
 Current honest status:
 
-> The project is a strong **v1-draft backend foundation**: auth, permissions, server-owned conversations, text/PDF/Markdown ingestion, permission-aware retrieval, citations, events, migrations, and SSE assistant streaming exist as a thin end-to-end slice. It is not yet a production-ready v1 because broad production ingestion, real vector retrieval, background jobs, stronger deployment-grade auth hardening, and operations remain.
+> The project is a strong **v1-draft backend foundation**: auth, permissions, server-owned conversations, text/PDF/Markdown ingestion, permission-aware retrieval, citations, events, migrations, pgvector-backed Postgres retrieval with JSON fallback, and SSE assistant streaming exist as a thin end-to-end slice. It is not yet a production-ready v1 because broad production ingestion, retrieval-quality evals/reranking, background jobs, stronger deployment-grade auth hardening, and operations remain.
 
 ## 1. Backend foundation
 
@@ -144,11 +144,10 @@ Current honest status:
 - [x] Citations are persisted and returned in run responses.
 - [x] Negative tests for permission leakage.
 - [x] Redacted event payloads avoid raw private content.
-- [~] Current retrieval is a deterministic local fixture, not real vector search.
-- [ ] Real embedding generation provider boundary.
-- [ ] JSON-backed semantic cosine ranking over authorized chunks as the first real-embedding slice.
-- [ ] pgvector schema columns and extension usage.
-- [ ] Permission-filtered SQL vector search before ranking enters app memory.
+- [x] Real embedding generation provider boundary.
+- [x] JSON-backed semantic cosine ranking over authorized chunks as the first real-embedding slice.
+- [x] pgvector schema columns and extension usage.
+- [x] Permission-filtered SQL vector search before ranking enters app memory on Postgres, with JSON/SQLite fallback.
 - [ ] Hybrid retrieval strategy: vector + keyword/full-text + graph/entity expansion, with tunable weights guided by [`docs/portfolio-chat-service/12-retrieval-agent-hybrid-reference.md`](./docs/portfolio-chat-service/12-retrieval-agent-hybrid-reference.md).
 - [ ] Dedicated retrieval-agent/service boundary that owns query planning, retrieval routing, hybrid candidate generation, reranking, context packing, and retrieval observability before the general assistant composes an answer.
 - [ ] Cross-encoder reranker stage over top-k authorized candidates after vector/full-text retrieval; keep it behind a provider/interface flag so local tests remain offline.
@@ -302,11 +301,11 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
    - Propagate the assembled instruction stack into conversation runs, retrieval-agent planning, and observability metadata.
 
 6. **Real retrieval upgrade / retrieval-agent track**
-   - Land the embedding provider boundary and JSON-backed semantic ranking first so the current service stops being fixture-only.
-   - Treat pgvector as the first-stage candidate retrieval accelerator, not the final relevance judge.
+   - Keep the embedding provider boundary and JSON-backed semantic ranking as the deterministic fallback.
+   - Treat pgvector as the first-stage candidate retrieval accelerator on Postgres, not the final relevance judge.
    - Keep permission filtering before every retrieval/reranking step.
    - Promote retrieval into a dedicated retrieval-agent/service boundary once hybrid search needs more than a thin service call: vector + keyword/full-text + graph expansion, top-k candidate fusion, cross-encoder reranking, query expansion, HyDE, context packing, and retrieval eval reporting.
-   - Add pgvector schema and migrations only after real embedding retrieval is implemented and the JSON fallback remains testable.
+   - Add ANN/vector indexes only after the fixed production embedding dimensionality and backfill policy are settled.
 
 7. **Production ingestion upgrade**
    - Add file upload and parser pipeline.

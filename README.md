@@ -283,6 +283,28 @@ uv run pytest tests/test_migrations.py -q
 
 Neon 콘솔이 보여주는 샘플 `playing_with_neon` 테이블 쿼리는 이 앱 스키마와 무관하므로 실행하지 않아도 됩니다. 이 프로젝트의 테이블은 Alembic migration으로 생성합니다.
 
+Neon 없이 로컬에서 pgvector를 테스트하려면 Docker helper를 사용할 수 있습니다. 기본값은
+DockerHub의 `pgvector/pgvector:pg17` 이미지를 pull하고, Postgres를 `127.0.0.1:5433`에
+띄우며, git-ignored `.env.pgvector.local` 파일을 생성하고 migration까지 실행할 수 있습니다.
+생성된 로컬 env 파일은 `MY_AGENTS_AUTH_EMAIL_MODE=local`과
+`MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=true`를 강제해서 signup verification이 SMTP/Resend가 아니라
+dev outbox를 사용하게 합니다.
+VS Code에는 같은 helper를 pre-launch task로 실행한 뒤 backend를 시작하는
+`FastAPI: uvicorn main:app (local pgvector)` launch configuration도 포함되어 있습니다.
+
+```bash
+uv run python -m scripts.dev_pgvector up --migrate
+set -a; source .env.pgvector.local; set +a
+MY_AGENTS_RESPONSE_MODE=deterministic uv run uvicorn main:app --host 127.0.0.1 --port 8000
+```
+
+이 로컬 Postgres로 전환한 뒤에는 document를 다시 ingest해야 `embedding_vector`가 채워집니다.
+pgvector schema migration은 다음 명령으로 확인할 수 있습니다.
+
+```bash
+uv run python -m scripts.dev_pgvector test
+```
+
 SQLAlchemy, Postgres, Alembic의 관계를 짧게 정리하면 다음과 같습니다.
 
 - **SQLAlchemy**: Python 코드에서 테이블/관계를 다루는 ORM과 DB 접근 도구입니다.
@@ -413,8 +435,9 @@ password reset request/confirm endpoint, 그리고 signup/login/verification-tok
 이것이 전체 production-grade RAG 서비스가 완성되었다는 뜻은 아닙니다.
 하지만 auth, group/document permission, server-owned conversation, text KB ingestion,
 permission-aware retrieval, JSON-backed semantic embedding ranking, citation-backed answer
-composition, structured agent activity event, SSE conversation-run stream의 얇은 end-to-end
-흐름은 구현되어 있습니다. production parser와 pgvector 가속은 이후 마일스톤입니다.
+composition, structured agent activity event, JSON/SQLite fallback을 유지하는 Postgres pgvector
+vector search, SSE conversation-run stream의 얇은 end-to-end 흐름은 구현되어 있습니다.
+production parser, ANN/vector index tuning, cross-encoder reranking은 이후 마일스톤입니다.
 
 구현된 auth endpoint:
 
@@ -576,10 +599,13 @@ Markdown/plain text는 UTF-8 텍스트로 decoding하며 구조적 Markdown pars
 저장되고, ingestion chunk에는 `source_page`가 기록되어 이후 citation provenance에 사용할 수
 있습니다. conversation citation 응답은 이미 가능한 경우 `source_page`와 `source_filename`을
 함께 반환합니다. ingestion은 paragraph/sentence 기반 chunk, entity mention, JSON-backed embedding을 생성합니다.
+Postgres에서 Alembic migration을 적용하면 chunk에 pgvector `embedding_vector`도 저장되어,
+retrieval이 권한 필터가 적용된 SQL vector search를 먼저 수행하고 JSON cosine ranking으로 fallback할 수 있습니다.
 기본값은 offline test용 32차원 deterministic lexical-hash vector이며,
 `MY_AGENTS_EMBEDDING_MODE=openai`일 때는 `langchain-openai`/OpenAI embedding
 (`text-embedding-3-small` 등)을 사용합니다. 이 경로는 scanned/encrypted/image-only PDF, OCR,
-DOCX, HTML, CSV/JSON structural parsing은 아직 지원하지 않으며, pgvector 가속과 OpenAI extraction 호출은 아직 수행하지 않습니다.
+DOCX, HTML, CSV/JSON structural parsing은 아직 지원하지 않으며, OpenAI extraction 호출,
+ANN/vector index tuning, cross-encoder reranking은 아직 수행하지 않습니다.
 
 
 ### Permission-aware RAG 및 citation 기반 응답
@@ -590,7 +616,7 @@ DOCX, HTML, CSV/JSON structural parsing은 아직 지원하지 않으며, pgvect
    `retrieval_optional`, `clarification_required`로 분류합니다.
 2. `no_retrieval`은 RetrievalService를 호출하지 않고 `answer_mode=general_knowledge`로 답합니다.
 3. `retrieval_required`/`retrieval_optional`만 `RetrievalService`를 호출하며, 서비스는 현재 사용자에게 읽기 권한이 있는 document chunk 후보만 먼저 선택합니다.
-4. 설정된 provider로 query embedding을 만들고, 권한이 확인된 후보 안에서만 JSON-backed cosine similarity와 lexical score를 섞어 ranking합니다. personal-document 질문은 최신 권한 내 chunk fallback을 사용할 수 있습니다.
+4. 설정된 provider로 query embedding을 만들고, Postgres에서는 권한이 확인된 row set 안에서 pgvector SQL vector search로 top-k 후보를 먼저 좁힙니다. SQLite/tests 또는 pgvector 후보가 없으면 기존 JSON-backed cosine similarity fallback을 사용합니다. 최종 후보는 lexical score와 섞어 ranking하며, personal-document 질문은 최신 권한 내 chunk fallback을 사용할 수 있습니다.
 5. 직접 검색된 chunk의 entity mention을 기준으로, 같은 entity를 공유하는 권한 내 chunk를 graph expansion context로 추가합니다.
 6. optional 검색 결과가 관련 있으면 `answer_mode=mixed`, required 검색 결과가 관련 있으면 `answer_mode=document_grounded`가 됩니다. 관련 context가 없으면 일반 지식 답변으로 남고 citation을 만들지 않습니다.
 7. 권한이 확인된 compact context payload만 `general_assistant` graph/provider prompt에 전달하고, 응답 payload에는 `retrieval_route`, `answer_mode`, `document_scope`, `citations`를 함께 반환합니다.

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
+import uuid
+from datetime import datetime
 from io import StringIO
 from os import environ
 
@@ -11,10 +14,26 @@ from alembic.autogenerate import compare_metadata
 from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
 from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 
 from alembic import command
+from my_agents.knowledge.models import DocumentChunkModel
+from my_agents.knowledge.retrieval import RetrievalService
 from my_agents.persistence.database import Base
 from my_agents.persistence.models import import_all_models
+
+
+class _LegacyEmbeddingProvider:
+    provider = "legacy-test"
+    model = "legacy-test"
+    dimensions = 2
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:  # noqa: ARG002
+        return [[1.0, 0.0] for _ in texts]
+
+    def embed_query(self, text: str) -> list[float]:  # noqa: ARG002
+        return [1.0, 0.0]
+
 
 EXPECTED_SERVICE_TABLES = {
     "alembic_version",
@@ -55,6 +74,25 @@ def _assert_database_matches_model_metadata(database_url: str) -> None:
         engine.dispose()
 
     assert differences == []
+
+
+def _assert_pgvector_available_when_postgres(database_url: str) -> None:
+    engine = create_engine(database_url)
+    try:
+        if engine.dialect.name != "postgresql":
+            return
+        with engine.connect() as connection:
+            assert connection.exec_driver_sql("select to_regtype('vector')").scalar() is not None
+            columns = {
+                row[0]
+                for row in connection.exec_driver_sql(
+                    "select column_name from information_schema.columns "
+                    "where table_name = 'document_chunks'"
+                ).fetchall()
+            }
+            assert "embedding_vector" in columns
+    finally:
+        engine.dispose()
 
 
 def test_alembic_upgrade_head_creates_current_service_schema(
@@ -98,6 +136,74 @@ def test_alembic_offline_sql_generation_covers_initial_schema(monkeypatch) -> No
     assert "20260520_0004" in sql
     assert "20260521_0005" in sql
     assert "20260521_0006" in sql
+    assert "20260521_0007" in sql
+    assert "embedding_vector" in sql
+
+
+def test_sqlite_json_fallback_reads_chunks_created_before_pgvector_migration(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    database_path = tmp_path / "pre-pgvector.db"
+    database_url = f"sqlite+pysqlite:///{database_path}"
+    monkeypatch.setenv("MY_AGENTS_DATABASE_URL", database_url)
+    command.upgrade(_alembic_config(), "20260521_0006")
+
+    engine = create_engine(database_url)
+    document_id = str(uuid.uuid4())
+    run_id = str(uuid.uuid4())
+    chunk_id = str(uuid.uuid4())
+    now = datetime.now().isoformat(sep=" ")
+    try:
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "insert into documents "
+                "(id, title, content, source_type, owner_user_id, created_at) "
+                "values (?, ?, ?, ?, ?, ?)",
+                (
+                    document_id,
+                    "Legacy Chunk",
+                    "Legacy vector fallback mentions LangGraph.",
+                    "text",
+                    "user-1",
+                    now,
+                ),
+            )
+            connection.exec_driver_sql(
+                "insert into extraction_runs (id, document_id, status, created_at) "
+                "values (?, ?, ?, ?)",
+                (run_id, document_id, "completed", now),
+            )
+            connection.exec_driver_sql(
+                "insert into document_chunks "
+                "(id, document_id, extraction_run_id, ordinal, content, start_offset, "
+                "end_offset, source_page, embedding_json) values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    chunk_id,
+                    document_id,
+                    run_id,
+                    0,
+                    "Legacy vector fallback mentions LangGraph.",
+                    0,
+                    39,
+                    None,
+                    json.dumps([1.0, 0.0]),
+                ),
+            )
+        with Session(engine) as session:
+            chunk = session.get(DocumentChunkModel, chunk_id)
+            assert chunk is not None
+            assert chunk.content == "Legacy vector fallback mentions LangGraph."
+
+            results = RetrievalService(
+                session,
+                embedding_provider=_LegacyEmbeddingProvider(),
+            ).retrieve(user_id="user-1", query="LangGraph")
+
+        assert results
+        assert results[0].chunk.id == chunk_id
+    finally:
+        engine.dispose()
 
 
 def test_optional_external_test_database_runs_migrations(monkeypatch) -> None:
@@ -110,3 +216,4 @@ def test_optional_external_test_database_runs_migrations(monkeypatch) -> None:
     command.upgrade(_alembic_config(), "head")
 
     _assert_database_matches_model_metadata(test_database_url)
+    _assert_pgvector_available_when_postgres(test_database_url)
