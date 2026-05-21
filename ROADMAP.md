@@ -19,12 +19,14 @@ flowchart LR
     V05 --> V07["v0.7 service foundation"]
     V07 --> V1["v1 portfolio chat service"]
     V1 --> V11["v1.1 production-like DB/deploy path"]
+    V11 --> V12["v1.2 ECS-lite portfolio deployment"]
 
     V0 --> V0Done["Done"]
     V05 --> V05Done["Done"]
     V07 --> V07Done["Mostly done"]
     V1 --> V1Wip["In progress"]
     V11 --> V11Wip["Partially done"]
+    V12 --> V12Todo["Planned"]
 ```
 
 Current honest status:
@@ -182,6 +184,9 @@ Current honest status:
 - [x] Optional external DB smoke test gated by `MY_AGENTS_TEST_DATABASE_URL`.
 - [~] Postgres/Neon path is documented and migration-ready, but not continuously exercised unless a test DB is configured.
 - [ ] Production deployment runbook.
+- [ ] ECS-lite portfolio deployment path: FastAPI Docker image, ECR image publishing, ECS Fargate task/service, health check, and documented rollback to a previous image tag.
+- [ ] Deployment environment strategy for AWS SSM Parameter Store or Secrets Manager without committing secrets.
+- [ ] CI/CD image promotion gate: lint/test, build Docker image, push to ECR, update ECS service, then smoke `GET /health`.
 - [ ] Backup/restore plan.
 - [ ] Data retention and deletion policy.
 - [x] Seed/demo data command for local SQLite V1 demos.
@@ -252,12 +257,20 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
    - Use the local SQLite seed helper for stable portfolio demo data.
    - Write a deployment runbook: migrate DB, start app, smoke auth/conversation run.
 
-3. **Production-ish auth hardening**
+3. **ECS-lite portfolio deployment pipeline**
+   - Containerize the backend as a small FastAPI image suitable for ECS Fargate.
+   - Publish immutable image tags to ECR from GitHub Actions after lint/test/build gates pass.
+   - Run one backend ECS service/task behind a health-checked endpoint; keep the frontend deployed separately on Vercel/Netlify.
+   - Store runtime configuration in SSM Parameter Store or Secrets Manager; keep `.env.example` as documentation only.
+   - Document migration execution, smoke checks, and rollback by redeploying a previous image tag.
+   - Keep Terraform/CDK optional until infrastructure-as-code itself becomes a portfolio goal.
+
+4. **Production-ish auth hardening**
    - Promote local auth abuse protection to a shared limiter when deployment topology requires it.
    - Keep the offline/local auth email boundary testable.
    - Prepare real email-provider integration notes before public demo exposure.
 
-4. **Real retrieval upgrade**
+5. **Real retrieval upgrade**
    - Add embedding provider boundary.
    - Add pgvector schema and migrations only when real embedding retrieval is implemented.
    - Keep permission filtering inside query construction.
@@ -278,6 +291,7 @@ The backend can be called v1 when all of the following are true:
 - [ ] A separate frontend can complete signup/login and product conversation flows without using legacy `/assistant/chat`.
 - [ ] Product chat supports streaming or an intentional polling UX with run status.
 - [ ] Fresh Postgres/Neon database setup is migration-driven and documented end to end.
+- [ ] Backend has a documented ECS-lite deployment path with Docker image build, ECR publish, ECS Fargate service update, health smoke, env/secret handling, migration step, and rollback note.
 - [ ] Auth/session behavior is safe enough for a public portfolio demo, including rate limiting and clear cookie/CSRF handling.
 - [ ] Permission-aware retrieval uses a real retrieval path, not only deterministic fixtures.
 - [x] Document ingestion supports at least one realistic uploaded file type: text-based PDF upload with page provenance.
