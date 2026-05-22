@@ -196,6 +196,16 @@ def test_selected_kb_chat_scope_filters_retrieval_and_metadata(monkeypatch) -> N
             "knowledge_base_selection": {"mode": "all", "knowledge_base_ids": [kb_a]},
         },
     )
+    nonexistent = owner.post(
+        f"/conversations/{conversation_id}/runs",
+        json={
+            "message": "uploaded document",
+            "knowledge_base_selection": {
+                "mode": "selected",
+                "knowledge_base_ids": ["missing-kb"],
+            },
+        },
+    )
     outsider_conversation_id = outsider.post("/conversations", json={"title": "Outsider"}).json()[
         "id"
     ]
@@ -234,6 +244,7 @@ def test_selected_kb_chat_scope_filters_retrieval_and_metadata(monkeypatch) -> N
     assert invalid_empty.status_code == 422
     assert invalid_empty_ids.status_code == 422
     assert invalid_all.status_code == 422
+    assert nonexistent.status_code == 404
     assert unauthorized.status_code == 404
     assert nonexistent.status_code == 404
     assert selected_a_for_beta.status_code == 200
