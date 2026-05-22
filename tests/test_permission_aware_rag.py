@@ -375,9 +375,15 @@ def test_graph_expansion_adds_authorized_related_chunks(monkeypatch) -> None:  #
 
 
 def test_selected_kb_scope_applies_to_graph_expansion_and_fallback(monkeypatch) -> None:  # noqa: ANN001
-    fake_embeddings = SemanticFakeEmbeddingProvider()
-    monkeypatch.setattr(extraction_module, "get_embedding_provider", lambda: fake_embeddings)
-    monkeypatch.setattr(retrieval_module, "get_embedding_provider", lambda: fake_embeddings)
+    class KeywordOnlyEmbeddingProvider:
+        def embed_query(self, text: str) -> list[float]:  # noqa: ARG002
+            return []
+
+    monkeypatch.setattr(
+        retrieval_module,
+        "get_embedding_provider",
+        lambda: KeywordOnlyEmbeddingProvider(),
+    )
     graph = RagSpyGraph()
     client = _client(monkeypatch, graph)
     _signup_login(client, "selected-source-paths@example.com")
@@ -387,8 +393,8 @@ def test_selected_kb_scope_applies_to_graph_expansion_and_fallback(monkeypatch) 
         client,
         json={
             "title": "Selected Alpha Expansion",
-            "content": "Automobile retrieval matches LangGraph.\n\n"
-            "Pastry LangGraph related planner memory.",
+            "content": "SharedEntity retrieval matches AlphaScope.\n\n"
+            "SharedEntity related planner memory.",
             "knowledge_base_id": kb_a,
         },
     )
@@ -396,7 +402,7 @@ def test_selected_kb_scope_applies_to_graph_expansion_and_fallback(monkeypatch) 
         client,
         json={
             "title": "Selected Beta Fallback",
-            "content": "PastryScope confidential source.",
+            "content": "BetaScope fallback private biography.",
             "knowledge_base_id": kb_b,
         },
     )
