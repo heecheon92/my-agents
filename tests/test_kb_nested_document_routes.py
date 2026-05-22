@@ -254,9 +254,7 @@ def test_selected_kb_chat_scope_filters_retrieval_and_metadata(monkeypatch) -> N
         "knowledge_base_ids": [kb_a],
     }
     assert selected_a_payload["resolved_knowledge_base_count"] == 1
-    assert {citation["knowledge_base_id"] for citation in selected_a_payload["citations"]} == {
-        kb_a
-    }
+    assert {citation["knowledge_base_id"] for citation in selected_a_payload["citations"]} == {kb_a}
     assert {context["document_id"] for context in graph.calls[-2]["retrieved_context"]} == {
         doc_a.json()["id"]
     }
