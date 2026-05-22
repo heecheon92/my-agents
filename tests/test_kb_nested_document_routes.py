@@ -254,9 +254,7 @@ def test_selected_kb_chat_scope_filters_retrieval_and_metadata(monkeypatch) -> N
         "knowledge_base_ids": [kb_a],
     }
     assert selected_a_payload["resolved_knowledge_base_count"] == 1
-    assert {citation["knowledge_base_id"] for citation in selected_a_payload["citations"]} == {
-        kb_a
-    }
+    assert {citation["knowledge_base_id"] for citation in selected_a_payload["citations"]} == {kb_a}
     assert {context["document_id"] for context in graph.calls[-2]["retrieved_context"]} == {
         doc_a.json()["id"]
     }
@@ -293,8 +291,14 @@ def test_all_kb_chat_scope_searches_all_authorized_kbs(monkeypatch) -> None:  # 
         f"/knowledge-bases/{kb_b}/documents",
         json={"title": "All Beta", "content": "BetaAll fallback-only source."},
     )
-    assert client.post(f"/knowledge-bases/{kb_a}/documents/{doc_a.json()['id']}/ingest").status_code == 200
-    assert client.post(f"/knowledge-bases/{kb_b}/documents/{doc_b.json()['id']}/ingest").status_code == 200
+    assert (
+        client.post(f"/knowledge-bases/{kb_a}/documents/{doc_a.json()['id']}/ingest").status_code
+        == 200
+    )
+    assert (
+        client.post(f"/knowledge-bases/{kb_b}/documents/{doc_b.json()['id']}/ingest").status_code
+        == 200
+    )
     conversation_id = client.post("/conversations", json={"title": "All KB chat"}).json()["id"]
 
     response = client.post(
@@ -327,8 +331,14 @@ def test_stream_selected_kb_chat_scope_filters_retrieval_and_metadata(monkeypatc
         f"/knowledge-bases/{kb_b}/documents",
         json={"title": "Stream Beta", "content": "StreamBetaOnly selected B source."},
     )
-    assert client.post(f"/knowledge-bases/{kb_a}/documents/{doc_a.json()['id']}/ingest").status_code == 200
-    assert client.post(f"/knowledge-bases/{kb_b}/documents/{doc_b.json()['id']}/ingest").status_code == 200
+    assert (
+        client.post(f"/knowledge-bases/{kb_a}/documents/{doc_a.json()['id']}/ingest").status_code
+        == 200
+    )
+    assert (
+        client.post(f"/knowledge-bases/{kb_b}/documents/{doc_b.json()['id']}/ingest").status_code
+        == 200
+    )
     conversation_id = client.post("/conversations", json={"title": "Stream KB chat"}).json()["id"]
 
     with client.stream(
@@ -351,6 +361,6 @@ def test_stream_selected_kb_chat_scope_filters_retrieval_and_metadata(monkeypatc
     assert completed["resolved_knowledge_base_count"] == 1
     assert {citation["knowledge_base_id"] for citation in completed["citations"]} == {kb_b}
     assert graph.calls[-1]["retrieved_context"][0]["document_id"] == doc_b.json()["id"]
-    assert retrieval_event["data"]["knowledge_base_selection"] == completed[
-        "knowledge_base_selection"
-    ]
+    assert (
+        retrieval_event["data"]["knowledge_base_selection"] == completed["knowledge_base_selection"]
+    )

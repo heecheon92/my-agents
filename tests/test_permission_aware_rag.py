@@ -375,6 +375,9 @@ def test_graph_expansion_adds_authorized_related_chunks(monkeypatch) -> None:  #
 
 
 def test_selected_kb_scope_applies_to_graph_expansion_and_fallback(monkeypatch) -> None:  # noqa: ANN001
+    fake_embeddings = SemanticFakeEmbeddingProvider()
+    monkeypatch.setattr(extraction_module, "get_embedding_provider", lambda: fake_embeddings)
+    monkeypatch.setattr(retrieval_module, "get_embedding_provider", lambda: fake_embeddings)
     graph = RagSpyGraph()
     client = _client(monkeypatch, graph)
     _signup_login(client, "selected-source-paths@example.com")
@@ -384,8 +387,8 @@ def test_selected_kb_scope_applies_to_graph_expansion_and_fallback(monkeypatch) 
         client,
         json={
             "title": "Selected Alpha Expansion",
-            "content": "AlphaScope retrieval matches SharedEntity.\n\n"
-            "AlphaScope related planner memory.",
+            "content": "Automobile retrieval matches LangGraph.\n\n"
+            "Pastry LangGraph related planner memory.",
             "knowledge_base_id": kb_a,
         },
     )
@@ -393,7 +396,7 @@ def test_selected_kb_scope_applies_to_graph_expansion_and_fallback(monkeypatch) 
         client,
         json={
             "title": "Selected Beta Fallback",
-            "content": "BetaScope fallback resume memory.",
+            "content": "PastryScope confidential source.",
             "knowledge_base_id": kb_b,
         },
     )
@@ -406,24 +409,25 @@ def test_selected_kb_scope_applies_to_graph_expansion_and_fallback(monkeypatch) 
     expansion_response = client.post(
         f"/conversations/{conversation_id}/runs",
         json={
-            "message": "AlphaScope",
+            "message": "automobile",
             "knowledge_base_selection": {"mode": "selected", "knowledge_base_ids": [kb_a]},
         },
     )
     fallback_response = client.post(
         f"/conversations/{conversation_id}/runs",
         json={
-            "message": "Tell me about me from my uploaded resume.",
+            "message": "Tell me about my vehicle resume.",
             "knowledge_base_selection": {"mode": "selected", "knowledge_base_ids": [kb_b]},
         },
     )
 
     assert expansion_response.status_code == 200
     expansion_payload = expansion_response.json()
-    assert {citation["knowledge_base_id"] for citation in expansion_payload["citations"]} == {
-        kb_a
-    }
-    assert any("related planner memory" in citation["snippet"] for citation in expansion_payload["citations"])
+    assert {citation["knowledge_base_id"] for citation in expansion_payload["citations"]} == {kb_a}
+    assert any(
+        "related planner memory" in citation["snippet"]
+        for citation in expansion_payload["citations"]
+    )
     expansion_events = client.get(
         f"/conversations/{conversation_id}/runs/{expansion_payload['run_id']}/events"
     ).json()
