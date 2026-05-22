@@ -89,10 +89,26 @@ def _signup_login(client: TestClient, email: str) -> str:
     return signup.json()["user"]["id"]
 
 
-def _create_personal_knowledge_base(client: TestClient, name: str = "Test KB") -> str:
+def _create_knowledge_base(client: TestClient, name: str = "Test KB") -> str:
     response = client.post("/knowledge-bases", json={"name": name, "scope": "personal"})
     assert response.status_code == 201
     return response.json()["id"]
+
+
+def _with_knowledge_base(client: TestClient, payload: dict) -> dict:
+    if "knowledge_base_id" in payload:
+        return payload
+    return {**payload, "knowledge_base_id": _create_knowledge_base(client)}
+
+
+def _create_document(client: TestClient, *, json: dict):  # noqa: ANN201
+    return client.post("/documents", json=_with_knowledge_base(client, json))
+
+
+def _upload_document(client: TestClient, *, data: dict, files: dict):  # noqa: ANN201
+    upload_data = dict(data)
+    upload_data.setdefault("knowledge_base_id", _create_knowledge_base(client))
+    return client.post("/documents/upload", data=upload_data, files=files)
 
 
 def _text_pdf(*pages: str) -> bytes:
@@ -210,8 +226,8 @@ def test_personal_knowledge_base_document_ingestion_creates_extraction_artifacts
     assert kb.status_code == 201
     kb_id = kb.json()["id"]
 
-    document = client.post(
-        "/documents",
+    document = _create_document(
+        client,
         json={
             "title": "Agent Notes",
             "content": "OpenAI builds agents with LangGraph.\n\nLangGraph helps Heecheon Park.",
@@ -376,8 +392,8 @@ def test_ingestion_uses_configured_embedding_provider(monkeypatch) -> None:  # n
     _signup_login(client, "provider-ingest@example.com")
     kb_id = _create_personal_knowledge_base(client, "Provider KB")
 
-    document = client.post(
-        "/documents",
+    document = _create_document(
+        client,
         json={
             "title": "Provider Embeddings",
             "content": "First provider chunk.\n\nSecond provider chunk.",
@@ -405,8 +421,8 @@ def test_async_ingest_returns_queued_run_and_polling_completes(monkeypatch) -> N
     _signup_login(client, "async-ingest-owner@example.com")
     kb_id = _create_personal_knowledge_base(client, "Async KB")
 
-    document = client.post(
-        "/documents",
+    document = _create_document(
+        client,
         json={
             "title": "Async Notes",
             "content": "Async ingestion mentions LangGraph.\n\nSecond chunk mentions FastAPI.",
@@ -451,13 +467,9 @@ def test_async_ingest_persists_failed_status_with_safe_error(monkeypatch) -> Non
     _signup_login(client, "async-ingest-failure@example.com")
     kb_id = _create_personal_knowledge_base(client, "Async Failure KB")
 
-    document = client.post(
-        "/documents",
-        json={
-            "title": "Failed Async",
-            "content": "This run should fail embedding.",
-            "knowledge_base_id": kb_id,
-        },
+    document = _create_document(
+        client,
+        json={"title": "Failed Async", "content": "This run should fail embedding."},
     )
     assert document.status_code == 201
     document_id = document.json()["id"]
@@ -486,13 +498,9 @@ def test_async_ingest_start_and_poll_respect_document_permissions(monkeypatch) -
     _signup_login(outsider, "async-permission-outsider@example.com")
     kb_id = _create_personal_knowledge_base(owner, "Async Permission KB")
 
-    document = owner.post(
-        "/documents",
-        json={
-            "title": "Permission Async",
-            "content": "Reader can poll but not ingest.",
-            "knowledge_base_id": kb_id,
-        },
+    document = _create_document(
+        owner,
+        json={"title": "Permission Async", "content": "Reader can poll but not ingest."},
     )
     assert document.status_code == 201
     document_id = document.json()["id"]
@@ -535,13 +543,9 @@ def test_parallel_async_ingest_shared_entities_complete(monkeypatch, tmp_path) -
         ],
         start=1,
     ):
-        document = client.post(
-            "/documents",
-            json={
-                "title": f"Parallel Async {index}",
-                "content": content,
-                "knowledge_base_id": kb_id,
-            },
+        document = _create_document(
+            client,
+            json={"title": f"Parallel Async {index}", "content": content},
         )
         assert document.status_code == 201
         document_ids.append(document.json()["id"])
@@ -596,9 +600,9 @@ def test_pdf_upload_persists_metadata_and_ingests_page_provenance(monkeypatch) -
     _signup_login(client, "pdf-owner@example.com")
     kb_id = _create_personal_knowledge_base(client, "PDF KB")
 
-    document = client.post(
-        "/documents/upload",
-        data={"title": "Portfolio PDF", "knowledge_base_id": kb_id},
+    document = _upload_document(
+        client,
+        data={"title": "Portfolio PDF"},
         files={
             "file": (
                 "portfolio.pdf",
@@ -661,9 +665,9 @@ def test_text_upload_persists_metadata_and_ingests_for_retrieval(
     kb_id = _create_personal_knowledge_base(client, f"{source_type.title()} Upload KB")
 
     phrase = f"TextUpload {source_type} source says Heecheon Park uses LangGraph retrieval"
-    document = client.post(
-        "/documents/upload",
-        data={"title": f"{source_type.title()} Upload", "knowledge_base_id": kb_id},
+    document = _upload_document(
+        client,
+        data={"title": f"{source_type.title()} Upload"},
         files={
             "file": (
                 filename,
@@ -736,9 +740,9 @@ def test_pdf_upload_ingest_and_conversation_retrieval_pipeline(monkeypatch) -> N
     kb_id = _create_personal_knowledge_base(client, "PDF RAG KB")
 
     resume_phrase = "Heecheon Park builds FastAPI and LangGraph portfolio systems"
-    document = client.post(
-        "/documents/upload",
-        data={"title": "Resume PDF", "knowledge_base_id": kb_id},
+    document = _upload_document(
+        client,
+        data={"title": "Resume PDF"},
         files={
             "file": (
                 "resume.pdf",
@@ -775,9 +779,9 @@ def test_owner_can_delete_uploaded_pdf_and_cleanup_ingestion_artifacts(monkeypat
     reader_id = _signup_login(reader, "delete-pdf-reader@example.com")
     kb_id = _create_personal_knowledge_base(owner, "Delete PDF KB")
 
-    document = owner.post(
-        "/documents/upload",
-        data={"title": "Delete Me PDF", "knowledge_base_id": kb_id},
+    document = _upload_document(
+        owner,
+        data={"title": "Delete Me PDF"},
         files={
             "file": (
                 "delete-me.pdf",
@@ -875,13 +879,9 @@ def test_non_owner_cannot_delete_document_without_manage_authorization(monkeypat
     reader_id = _signup_login(reader, "delete-denied-reader@example.com")
     kb_id = _create_personal_knowledge_base(owner, "Delete Denied KB")
 
-    document = owner.post(
-        "/documents",
-        json={
-            "title": "Private delete guard",
-            "content": "reader can see but not delete",
-            "knowledge_base_id": kb_id,
-        },
+    document = _create_document(
+        owner,
+        json={"title": "Private delete guard", "content": "reader can see but not delete"},
     )
     assert document.status_code == 201
     document_id = document.json()["id"]
@@ -903,23 +903,23 @@ def test_upload_rejects_unsupported_or_unsafe_input(monkeypatch) -> None:  # noq
     _signup_login(client, "pdf-safety@example.com")
     kb_id = _create_personal_knowledge_base(client, "PDF Safety KB")
 
-    unsupported = client.post(
-        "/documents/upload",
-        data={"title": "Docx", "knowledge_base_id": kb_id},
+    unsupported = _upload_document(
+        client,
+        data={"title": "Docx"},
         files={"file": ("notes.docx", b"not supported", "text/plain")},
     )
     assert unsupported.status_code == 415
 
-    binary_text = client.post(
-        "/documents/upload",
-        data={"title": "Binary text", "knowledge_base_id": kb_id},
+    binary_text = _upload_document(
+        client,
+        data={"title": "Binary text"},
         files={"file": ("notes.txt", b"hello\x00not text", "text/plain")},
     )
     assert binary_text.status_code == 400
 
-    unsafe_name = client.post(
-        "/documents/upload",
-        data={"title": "Bad name", "knowledge_base_id": kb_id},
+    unsafe_name = _upload_document(
+        client,
+        data={"title": "Bad name"},
         files={"file": ("../bad.pdf", _text_pdf("Safe text"), "application/pdf")},
     )
     assert unsafe_name.status_code == 400

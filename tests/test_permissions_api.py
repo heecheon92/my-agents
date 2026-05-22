@@ -24,7 +24,7 @@ def _signup_login(client: TestClient, email: str) -> tuple[str, str]:
     return user_id, login.json()["csrf_token"]
 
 
-def _create_personal_knowledge_base(client: TestClient, name: str = "Test KB") -> str:
+def _create_personal_kb(client: TestClient, name: str = "Test KB") -> str:
     response = client.post("/knowledge-bases", json={"name": name, "scope": "personal"})
     assert response.status_code == 201
     return response.json()["id"]
@@ -51,7 +51,7 @@ def test_group_owner_can_add_member_and_group_viewer_can_read_document(monkeypat
     assert viewer.get(f"/groups/{group_id}").status_code == 200
     kb = owner.post(
         "/knowledge-bases",
-        json={"name": "Portfolio Team KB", "scope": "group", "group_id": group_id},
+        json={"name": "Group KB", "scope": "group", "group_id": group_id},
     )
     assert kb.status_code == 201
     kb_id = kb.json()["id"]
@@ -92,7 +92,11 @@ def test_document_owner_can_grant_explicit_user_read_permission(monkeypatch) -> 
 
     document = owner.post(
         "/documents",
-        json={"title": "Personal Note", "content": "private", "knowledge_base_id": kb_id},
+        json={
+            "title": "Personal Note",
+            "content": "private",
+            "knowledge_base_id": _create_personal_kb(owner),
+        },
     )
     assert document.status_code == 201
     document_id = document.json()["id"]

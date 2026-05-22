@@ -82,6 +82,18 @@ def _create_conversation(client: TestClient, title: str = "RAG") -> str:
     return response.json()["id"]
 
 
+def _create_knowledge_base(client: TestClient, name: str = "Test KB") -> str:
+    response = client.post("/knowledge-bases", json={"name": name, "scope": "personal"})
+    assert response.status_code == 201
+    return response.json()["id"]
+
+
+def _create_document(client: TestClient, *, json: dict):  # noqa: ANN201
+    payload = dict(json)
+    payload.setdefault("knowledge_base_id", _create_knowledge_base(client))
+    return client.post("/documents", json=payload)
+
+
 def test_chat_run_cites_only_authorized_personal_knowledge(monkeypatch) -> None:  # noqa: ANN001
     graph = RagSpyGraph()
     owner = _client(monkeypatch, graph)
@@ -91,8 +103,8 @@ def test_chat_run_cites_only_authorized_personal_knowledge(monkeypatch) -> None:
     kb_id = _create_personal_knowledge_base(owner, "RAG Owner KB")
 
     private_phrase = "Phoenix Retrieval Kernel"
-    document = owner.post(
-        "/documents",
+    document = _create_document(
+        owner,
         json={
             "title": "Private RAG Plan",
             "content": f"{private_phrase} uses LangGraph for authorized answers.",
@@ -142,8 +154,8 @@ def test_broad_resume_question_uses_recent_authorized_document(monkeypatch) -> N
     kb_id = _create_personal_knowledge_base(owner, "Resume KB")
 
     resume_phrase = "Heecheon Park builds FastAPI LangGraph portfolio systems"
-    document = owner.post(
-        "/documents",
+    document = _create_document(
+        owner,
         json={
             "title": "Resume 2026",
             "content": f"{resume_phrase} with permission-aware document retrieval.",
@@ -193,16 +205,16 @@ def test_semantic_vector_retrieval_after_permission_filtering(monkeypatch) -> No
     _signup_login(outsider, "semantic-outsider@example.com")
     kb_id = _create_personal_knowledge_base(owner, "Semantic KB")
 
-    vehicle_doc = owner.post(
-        "/documents",
+    vehicle_doc = _create_document(
+        owner,
         json={
             "title": "Vehicle Notes",
             "content": "Automobile maintenance schedule uses quarterly inspections.",
             "knowledge_base_id": kb_id,
         },
     )
-    pastry_doc = owner.post(
-        "/documents",
+    pastry_doc = _create_document(
+        owner,
         json={
             "title": "Pastry Notes",
             "content": "Pastry dough proofing depends on warm kitchen timing.",
@@ -261,8 +273,8 @@ def test_graph_expansion_adds_authorized_related_chunks(monkeypatch) -> None:  #
     _signup_login(client, "rag-expansion@example.com")
     kb_id = _create_personal_knowledge_base(client, "Expansion KB")
 
-    document = client.post(
-        "/documents",
+    document = _create_document(
+        client,
         json={
             "title": "LangGraph Expansion Notes",
             "content": "LangGraph retrieval matches AlphaQuery.\n\n"

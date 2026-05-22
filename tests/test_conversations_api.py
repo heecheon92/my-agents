@@ -104,10 +104,16 @@ def _signup_login(client: TestClient, email: str) -> str:
     return signup.json()["user"]["id"]
 
 
-def _create_personal_knowledge_base(client: TestClient, name: str = "Test KB") -> str:
+def _create_knowledge_base(client: TestClient, name: str = "Test KB") -> str:
     response = client.post("/knowledge-bases", json={"name": name, "scope": "personal"})
     assert response.status_code == 201
     return response.json()["id"]
+
+
+def _create_document(client: TestClient, *, json: dict):  # noqa: ANN201
+    payload = dict(json)
+    payload.setdefault("knowledge_base_id", _create_knowledge_base(client))
+    return client.post("/documents", json=payload)
 
 
 def test_conversation_run_uses_server_owned_history(monkeypatch) -> None:  # noqa: ANN001
@@ -182,9 +188,8 @@ def test_optional_retrieval_with_relevant_context_uses_mixed_mode(monkeypatch) -
     graph = SpyGraph()
     client = _client(monkeypatch, graph)
     _signup_login(client, "optional-mixed@example.com")
-    kb_id = _create_personal_knowledge_base(client, "Optional Mixed KB")
-    document = client.post(
-        "/documents",
+    document = _create_document(
+        client,
         json={
             "title": "Service Auth Notes",
             "content": "우리 서비스 인증 로직은 세션 쿠키와 CSRF 토큰으로 정리합니다.",
@@ -215,14 +220,7 @@ def test_ambiguous_document_scope_returns_clarification_without_graph(monkeypatc
     _signup_login(client, "clarify-docs@example.com")
     kb_id = _create_personal_knowledge_base(client, "Clarify Docs KB")
     for title in ("Doc A", "Doc B"):
-        response = client.post(
-            "/documents",
-            json={
-                "title": title,
-                "content": f"{title} content",
-                "knowledge_base_id": kb_id,
-            },
-        )
+        response = _create_document(client, json={"title": title, "content": f"{title} content"})
         assert response.status_code == 201
     conversation_id = client.post("/conversations", json={"title": "Clarify"}).json()["id"]
 

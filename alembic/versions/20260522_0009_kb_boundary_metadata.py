@@ -10,7 +10,6 @@ from __future__ import annotations
 import sqlalchemy as sa
 
 from alembic import op
-from alembic.runtime import migration
 
 revision = "20260522_0009"
 down_revision = "20260522_0008"
@@ -36,7 +35,7 @@ def upgrade() -> None:
             server_default="0",
         ),
     )
-    if migration.MigrationContext.get_current().as_sql:
+    if op.get_context().as_sql:
         op.alter_column(
             "documents",
             "knowledge_base_id",
@@ -53,7 +52,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    if migration.MigrationContext.get_current().as_sql:
+    if op.get_context().as_sql:
         op.alter_column(
             "documents",
             "knowledge_base_id",
