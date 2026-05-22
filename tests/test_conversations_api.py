@@ -422,6 +422,83 @@ def test_streaming_conversation_run_emits_events_and_persists_result(monkeypatch
     ]
 
 
+def test_streaming_selected_kb_run_uses_fallback_only_in_selected_scope(monkeypatch) -> None:  # noqa: ANN001
+    graph = SpyGraph()
+    client = _client(monkeypatch, graph)
+    _signup_login(client, "stream-selected-kb@example.com")
+    kb_a = _create_knowledge_base(client, "Stream Selected A")
+    kb_b = _create_knowledge_base(client, "Stream Selected B")
+    doc_a = _create_document(
+        client,
+        json={
+            "title": "Selected Stream Notes",
+            "content": "AlphaStreamOnly selected fallback boundary note.",
+            "knowledge_base_id": kb_a,
+        },
+    )
+    doc_b = _create_document(
+        client,
+        json={
+            "title": "Unselected Stream Notes",
+            "content": "BetaStreamOnly unselected fallback boundary note.",
+            "knowledge_base_id": kb_b,
+        },
+    )
+    assert doc_a.status_code == 201
+    assert doc_b.status_code == 201
+    assert client.post(f"/documents/{doc_a.json()['id']}/ingest").status_code == 200
+    assert client.post(f"/documents/{doc_b.json()['id']}/ingest").status_code == 200
+    conversation_id = client.post("/conversations", json={"title": "Selected stream"}).json()["id"]
+
+    with client.stream(
+        "POST",
+        f"/conversations/{conversation_id}/runs/stream",
+        json={
+            "message": "Tell me about my uploaded document.",
+            "knowledge_base_selection": {"mode": "selected", "knowledge_base_ids": [kb_a]},
+        },
+    ) as response:
+        assert response.status_code == 200
+        events = _parse_sse(response.read().decode())
+
+    events_by_name = {event["event"]: event["data"] for event in events}
+    selected_payload = {"mode": "selected", "knowledge_base_ids": [kb_a]}
+    retrieval_completed = events_by_name["retrieval_completed"]
+    graph_invoked = events_by_name["graph_invoked"]
+    answer_composed = events_by_name["answer_composed"]
+    completed = events_by_name["run_completed"]
+
+    assert retrieval_completed["knowledge_base_selection"] == selected_payload
+    assert retrieval_completed["resolved_knowledge_base_count"] == 1
+    assert retrieval_completed["fallback_count"] == 1
+    assert retrieval_completed["authorized_context_count"] == 1
+    assert graph_invoked["knowledge_base_selection"] == selected_payload
+    assert graph_invoked["retrieved_chunk_count"] == 1
+    assert answer_composed["knowledge_base_selection"] == selected_payload
+    assert answer_composed["citation_count"] == 1
+    assert completed["knowledge_base_selection"] == selected_payload
+    assert completed["resolved_knowledge_base_count"] == 1
+    assert {citation["knowledge_base_id"] for citation in completed["citations"]} == {kb_a}
+    assert "AlphaStreamOnly" in completed["reply"]
+    assert "BetaStreamOnly" not in completed["reply"]
+    assert {context["document_id"] for context in graph.calls[-1]["retrieved_context"]} == {
+        doc_a.json()["id"]
+    }
+    assert graph.calls[-1]["retrieved_context"][0]["source"] == "document_fallback"
+
+    detail = client.get(f"/conversations/{conversation_id}/runs/{completed['run_id']}")
+    run_events = client.get(f"/conversations/{conversation_id}/runs/{completed['run_id']}/events")
+
+    assert detail.status_code == 200
+    assert detail.json()["knowledge_base_selection"] == selected_payload
+    assert {citation["knowledge_base_id"] for citation in detail.json()["citations"]} == {kb_a}
+    persisted_payloads = {event["event_type"]: event["payload"] for event in run_events.json()}
+    assert persisted_payloads["retrieval_completed"]["knowledge_base_selection"] == selected_payload
+    assert persisted_payloads["retrieval_completed"]["fallback_count"] == 1
+    assert persisted_payloads["graph_invoked"]["knowledge_base_selection"] == selected_payload
+    assert persisted_payloads["answer_composed"]["knowledge_base_selection"] == selected_payload
+
+
 def test_streaming_conversation_run_emits_answer_deltas_before_completion(monkeypatch) -> None:  # noqa: ANN001
     graph = StreamingSpyGraph()
     client = _client(monkeypatch, graph)

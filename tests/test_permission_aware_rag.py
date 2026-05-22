@@ -250,65 +250,68 @@ def test_semantic_vector_retrieval_after_permission_filtering(monkeypatch) -> No
     assert graph.calls[-1]["retrieved_context"] == []
 
 
-def test_selected_kb_scope_applies_to_semantic_vector_retrieval(monkeypatch) -> None:  # noqa: ANN001
+def test_selected_kb_vector_retrieval_respects_scope(monkeypatch) -> None:  # noqa: ANN001
     fake_embeddings = SemanticFakeEmbeddingProvider()
     monkeypatch.setattr(extraction_module, "get_embedding_provider", lambda: fake_embeddings)
     monkeypatch.setattr(retrieval_module, "get_embedding_provider", lambda: fake_embeddings)
     graph = RagSpyGraph()
     client = _client(monkeypatch, graph)
     _signup_login(client, "semantic-selected@example.com")
-    vehicle_kb_id = _create_personal_knowledge_base(client, "Selected Vehicle KB")
-    pastry_kb_id = _create_personal_knowledge_base(client, "Selected Pastry KB")
+    vehicle_kb = _create_personal_knowledge_base(client, "Vehicle KB")
+    pastry_kb = _create_personal_knowledge_base(client, "Pastry KB")
 
     vehicle_doc = _create_document(
         client,
         json={
-            "title": "Selected Vehicle Notes",
-            "content": "Automobile selected-boundary maintenance schedule.",
-            "knowledge_base_id": vehicle_kb_id,
+            "title": "Vehicle Scope Notes",
+            "content": "Automobile maintenance schedule uses quarterly inspections.",
+            "knowledge_base_id": vehicle_kb,
         },
     )
     pastry_doc = _create_document(
         client,
         json={
-            "title": "Selected Pastry Notes",
-            "content": "Pastry selected-boundary proofing schedule.",
-            "knowledge_base_id": pastry_kb_id,
+            "title": "Pastry Scope Notes",
+            "content": "Pastry dough proofing depends on warm kitchen timing.",
+            "knowledge_base_id": pastry_kb,
         },
     )
     assert vehicle_doc.status_code == 201
     assert pastry_doc.status_code == 201
     assert client.post(f"/documents/{vehicle_doc.json()['id']}/ingest").status_code == 200
     assert client.post(f"/documents/{pastry_doc.json()['id']}/ingest").status_code == 200
-    conversation_id = _create_conversation(client, "Selected semantic scope")
+    conversation_id = _create_conversation(client, "Selected semantic")
 
-    selected_wrong_kb = client.post(
+    response = client.post(
         f"/conversations/{conversation_id}/runs",
         json={
-            "message": "What do cars need?",
+            "message": "What does my uploaded document say about cars?",
             "knowledge_base_selection": {
                 "mode": "selected",
-                "knowledge_base_ids": [pastry_kb_id],
-            },
-        },
-    )
-    selected_vehicle = client.post(
-        f"/conversations/{conversation_id}/runs",
-        json={
-            "message": "What do cars need?",
-            "knowledge_base_selection": {
-                "mode": "selected",
-                "knowledge_base_ids": [vehicle_kb_id],
+                "knowledge_base_ids": [vehicle_kb],
             },
         },
     )
 
-    assert selected_wrong_kb.status_code == 200
-    assert selected_wrong_kb.json()["citations"] == []
-    assert graph.calls[-2]["retrieved_context"] == []
-    assert selected_vehicle.status_code == 200
-    assert selected_vehicle.json()["citations"][0]["knowledge_base_id"] == vehicle_kb_id
-    assert graph.calls[-1]["retrieved_context"][0]["document_id"] == vehicle_doc.json()["id"]
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["knowledge_base_selection"] == {
+        "mode": "selected",
+        "knowledge_base_ids": [vehicle_kb],
+    }
+    assert payload["resolved_knowledge_base_count"] == 1
+    assert {citation["knowledge_base_id"] for citation in payload["citations"]} == {vehicle_kb}
+    assert {citation["document_id"] for citation in payload["citations"]} == {
+        vehicle_doc.json()["id"]
+    }
+    assert "Automobile maintenance" in payload["reply"]
+    assert "Pastry dough" not in payload["reply"]
+    assert {context["document_id"] for context in graph.calls[-1]["retrieved_context"]} == {
+        vehicle_doc.json()["id"]
+    }
+    assert {context["source"] for context in graph.calls[-1]["retrieved_context"]} == {
+        "semantic_vector"
+    }
 
 
 def test_postgres_vector_statement_filters_permissions_before_vector_ordering() -> None:
