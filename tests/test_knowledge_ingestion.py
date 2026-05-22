@@ -55,9 +55,26 @@ class FailingEmbeddingProvider:
         return [1.0, 0.0, 0.0]
 
 
+class SlowEmbeddingProvider(FakeEmbeddingProvider):
+    provider = "slow-fake"
+    model = "slow-fake-embedding-model"
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        sleep(0.05)
+        return super().embed_documents(texts)
+
+
 def _client(monkeypatch) -> TestClient:  # noqa: ANN001 - pytest monkeypatch fixture
     monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
     monkeypatch.setenv("MY_AGENTS_SESSION_COOKIE_SECURE", "false")
+    return TestClient(load_app())
+
+
+def _file_client(monkeypatch, tmp_path) -> TestClient:  # noqa: ANN001 - pytest fixtures
+    monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
+    monkeypatch.setenv("MY_AGENTS_SESSION_COOKIE_SECURE", "false")
+    monkeypatch.setenv("MY_AGENTS_DATABASE_URL", f"sqlite+pysqlite:///{tmp_path / 'app.db'}")
+    monkeypatch.setenv("MY_AGENTS_AUTO_CREATE_TABLES", "true")
     return TestClient(load_app())
 
 
@@ -351,6 +368,45 @@ def test_async_ingest_start_and_poll_respect_document_permissions(monkeypatch) -
     assert reader_poll.status_code == 200
     outsider_poll = outsider.get(f"/documents/{document_id}/extraction-runs/{run_id}")
     assert outsider_poll.status_code == 404
+
+
+def test_parallel_async_ingest_shared_entities_complete(monkeypatch, tmp_path) -> None:  # noqa: ANN001
+    monkeypatch.setattr(
+        extraction_module,
+        "get_embedding_provider",
+        lambda: SlowEmbeddingProvider(),
+    )
+    client = _file_client(monkeypatch, tmp_path)
+    _signup_login(client, "parallel-async-owner@example.com")
+
+    document_ids = []
+    for index, content in enumerate(
+        [
+            "Shared Alpha uses FastAPI. LangGraph helps Shared Alpha.",
+            "FastAPI helps Shared Alpha. Shared Alpha studies LangGraph.",
+            "LangGraph and FastAPI support Shared Alpha in portfolio demos.",
+        ],
+        start=1,
+    ):
+        document = client.post(
+            "/documents",
+            json={"title": f"Parallel Async {index}", "content": content},
+        )
+        assert document.status_code == 201
+        document_ids.append(document.json()["id"])
+
+    queued_runs = [
+        client.post(f"/documents/{document_id}/ingest/async") for document_id in document_ids
+    ]
+
+    assert [response.status_code for response in queued_runs] == [202, 202, 202]
+    completed_runs = [
+        _wait_for_run(client, document_id, response.json()["id"])
+        for document_id, response in zip(document_ids, queued_runs, strict=True)
+    ]
+
+    assert [run["status"] for run in completed_runs] == ["completed", "completed", "completed"]
+    assert all(run["entity_count"] >= 2 for run in completed_runs)
 
 
 def test_pdf_parser_tolerates_invalid_octal_like_literal_escape() -> None:

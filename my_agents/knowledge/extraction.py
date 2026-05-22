@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import json
 import re
+import uuid
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from sqlalchemy import select, update
+from sqlalchemy.dialects.postgresql import insert as postgresql_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 from my_agents.knowledge.embeddings import deterministic_embedding, get_embedding_provider
@@ -102,6 +106,10 @@ class KnowledgeExtractionService:
                 stage="entities",
                 percent=85,
             )
+            entity_names_by_chunk = [_extract_entity_names(content) for content, *_ in chunks]
+            entity_by_name = self._get_or_create_entities(
+                name for names in entity_names_by_chunk for name in names
+            )
             for ordinal, ((content, start, end, source_page), embedding) in enumerate(
                 zip(chunks, embeddings, strict=True)
             ):
@@ -120,8 +128,8 @@ class KnowledgeExtractionService:
                 if stores_sql_vector:
                     self._store_sql_embedding_vector(chunk_id=chunk.id, embedding=embedding)
                 chunk_entity_ids = []
-                for entity_name in _extract_entity_names(content):
-                    entity = self._get_or_create_entity(entity_name)
+                for entity_name in entity_names_by_chunk[ordinal]:
+                    entity = entity_by_name[entity_name]
                     entity_ids.add(entity.id)
                     chunk_entity_ids.append(entity.id)
                     self._db.add(
@@ -192,13 +200,41 @@ class KnowledgeExtractionService:
         self._db.refresh(run)
 
     def _get_or_create_entity(self, name: str) -> EntityModel:
+        """Create an entity safely when parallel ingestions share names."""
         entity = self._db.scalar(select(EntityModel).where(EntityModel.name == name))
         if entity is not None:
             return entity
+        if self._db.get_bind().dialect.name in {"postgresql", "sqlite"}:
+            self._insert_entity_if_missing(name)
+            entity = self._db.scalar(select(EntityModel).where(EntityModel.name == name))
+            if entity is not None:
+                return entity
         entity = EntityModel(name=name)
         self._db.add(entity)
         self._db.flush()
         return entity
+
+    def _get_or_create_entities(self, names: Iterable[str]) -> dict[str, EntityModel]:
+        """Create entities in a stable order to avoid unique-index lock cycles."""
+        unique_names = sorted(set(names), key=lambda value: (value.casefold(), value))
+        return {name: self._get_or_create_entity(name) for name in unique_names}
+
+    def _insert_entity_if_missing(self, name: str) -> None:
+        dialect = self._db.get_bind().dialect.name
+        values = {"id": str(uuid.uuid4()), "name": name}
+        if dialect == "postgresql":
+            statement = (
+                postgresql_insert(EntityModel)
+                .values(**values)
+                .on_conflict_do_nothing(index_elements=[EntityModel.name])
+            )
+        else:
+            statement = (
+                sqlite_insert(EntityModel)
+                .values(**values)
+                .on_conflict_do_nothing(index_elements=[EntityModel.name])
+            )
+        self._db.execute(statement)
 
     def _store_sql_embedding_vector(self, *, chunk_id: str, embedding: list[float]) -> None:
         embedding_vector = DocumentChunkModel.__table__.c.embedding_vector
