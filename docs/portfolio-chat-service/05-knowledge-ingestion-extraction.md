@@ -114,6 +114,12 @@ column after Alembic migrations so retrieval can use SQL vector search.
 
 This is a scaffold for portfolio-visible architecture, not a claim of production extraction quality.
 
+## Parallel ingestion concurrency lesson
+
+During multi-file UX testing against Postgres, a user uploaded and ingested three files concurrently and hit `psycopg.errors.DeadlockDetected`. The failure came from extraction, not retrieval: parallel runs extracted overlapping entity names and the older select-then-insert helper raced on the unique `entities.name` constraint.
+
+The ingestion service now pre-collects entity names for a run, inserts them in a stable sorted order, and uses dialect-aware conflict-safe inserts (`ON CONFLICT DO NOTHING` for Postgres/SQLite) before creating mentions and relationships. This preserves the frontend's parallel upload/ingestion goal while avoiding shared canonical-entity lock cycles. Regression coverage lives in `tests/test_knowledge_ingestion.py::test_parallel_async_ingest_shared_entities_complete`. A learner-focused incident note is in [`docs/learning/06-parallel-ingestion-postgres-deadlock.md`](../learning/06-parallel-ingestion-postgres-deadlock.md).
+
 ## Current limitations
 
 - PDF support is text-first through `pypdf`, with a legacy literal/FlateDecode stream fallback for simple PDFs;
@@ -142,10 +148,12 @@ Thin permission-aware RAG and graph expansion now live in the next learning note
 - a local skip-if-missing regression for the LangChain Academy LangGraph PDF that previously produced only boilerplate text;
 - ingestion creates chunks, entities, relationships, and extraction-run summaries;
 - async ingestion returns a queued run, supports direct polling, persists completed/failed progress, and respects document permissions;
+- parallel async ingestion of documents with shared entity names completes without select-then-insert entity deadlocks;
 - outsiders cannot create group KBs for groups they do not belong to.
 
 ## Revision history
 
+- 2026-05-22: Documented and fixed the Postgres parallel-ingestion entity deadlock lesson.
 - 2026-05-22: Added additive async ingestion progress endpoints and extraction-run status fields for multi-file upload UX.
 - 2026-05-21: Extended `/documents/upload` to accept Markdown and plain-text UTF-8 files while preserving PDF parsing and provenance.
 - 2026-05-21: Added pgvector chunk storage for Postgres retrieval acceleration while keeping JSON/SQLite fallback.

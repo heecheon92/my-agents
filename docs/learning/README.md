@@ -10,6 +10,7 @@ Start here:
 4. [FastAPI dependencies and Principal with React analogies](./04-fastapi-dependencies-and-principal-with-react-analogies.md)
 5. [Auth lifecycle: email verification and password reset tokens](./04-auth-lifecycle-email-verification-and-password-reset-tokens.md)
 6. [Resume RAG fallback after broad personal questions](./05-resume-rag-fallback-after-broad-personal-questions.md)
+7. [Parallel ingestion Postgres deadlock](./06-parallel-ingestion-postgres-deadlock.md)
 
 This directory is the owner's learning path archive. The root numbered notes are personal learning logs. Focused learning tracks can live in subfolders, such as [`agent-lab/`](./agent-lab/). Project architecture docs that are not primarily learning logs live outside this directory, for example [`docs/portfolio-chat-service/`](../portfolio-chat-service/).
 

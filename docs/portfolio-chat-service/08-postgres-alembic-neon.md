@@ -63,6 +63,14 @@ If you override the password with `MY_AGENTS_PGVECTOR_PASSWORD`, keep that value
 do not paste it into reports. After switching from SQLite to this local Postgres, re-ingest
 documents so the Postgres-only `embedding_vector` column is populated.
 
+## Parallel ingestion and unique entities
+
+A local Postgres/pgvector multi-file smoke uncovered a `DeadlockDetected` incident when three files were ingested concurrently. The extraction pipeline writes canonical entity rows to `entities.name`, which is unique. A select-then-insert pattern can race when concurrent transactions extract the same names and insert them in different orders.
+
+The current ingestion path keeps multi-file concurrency enabled by creating entity names in a deterministic sorted order and using dialect-aware conflict-safe inserts (`ON CONFLICT DO NOTHING`) before mentions/relationships are written. If future extraction adds more shared canonical tables, preserve the same rule: stable lock order plus conflict-safe writes.
+
+Regression: `tests/test_knowledge_ingestion.py::test_parallel_async_ingest_shared_entities_complete`. Learning note: [`docs/learning/06-parallel-ingestion-postgres-deadlock.md`](../learning/06-parallel-ingestion-postgres-deadlock.md).
+
 ## Verification
 
 The offline verification path is:
