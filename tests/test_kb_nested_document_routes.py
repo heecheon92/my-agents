@@ -182,6 +182,13 @@ def test_selected_kb_chat_scope_filters_retrieval_and_metadata(monkeypatch) -> N
         f"/conversations/{conversation_id}/runs",
         json={"message": "uploaded document", "knowledge_base_selection": {"mode": "selected"}},
     )
+    invalid_empty_ids = owner.post(
+        f"/conversations/{conversation_id}/runs",
+        json={
+            "message": "uploaded document",
+            "knowledge_base_selection": {"mode": "selected", "knowledge_base_ids": []},
+        },
+    )
     invalid_all = owner.post(
         f"/conversations/{conversation_id}/runs",
         json={
@@ -199,6 +206,23 @@ def test_selected_kb_chat_scope_filters_retrieval_and_metadata(monkeypatch) -> N
             "knowledge_base_selection": {"mode": "selected", "knowledge_base_ids": [kb_a]},
         },
     )
+    nonexistent = owner.post(
+        f"/conversations/{conversation_id}/runs",
+        json={
+            "message": "uploaded document",
+            "knowledge_base_selection": {
+                "mode": "selected",
+                "knowledge_base_ids": ["missing-kb-id"],
+            },
+        },
+    )
+    selected_a_for_beta = owner.post(
+        f"/conversations/{conversation_id}/runs",
+        json={
+            "message": "What does my uploaded document say about BetaOnly?",
+            "knowledge_base_selection": {"mode": "selected", "knowledge_base_ids": [kb_a]},
+        },
+    )
     selected_b = owner.post(
         f"/conversations/{conversation_id}/runs",
         json={
@@ -208,8 +232,23 @@ def test_selected_kb_chat_scope_filters_retrieval_and_metadata(monkeypatch) -> N
     )
 
     assert invalid_empty.status_code == 422
+    assert invalid_empty_ids.status_code == 422
     assert invalid_all.status_code == 422
     assert unauthorized.status_code == 404
+    assert nonexistent.status_code == 404
+    assert selected_a_for_beta.status_code == 200
+    selected_a_payload = selected_a_for_beta.json()
+    assert selected_a_payload["knowledge_base_selection"] == {
+        "mode": "selected",
+        "knowledge_base_ids": [kb_a],
+    }
+    assert selected_a_payload["resolved_knowledge_base_count"] == 1
+    assert {citation["knowledge_base_id"] for citation in selected_a_payload["citations"]} == {
+        kb_a
+    }
+    assert {context["document_id"] for context in graph.calls[-2]["retrieved_context"]} == {
+        doc_a.json()["id"]
+    }
     assert selected_b.status_code == 200
     payload = selected_b.json()
     assert payload["knowledge_base_selection"] == {
