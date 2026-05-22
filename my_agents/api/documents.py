@@ -92,18 +92,6 @@ def create_document_in_knowledge_base(
         knowledge_base_id=knowledge_base_id,
         user_id=principal.user_id,
     )
-
-
-def create_document_in_knowledge_base(
-    *,
-    knowledge_base_id: str,
-    request: DocumentCreateRequest,
-    principal: Principal,
-    db: Session,
-    settings: Settings,
-) -> DocumentResponse:
-    assert_guest_can_create_document(db, principal, settings)
-    group_id = resolve_kb_document_group_id(db, knowledge_base_id=knowledge_base_id, user_id=principal.user_id)
     document = DocumentModel(
         title=request.title.strip(),
         content=request.content,
