@@ -188,6 +188,7 @@ def test_optional_retrieval_with_relevant_context_uses_mixed_mode(monkeypatch) -
     graph = SpyGraph()
     client = _client(monkeypatch, graph)
     _signup_login(client, "optional-mixed@example.com")
+    kb_id = _create_knowledge_base(client, "Service Auth KB")
     document = _create_document(
         client,
         json={
@@ -218,9 +219,16 @@ def test_ambiguous_document_scope_returns_clarification_without_graph(monkeypatc
     graph = SpyGraph()
     client = _client(monkeypatch, graph)
     _signup_login(client, "clarify-docs@example.com")
-    kb_id = _create_personal_knowledge_base(client, "Clarify Docs KB")
+    kb_id = _create_knowledge_base(client, "Clarify Docs KB")
     for title in ("Doc A", "Doc B"):
-        response = _create_document(client, json={"title": title, "content": f"{title} content"})
+        response = _create_document(
+            client,
+            json={
+                "title": title,
+                "content": f"{title} content",
+                "knowledge_base_id": kb_id,
+            },
+        )
         assert response.status_code == 201
     conversation_id = client.post("/conversations", json={"title": "Clarify"}).json()["id"]
 

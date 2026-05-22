@@ -88,14 +88,14 @@ def test_document_owner_can_grant_explicit_user_read_permission(monkeypatch) -> 
     reader = _client(monkeypatch)
     _owner_id, _ = _signup_login(owner, "doc-owner@example.com")
     reader_id, _ = _signup_login(reader, "reader@example.com")
-    kb_id = _create_personal_knowledge_base(owner, "Permission KB")
+    kb_id = _create_personal_kb(owner, "Permission KB")
 
     document = owner.post(
         "/documents",
         json={
             "title": "Personal Note",
             "content": "private",
-            "knowledge_base_id": _create_personal_kb(owner),
+            "knowledge_base_id": kb_id,
         },
     )
     assert document.status_code == 201
