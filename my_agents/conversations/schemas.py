@@ -50,6 +50,12 @@ class ConversationRunRequest(BaseModel):
     knowledge_base_selection: KnowledgeBaseSelection = Field(default_factory=KnowledgeBaseSelection)
 
 
+class ConversationReplayRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    knowledge_base_selection: KnowledgeBaseSelection | None = None
+
+
 class ConversationRunResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

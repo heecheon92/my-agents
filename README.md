@@ -547,6 +547,7 @@ conversation run으로 이동하고 있습니다. 현재 conversation surface는
 - `GET /conversations/{conversation_id}`
 - `POST /conversations/{conversation_id}/messages`
 - `GET /conversations/{conversation_id}/messages`
+- `POST /conversations/{conversation_id}/messages/{message_id}/replay`
 - `POST /conversations/{conversation_id}/runs`
 - `POST /conversations/{conversation_id}/runs/stream`
 - `GET /conversations/{conversation_id}/runs`
@@ -572,6 +573,20 @@ KB 접근을 위한 제품용 chat surface가 되어서는 안 됩니다.
 프론트엔드는 `GET /conversations/{conversation_id}/messages`로 서버가 저장한 transcript를
 권한 확인 후 다시 읽고, `GET /conversations/{conversation_id}/runs`로 completed/failed/cancelled
 run history를 확인할 수 있습니다.
+
+`POST /conversations/{conversation_id}/messages/{message_id}/replay`는 기존 assistant message를
+linear transcript 안에서 다시 생성합니다. body는 생략하거나 `{}`를 보낼 수 있으며, 원래
+assistant message와 연결된 run이 있으면 그 run의 `knowledge_base_selection`을 보존합니다.
+원래 run을 찾을 수 없는 legacy/orphan message일 때만 optional
+`knowledge_base_selection` fallback을 사용하고, 없으면 일반 conversation run 기본값인
+`mode: "all"`을 사용합니다. V1 replay는 branch를 만들지 않습니다. 대상 assistant message와
+그 뒤의 message/run/event/citation을 삭제한 뒤, 대상 직전의 user turn을 prompt로 삼고 그 이전
+history를 함께 전달해 새 run을 생성합니다. 응답 shape는 `/runs`와 같은
+`ConversationRunResponse`입니다. 존재하지 않거나 권한 없는 conversation은 `404`
+`detail: "conversation not found"`, 존재하지 않거나 다른 conversation의 message는 `404`
+`detail: "message not found"`, user message replay는 `409`
+`detail: "message is not an assistant message"`, active run 중 replay는 `409`
+`detail: "conversation run already active"`입니다.
 
 명시적인 send-immediately steering은 `run_started`의 `run_id`로
 `POST /conversations/{conversation_id}/runs/{run_id}/cancel`을 호출하고, `run_cancelled` 또는

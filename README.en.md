@@ -549,6 +549,7 @@ runs. The current conversation surface includes:
 - `GET /conversations/{conversation_id}`
 - `POST /conversations/{conversation_id}/messages`
 - `GET /conversations/{conversation_id}/messages`
+- `POST /conversations/{conversation_id}/messages/{message_id}/replay`
 - `POST /conversations/{conversation_id}/runs`
 - `POST /conversations/{conversation_id}/runs/stream`
 - `GET /conversations/{conversation_id}/runs`
@@ -575,6 +576,20 @@ Frontend clients can read the stored transcript through
 `GET /conversations/{conversation_id}/messages` after the same conversation access check,
 and can inspect completed/failed/cancelled run history through
 `GET /conversations/{conversation_id}/runs`.
+
+`POST /conversations/{conversation_id}/messages/{message_id}/replay` regenerates an existing
+assistant message inside the linear transcript. The body may be omitted or `{}`. When the
+original assistant message has an associated run, the backend preserves that run's
+`knowledge_base_selection`; the optional request `knowledge_base_selection` is only a fallback
+for legacy/orphan assistant messages without an original run, and the normal run default
+`mode: "all"` is used when neither exists. V1 replay does not create branches. It deletes the
+target assistant message plus later messages/runs/events/citations, then creates a fresh run
+from the preceding user turn as the prompt with earlier messages as history. The response shape
+is the same `ConversationRunResponse` returned by `/runs`. Missing/foreign conversations return
+`404` with `detail: "conversation not found"`; missing/foreign messages return `404` with
+`detail: "message not found"`; replaying a user message returns `409` with
+`detail: "message is not an assistant message"`; replay during an active run returns `409` with
+`detail: "conversation run already active"`.
 
 For explicit send-immediately steering, call
 `POST /conversations/{conversation_id}/runs/{run_id}/cancel` using the `run_id` from

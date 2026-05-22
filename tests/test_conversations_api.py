@@ -6,11 +6,12 @@ import json
 from typing import Any
 
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from my_agents.api import create_app
 from my_agents.api.assistant import get_graph_runner
-from my_agents.conversations.models import AgentRunModel, RunStatus
+from my_agents.conversations.models import AgentEventModel, AgentRunModel, MessageModel, RunStatus
+from my_agents.knowledge.models import CitationModel
 from my_agents.knowledge.retrieval import RetrievalService
 from my_agents.persistence.database import get_database_session
 from my_agents.schemas import RouteDecision
@@ -350,6 +351,197 @@ def test_completed_conversation_run_detail_survives_refresh(monkeypatch) -> None
 
     assert detail.status_code == 200
     assert detail.json() == run_payload
+
+
+def test_assistant_message_replay_requires_auth_and_ownership(monkeypatch) -> None:  # noqa: ANN001
+    owner = _client(monkeypatch, SpyGraph())
+    outsider = _client(monkeypatch, SpyGraph())
+    _signup_login(owner, "replay-owner@example.com")
+    _signup_login(outsider, "replay-outsider@example.com")
+    conversation_id = owner.post("/conversations", json={"title": "Replay private"}).json()["id"]
+    run = owner.post(f"/conversations/{conversation_id}/runs", json={"message": "Private"})
+    assistant_message_id = _assistant_message_id(run.json()["run_id"])
+
+    anonymous = _client(monkeypatch, SpyGraph())
+    anonymous_response = anonymous.post(
+        f"/conversations/{conversation_id}/messages/{assistant_message_id}/replay"
+    )
+    outsider_response = outsider.post(
+        f"/conversations/{conversation_id}/messages/{assistant_message_id}/replay"
+    )
+
+    assert anonymous_response.status_code == 401
+    assert outsider_response.status_code == 404
+    assert "Private" not in outsider_response.text
+
+
+def test_assistant_message_replay_rejects_non_assistant_message(monkeypatch) -> None:  # noqa: ANN001
+    client = _client(monkeypatch, SpyGraph())
+    _signup_login(client, "replay-user-message@example.com")
+    conversation_id = client.post("/conversations", json={"title": "Replay user"}).json()["id"]
+    user_message = client.post(
+        f"/conversations/{conversation_id}/messages",
+        json={"content": "I am not assistant output"},
+    )
+
+    response = client.post(
+        f"/conversations/{conversation_id}/messages/{user_message.json()['id']}/replay"
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "message is not an assistant message"}
+
+
+def test_assistant_message_replay_hides_missing_or_foreign_message(monkeypatch) -> None:  # noqa: ANN001
+    owner = _client(monkeypatch, SpyGraph())
+    other = _client(monkeypatch, SpyGraph())
+    _signup_login(owner, "replay-notfound-owner@example.com")
+    _signup_login(other, "replay-notfound-other@example.com")
+    owner_conversation_id = owner.post("/conversations", json={"title": "Replay owner"}).json()[
+        "id"
+    ]
+    other_conversation_id = other.post("/conversations", json={"title": "Replay other"}).json()[
+        "id"
+    ]
+    other_run = other.post(f"/conversations/{other_conversation_id}/runs", json={"message": "Hi"})
+    foreign_message_id = _assistant_message_id(other_run.json()["run_id"])
+
+    missing = owner.post(f"/conversations/{owner_conversation_id}/messages/not-a-message/replay")
+    foreign = owner.post(
+        f"/conversations/{owner_conversation_id}/messages/{foreign_message_id}/replay"
+    )
+
+    assert missing.status_code == 404
+    assert missing.json() == {"detail": "message not found"}
+    assert foreign.status_code == 404
+    assert foreign.json() == {"detail": "message not found"}
+
+
+def test_assistant_message_replay_prunes_later_transcript_and_regenerates(monkeypatch) -> None:  # noqa: ANN001
+    graph = SpyGraph()
+    client = _client(monkeypatch, graph)
+    _signup_login(client, "replay-success@example.com")
+    conversation_id = client.post("/conversations", json={"title": "Replay success"}).json()["id"]
+    first = client.post(f"/conversations/{conversation_id}/runs", json={"message": "First"})
+    second = client.post(f"/conversations/{conversation_id}/runs", json={"message": "Second"})
+    first_run_id = first.json()["run_id"]
+    second_run_id = second.json()["run_id"]
+    first_assistant_id = _assistant_message_id(first_run_id)
+
+    response = client.post(f"/conversations/{conversation_id}/messages/{first_assistant_id}/replay")
+
+    assert response.status_code == 200
+    replay_payload = response.json()
+    assert replay_payload["run_id"] not in {first_run_id, second_run_id}
+    assert replay_payload["reply"] == "saw 1 messages"
+    assert [message.content for message in graph.calls[-1]["messages"]] == ["First"]
+
+    transcript = client.get(f"/conversations/{conversation_id}/messages")
+    runs = client.get(f"/conversations/{conversation_id}/runs")
+
+    assert [(message["role"], message["content"]) for message in transcript.json()] == [
+        ("user", "First"),
+        ("assistant", "saw 1 messages"),
+    ]
+    assert [run["run_id"] for run in runs.json()] == [replay_payload["run_id"]]
+    assert _row_count(AgentEventModel) == 5
+    assert _row_count(CitationModel) == 0
+
+
+def test_assistant_message_replay_preserves_original_kb_selection(monkeypatch) -> None:  # noqa: ANN001
+    graph = SpyGraph()
+    client = _client(monkeypatch, graph)
+    _signup_login(client, "replay-kb@example.com")
+    kb_a = _create_knowledge_base(client, "Replay Selected A")
+    kb_b = _create_knowledge_base(client, "Replay Selected B")
+    doc_a = _create_document(
+        client,
+        json={
+            "title": "Replay selected source",
+            "content": "ReplayAlphaOnly selected replay boundary note.",
+            "knowledge_base_id": kb_a,
+        },
+    )
+    doc_b = _create_document(
+        client,
+        json={
+            "title": "Replay unselected source",
+            "content": "ReplayBetaOnly unselected replay boundary note.",
+            "knowledge_base_id": kb_b,
+        },
+    )
+    assert client.post(f"/documents/{doc_a.json()['id']}/ingest").status_code == 200
+    assert client.post(f"/documents/{doc_b.json()['id']}/ingest").status_code == 200
+    conversation_id = client.post("/conversations", json={"title": "Replay KB"}).json()["id"]
+    original = client.post(
+        f"/conversations/{conversation_id}/runs",
+        json={
+            "message": "Tell me about my uploaded document.",
+            "knowledge_base_selection": {"mode": "selected", "knowledge_base_ids": [kb_a]},
+        },
+    )
+    assistant_message_id = _assistant_message_id(original.json()["run_id"])
+
+    replay = client.post(
+        f"/conversations/{conversation_id}/messages/{assistant_message_id}/replay",
+        json={"knowledge_base_selection": {"mode": "all", "knowledge_base_ids": []}},
+    )
+
+    assert replay.status_code == 200
+    payload = replay.json()
+    assert payload["knowledge_base_selection"] == {
+        "mode": "selected",
+        "knowledge_base_ids": [kb_a],
+    }
+    assert payload["resolved_knowledge_base_count"] == 1
+    assert {citation["knowledge_base_id"] for citation in payload["citations"]} == {kb_a}
+    assert "ReplayAlphaOnly" in payload["reply"]
+    assert "ReplayBetaOnly" not in payload["reply"]
+    assert {context["document_id"] for context in graph.calls[-1]["retrieved_context"]} == {
+        doc_a.json()["id"]
+    }
+
+
+def test_assistant_message_replay_uses_request_kb_selection_when_original_run_missing(
+    monkeypatch,
+) -> None:  # noqa: ANN001
+    graph = SpyGraph()
+    client = _client(monkeypatch, graph)
+    _signup_login(client, "replay-kb-fallback@example.com")
+    kb_id = _create_knowledge_base(client, "Replay explicit fallback")
+    document = _create_document(
+        client,
+        json={
+            "title": "Replay fallback source",
+            "content": "ReplayFallbackOnly explicit fallback boundary note.",
+            "knowledge_base_id": kb_id,
+        },
+    )
+    assert client.post(f"/documents/{document.json()['id']}/ingest").status_code == 200
+    conversation_id = client.post("/conversations", json={"title": "Replay fallback"}).json()["id"]
+    user_message = client.post(
+        f"/conversations/{conversation_id}/messages",
+        json={"content": "Tell me about my uploaded document."},
+    )
+    assert user_message.status_code == 201
+    assistant_message_id = _create_orphan_assistant_message(
+        conversation_id=conversation_id,
+        content="Old orphan answer",
+    )
+
+    replay = client.post(
+        f"/conversations/{conversation_id}/messages/{assistant_message_id}/replay",
+        json={"knowledge_base_selection": {"mode": "selected", "knowledge_base_ids": [kb_id]}},
+    )
+
+    assert replay.status_code == 200
+    payload = replay.json()
+    assert payload["knowledge_base_selection"] == {
+        "mode": "selected",
+        "knowledge_base_ids": [kb_id],
+    }
+    assert payload["citations"]
+    assert "ReplayFallbackOnly" in payload["reply"]
 
 
 def test_failed_conversation_run_detail_returns_conflict(monkeypatch) -> None:  # noqa: ANN001
@@ -729,6 +921,44 @@ def _create_running_run(*, conversation_id: str, user_id: str) -> str:
         db.commit()
         db.refresh(run)
         return run.id
+    finally:
+        session_generator.close()
+
+
+def _assistant_message_id(run_id: str) -> str:
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        run = db.get(AgentRunModel, run_id)
+        assert run is not None
+        assert run.assistant_message_id is not None
+        return run.assistant_message_id
+    finally:
+        session_generator.close()
+
+
+def _create_orphan_assistant_message(*, conversation_id: str, content: str) -> str:
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        message = MessageModel(
+            conversation_id=conversation_id,
+            role="assistant",
+            content=content,
+        )
+        db.add(message)
+        db.commit()
+        db.refresh(message)
+        return message.id
+    finally:
+        session_generator.close()
+
+
+def _row_count(model: type) -> int:
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        return db.scalar(select(func.count()).select_from(model)) or 0
     finally:
         session_generator.close()
 

@@ -8,10 +8,10 @@ from dataclasses import dataclass
 from time import perf_counter
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Body, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session
 
 from my_agents.agents.general_assistant.classifier import classify_messages
@@ -37,6 +37,7 @@ from my_agents.conversations.schemas import (
     AgentEventResponse,
     AgentRunSummaryResponse,
     ConversationCreateRequest,
+    ConversationReplayRequest,
     ConversationResponse,
     ConversationRunCancelResponse,
     ConversationRunRequest,
@@ -212,12 +213,122 @@ def run_conversation(
         message_content_length=len(request.message.strip()),
         selection_context=selection_context,
     )
-
     messages = _messages_for_conversation(db, conversation_id)
+    return _complete_sync_conversation_run(
+        db=db,
+        conversation_id=conversation_id,
+        user_id=principal.user_id,
+        prompt=request.message,
+        messages=messages,
+        run=run,
+        selection_context=selection_context,
+        graph_runner=graph_runner,
+    )
+
+
+@conversations_router.post(
+    "/{conversation_id}/messages/{message_id}/replay",
+    response_model=ConversationRunResponse,
+)
+def replay_assistant_message(
+    conversation_id: str,
+    message_id: str,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    db: Annotated[Session, Depends(get_database_session)],
+    graph_runner: Annotated[GraphRunner, Depends(get_graph_runner)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    request: Annotated[ConversationReplayRequest, Body(default_factory=ConversationReplayRequest)],
+) -> ConversationRunResponse:
+    """Regenerate an existing assistant message from the transcript prefix before it.
+
+    V1 keeps the transcript linear: the target assistant message and all later
+    messages, runs, events, and citations in the conversation are pruned before a
+    fresh run is created from the preceding user turn and earlier history.
+    """
+    assert_guest_can_send_prompt(db, principal, settings)
+    _get_authorized_conversation(db, conversation_id, principal.user_id)
+    _assert_no_active_run(db, conversation_id)
+    target_message = db.get(MessageModel, message_id)
+    if target_message is None or target_message.conversation_id != conversation_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="message not found")
+    if target_message.role != MessageRole.ASSISTANT.value:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="message is not an assistant message",
+        )
+
+    persisted_messages = _persisted_messages_for_conversation(db, conversation_id)
+    try:
+        target_index = next(
+            index for index, message in enumerate(persisted_messages) if message.id == message_id
+        )
+    except StopIteration as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="message not found"
+        ) from exc
+    prefix_messages = persisted_messages[:target_index]
+    preceding_user_message = _preceding_user_message(prefix_messages)
+    if preceding_user_message is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="assistant message has no preceding user prompt",
+        )
+
+    original_run = _run_for_assistant_message(db, conversation_id, message_id)
+    requested_selection = (
+        _run_knowledge_base_selection(original_run)
+        if original_run is not None
+        else request.knowledge_base_selection or KnowledgeBaseSelection()
+    )
+    selection_context = resolve_knowledge_base_selection(
+        db,
+        user_id=principal.user_id,
+        mode=requested_selection.mode,
+        knowledge_base_ids=requested_selection.knowledge_base_ids,
+    )
+    _prune_conversation_from_message(
+        db,
+        conversation_id=conversation_id,
+        target_message=target_message,
+        removed_messages=persisted_messages[target_index:],
+        original_run=original_run,
+    )
+    run = _start_run(
+        db=db,
+        conversation_id=conversation_id,
+        user_id=principal.user_id,
+        user_message_id=preceding_user_message.id,
+        message_content_length=len(preceding_user_message.content.strip()),
+        selection_context=selection_context,
+    )
+    messages = _base_messages_from_persisted(prefix_messages)
+    return _complete_sync_conversation_run(
+        db=db,
+        conversation_id=conversation_id,
+        user_id=principal.user_id,
+        prompt=preceding_user_message.content,
+        messages=messages,
+        run=run,
+        selection_context=selection_context,
+        graph_runner=graph_runner,
+    )
+
+
+def _complete_sync_conversation_run(
+    *,
+    db: Session,
+    conversation_id: str,
+    user_id: str,
+    prompt: str,
+    messages: list[BaseMessage],
+    run: AgentRunModel,
+    selection_context: KnowledgeBaseSelectionContext,
+    graph_runner: GraphRunner,
+) -> ConversationRunResponse:
     retrieval_context = _prepare_retrieval_context(
         db=db,
-        user_id=principal.user_id,
-        message=request.message,
+        user_id=user_id,
+        message=prompt,
         messages=messages,
         selection_context=selection_context,
     )
@@ -255,7 +366,7 @@ def run_conversation(
         )
     graph_input = _graph_input_for_run(
         messages=messages,
-        user_id=principal.user_id,
+        user_id=user_id,
         conversation_id=conversation_id,
         retrieval_context=retrieval_context,
     )
@@ -785,12 +896,21 @@ def _has_group_membership(db: Session, group_id: str, user_id: str) -> bool:
     )
 
 
+def _persisted_messages_for_conversation(db: Session, conversation_id: str) -> list[MessageModel]:
+    return list(
+        db.scalars(
+            select(MessageModel)
+            .where(MessageModel.conversation_id == conversation_id)
+            .order_by(MessageModel.created_at, MessageModel.id)
+        ).all()
+    )
+
+
 def _messages_for_conversation(db: Session, conversation_id: str) -> list[BaseMessage]:
-    persisted = db.scalars(
-        select(MessageModel)
-        .where(MessageModel.conversation_id == conversation_id)
-        .order_by(MessageModel.created_at, MessageModel.id)
-    ).all()
+    return _base_messages_from_persisted(_persisted_messages_for_conversation(db, conversation_id))
+
+
+def _base_messages_from_persisted(persisted: list[MessageModel]) -> list[BaseMessage]:
     messages: list[BaseMessage] = []
     for message in persisted:
         if message.role == MessageRole.ASSISTANT.value:
@@ -798,6 +918,69 @@ def _messages_for_conversation(db: Session, conversation_id: str) -> list[BaseMe
         else:
             messages.append(HumanMessage(content=message.content))
     return messages
+
+
+def _preceding_user_message(messages: list[MessageModel]) -> MessageModel | None:
+    for message in reversed(messages):
+        if message.role == MessageRole.USER.value:
+            return message
+    return None
+
+
+def _run_for_assistant_message(
+    db: Session, conversation_id: str, assistant_message_id: str
+) -> AgentRunModel | None:
+    return db.scalar(
+        select(AgentRunModel)
+        .where(
+            AgentRunModel.conversation_id == conversation_id,
+            AgentRunModel.assistant_message_id == assistant_message_id,
+        )
+        .order_by(AgentRunModel.created_at.desc(), AgentRunModel.id.desc())
+    )
+
+
+def _prune_conversation_from_message(
+    db: Session,
+    *,
+    conversation_id: str,
+    target_message: MessageModel,
+    removed_messages: list[MessageModel],
+    original_run: AgentRunModel | None,
+) -> None:
+    removed_message_ids = [message.id for message in removed_messages]
+    run_ids_to_prune = set(
+        db.scalars(
+            select(AgentRunModel.id).where(
+                AgentRunModel.conversation_id == conversation_id,
+                AgentRunModel.assistant_message_id.in_(removed_message_ids),
+            )
+        ).all()
+    )
+    if original_run is not None:
+        later_run_ids = db.scalars(
+            select(AgentRunModel.id).where(
+                AgentRunModel.conversation_id == conversation_id,
+                AgentRunModel.created_at >= original_run.created_at,
+            )
+        ).all()
+        run_ids_to_prune.update(later_run_ids)
+    else:
+        later_run_ids = db.scalars(
+            select(AgentRunModel.id).where(
+                AgentRunModel.conversation_id == conversation_id,
+                AgentRunModel.created_at >= target_message.created_at,
+            )
+        ).all()
+        run_ids_to_prune.update(later_run_ids)
+
+    if run_ids_to_prune:
+        db.execute(delete(CitationModel).where(CitationModel.run_id.in_(run_ids_to_prune)))
+        db.execute(delete(AgentEventModel).where(AgentEventModel.run_id.in_(run_ids_to_prune)))
+        db.execute(delete(AgentRunModel).where(AgentRunModel.id.in_(run_ids_to_prune)))
+    if removed_message_ids:
+        db.execute(delete(MessageModel).where(MessageModel.id.in_(removed_message_ids)))
+    db.commit()
 
 
 def _store_user_message(db: Session, conversation_id: str, message: str) -> MessageModel:
