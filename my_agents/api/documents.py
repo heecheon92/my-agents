@@ -85,8 +85,8 @@ async def upload_document(
         UploadFile,
         File(description="Supported file: text-based PDF, Markdown, or plain text."),
     ],
+    knowledge_base_id: Annotated[str, Form(min_length=1)],
     group_id: Annotated[str | None, Form()] = None,
-    knowledge_base_id: Annotated[str | None, Form()] = None,
 ) -> DocumentResponse:
     """Create a document from a safe upload and persist parser metadata."""
     assert_guest_can_create_document(db, principal, settings)

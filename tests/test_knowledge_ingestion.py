@@ -24,6 +24,7 @@ from my_agents.knowledge.models import (
     EntityMentionModel,
     EntityRelationshipModel,
     ExtractionRunModel,
+    KnowledgeBaseModel,
 )
 from my_agents.knowledge.pdf_uploads import PdfUploadError, parse_uploaded_pdf
 from my_agents.persistence.database import get_database_session
@@ -86,6 +87,12 @@ def _signup_login(client: TestClient, email: str) -> str:
     login = client.post("/auth/login", json={"email": email, "password": password})
     assert login.status_code == 200
     return signup.json()["user"]["id"]
+
+
+def _create_personal_knowledge_base(client: TestClient, name: str = "Test KB") -> str:
+    response = client.post("/knowledge-bases", json={"name": name, "scope": "personal"})
+    assert response.status_code == 201
+    return response.json()["id"]
 
 
 def _text_pdf(*pages: str) -> bytes:
