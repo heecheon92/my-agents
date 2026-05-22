@@ -24,6 +24,12 @@ def _signup_login(client: TestClient, email: str) -> tuple[str, str]:
     return user_id, login.json()["csrf_token"]
 
 
+def _create_personal_knowledge_base(client: TestClient, name: str = "Test KB") -> str:
+    response = client.post("/knowledge-bases", json={"name": name, "scope": "personal"})
+    assert response.status_code == 201
+    return response.json()["id"]
+
+
 def test_group_owner_can_add_member_and_group_viewer_can_read_document(monkeypatch) -> None:  # noqa: ANN001
     owner = _client(monkeypatch)
     viewer = _client(monkeypatch)
@@ -43,10 +49,21 @@ def test_group_owner_can_add_member_and_group_viewer_can_read_document(monkeypat
     )
     assert add_member.status_code == 204
     assert viewer.get(f"/groups/{group_id}").status_code == 200
+    kb = owner.post(
+        "/knowledge-bases",
+        json={"name": "Portfolio Team KB", "scope": "group", "group_id": group_id},
+    )
+    assert kb.status_code == 201
+    kb_id = kb.json()["id"]
 
     document = owner.post(
         "/documents",
-        json={"title": "Group Plan", "content": "shared", "group_id": group_id},
+        json={
+            "title": "Group Plan",
+            "content": "shared",
+            "group_id": group_id,
+            "knowledge_base_id": kb_id,
+        },
     )
     assert document.status_code == 201
     document_id = document.json()["id"]
@@ -56,7 +73,12 @@ def test_group_owner_can_add_member_and_group_viewer_can_read_document(monkeypat
 
     viewer_create = viewer.post(
         "/documents",
-        json={"title": "Viewer Write", "content": "no", "group_id": group_id},
+        json={
+            "title": "Viewer Write",
+            "content": "no",
+            "group_id": group_id,
+            "knowledge_base_id": kb_id,
+        },
     )
     assert viewer_create.status_code == 403
 
@@ -66,10 +88,11 @@ def test_document_owner_can_grant_explicit_user_read_permission(monkeypatch) -> 
     reader = _client(monkeypatch)
     _owner_id, _ = _signup_login(owner, "doc-owner@example.com")
     reader_id, _ = _signup_login(reader, "reader@example.com")
+    kb_id = _create_personal_knowledge_base(owner, "Permission KB")
 
     document = owner.post(
         "/documents",
-        json={"title": "Personal Note", "content": "private"},
+        json={"title": "Personal Note", "content": "private", "knowledge_base_id": kb_id},
     )
     assert document.status_code == 201
     document_id = document.json()["id"]

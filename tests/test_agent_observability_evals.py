@@ -52,14 +52,25 @@ def _signup_login(client: TestClient, email: str) -> str:
     return signup.json()["user"]["id"]
 
 
+def _create_personal_knowledge_base(client: TestClient, name: str = "Test KB") -> str:
+    response = client.post("/knowledge-bases", json={"name": name, "scope": "personal"})
+    assert response.status_code == 201
+    return response.json()["id"]
+
+
 def test_chat_run_events_are_ordered_structured_and_redacted(monkeypatch) -> None:  # noqa: ANN001
     graph = ObservabilitySpyGraph()
     client = _client(monkeypatch, graph)
     _signup_login(client, "events@example.com")
+    kb_id = _create_personal_knowledge_base(client, "Events KB")
     private_phrase = "Orion Agent Trace"
     document = client.post(
         "/documents",
-        json={"title": "Trace Notes", "content": f"{private_phrase} uses LangGraph events."},
+        json={
+            "title": "Trace Notes",
+            "content": f"{private_phrase} uses LangGraph events.",
+            "knowledge_base_id": kb_id,
+        },
     )
     assert document.status_code == 201
     assert client.post(f"/documents/{document.json()['id']}/ingest").status_code == 200
@@ -111,10 +122,15 @@ def test_eval_fixture_detects_permission_leakage(monkeypatch) -> None:  # noqa: 
     outsider = _client(monkeypatch, graph)
     _signup_login(owner, "eval-owner@example.com")
     _signup_login(outsider, "eval-outsider@example.com")
+    kb_id = _create_personal_knowledge_base(owner, "Eval KB")
     forbidden = "Velvet Private Strategy"
     document = owner.post(
         "/documents",
-        json={"title": "Private Eval", "content": f"{forbidden} belongs to the owner."},
+        json={
+            "title": "Private Eval",
+            "content": f"{forbidden} belongs to the owner.",
+            "knowledge_base_id": kb_id,
+        },
     )
     assert document.status_code == 201
     assert owner.post(f"/documents/{document.json()['id']}/ingest").status_code == 200
