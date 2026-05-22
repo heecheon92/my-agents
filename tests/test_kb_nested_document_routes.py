@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from fastapi.testclient import TestClient
@@ -60,6 +61,20 @@ def _document_rows(document_id: str) -> list[DocumentModel]:
         return db.scalars(select(DocumentModel).where(DocumentModel.id == document_id)).all()
     finally:
         session_generator.close()
+
+
+def _parse_sse(body: str) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    for raw_event in body.strip().split("\n\n"):
+        event_name = ""
+        data = ""
+        for line in raw_event.splitlines():
+            if line.startswith("event: "):
+                event_name = line.removeprefix("event: ")
+            if line.startswith("data: "):
+                data = line.removeprefix("data: ")
+        events.append({"event": event_name, "data": json.loads(data)})
+    return events
 
 
 def test_kb_nested_document_routes_enforce_no_null_writes_and_wrong_kb_404(monkeypatch) -> None:  # noqa: ANN001
@@ -212,3 +227,80 @@ def test_selected_kb_chat_scope_filters_retrieval_and_metadata(monkeypatch) -> N
         events.json()[0]["payload"]["knowledge_base_selection"]
         == payload["knowledge_base_selection"]
     )
+
+
+def test_all_kb_chat_scope_searches_all_authorized_kbs(monkeypatch) -> None:  # noqa: ANN001
+    graph = KbSpyGraph()
+    client = _client(monkeypatch, graph)
+    _signup_login(client, "kb-all-chat@example.com")
+    kb_a = _create_kb(client, "All KB A")
+    kb_b = _create_kb(client, "All KB B")
+    doc_a = client.post(
+        f"/knowledge-bases/{kb_a}/documents",
+        json={"title": "All Alpha", "content": "AlphaAll fallback-only source."},
+    )
+    doc_b = client.post(
+        f"/knowledge-bases/{kb_b}/documents",
+        json={"title": "All Beta", "content": "BetaAll fallback-only source."},
+    )
+    assert client.post(f"/knowledge-bases/{kb_a}/documents/{doc_a.json()['id']}/ingest").status_code == 200
+    assert client.post(f"/knowledge-bases/{kb_b}/documents/{doc_b.json()['id']}/ingest").status_code == 200
+    conversation_id = client.post("/conversations", json={"title": "All KB chat"}).json()["id"]
+
+    response = client.post(
+        f"/conversations/{conversation_id}/runs",
+        json={"message": "Summarize my uploaded document."},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["knowledge_base_selection"] == {"mode": "all", "knowledge_base_ids": []}
+    assert payload["resolved_knowledge_base_count"] == 2
+    assert {citation["knowledge_base_id"] for citation in payload["citations"]} == {kb_a, kb_b}
+    assert {context["document_id"] for context in graph.calls[-1]["retrieved_context"]} == {
+        doc_a.json()["id"],
+        doc_b.json()["id"],
+    }
+
+
+def test_stream_selected_kb_chat_scope_filters_retrieval_and_metadata(monkeypatch) -> None:  # noqa: ANN001
+    graph = KbSpyGraph()
+    client = _client(monkeypatch, graph)
+    _signup_login(client, "kb-stream-chat@example.com")
+    kb_a = _create_kb(client, "Stream KB A")
+    kb_b = _create_kb(client, "Stream KB B")
+    doc_a = client.post(
+        f"/knowledge-bases/{kb_a}/documents",
+        json={"title": "Stream Alpha", "content": "StreamAlphaOnly selected A source."},
+    )
+    doc_b = client.post(
+        f"/knowledge-bases/{kb_b}/documents",
+        json={"title": "Stream Beta", "content": "StreamBetaOnly selected B source."},
+    )
+    assert client.post(f"/knowledge-bases/{kb_a}/documents/{doc_a.json()['id']}/ingest").status_code == 200
+    assert client.post(f"/knowledge-bases/{kb_b}/documents/{doc_b.json()['id']}/ingest").status_code == 200
+    conversation_id = client.post("/conversations", json={"title": "Stream KB chat"}).json()["id"]
+
+    with client.stream(
+        "POST",
+        f"/conversations/{conversation_id}/runs/stream",
+        json={
+            "message": "What does my uploaded document say about StreamBetaOnly?",
+            "knowledge_base_selection": {"mode": "selected", "knowledge_base_ids": [kb_b]},
+        },
+    ) as response:
+        assert response.status_code == 200
+        events = _parse_sse(response.read().decode())
+
+    retrieval_event = next(event for event in events if event["event"] == "retrieval_completed")
+    completed = events[-1]["data"]
+    assert completed["knowledge_base_selection"] == {
+        "mode": "selected",
+        "knowledge_base_ids": [kb_b],
+    }
+    assert completed["resolved_knowledge_base_count"] == 1
+    assert {citation["knowledge_base_id"] for citation in completed["citations"]} == {kb_b}
+    assert graph.calls[-1]["retrieved_context"][0]["document_id"] == doc_b.json()["id"]
+    assert retrieval_event["data"]["knowledge_base_selection"] == completed[
+        "knowledge_base_selection"
+    ]
