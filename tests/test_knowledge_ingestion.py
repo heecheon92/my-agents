@@ -95,6 +95,10 @@ def _create_knowledge_base(client: TestClient, name: str = "Test KB") -> str:
     return response.json()["id"]
 
 
+def _create_personal_knowledge_base(client: TestClient, name: str = "Test KB") -> str:
+    return _create_knowledge_base(client, name)
+
+
 def _with_knowledge_base(client: TestClient, payload: dict) -> dict:
     if "knowledge_base_id" in payload:
         return payload
@@ -469,7 +473,11 @@ def test_async_ingest_persists_failed_status_with_safe_error(monkeypatch) -> Non
 
     document = _create_document(
         client,
-        json={"title": "Failed Async", "content": "This run should fail embedding."},
+        json={
+            "title": "Failed Async",
+            "content": "This run should fail embedding.",
+            "knowledge_base_id": kb_id,
+        },
     )
     assert document.status_code == 201
     document_id = document.json()["id"]
@@ -500,7 +508,11 @@ def test_async_ingest_start_and_poll_respect_document_permissions(monkeypatch) -
 
     document = _create_document(
         owner,
-        json={"title": "Permission Async", "content": "Reader can poll but not ingest."},
+        json={
+            "title": "Permission Async",
+            "content": "Reader can poll but not ingest.",
+            "knowledge_base_id": kb_id,
+        },
     )
     assert document.status_code == 201
     document_id = document.json()["id"]
@@ -545,7 +557,11 @@ def test_parallel_async_ingest_shared_entities_complete(monkeypatch, tmp_path) -
     ):
         document = _create_document(
             client,
-            json={"title": f"Parallel Async {index}", "content": content},
+            json={
+                "title": f"Parallel Async {index}",
+                "content": content,
+                "knowledge_base_id": kb_id,
+            },
         )
         assert document.status_code == 201
         document_ids.append(document.json()["id"])
@@ -602,7 +618,7 @@ def test_pdf_upload_persists_metadata_and_ingests_page_provenance(monkeypatch) -
 
     document = _upload_document(
         client,
-        data={"title": "Portfolio PDF"},
+        data={"title": "Portfolio PDF", "knowledge_base_id": kb_id},
         files={
             "file": (
                 "portfolio.pdf",
@@ -667,7 +683,7 @@ def test_text_upload_persists_metadata_and_ingests_for_retrieval(
     phrase = f"TextUpload {source_type} source says Heecheon Park uses LangGraph retrieval"
     document = _upload_document(
         client,
-        data={"title": f"{source_type.title()} Upload"},
+        data={"title": f"{source_type.title()} Upload", "knowledge_base_id": kb_id},
         files={
             "file": (
                 filename,
@@ -742,7 +758,7 @@ def test_pdf_upload_ingest_and_conversation_retrieval_pipeline(monkeypatch) -> N
     resume_phrase = "Heecheon Park builds FastAPI and LangGraph portfolio systems"
     document = _upload_document(
         client,
-        data={"title": "Resume PDF"},
+        data={"title": "Resume PDF", "knowledge_base_id": kb_id},
         files={
             "file": (
                 "resume.pdf",
@@ -781,7 +797,7 @@ def test_owner_can_delete_uploaded_pdf_and_cleanup_ingestion_artifacts(monkeypat
 
     document = _upload_document(
         owner,
-        data={"title": "Delete Me PDF"},
+        data={"title": "Delete Me PDF", "knowledge_base_id": kb_id},
         files={
             "file": (
                 "delete-me.pdf",
@@ -881,7 +897,11 @@ def test_non_owner_cannot_delete_document_without_manage_authorization(monkeypat
 
     document = _create_document(
         owner,
-        json={"title": "Private delete guard", "content": "reader can see but not delete"},
+        json={
+            "title": "Private delete guard",
+            "content": "reader can see but not delete",
+            "knowledge_base_id": kb_id,
+        },
     )
     assert document.status_code == 201
     document_id = document.json()["id"]
@@ -905,7 +925,7 @@ def test_upload_rejects_unsupported_or_unsafe_input(monkeypatch) -> None:  # noq
 
     unsupported = _upload_document(
         client,
-        data={"title": "Docx"},
+        data={"title": "Docx", "knowledge_base_id": kb_id},
         files={"file": ("notes.docx", b"not supported", "text/plain")},
     )
     assert unsupported.status_code == 415

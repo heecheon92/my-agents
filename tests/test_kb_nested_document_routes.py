@@ -174,8 +174,10 @@ def test_selected_kb_chat_scope_filters_retrieval_and_metadata(monkeypatch) -> N
             "knowledge_base_selection": {"mode": "all", "knowledge_base_ids": [kb_a]},
         },
     )
+    outsider_conversation = outsider.post("/conversations", json={"title": "Outsider"})
+    assert outsider_conversation.status_code == 201
     unauthorized = outsider.post(
-        f"/conversations/{outsider.post('/conversations', json={'title': 'Outsider'}).json()['id']}/runs",
+        f"/conversations/{outsider_conversation.json()['id']}/runs",
         json={
             "message": "uploaded document",
             "knowledge_base_selection": {"mode": "selected", "knowledge_base_ids": [kb_a]},
