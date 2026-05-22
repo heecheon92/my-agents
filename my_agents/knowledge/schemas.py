@@ -49,7 +49,7 @@ class DocumentCreateRequest(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     content: str = ""
     group_id: str | None = None
-    knowledge_base_id: str = Field(min_length=1)
+    knowledge_base_id: str | None = Field(default=None, min_length=1)
 
 
 class DocumentResponse(BaseModel):
