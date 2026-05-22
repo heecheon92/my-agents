@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from my_agents.knowledge.models import KnowledgeBaseScope
 
@@ -25,6 +26,21 @@ class KnowledgeBaseResponse(BaseModel):
     scope: KnowledgeBaseScope
     owner_user_id: str
     group_id: str | None
+
+
+class KnowledgeBaseSelection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    mode: Literal["all", "selected"] = "all"
+    knowledge_base_ids: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_selection_shape(self) -> "KnowledgeBaseSelection":
+        if self.mode == "selected" and not self.knowledge_base_ids:
+            raise ValueError("selected knowledge_base_ids must be non-empty")
+        if self.mode == "all" and self.knowledge_base_ids:
+            raise ValueError("all knowledge-base mode does not accept knowledge_base_ids")
+        return self
 
 
 class DocumentCreateRequest(BaseModel):
@@ -123,6 +139,7 @@ class CitationResponse(BaseModel):
 
     id: str
     document_id: str
+    knowledge_base_id: str | None = None
     chunk_id: str
     snippet: str
     source_page: int | None = None

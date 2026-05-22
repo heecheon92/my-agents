@@ -8,7 +8,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from my_agents.knowledge.routing import AnswerMode, DocumentScope, RetrievalRoute
-from my_agents.knowledge.schemas import CitationResponse
+from my_agents.knowledge.schemas import CitationResponse, KnowledgeBaseSelection
 from my_agents.schemas import RouteDecision
 
 
@@ -47,6 +47,9 @@ class ConversationRunRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     message: str = Field(min_length=1)
+    knowledge_base_selection: KnowledgeBaseSelection = Field(
+        default_factory=KnowledgeBaseSelection
+    )
 
 
 class ConversationRunResponse(BaseModel):
@@ -60,6 +63,8 @@ class ConversationRunResponse(BaseModel):
     retrieval_route: RetrievalRoute
     answer_mode: AnswerMode
     document_scope: DocumentScope
+    knowledge_base_selection: KnowledgeBaseSelection
+    resolved_knowledge_base_count: int = 0
     citations: list[CitationResponse] = Field(default_factory=list)
 
 
@@ -78,6 +83,8 @@ class AgentRunSummaryResponse(BaseModel):
     conversation_id: str
     status: str
     route_label: str | None
+    knowledge_base_selection: KnowledgeBaseSelection
+    resolved_knowledge_base_count: int = 0
     created_at: datetime
 
 
