@@ -12,7 +12,11 @@ from sqlalchemy.orm import Session
 from my_agents.auth.contracts import Principal
 from my_agents.auth.dependencies import get_current_principal
 from my_agents.auth.guest_limits import assert_guest_access_active, assert_guest_can_create_document
-from my_agents.groups.models import MembershipModel, MembershipRole
+from my_agents.groups.models import MembershipModel
+from my_agents.knowledge.auth import (
+    get_authorized_knowledge_base_or_404,
+    resolve_kb_document_group_id,
+)
 from my_agents.knowledge.extraction import KnowledgeExtractionService
 from my_agents.knowledge.models import (
     CitationModel,
@@ -23,7 +27,6 @@ from my_agents.knowledge.models import (
     EntityRelationshipModel,
     ExtractionRunModel,
     ExtractionStatus,
-    KnowledgeBaseModel,
 )
 from my_agents.knowledge.schemas import (
     DocumentCreateRequest,
@@ -52,20 +55,46 @@ def create_document(
     db: Annotated[Session, Depends(get_database_session)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> DocumentResponse:
-    assert_guest_can_create_document(db, principal, settings)
-    group_id = _resolve_document_group_id(
-        db=db,
-        requested_group_id=request.group_id,
+    if request.knowledge_base_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="knowledge_base_id is required",
+        )
+    if request.group_id is not None:
+        knowledge_base = get_authorized_knowledge_base_or_404(
+            db, request.knowledge_base_id, principal.user_id
+        )
+        if request.group_id != knowledge_base.group_id:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="group_id must match knowledge base group_id",
+            )
+    return create_document_in_knowledge_base(
         knowledge_base_id=request.knowledge_base_id,
-        user_id=principal.user_id,
+        request=request,
+        principal=principal,
+        db=db,
+        settings=settings,
     )
+
+
+def create_document_in_knowledge_base(
+    *,
+    knowledge_base_id: str,
+    request: DocumentCreateRequest,
+    principal: Principal,
+    db: Session,
+    settings: Settings,
+) -> DocumentResponse:
+    assert_guest_can_create_document(db, principal, settings)
+    group_id = resolve_kb_document_group_id(db, knowledge_base_id=knowledge_base_id, user_id=principal.user_id)
     document = DocumentModel(
         title=request.title.strip(),
         content=request.content,
         source_type="text",
         owner_user_id=principal.user_id,
         group_id=group_id,
-        knowledge_base_id=request.knowledge_base_id,
+        knowledge_base_id=knowledge_base_id,
     )
     db.add(document)
     db.commit()
@@ -89,12 +118,36 @@ async def upload_document(
     group_id: Annotated[str | None, Form()] = None,
 ) -> DocumentResponse:
     """Create a document from a safe upload and persist parser metadata."""
-    assert_guest_can_create_document(db, principal, settings)
-    resolved_group_id = _resolve_document_group_id(
-        db=db,
-        requested_group_id=group_id,
+    if group_id is not None:
+        knowledge_base = get_authorized_knowledge_base_or_404(db, knowledge_base_id, principal.user_id)
+        if group_id != knowledge_base.group_id:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="group_id must match knowledge base group_id",
+            )
+    return await upload_document_in_knowledge_base(
         knowledge_base_id=knowledge_base_id,
-        user_id=principal.user_id,
+        principal=principal,
+        db=db,
+        settings=settings,
+        title=title,
+        file=file,
+    )
+
+
+async def upload_document_in_knowledge_base(
+    *,
+    knowledge_base_id: str,
+    principal: Principal,
+    db: Session,
+    settings: Settings,
+    title: str,
+    file: UploadFile,
+) -> DocumentResponse:
+    """Create an uploaded document inside an already path-selected KB."""
+    assert_guest_can_create_document(db, principal, settings)
+    resolved_group_id = resolve_kb_document_group_id(
+        db, knowledge_base_id=knowledge_base_id, user_id=principal.user_id
     )
     content = await file.read()
     try:
@@ -151,6 +204,23 @@ def list_documents(
         )
     ).all()
     return [_document_response(document) for document in docs]
+
+
+def list_documents_in_knowledge_base(
+    *, db: Session, knowledge_base_id: str, principal: Principal
+) -> list[DocumentResponse]:
+    """Return documents in an authorized KB boundary."""
+    assert_guest_access_active(db, principal)
+    get_authorized_knowledge_base_or_404(db, knowledge_base_id, principal.user_id)
+    documents = db.scalars(
+        select(DocumentModel).where(DocumentModel.knowledge_base_id == knowledge_base_id)
+    ).all()
+    auth = AuthorizationService(db)
+    return [
+        _document_response(document)
+        for document in documents
+        if auth.can(user_id=principal.user_id, document=document, operation=DocumentOperation.READ)
+    ]
 
 
 @documents_router.get("/{document_id}", response_model=DocumentResponse)
@@ -256,6 +326,33 @@ def ingest_document(
     )
 
 
+def ingest_document_in_knowledge_base(
+    *, knowledge_base_id: str, document_id: str, principal: Principal, db: Session
+) -> ExtractionRunResponse:
+    """Synchronously ingest a document after enforcing its KB path boundary."""
+    assert_guest_access_active(db, principal)
+    document = get_document_in_knowledge_base_or_404(
+        db=db,
+        knowledge_base_id=knowledge_base_id,
+        document_id=document_id,
+        user_id=principal.user_id,
+    )
+    if not AuthorizationService(db).can(
+        user_id=principal.user_id,
+        document=document,
+        operation=DocumentOperation.INGEST,
+    ):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="not allowed")
+    summary = KnowledgeExtractionService(db).ingest_document(document)
+    return _extraction_run_response(
+        db,
+        summary.run,
+        chunk_count=summary.chunk_count,
+        entity_count=summary.entity_count,
+        relationship_count=summary.relationship_count,
+    )
+
+
 @documents_router.post(
     "/{document_id}/ingest/async",
     response_model=ExtractionRunResponse,
@@ -270,6 +367,40 @@ def ingest_document_async(
     """Queue an in-process background extraction run for an authorized document."""
     assert_guest_access_active(db, principal)
     document = _get_document_or_404(db, document_id)
+    if not AuthorizationService(db).can(
+        user_id=principal.user_id,
+        document=document,
+        operation=DocumentOperation.INGEST,
+    ):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="not allowed")
+
+    run = KnowledgeExtractionService(db).create_extraction_run(document_id=document.id)
+    response = _extraction_run_response(db, run)
+    Thread(
+        target=_execute_ingestion_run_in_background,
+        args=(settings.database_url, run.id),
+        daemon=True,
+        name=f"document-ingest-{run.id}",
+    ).start()
+    return response
+
+
+def ingest_document_async_in_knowledge_base(
+    *,
+    knowledge_base_id: str,
+    document_id: str,
+    principal: Principal,
+    db: Session,
+    settings: Settings,
+) -> ExtractionRunResponse:
+    """Queue ingestion after enforcing the document's KB path boundary."""
+    assert_guest_access_active(db, principal)
+    document = get_document_in_knowledge_base_or_404(
+        db=db,
+        knowledge_base_id=knowledge_base_id,
+        document_id=document_id,
+        user_id=principal.user_id,
+    )
     if not AuthorizationService(db).can(
         user_id=principal.user_id,
         document=document,
@@ -316,6 +447,32 @@ def get_extraction_run(
     return _extraction_run_response(db, run)
 
 
+def get_extraction_run_in_knowledge_base(
+    *, knowledge_base_id: str, document_id: str, run_id: str, principal: Principal, db: Session
+) -> ExtractionRunResponse:
+    """Return one extraction run after enforcing its document KB path boundary."""
+    assert_guest_access_active(db, principal)
+    document = get_document_in_knowledge_base_or_404(
+        db=db,
+        knowledge_base_id=knowledge_base_id,
+        document_id=document_id,
+        user_id=principal.user_id,
+    )
+    if not AuthorizationService(db).can(
+        user_id=principal.user_id,
+        document=document,
+        operation=DocumentOperation.READ,
+    ):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="document not found")
+    run = db.get(ExtractionRunModel, run_id)
+    if run is None or run.document_id != document_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="extraction run not found",
+        )
+    return _extraction_run_response(db, run)
+
+
 @documents_router.get("/{document_id}/extraction-runs", response_model=list[ExtractionRunResponse])
 def list_extraction_runs(
     document_id: str,
@@ -340,6 +497,29 @@ def list_extraction_runs(
     return responses
 
 
+def list_extraction_runs_in_knowledge_base(
+    *, knowledge_base_id: str, document_id: str, principal: Principal, db: Session
+) -> list[ExtractionRunResponse]:
+    """Return extraction runs after enforcing the document KB path boundary."""
+    assert_guest_access_active(db, principal)
+    document = get_document_in_knowledge_base_or_404(
+        db=db,
+        knowledge_base_id=knowledge_base_id,
+        document_id=document_id,
+        user_id=principal.user_id,
+    )
+    if not AuthorizationService(db).can(
+        user_id=principal.user_id,
+        document=document,
+        operation=DocumentOperation.READ,
+    ):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="document not found")
+    runs = db.scalars(
+        select(ExtractionRunModel).where(ExtractionRunModel.document_id == document_id)
+    ).all()
+    return [_extraction_run_response(db, run) for run in runs]
+
+
 def _execute_ingestion_run_in_background(database_url: str, run_id: str) -> None:
     """Execute a queued run with a fresh session instead of the request session."""
     session_factory = _sessionmaker_for_url(database_url)
@@ -361,63 +541,20 @@ def _execute_ingestion_run_in_background(database_url: str, run_id: str) -> None
             return
 
 
-def _require_group_write_access(db: Session, group_id: str, user_id: str) -> None:
-    membership = db.scalar(
-        select(MembershipModel).where(
-            MembershipModel.group_id == group_id,
-            MembershipModel.user_id == user_id,
-        )
-    )
-    if membership is None or membership.role not in {
-        MembershipRole.OWNER.value,
-        MembershipRole.ADMIN.value,
-        MembershipRole.EDITOR.value,
-    }:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="not allowed")
-
-
-def _resolve_document_group_id(
-    *,
-    db: Session,
-    requested_group_id: str | None,
-    knowledge_base_id: str | None,
-    user_id: str,
-) -> str | None:
-    group_id = requested_group_id
-    if knowledge_base_id is not None:
-        knowledge_base = _get_authorized_knowledge_base(db, knowledge_base_id, user_id)
-        group_id = knowledge_base.group_id
-    if group_id is not None:
-        _require_group_write_access(db, group_id, user_id)
-    return group_id
-
-
-def _get_authorized_knowledge_base(
-    db: Session, knowledge_base_id: str, user_id: str
-) -> KnowledgeBaseModel:
-    knowledge_base = db.get(KnowledgeBaseModel, knowledge_base_id)
-    if knowledge_base is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="knowledge base not found",
-        )
-    if knowledge_base.owner_user_id == user_id:
-        return knowledge_base
-    if knowledge_base.group_id is not None:
-        membership = db.scalar(
-            select(MembershipModel).where(
-                MembershipModel.group_id == knowledge_base.group_id,
-                MembershipModel.user_id == user_id,
-            )
-        )
-        if membership is not None:
-            return knowledge_base
-    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="knowledge base not found")
-
-
 def _get_document_or_404(db: Session, document_id: str) -> DocumentModel:
     document = db.get(DocumentModel, document_id)
     if document is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="document not found")
+    return document
+
+
+def get_document_in_knowledge_base_or_404(
+    *, db: Session, knowledge_base_id: str, document_id: str, user_id: str
+) -> DocumentModel:
+    """Return an authorized document only when it belongs to the path KB."""
+    get_authorized_knowledge_base_or_404(db, knowledge_base_id, user_id)
+    document = _get_document_or_404(db, document_id)
+    if document.knowledge_base_id != knowledge_base_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="document not found")
     return document
 

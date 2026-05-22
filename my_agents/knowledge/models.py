@@ -80,8 +80,8 @@ class DocumentModel(Base):
     parser_name: Mapped[str | None] = mapped_column(String(80), nullable=True)
     owner_user_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     group_id: Mapped[str | None] = mapped_column(ForeignKey("groups.id"), nullable=True, index=True)
-    knowledge_base_id: Mapped[str | None] = mapped_column(
-        ForeignKey("knowledge_bases.id"), nullable=True, index=True
+    knowledge_base_id: Mapped[str] = mapped_column(
+        ForeignKey("knowledge_bases.id"), nullable=False, index=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
