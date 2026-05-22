@@ -7,7 +7,9 @@ import math
 import re
 from dataclasses import dataclass
 
-from sqlalchemy import desc, func, or_, select
+from collections.abc import Sequence
+
+from sqlalchemy import and_, desc, false, func, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -39,50 +41,85 @@ class RetrievalService:
         self._embedding_provider = embedding_provider or get_embedding_provider()
 
     def retrieve(self, *, user_id: str, query: str, limit: int = 5) -> list[RetrievedChunk]:
+        return self.retrieve_scoped(user_id=user_id, query=query, limit=limit)
+
+    def retrieve_scoped(
+        self,
+        *,
+        user_id: str,
+        query: str,
+        limit: int = 5,
+        knowledge_base_ids: Sequence[str] | None = None,
+    ) -> list[RetrievedChunk]:
         terms = _query_terms(query)
-        direct = self._direct_authorized_matches(user_id=user_id, query=query, terms=terms)
-        expanded = self._expand_authorized_related(user_id=user_id, direct=direct)
+        direct = self._direct_authorized_matches(
+            user_id=user_id,
+            query=query,
+            terms=terms,
+            knowledge_base_ids=knowledge_base_ids,
+        )
+        expanded = self._expand_authorized_related(
+            user_id=user_id,
+            direct=direct,
+            knowledge_base_ids=knowledge_base_ids,
+        )
         combined: dict[str, RetrievedChunk] = {item.chunk.id: item for item in direct}
         for item in expanded:
             combined.setdefault(item.chunk.id, item)
         if not combined and _needs_personal_document_fallback(query):
-            return self._recent_authorized_chunks(user_id=user_id, limit=limit)
+            return self._recent_authorized_chunks(
+                user_id=user_id, limit=limit, knowledge_base_ids=knowledge_base_ids
+            )
         return sorted(combined.values(), key=lambda item: (-item.score, item.chunk.ordinal))[:limit]
 
-    def authorized_document_count(self, *, user_id: str) -> int:
+    def authorized_document_count(
+        self, *, user_id: str, knowledge_base_ids: Sequence[str] | None = None
+    ) -> int:
         """Return how many distinct documents the user can read."""
         return (
             self._db.scalar(
                 select(func.count(DocumentModel.id.distinct())).where(
-                    _authorized_document_filter(user_id)
+                    _authorized_document_filter(user_id, knowledge_base_ids=knowledge_base_ids)
                 )
             )
             or 0
         )
 
     def _direct_authorized_matches(
-        self, *, user_id: str, query: str, terms: set[str]
+        self,
+        *,
+        user_id: str,
+        query: str,
+        terms: set[str],
+        knowledge_base_ids: Sequence[str] | None,
     ) -> list[RetrievedChunk]:
         query_embedding = self._embedding_provider.embed_query(query)
         if _uses_postgres(self._db):
             sql_matches = self._postgres_vector_authorized_matches(
-                user_id=user_id,
-                query_embedding=query_embedding,
-                terms=terms,
-                limit=20,
-            )
+                    user_id=user_id,
+                    query_embedding=query_embedding,
+                    terms=terms,
+                    knowledge_base_ids=knowledge_base_ids,
+                    limit=20,
+                )
             if sql_matches:
                 return sql_matches
         return self._json_authorized_matches(
             user_id=user_id,
             query_embedding=query_embedding,
             terms=terms,
+            knowledge_base_ids=knowledge_base_ids,
         )
 
     def _json_authorized_matches(
-        self, *, user_id: str, query_embedding: list[float], terms: set[str]
+        self,
+        *,
+        user_id: str,
+        query_embedding: list[float],
+        terms: set[str],
+        knowledge_base_ids: Sequence[str] | None,
     ) -> list[RetrievedChunk]:
-        rows = self._authorized_chunk_rows(user_id)
+        rows = self._authorized_chunk_rows(user_id, knowledge_base_ids=knowledge_base_ids)
         if not rows:
             return []
         matches: list[RetrievedChunk] = []
@@ -124,6 +161,7 @@ class RetrievalService:
         user_id: str,
         query_embedding: list[float],
         terms: set[str],
+        knowledge_base_ids: Sequence[str] | None,
         limit: int,
     ) -> list[RetrievedChunk]:
         if not query_embedding:
@@ -133,6 +171,7 @@ class RetrievalService:
                 _postgres_vector_authorized_statement(
                     user_id=user_id,
                     query_embedding=query_embedding,
+                    knowledge_base_ids=knowledge_base_ids,
                     limit=limit,
                 )
             ).all()
@@ -165,7 +204,11 @@ class RetrievalService:
         return sorted(matches, key=lambda item: (-item.score, item.chunk.ordinal))
 
     def _expand_authorized_related(
-        self, *, user_id: str, direct: list[RetrievedChunk]
+        self,
+        *,
+        user_id: str,
+        direct: list[RetrievedChunk],
+        knowledge_base_ids: Sequence[str] | None,
     ) -> list[RetrievedChunk]:
         if not direct:
             return []
@@ -178,7 +221,9 @@ class RetrievalService:
         }
         if not entity_ids:
             return []
-        authorized_rows = self._authorized_chunk_rows(user_id)
+        authorized_rows = self._authorized_chunk_rows(
+            user_id, knowledge_base_ids=knowledge_base_ids
+        )
         expanded: list[RetrievedChunk] = []
         direct_chunk_ids = {item.chunk.id for item in direct}
         for chunk, document in authorized_rows:
@@ -198,7 +243,9 @@ class RetrievalService:
                 )
         return expanded
 
-    def _recent_authorized_chunks(self, *, user_id: str, limit: int) -> list[RetrievedChunk]:
+    def _recent_authorized_chunks(
+        self, *, user_id: str, limit: int, knowledge_base_ids: Sequence[str] | None
+    ) -> list[RetrievedChunk]:
         return [
             RetrievedChunk(
                 chunk=chunk,
@@ -206,23 +253,29 @@ class RetrievalService:
                 score=0.1,
                 source="document_fallback",
             )
-            for chunk, document in self._authorized_chunk_rows(user_id)[:limit]
+            for chunk, document in self._authorized_chunk_rows(
+                user_id, knowledge_base_ids=knowledge_base_ids
+            )[:limit]
         ]
 
     def _authorized_chunk_rows(
-        self, user_id: str
+        self, user_id: str, *, knowledge_base_ids: Sequence[str] | None
     ) -> list[tuple[DocumentChunkModel, DocumentModel]]:
         statement = (
             select(DocumentChunkModel, DocumentModel)
             .join(DocumentModel, DocumentChunkModel.document_id == DocumentModel.id)
-            .where(_authorized_document_filter(user_id))
+            .where(_authorized_document_filter(user_id, knowledge_base_ids=knowledge_base_ids))
             .order_by(desc(DocumentModel.created_at), DocumentChunkModel.ordinal)
         )
         return list(self._db.execute(statement).all())
 
 
 def _postgres_vector_authorized_statement(
-    *, user_id: str, query_embedding: list[float], limit: int
+    *,
+    user_id: str,
+    query_embedding: list[float],
+    limit: int,
+    knowledge_base_ids: Sequence[str] | None = None,
 ):
     embedding_vector = _embedding_vector_column()
     vector_distance = embedding_vector.cosine_distance(query_embedding).label("vector_distance")
@@ -231,6 +284,7 @@ def _postgres_vector_authorized_statement(
         .join(DocumentModel, DocumentChunkModel.document_id == DocumentModel.id)
         .where(
             _authorized_document_filter(user_id),
+            _knowledge_base_scope_filter(user_id, knowledge_base_ids),
             embedding_vector.is_not(None),
         )
         .order_by(vector_distance, desc(DocumentModel.created_at), DocumentChunkModel.ordinal)
@@ -238,16 +292,40 @@ def _postgres_vector_authorized_statement(
     )
 
 
-def _authorized_document_filter(user_id: str):
+def _authorized_document_filter(user_id: str, *, knowledge_base_ids: Sequence[str] | None = None):
     group_ids = select(MembershipModel.group_id).where(MembershipModel.user_id == user_id)
     explicit_doc_ids = select(DocumentPermissionModel.document_id).where(
         DocumentPermissionModel.user_id == user_id,
         DocumentPermissionModel.can_read.is_(True),
     )
-    return or_(
-        DocumentModel.owner_user_id == user_id,
-        DocumentModel.group_id.in_(group_ids),
-        DocumentModel.id.in_(explicit_doc_ids),
+    return and_(
+        _knowledge_base_scope_filter(user_id, knowledge_base_ids),
+        or_(
+            DocumentModel.owner_user_id == user_id,
+            DocumentModel.group_id.in_(group_ids),
+            DocumentModel.id.in_(explicit_doc_ids),
+        ),
+    )
+
+
+def _knowledge_base_scope_filter(user_id: str, knowledge_base_ids: Sequence[str] | None = None):
+    from my_agents.knowledge.models import KnowledgeBaseModel
+
+    group_ids = select(MembershipModel.group_id).where(MembershipModel.user_id == user_id)
+    authorized_kb_ids = select(KnowledgeBaseModel.id).where(
+        or_(
+            KnowledgeBaseModel.owner_user_id == user_id,
+            KnowledgeBaseModel.group_id.in_(group_ids),
+        )
+    )
+    if knowledge_base_ids is None:
+        return DocumentModel.knowledge_base_id.in_(authorized_kb_ids)
+    unique_ids = tuple(dict.fromkeys(knowledge_base_ids))
+    if not unique_ids:
+        return false()
+    return and_(
+        DocumentModel.knowledge_base_id.in_(unique_ids),
+        DocumentModel.knowledge_base_id.in_(authorized_kb_ids),
     )
 
 

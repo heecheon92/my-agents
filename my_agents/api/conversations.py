@@ -45,6 +45,10 @@ from my_agents.conversations.schemas import (
     MessageResponse,
 )
 from my_agents.groups.models import MembershipModel
+from my_agents.knowledge.auth import (
+    KnowledgeBaseSelectionContext,
+    resolve_knowledge_base_selection,
+)
 from my_agents.knowledge.models import CitationModel, DocumentChunkModel, DocumentModel
 from my_agents.knowledge.retrieval import RetrievalService, RetrievedChunk
 from my_agents.knowledge.routing import (
@@ -54,7 +58,7 @@ from my_agents.knowledge.routing import (
     is_relevant_retrieval_result,
     route_retrieval,
 )
-from my_agents.knowledge.schemas import CitationResponse
+from my_agents.knowledge.schemas import CitationResponse, KnowledgeBaseSelection
 from my_agents.persistence.database import get_database_session
 from my_agents.schemas import RouteDecision
 from my_agents.settings import Settings, get_settings
@@ -82,6 +86,7 @@ class ConversationRetrievalContext:
     answer_mode: AnswerMode
     retrieved_chunks: list[RetrievedChunk]
     retrieval_latency_ms: float
+    knowledge_base_selection: KnowledgeBaseSelectionContext
 
 
 @conversations_router.post(
@@ -192,6 +197,12 @@ def run_conversation(
     assert_guest_can_send_prompt(db, principal, settings)
     _get_authorized_conversation(db, conversation_id, principal.user_id)
     _assert_no_active_run(db, conversation_id)
+    selection_context = resolve_knowledge_base_selection(
+        db,
+        user_id=principal.user_id,
+        mode=request.knowledge_base_selection.mode,
+        knowledge_base_ids=request.knowledge_base_selection.knowledge_base_ids,
+    )
     user_message = _store_user_message(db, conversation_id, request.message)
     run = _start_run(
         db=db,
@@ -199,6 +210,7 @@ def run_conversation(
         user_id=principal.user_id,
         user_message_id=user_message.id,
         message_content_length=len(request.message.strip()),
+        selection_context=selection_context,
     )
 
     messages = _messages_for_conversation(db, conversation_id)
@@ -207,12 +219,14 @@ def run_conversation(
         user_id=principal.user_id,
         message=request.message,
         messages=messages,
+        selection_context=selection_context,
     )
     _record_run_retrieval_metadata(
         db,
         run.id,
         retrieval_decision=retrieval_context.decision,
         answer_mode=retrieval_context.answer_mode,
+        selection_context=retrieval_context.knowledge_base_selection,
     )
     _append_run_event(
         db,
@@ -223,6 +237,7 @@ def run_conversation(
             retrieval_latency_ms=retrieval_context.retrieval_latency_ms,
             retrieval_decision=retrieval_context.decision,
             answer_mode=retrieval_context.answer_mode,
+            selection_context=retrieval_context.knowledge_base_selection,
         ),
     )
     if retrieval_context.decision.route == "clarification_required":
@@ -236,6 +251,7 @@ def run_conversation(
             reply=_clarification_reply(retrieval_context.decision),
             retrieval_decision=retrieval_context.decision,
             answer_mode=retrieval_context.answer_mode,
+            selection_context=retrieval_context.knowledge_base_selection,
         )
     graph_input = _graph_input_for_run(
         messages=messages,
@@ -253,6 +269,7 @@ def run_conversation(
             retrieved_chunks=retrieval_context.retrieved_chunks,
             retrieval_decision=retrieval_context.decision,
             answer_mode=retrieval_context.answer_mode,
+            selection_context=retrieval_context.knowledge_base_selection,
         ),
     )
     try:
@@ -288,6 +305,7 @@ def run_conversation(
         reply=reply,
         retrieval_decision=retrieval_context.decision,
         answer_mode=retrieval_context.answer_mode,
+        selection_context=retrieval_context.knowledge_base_selection,
     )
 
 
@@ -331,12 +349,19 @@ def stream_conversation_run(
     assert_guest_can_send_prompt(db, principal, settings)
     _get_authorized_conversation(db, conversation_id, principal.user_id)
     _assert_no_active_run(db, conversation_id)
+    selection_context = resolve_knowledge_base_selection(
+        db,
+        user_id=principal.user_id,
+        mode=request.knowledge_base_selection.mode,
+        knowledge_base_ids=request.knowledge_base_selection.knowledge_base_ids,
+    )
     return StreamingResponse(
         _conversation_run_events(
             db=db,
             conversation_id=conversation_id,
             request=request,
             user_id=principal.user_id,
+            selection_context=selection_context,
             graph_runner=graph_runner,
         ),
         media_type="text/event-stream",
@@ -349,6 +374,7 @@ def _conversation_run_events(
     conversation_id: str,
     request: ConversationRunRequest,
     user_id: str,
+    selection_context: KnowledgeBaseSelectionContext,
     graph_runner: GraphRunner,
 ) -> Iterator[str]:
     user_message = _store_user_message(db, conversation_id, request.message)
@@ -359,6 +385,7 @@ def _conversation_run_events(
         user_id=user_id,
         user_message_id=user_message.id,
         message_content_length=message_content_length,
+        selection_context=selection_context,
     )
     yield _sse_event(
         AgentEventType.RUN_STARTED.value,
@@ -376,18 +403,21 @@ def _conversation_run_events(
         user_id=user_id,
         message=request.message,
         messages=messages,
+        selection_context=selection_context,
     )
     _record_run_retrieval_metadata(
         db,
         run.id,
         retrieval_decision=retrieval_context.decision,
         answer_mode=retrieval_context.answer_mode,
+        selection_context=retrieval_context.knowledge_base_selection,
     )
     retrieval_payload = _retrieval_completed_payload(
         retrieved_chunks=retrieval_context.retrieved_chunks,
         retrieval_latency_ms=retrieval_context.retrieval_latency_ms,
         retrieval_decision=retrieval_context.decision,
         answer_mode=retrieval_context.answer_mode,
+        selection_context=retrieval_context.knowledge_base_selection,
     )
     _append_run_event(db, run.id, AgentEventType.RETRIEVAL_COMPLETED, retrieval_payload)
     yield _sse_event(AgentEventType.RETRIEVAL_COMPLETED.value, retrieval_payload)
@@ -406,6 +436,7 @@ def _conversation_run_events(
             reply=_clarification_reply(retrieval_context.decision),
             retrieval_decision=retrieval_context.decision,
             answer_mode=retrieval_context.answer_mode,
+            selection_context=retrieval_context.knowledge_base_selection,
         )
         yield _sse_event(
             AgentEventType.ANSWER_COMPOSED.value,
@@ -498,6 +529,7 @@ def _conversation_run_events(
             retrieved_chunks=retrieval_context.retrieved_chunks,
             retrieval_decision=retrieval_context.decision,
             answer_mode=retrieval_context.answer_mode,
+            selection_context=retrieval_context.knowledge_base_selection,
         )
         _append_run_event(db, run.id, AgentEventType.GRAPH_INVOKED, graph_payload)
         yield _sse_event(
@@ -523,6 +555,7 @@ def _conversation_run_events(
         reply=reply,
         retrieval_decision=retrieval_context.decision,
         answer_mode=retrieval_context.answer_mode,
+        selection_context=retrieval_context.knowledge_base_selection,
     )
     yield _sse_event(
         AgentEventType.ANSWER_COMPOSED.value,
@@ -531,6 +564,7 @@ def _conversation_run_events(
             reply=reply,
             retrieval_decision=retrieval_context.decision,
             answer_mode=retrieval_context.answer_mode,
+            selection_context=retrieval_context.knowledge_base_selection,
         ),
     )
     yield _sse_event("run_completed", response.model_dump(mode="json"))
@@ -777,9 +811,16 @@ def _prepare_retrieval_context(
     user_id: str,
     message: str,
     messages: list[BaseMessage],
+    selection_context: KnowledgeBaseSelectionContext,
 ) -> ConversationRetrievalContext:
     service = RetrievalService(db)
-    document_count = service.authorized_document_count(user_id=user_id)
+    selected_ids = (
+        selection_context.knowledge_base_ids if selection_context.mode == "selected" else None
+    )
+    document_count = service.authorized_document_count(
+        user_id=user_id,
+        knowledge_base_ids=selected_ids,
+    )
     decision = route_retrieval(
         message=message,
         history=messages,
@@ -791,9 +832,14 @@ def _prepare_retrieval_context(
             answer_mode=answer_mode_for_route(decision=decision, relevant_context_found=False),
             retrieved_chunks=[],
             retrieval_latency_ms=0.0,
+            knowledge_base_selection=selection_context,
         )
     retrieval_started = perf_counter()
-    retrieved_chunks = service.retrieve(user_id=user_id, query=decision.rewritten_query)
+    retrieved_chunks = service.retrieve_scoped(
+        user_id=user_id,
+        query=decision.rewritten_query,
+        knowledge_base_ids=selected_ids,
+    )
     retrieval_latency_ms = round((perf_counter() - retrieval_started) * 1000, 3)
     relevant_context_found = any(
         is_relevant_retrieval_result(
@@ -811,6 +857,7 @@ def _prepare_retrieval_context(
         ),
         retrieved_chunks=retrieved_chunks,
         retrieval_latency_ms=retrieval_latency_ms,
+        knowledge_base_selection=selection_context,
     )
 
 
