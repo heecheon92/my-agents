@@ -239,14 +239,24 @@ def test_guest_interrupted_prompt_counts_toward_prompt_cap(monkeypatch) -> None:
 def test_guest_document_cap_applies_to_creates_and_uploads(monkeypatch) -> None:  # noqa: ANN001
     client = _client(monkeypatch)
     _guest_login(client)
+    kb = client.post("/knowledge-bases", json={"name": "Guest KB", "scope": "personal"})
+    assert kb.status_code == 201
+    kb_id = kb.json()["id"]
 
     responses = [
-        client.post("/documents", json={"title": f"Guest doc {index}", "content": "demo"})
+        client.post(
+            "/documents",
+            json={
+                "title": f"Guest doc {index}",
+                "content": "demo",
+                "knowledge_base_id": kb_id,
+            },
+        )
         for index in range(3)
     ]
     limited_upload = client.post(
         "/documents/upload",
-        data={"title": "Too many"},
+        data={"title": "Too many", "knowledge_base_id": kb_id},
         files={"file": ("not-a.pdf", b"not a pdf", "application/pdf")},
     )
 

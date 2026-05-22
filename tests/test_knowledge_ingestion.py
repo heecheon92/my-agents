@@ -274,7 +274,8 @@ def test_document_write_with_nonexistent_knowledge_base_returns_404(
     endpoint: str,
 ) -> None:  # noqa: ANN001
     client = _client(monkeypatch)
-    _signup_login(client, f"missing-kb-{endpoint.rsplit('/', maxsplit=1)[-1] or 'create'}@example.com")
+    endpoint_name = endpoint.rsplit("/", maxsplit=1)[-1] or "create"
+    _signup_login(client, f"missing-kb-{endpoint_name}@example.com")
     missing_kb_id = "00000000-0000-0000-0000-000000000000"
 
     if endpoint == "/documents":
@@ -305,10 +306,11 @@ def test_document_write_with_unauthorized_knowledge_base_returns_404(
 ) -> None:  # noqa: ANN001
     owner = _client(monkeypatch)
     outsider = _client(monkeypatch)
-    _signup_login(owner, f"kb-auth-owner-{endpoint.rsplit('/', maxsplit=1)[-1] or 'create'}@example.com")
+    endpoint_name = endpoint.rsplit("/", maxsplit=1)[-1] or "create"
+    _signup_login(owner, f"kb-auth-owner-{endpoint_name}@example.com")
     _signup_login(
         outsider,
-        f"kb-auth-outsider-{endpoint.rsplit('/', maxsplit=1)[-1] or 'create'}@example.com",
+        f"kb-auth-outsider-{endpoint_name}@example.com",
     )
     kb_id = _create_personal_knowledge_base(owner, "Owner-only KB")
 
@@ -357,7 +359,10 @@ def test_document_write_paths_do_not_create_null_knowledge_base_ids(monkeypatch)
     assert uploaded.status_code == 201
     documents = _database_rows(select(DocumentModel))
     assert {document.knowledge_base_id for document in documents} == {text_kb_id, upload_kb_id}
-    assert _database_rows(select(DocumentModel).where(DocumentModel.knowledge_base_id.is_(None))) == []
+    null_kb_documents = _database_rows(
+        select(DocumentModel).where(DocumentModel.knowledge_base_id.is_(None))
+    )
+    assert null_kb_documents == []
     assert _database_rows(select(KnowledgeBaseModel)) != []
 
 

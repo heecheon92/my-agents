@@ -70,6 +70,12 @@ def _signup_login(client: TestClient, email: str) -> str:
     return signup.json()["user"]["id"]
 
 
+def _create_personal_knowledge_base(client: TestClient, name: str = "Test KB") -> str:
+    response = client.post("/knowledge-bases", json={"name": name, "scope": "personal"})
+    assert response.status_code == 201
+    return response.json()["id"]
+
+
 def _create_conversation(client: TestClient, title: str = "RAG") -> str:
     response = client.post("/conversations", json={"title": title})
     assert response.status_code == 201
@@ -82,6 +88,7 @@ def test_chat_run_cites_only_authorized_personal_knowledge(monkeypatch) -> None:
     outsider = _client(monkeypatch, graph)
     _signup_login(owner, "rag-owner@example.com")
     _signup_login(outsider, "rag-outsider@example.com")
+    kb_id = _create_personal_knowledge_base(owner, "RAG Owner KB")
 
     private_phrase = "Phoenix Retrieval Kernel"
     document = owner.post(
@@ -89,6 +96,7 @@ def test_chat_run_cites_only_authorized_personal_knowledge(monkeypatch) -> None:
         json={
             "title": "Private RAG Plan",
             "content": f"{private_phrase} uses LangGraph for authorized answers.",
+            "knowledge_base_id": kb_id,
         },
     )
     assert document.status_code == 201
@@ -131,6 +139,7 @@ def test_broad_resume_question_uses_recent_authorized_document(monkeypatch) -> N
     outsider = _client(monkeypatch, graph)
     _signup_login(owner, "resume-owner@example.com")
     _signup_login(outsider, "resume-outsider@example.com")
+    kb_id = _create_personal_knowledge_base(owner, "Resume KB")
 
     resume_phrase = "Heecheon Park builds FastAPI LangGraph portfolio systems"
     document = owner.post(
@@ -138,6 +147,7 @@ def test_broad_resume_question_uses_recent_authorized_document(monkeypatch) -> N
         json={
             "title": "Resume 2026",
             "content": f"{resume_phrase} with permission-aware document retrieval.",
+            "knowledge_base_id": kb_id,
         },
     )
     assert document.status_code == 201
@@ -181,12 +191,14 @@ def test_semantic_vector_retrieval_after_permission_filtering(monkeypatch) -> No
     outsider = _client(monkeypatch, graph)
     _signup_login(owner, "semantic-owner@example.com")
     _signup_login(outsider, "semantic-outsider@example.com")
+    kb_id = _create_personal_knowledge_base(owner, "Semantic KB")
 
     vehicle_doc = owner.post(
         "/documents",
         json={
             "title": "Vehicle Notes",
             "content": "Automobile maintenance schedule uses quarterly inspections.",
+            "knowledge_base_id": kb_id,
         },
     )
     pastry_doc = owner.post(
@@ -194,6 +206,7 @@ def test_semantic_vector_retrieval_after_permission_filtering(monkeypatch) -> No
         json={
             "title": "Pastry Notes",
             "content": "Pastry dough proofing depends on warm kitchen timing.",
+            "knowledge_base_id": kb_id,
         },
     )
     assert vehicle_doc.status_code == 201
@@ -246,6 +259,7 @@ def test_graph_expansion_adds_authorized_related_chunks(monkeypatch) -> None:  #
     graph = RagSpyGraph()
     client = _client(monkeypatch, graph)
     _signup_login(client, "rag-expansion@example.com")
+    kb_id = _create_personal_knowledge_base(client, "Expansion KB")
 
     document = client.post(
         "/documents",
@@ -253,6 +267,7 @@ def test_graph_expansion_adds_authorized_related_chunks(monkeypatch) -> None:  #
             "title": "LangGraph Expansion Notes",
             "content": "LangGraph retrieval matches AlphaQuery.\n\n"
             "LangGraph planner memory explains follow-up synthesis.",
+            "knowledge_base_id": kb_id,
         },
     )
     assert document.status_code == 201
