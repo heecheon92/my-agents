@@ -23,13 +23,13 @@ This note explains the text-based V1 knowledge-ingestion slice.
 
 ## What is implemented now
 
-A user can create a personal or group knowledge base, attach either a JSON text document or a supported text-based file upload, and run deterministic ingestion over the stored document text. The upload path accepts text-based PDFs, Markdown files, and plain-text files. The existing bodyless `/documents/{document_id}/ingest` contract remains unchanged.
+A user can create a personal or group knowledge base, attach either a JSON text document or a supported text-based file upload, and run deterministic ingestion over the stored document text. The upload path accepts text-based PDFs, Markdown files, and plain-text files. The existing bodyless synchronous `/documents/{document_id}/ingest` contract remains unchanged, and the additive `/documents/{document_id}/ingest/async` endpoint starts an in-process background run for polling-based multi-file UX.
 
 The ingestion pass creates:
 
 - chunks;
 - JSON-backed embeddings through a provider boundary;
-- extraction run records;
+- extraction run records with status/stage/progress fields;
 - entities;
 - entity mentions;
 - co-occurrence relationships between adjacent extracted entities;
@@ -55,8 +55,12 @@ flowchart TD
     Plain --> Metadata
     Plain --> Content
     Text[POST /documents JSON text] --> Content
-    Content --> Run[POST /documents/{id}/ingest]
+    Content --> RunChoice{Ingestion endpoint}
+    RunChoice -->|sync compatibility| Run[POST /documents/{id}/ingest]
+    RunChoice -->|async queued| Async[POST /documents/{id}/ingest/async]
+    Async --> Poll[GET /documents/{id}/extraction-runs/{run_id}]
     Run --> Chunks[DocumentChunk rows]
+    Poll --> Chunks
     Chunks --> Page[PDF source_page when available]
     Chunks --> Provider{Embedding mode}
     Provider -->|deterministic default| Embeddings[32-d lexical-hash embedding_json]
@@ -66,6 +70,35 @@ flowchart TD
     Chunks --> Entities[Entity extraction]
     Entities --> Mentions[EntityMention provenance]
     Mentions --> Relationships[EntityRelationship co_occurs_with]
+```
+
+## Async ingestion progress contract
+
+The first async slice is additive and intentionally local/demo-shaped:
+
+- `POST /documents/{document_id}/ingest/async` requires the same ingest permission as the sync endpoint and returns `202 Accepted`;
+- response body is an `ExtractionRunResponse` with `status=pending`, `stage=queued`, and `progress_percent=0`;
+- background execution uses a fresh SQLAlchemy session and updates the same run through `running` stages (`chunking`, `embedding`, optional `indexing`, `entities`) to `completed`;
+- `GET /documents/{document_id}/extraction-runs/{run_id}` requires document read access and returns the latest progress/counts;
+- failures persist `status=failed`, `stage=failed`, and a bounded display-safe `error`;
+- the backend still uses no Redis/Celery/external queue, so process restarts can interrupt in-flight demo jobs.
+
+Response shape:
+
+```json
+{
+  "id": "run-id",
+  "document_id": "document-id",
+  "status": "pending|running|completed|failed",
+  "stage": "queued|chunking|embedding|indexing|entities|completed|failed",
+  "progress_percent": 0,
+  "chunk_count": 0,
+  "entity_count": 0,
+  "relationship_count": 0,
+  "error": null,
+  "started_at": null,
+  "completed_at": null
+}
 ```
 
 ## Why deterministic extraction
@@ -88,6 +121,7 @@ This is a scaffold for portfolio-visible architecture, not a claim of production
 - no scanned PDF OCR, docx, HTML, or CSV/JSON structural ingestion yet;
 - no cloud object storage adapter yet;
 - OpenAI embeddings are opt-in and require `OPENAI_API_KEY`; OpenAI extraction calls are not implemented yet;
+- async ingestion uses in-process background threads for demo UX only; no durable external queue yet;
 - pgvector acceleration is exact SQL vector search over authorized candidates; ANN/vector indexes and cross-encoder reranking are future work.
 
 Thin permission-aware RAG and graph expansion now live in the next learning note.
@@ -107,10 +141,12 @@ Thin permission-aware RAG and graph expansion now live in the next learning note
 - PDF parser/page provenance on chunks;
 - a local skip-if-missing regression for the LangChain Academy LangGraph PDF that previously produced only boilerplate text;
 - ingestion creates chunks, entities, relationships, and extraction-run summaries;
+- async ingestion returns a queued run, supports direct polling, persists completed/failed progress, and respects document permissions;
 - outsiders cannot create group KBs for groups they do not belong to.
 
 ## Revision history
 
+- 2026-05-22: Added additive async ingestion progress endpoints and extraction-run status fields for multi-file upload UX.
 - 2026-05-21: Extended `/documents/upload` to accept Markdown and plain-text UTF-8 files while preserving PDF parsing and provenance.
 - 2026-05-21: Added pgvector chunk storage for Postgres retrieval acceleration while keeping JSON/SQLite fallback.
 - 2026-05-21: Upgraded PDF extraction to `pypdf_text_v2`, added legacy fallback documentation, 32-d lexical-hash embedding fixtures, and local LangGraph PDF regression coverage.

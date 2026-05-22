@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
@@ -47,65 +48,148 @@ class KnowledgeExtractionService:
         self._db = db
         self._embedding_provider = get_embedding_provider()
 
-    def ingest_document(self, document: DocumentModel) -> ExtractionSummary:
-        run = ExtractionRunModel(document_id=document.id, status=ExtractionStatus.COMPLETED.value)
+    def create_extraction_run(self, document_id: str) -> ExtractionRunModel:
+        """Create a queued extraction run without doing document work."""
+        run = ExtractionRunModel(
+            document_id=document_id,
+            status=ExtractionStatus.PENDING.value,
+            stage="queued",
+            progress_percent=0,
+            chunk_count=0,
+            entity_count=0,
+            relationship_count=0,
+        )
         self._db.add(run)
-        self._db.flush()
-
-        chunks = list(_chunk_document_text(document))
-        embeddings = self._embedding_provider.embed_documents([content for content, *_ in chunks])
-        entity_ids: set[str] = set()
-        relationship_count = 0
-        for ordinal, ((content, start, end, source_page), embedding) in enumerate(
-            zip(chunks, embeddings, strict=True)
-        ):
-            chunk = DocumentChunkModel(
-                document_id=document.id,
-                extraction_run_id=run.id,
-                ordinal=ordinal,
-                content=content,
-                start_offset=start,
-                end_offset=end,
-                source_page=source_page,
-                embedding_json=json.dumps(embedding),
-            )
-            self._db.add(chunk)
-            self._db.flush()
-            if _stores_sql_embedding_vector(self._db):
-                self._store_sql_embedding_vector(chunk_id=chunk.id, embedding=embedding)
-            chunk_entity_ids = []
-            for entity_name in _extract_entity_names(content):
-                entity = self._get_or_create_entity(entity_name)
-                entity_ids.add(entity.id)
-                chunk_entity_ids.append(entity.id)
-                self._db.add(
-                    EntityMentionModel(
-                        entity_id=entity.id,
-                        chunk_id=chunk.id,
-                        document_id=document.id,
-                        extraction_run_id=run.id,
-                    )
-                )
-            for source_id, target_id in zip(chunk_entity_ids, chunk_entity_ids[1:], strict=False):
-                self._db.add(
-                    EntityRelationshipModel(
-                        source_entity_id=source_id,
-                        target_entity_id=target_id,
-                        relation_type="co_occurs_with",
-                        document_id=document.id,
-                        chunk_id=chunk.id,
-                        extraction_run_id=run.id,
-                    )
-                )
-                relationship_count += 1
         self._db.commit()
         self._db.refresh(run)
-        return ExtractionSummary(
-            run=run,
-            chunk_count=len(chunks),
-            entity_count=len(entity_ids),
-            relationship_count=relationship_count,
-        )
+        return run
+
+    def ingest_document(
+        self,
+        document: DocumentModel,
+        *,
+        run: ExtractionRunModel | None = None,
+    ) -> ExtractionSummary:
+        """Execute extraction for a document, optionally into an existing queued run."""
+        if run is None:
+            run = ExtractionRunModel(document_id=document.id, status=ExtractionStatus.PENDING.value)
+            self._db.add(run)
+            self._db.flush()
+        run_id = run.id
+        try:
+            self._mark_progress(run, status=ExtractionStatus.RUNNING, stage="chunking", percent=15)
+            chunks = list(_chunk_document_text(document))
+            run.chunk_count = len(chunks)
+            self._db.commit()
+
+            self._mark_progress(run, status=ExtractionStatus.RUNNING, stage="embedding", percent=45)
+            embeddings = self._embedding_provider.embed_documents(
+                [content for content, *_ in chunks]
+            )
+            entity_ids: set[str] = set()
+            relationship_count = 0
+            stores_sql_vector = _stores_sql_embedding_vector(self._db)
+            if stores_sql_vector:
+                self._mark_progress(
+                    run,
+                    status=ExtractionStatus.RUNNING,
+                    stage="indexing",
+                    percent=70,
+                )
+            self._mark_progress(
+                run,
+                status=ExtractionStatus.RUNNING,
+                stage="entities",
+                percent=85,
+            )
+            for ordinal, ((content, start, end, source_page), embedding) in enumerate(
+                zip(chunks, embeddings, strict=True)
+            ):
+                chunk = DocumentChunkModel(
+                    document_id=document.id,
+                    extraction_run_id=run.id,
+                    ordinal=ordinal,
+                    content=content,
+                    start_offset=start,
+                    end_offset=end,
+                    source_page=source_page,
+                    embedding_json=json.dumps(embedding),
+                )
+                self._db.add(chunk)
+                self._db.flush()
+                if stores_sql_vector:
+                    self._store_sql_embedding_vector(chunk_id=chunk.id, embedding=embedding)
+                chunk_entity_ids = []
+                for entity_name in _extract_entity_names(content):
+                    entity = self._get_or_create_entity(entity_name)
+                    entity_ids.add(entity.id)
+                    chunk_entity_ids.append(entity.id)
+                    self._db.add(
+                        EntityMentionModel(
+                            entity_id=entity.id,
+                            chunk_id=chunk.id,
+                            document_id=document.id,
+                            extraction_run_id=run.id,
+                        )
+                    )
+                for source_id, target_id in zip(
+                    chunk_entity_ids, chunk_entity_ids[1:], strict=False
+                ):
+                    self._db.add(
+                        EntityRelationshipModel(
+                            source_entity_id=source_id,
+                            target_entity_id=target_id,
+                            relation_type="co_occurs_with",
+                            document_id=document.id,
+                            chunk_id=chunk.id,
+                            extraction_run_id=run.id,
+                        )
+                    )
+                    relationship_count += 1
+
+            run.status = ExtractionStatus.COMPLETED.value
+            run.stage = "completed"
+            run.progress_percent = 100
+            run.chunk_count = len(chunks)
+            run.entity_count = len(entity_ids)
+            run.relationship_count = relationship_count
+            run.error = None
+            run.completed_at = datetime.now(UTC)
+            self._db.commit()
+            self._db.refresh(run)
+            return ExtractionSummary(
+                run=run,
+                chunk_count=len(chunks),
+                entity_count=len(entity_ids),
+                relationship_count=relationship_count,
+            )
+        except Exception as exc:
+            self._db.rollback()
+            run = self._db.get(ExtractionRunModel, run_id)
+            if run is not None:
+                run.status = ExtractionStatus.FAILED.value
+                run.stage = "failed"
+                run.error = _safe_error_message(exc)
+                run.completed_at = datetime.now(UTC)
+                self._db.commit()
+            raise
+
+    def _mark_progress(
+        self,
+        run: ExtractionRunModel,
+        *,
+        status: ExtractionStatus,
+        stage: str,
+        percent: int,
+    ) -> None:
+        run.status = status.value
+        run.stage = stage
+        run.progress_percent = percent
+        run.error = None
+        if run.started_at is None:
+            run.started_at = datetime.now(UTC)
+        self._db.commit()
+        self._db.refresh(run)
 
     def _get_or_create_entity(self, name: str) -> EntityModel:
         entity = self._db.scalar(select(EntityModel).where(EntityModel.name == name))
@@ -135,6 +219,14 @@ def _stores_sql_embedding_vector(db: Session) -> bool:
     """Return whether chunks should persist the pgvector column for SQL search."""
     bind = db.get_bind()
     return bind.dialect.name == "postgresql"
+
+
+def _safe_error_message(exc: Exception) -> str:
+    """Return a bounded display-safe failure reason for extraction polling."""
+    message = str(exc).strip()
+    if not message:
+        message = exc.__class__.__name__
+    return f"{exc.__class__.__name__}: {message}"[:300]
 
 
 def _chunk_pdf_text(text: str) -> list[tuple[str, int, int, int | None]]:

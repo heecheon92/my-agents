@@ -137,7 +137,10 @@ def test_alembic_offline_sql_generation_covers_initial_schema(monkeypatch) -> No
     assert "20260521_0005" in sql
     assert "20260521_0006" in sql
     assert "20260521_0007" in sql
+    assert "20260522_0008" in sql
     assert "embedding_vector" in sql
+    assert "progress_percent" in sql
+    assert "completed_at" in sql
 
 
 def test_sqlite_json_fallback_reads_chunks_created_before_pgvector_migration(

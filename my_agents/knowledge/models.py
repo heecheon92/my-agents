@@ -42,6 +42,8 @@ class KnowledgeBaseScope(StrEnum):
 class ExtractionStatus(StrEnum):
     """Document extraction run status."""
 
+    PENDING = "pending"
+    RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
 
@@ -112,10 +114,17 @@ class ExtractionRunModel(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     document_id: Mapped[str] = mapped_column(ForeignKey("documents.id"), nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False)
+    stage: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    progress_percent: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    chunk_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    entity_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    relationship_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class DocumentChunkModel(Base):

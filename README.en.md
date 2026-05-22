@@ -592,8 +592,10 @@ The text-based upload/ingestion slice is available:
 - `GET /knowledge-bases`
 - `POST /documents` — existing JSON text-document creation path
 - `POST /documents/upload` — multipart PDF/Markdown/plain-text upload creation path
-- `POST /documents/{document_id}/ingest` — bodyless ingestion execution path
+- `POST /documents/{document_id}/ingest` — existing bodyless synchronous ingestion path
+- `POST /documents/{document_id}/ingest/async` — starts async ingestion and returns a `202 Accepted` queued extraction run
 - `GET /documents/{document_id}/extraction-runs`
+- `GET /documents/{document_id}/extraction-runs/{run_id}` — single-run progress polling path
 
 The text-document path remains compatible. The upload path accepts `.pdf`, `.md`,
 `.markdown`, and `.txt` files up to 5 MiB. PDFs use `pypdf` for page text from
@@ -604,7 +606,7 @@ metadata (`source_filename`, content type, byte size, SHA-256, page count, parse
 is persisted on the document, and ingestion chunks record `source_page` for later citation
 provenance. Conversation citation responses now include `source_page` and `source_filename`
 when known. Ingestion creates paragraph/sentence-aware chunks, entity mentions, and JSON-backed
-embeddings. On Postgres after Alembic migrations, chunks also persist a pgvector
+embeddings. The existing sync ingestion endpoint remains compatible, while the async ingestion endpoint runs in an in-process background thread with a fresh DB session. `ExtractionRunResponse` returns `status` (`pending|running|completed|failed`), `stage`, `progress_percent`, counts, a safe `error`, `started_at`, and `completed_at`. This V1 async path is a local/demo contract without an external queue/Redis/Celery and is not durable across process restarts. On Postgres after Alembic migrations, chunks also persist a pgvector
 `embedding_vector` column so retrieval can run permission-filtered SQL vector search before
 falling back to JSON cosine ranking. By default embeddings are 32-dimensional deterministic
 lexical-hash vectors for offline tests; when `MY_AGENTS_EMBEDDING_MODE=openai`, ingestion uses

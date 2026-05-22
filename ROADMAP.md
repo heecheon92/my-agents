@@ -36,7 +36,7 @@ flowchart LR
 
 Current honest status:
 
-> The project is a strong **v1-draft backend foundation**: auth, permissions, server-owned conversations, text/PDF/Markdown ingestion, permission-aware retrieval, citations, events, migrations, pgvector-backed Postgres retrieval with JSON fallback, and SSE assistant streaming exist as a thin end-to-end slice. It is not yet a production-ready v1 because broad production ingestion, retrieval-quality evals/reranking, background jobs, stronger deployment-grade auth hardening, and operations remain.
+> The project is a strong **v1-draft backend foundation**: auth, permissions, server-owned conversations, text/PDF/Markdown ingestion, permission-aware retrieval, citations, events, migrations, pgvector-backed Postgres retrieval with JSON fallback, and SSE assistant streaming exist as a thin end-to-end slice. It is not yet a production-ready v1 because broad production ingestion, retrieval-quality evals/reranking, durable background queues, stronger deployment-grade auth hardening, and operations remain.
 
 ## 1. Backend foundation
 
@@ -119,6 +119,8 @@ Current honest status:
 - [x] Link documents to knowledge bases.
 - [x] Text document ingestion endpoint: `POST /documents/{document_id}/ingest`.
 - [x] Extraction-run listing: `GET /documents/{document_id}/extraction-runs`.
+- [x] Additive async ingestion start: `POST /documents/{document_id}/ingest/async`.
+- [x] Direct extraction-run polling: `GET /documents/{document_id}/extraction-runs/{run_id}`.
 - [x] Deterministic text chunking.
 - [x] Deterministic embedding-like fixtures for tests/retrieval.
 - [x] Entity extraction fixtures.
@@ -131,7 +133,7 @@ Current honest status:
 - [ ] Production parsers for scanned/encrypted/compressed PDF, DOCX, web pages, CSV/JSON structure, etc.
 - [ ] Object storage for uploaded source files.
 - [ ] Reingestion/versioning policy.
-- [ ] Ingestion failure recovery and partial-progress cleanup.
+- [~] Ingestion failure recovery stores failed run status and safe error; partial artifact cleanup remains minimal.
 - [ ] Document deletion and cascading cleanup policy.
 
 ## 6. Retrieval, RAG, and citations
@@ -188,11 +190,11 @@ This is the product-facing equivalent of repo-local `AGENTS.md`: durable Markdow
 - [x] HTTP progress and assistant-text streaming response for frontend chat.
 - [x] SSE transport endpoint: `POST /conversations/{id}/runs/stream`.
 - [x] `answer_delta` SSE events for incremental assistant text.
-- [ ] Background job queue for long-running runs/ingestion.
+- [~] In-process async ingestion runner for local/demo multi-file UX; durable external queue remains future work.
 - [ ] Run cancellation.
 - [ ] Run retry.
 - [ ] Rich failed-run detail table/model.
-- [ ] Polling-friendly run status transitions for pending/running/completed/failed.
+- [x] Polling-friendly extraction-run status transitions for pending/running/completed/failed.
 
 ## 9. Persistence, migrations, and database operations
 
@@ -267,7 +269,7 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
 - [~] Optional Postgres/Neon test is skipped unless `MY_AGENTS_TEST_DATABASE_URL` is set.
 - [x] Dedicated streaming endpoint tests.
 - [x] Upload/parser tests for supported PDF, Markdown, and plain-text ingestion.
-- [ ] Background job tests once queueing exists.
+- [x] Async ingestion progress/polling tests for the in-process runner.
 - [ ] Load/performance smoke tests for larger fixture data.
 - [ ] Security regression tests for rate limits, CSRF coverage, and auth hardening.
 
@@ -309,7 +311,8 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
 
 7. **Production ingestion upgrade**
    - Add file upload and parser pipeline.
-   - Move long ingestion to a background job model.
+   - [done for local/demo] Move ingestion start to an additive in-process async runner with polling.
+   - [future] Replace in-process jobs with a durable queue for production workers.
    - Store source provenance and parser errors safely.
 
 ## 14. Strict v1 phase gates

@@ -99,7 +99,7 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 ### Persistence and migrations
 
 - SQLAlchemy models cover auth, auth lifecycle tokens, sessions, groups, documents, knowledge artifacts, conversations, runs, events, and citations.
-- Alembic migrations cover the initial service schema, auth lifecycle, run detail refresh fields, PDF upload provenance fields, guest access state, and retrieval-routing run metadata.
+- Alembic migrations cover the initial service schema, auth lifecycle, run detail refresh fields, PDF upload provenance fields, guest access state, retrieval-routing run metadata, pgvector chunk embeddings, and async extraction-run progress fields.
 - SQLite in-memory auto-create supports offline tests.
 - Postgres/Neon readiness is documented, with external DB tests skipped unless configured.
 
@@ -152,7 +152,7 @@ The test harness sets `MY_AGENTS_ENV_FILE=` so a developer's local `.env` file c
 
 - Text-based upload and extraction supports text-based PDFs through `pypdf_text_v2`, Markdown through `utf8_markdown_v1`, and plain text through `utf8_text_v1`; simple PDFs keep a deterministic literal/FlateDecode stream fallback.
 - Scanned/encrypted/image-only PDFs, OCR, docx, HTML, and CSV/JSON structural parsing are intentionally unsupported.
-- No background ingestion jobs yet.
+- Async ingestion progress is available through an additive in-process background endpoint (`POST /documents/{id}/ingest/async`) plus direct run polling; no durable external queue yet.
 - Embeddings use a provider boundary: deterministic 32-dimensional lexical-hash vectors by default, or opt-in OpenAI embeddings through `langchain-openai` when `MY_AGENTS_EMBEDDING_MODE=openai`; Postgres chunks also store a pgvector `embedding_vector` through Alembic migration `20260521_0007`.
 - Retrieval ranking is permission-first pgvector SQL vector search on Postgres with JSON cosine fallback for SQLite/tests, blended lexical score, entity expansion, and a narrow personal-document fallback; LLM query rewrite, ANN/vector index tuning, and cross-encoder reranking are still future work.
 - A dedicated RetrievalGraph is intentionally deferred until retrieval needs query rewrite, metadata planning, hybrid/vector search, reranking, context compression, or branch-level retrieval observability; hard authorization should remain in `RetrievalService` even then.
@@ -209,7 +209,7 @@ Suggested order:
 3. [done] Add pgvector-backed ranking behind the existing permission filter.
 4. Add cross-encoder reranking only as a second-stage pass over top-k authorized candidates; do not let a reranker see unauthorized chunks.
 5. Add LLM query rewrite or context compression only after measuring retrieval quality.
-6. Add ingestion status transitions for queued/running/completed/failed.
+6. [done] Add ingestion status transitions for queued/running/completed/failed.
 7. Add tests proving unauthorized chunks never enter reranking, context, citations, or events.
 
 Stop condition:
@@ -229,6 +229,7 @@ limits.
 | Date | Milestone | Evidence |
 | --- | --- | --- |
 | 2026-05-21 | Added a local Docker pgvector helper for pulling DockerHub pgvector/Postgres, writing ignored backend env wiring, running Alembic, and executing the gated migration smoke. | `scripts/dev_pgvector.py`; `tests/test_dev_pgvector_script.py`; `.env.example`; README pair; `docs/portfolio-chat-service/08-postgres-alembic-neon.md`. |
+| 2026-05-22 | Added additive async document ingestion with extraction-run progress fields, direct polling, in-process background execution, and permission-safe tests. | `my_agents/api/documents.py`; `my_agents/knowledge/extraction.py`; `my_agents/knowledge/models.py`; `my_agents/knowledge/schemas.py`; `alembic/versions/20260522_0008_async_extraction_progress.py`; `tests/test_knowledge_ingestion.py`; `tests/test_migrations.py`; README pair; `docs/portfolio-chat-service/05-knowledge-ingestion-extraction.md`. |
 | 2026-05-21 | Added Slice B pgvector chunk storage and permission-filtered SQL vector search with JSON/SQLite fallback. | `alembic/versions/20260521_0007_pgvector_chunk_embeddings.py`; `my_agents/knowledge/models.py`; `my_agents/knowledge/extraction.py`; `my_agents/knowledge/retrieval.py`; `tests/test_migrations.py`; `tests/test_permission_aware_rag.py`; README pair; `docs/portfolio-chat-service/05-knowledge-ingestion-extraction.md`; `docs/portfolio-chat-service/06-permission-aware-rag.md`; `docs/portfolio-chat-service/08-postgres-alembic-neon.md`. |
 | 2026-05-21 | Extended document upload beyond PDF to Markdown and plain text while preserving PDF provenance and retrieval behavior. | `my_agents/api/documents.py`; `my_agents/knowledge/uploads.py`; `tests/test_knowledge_ingestion.py`; README pair; `docs/portfolio-chat-service/05-knowledge-ingestion-extraction.md`. |
 | 2026-05-21 | Retrieval routing and answer-mode metadata added before graph invocation. | `my_agents/knowledge/routing.py`; `my_agents/knowledge/retrieval.py`; `my_agents/api/conversations.py`; `my_agents/conversations/models.py`; `alembic/versions/20260521_0006_retrieval_routing_metadata.py`; `tests/test_retrieval_routing.py`; `tests/test_conversations_api.py`; `tests/test_permission_aware_rag.py`; README pair; general assistant README pair; `docs/portfolio-chat-service/06-permission-aware-rag.md`. |

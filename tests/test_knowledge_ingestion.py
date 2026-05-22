@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import zlib
 from pathlib import Path
+from time import monotonic, sleep
 
 import pytest
 from fastapi.testclient import TestClient
@@ -39,6 +40,18 @@ class FakeEmbeddingProvider:
         return [[float(index), float(len(text)), 1.0] for index, text in enumerate(texts)]
 
     def embed_query(self, text: str) -> list[float]:
+        return [1.0, 0.0, 0.0]
+
+
+class FailingEmbeddingProvider:
+    provider = "failing"
+    model = "failing-embedding-model"
+    dimensions = 3
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:  # noqa: ARG002
+        raise RuntimeError("fixture embedding failure")
+
+    def embed_query(self, text: str) -> list[float]:  # noqa: ARG002
         return [1.0, 0.0, 0.0]
 
 
@@ -144,6 +157,25 @@ def _database_rows(statement):  # noqa: ANN001 - SQLAlchemy statement type is ve
         session_generator.close()
 
 
+def _wait_for_run(
+    client: TestClient,
+    document_id: str,
+    run_id: str,
+    *,
+    terminal_status: str = "completed",
+) -> dict:
+    deadline = monotonic() + 5
+    payload: dict | None = None
+    while monotonic() < deadline:
+        response = client.get(f"/documents/{document_id}/extraction-runs/{run_id}")
+        assert response.status_code == 200
+        payload = response.json()
+        if payload["status"] == terminal_status:
+            return payload
+        sleep(0.02)
+    pytest.fail(f"run {run_id} did not reach {terminal_status}; last payload={payload}")
+
+
 def test_personal_knowledge_base_document_ingestion_creates_extraction_artifacts(
     monkeypatch,
 ) -> None:  # noqa: ANN001
@@ -215,6 +247,110 @@ def test_ingestion_uses_configured_embedding_provider(monkeypatch) -> None:  # n
         "[0.0, 21.0, 1.0]",
         "[1.0, 22.0, 1.0]",
     ]
+
+
+def test_async_ingest_returns_queued_run_and_polling_completes(monkeypatch) -> None:  # noqa: ANN001
+    client = _client(monkeypatch)
+    _signup_login(client, "async-ingest-owner@example.com")
+
+    document = client.post(
+        "/documents",
+        json={
+            "title": "Async Notes",
+            "content": "Async ingestion mentions LangGraph.\n\nSecond chunk mentions FastAPI.",
+        },
+    )
+    assert document.status_code == 201
+    document_id = document.json()["id"]
+
+    queued = client.post(f"/documents/{document_id}/ingest/async")
+
+    assert queued.status_code == 202
+    queued_payload = queued.json()
+    assert queued_payload["document_id"] == document_id
+    assert queued_payload["status"] == "pending"
+    assert queued_payload["stage"] == "queued"
+    assert queued_payload["progress_percent"] == 0
+    assert queued_payload["error"] is None
+
+    completed = _wait_for_run(client, document_id, queued_payload["id"])
+    assert completed["status"] == "completed"
+    assert completed["stage"] == "completed"
+    assert completed["progress_percent"] == 100
+    assert completed["chunk_count"] >= 1
+    assert completed["entity_count"] >= 2
+    assert completed["relationship_count"] >= 1
+    assert completed["started_at"] is not None
+    assert completed["completed_at"] is not None
+
+    runs = client.get(f"/documents/{document_id}/extraction-runs")
+    assert runs.status_code == 200
+    assert runs.json()[0]["id"] == queued_payload["id"]
+
+
+def test_async_ingest_persists_failed_status_with_safe_error(monkeypatch) -> None:  # noqa: ANN001
+    monkeypatch.setattr(
+        extraction_module,
+        "get_embedding_provider",
+        lambda: FailingEmbeddingProvider(),
+    )
+    client = _client(monkeypatch)
+    _signup_login(client, "async-ingest-failure@example.com")
+
+    document = client.post(
+        "/documents",
+        json={"title": "Failed Async", "content": "This run should fail embedding."},
+    )
+    assert document.status_code == 201
+    document_id = document.json()["id"]
+
+    queued = client.post(f"/documents/{document_id}/ingest/async")
+
+    assert queued.status_code == 202
+    failed = _wait_for_run(
+        client,
+        document_id,
+        queued.json()["id"],
+        terminal_status="failed",
+    )
+    assert failed["status"] == "failed"
+    assert failed["stage"] == "failed"
+    assert "RuntimeError" in failed["error"]
+    assert "fixture embedding failure" in failed["error"]
+
+
+def test_async_ingest_start_and_poll_respect_document_permissions(monkeypatch) -> None:  # noqa: ANN001
+    owner = _client(monkeypatch)
+    reader = _client(monkeypatch)
+    outsider = _client(monkeypatch)
+    _signup_login(owner, "async-permission-owner@example.com")
+    reader_id = _signup_login(reader, "async-permission-reader@example.com")
+    _signup_login(outsider, "async-permission-outsider@example.com")
+
+    document = owner.post(
+        "/documents",
+        json={"title": "Permission Async", "content": "Reader can poll but not ingest."},
+    )
+    assert document.status_code == 201
+    document_id = document.json()["id"]
+    grant = owner.patch(
+        f"/documents/{document_id}/permissions",
+        json={"user_id": reader_id, "can_read": True, "can_ingest": False},
+    )
+    assert grant.status_code == 200
+
+    denied_start = reader.post(f"/documents/{document_id}/ingest/async")
+    assert denied_start.status_code == 403
+
+    queued = owner.post(f"/documents/{document_id}/ingest/async")
+    assert queued.status_code == 202
+    run_id = queued.json()["id"]
+    _wait_for_run(owner, document_id, run_id)
+
+    reader_poll = reader.get(f"/documents/{document_id}/extraction-runs/{run_id}")
+    assert reader_poll.status_code == 200
+    outsider_poll = outsider.get(f"/documents/{document_id}/extraction-runs/{run_id}")
+    assert outsider_poll.status_code == 404
 
 
 def test_pdf_parser_tolerates_invalid_octal_like_literal_escape() -> None:

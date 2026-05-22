@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from threading import Thread
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile, status
@@ -21,6 +22,7 @@ from my_agents.knowledge.models import (
     EntityMentionModel,
     EntityRelationshipModel,
     ExtractionRunModel,
+    ExtractionStatus,
     KnowledgeBaseModel,
 )
 from my_agents.knowledge.schemas import (
@@ -37,7 +39,7 @@ from my_agents.knowledge.uploads import (
 )
 from my_agents.permissions.contracts import DocumentOperation
 from my_agents.permissions.service import AuthorizationService
-from my_agents.persistence.database import get_database_session
+from my_agents.persistence.database import _sessionmaker_for_url, get_database_session
 from my_agents.settings import Settings, get_settings
 
 documents_router = APIRouter(prefix="/documents", tags=["documents"])
@@ -245,14 +247,73 @@ def ingest_document(
     ):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="not allowed")
     summary = KnowledgeExtractionService(db).ingest_document(document)
-    return ExtractionRunResponse(
-        id=summary.run.id,
-        document_id=document.id,
-        status=summary.run.status,
+    return _extraction_run_response(
+        db,
+        summary.run,
         chunk_count=summary.chunk_count,
         entity_count=summary.entity_count,
         relationship_count=summary.relationship_count,
     )
+
+
+@documents_router.post(
+    "/{document_id}/ingest/async",
+    response_model=ExtractionRunResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def ingest_document_async(
+    document_id: str,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    db: Annotated[Session, Depends(get_database_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> ExtractionRunResponse:
+    """Queue an in-process background extraction run for an authorized document."""
+    assert_guest_access_active(db, principal)
+    document = _get_document_or_404(db, document_id)
+    if not AuthorizationService(db).can(
+        user_id=principal.user_id,
+        document=document,
+        operation=DocumentOperation.INGEST,
+    ):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="not allowed")
+
+    run = KnowledgeExtractionService(db).create_extraction_run(document_id=document.id)
+    response = _extraction_run_response(db, run)
+    Thread(
+        target=_execute_ingestion_run_in_background,
+        args=(settings.database_url, run.id),
+        daemon=True,
+        name=f"document-ingest-{run.id}",
+    ).start()
+    return response
+
+
+@documents_router.get(
+    "/{document_id}/extraction-runs/{run_id}",
+    response_model=ExtractionRunResponse,
+)
+def get_extraction_run(
+    document_id: str,
+    run_id: str,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    db: Annotated[Session, Depends(get_database_session)],
+) -> ExtractionRunResponse:
+    """Return one extraction run for a readable document."""
+    assert_guest_access_active(db, principal)
+    document = _get_document_or_404(db, document_id)
+    if not AuthorizationService(db).can(
+        user_id=principal.user_id,
+        document=document,
+        operation=DocumentOperation.READ,
+    ):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="document not found")
+    run = db.get(ExtractionRunModel, run_id)
+    if run is None or run.document_id != document_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="extraction run not found",
+        )
+    return _extraction_run_response(db, run)
 
 
 @documents_router.get("/{document_id}/extraction-runs", response_model=list[ExtractionRunResponse])
@@ -275,17 +336,29 @@ def list_extraction_runs(
     ).all()
     responses: list[ExtractionRunResponse] = []
     for run in runs:
-        responses.append(
-            ExtractionRunResponse(
-                id=run.id,
-                document_id=run.document_id,
-                status=run.status,
-                chunk_count=_count_chunks(db, run.id),
-                entity_count=_count_entities(db, run.id),
-                relationship_count=_count_relationships(db, run.id),
-            )
-        )
+        responses.append(_extraction_run_response(db, run))
     return responses
+
+
+def _execute_ingestion_run_in_background(database_url: str, run_id: str) -> None:
+    """Execute a queued run with a fresh session instead of the request session."""
+    session_factory = _sessionmaker_for_url(database_url)
+    with session_factory() as db:
+        run = db.get(ExtractionRunModel, run_id)
+        if run is None:
+            return
+        document = db.get(DocumentModel, run.document_id)
+        if document is None:
+            run.status = ExtractionStatus.FAILED.value
+            run.stage = "failed"
+            run.error = "DocumentNotFound: document not found"
+            db.commit()
+            return
+        try:
+            KnowledgeExtractionService(db).ingest_document(document, run=run)
+        except Exception:
+            # KnowledgeExtractionService persists a bounded failed status before re-raising.
+            return
 
 
 def _require_group_write_access(db: Session, group_id: str, user_id: str) -> None:
@@ -378,6 +451,65 @@ def _document_response(document: DocumentModel) -> DocumentResponse:
         source_page_count=document.source_page_count,
         parser_name=document.parser_name,
     )
+
+
+def _extraction_run_response(
+    db: Session,
+    run: ExtractionRunModel,
+    *,
+    chunk_count: int | None = None,
+    entity_count: int | None = None,
+    relationship_count: int | None = None,
+) -> ExtractionRunResponse:
+    resolved_chunk_count = _resolve_run_count(
+        db,
+        run,
+        explicit_count=chunk_count,
+        stored_count=run.chunk_count,
+        counter=_count_chunks,
+    )
+    resolved_entity_count = _resolve_run_count(
+        db,
+        run,
+        explicit_count=entity_count,
+        stored_count=run.entity_count,
+        counter=_count_entities,
+    )
+    resolved_relationship_count = _resolve_run_count(
+        db,
+        run,
+        explicit_count=relationship_count,
+        stored_count=run.relationship_count,
+        counter=_count_relationships,
+    )
+    return ExtractionRunResponse(
+        id=run.id,
+        document_id=run.document_id,
+        status=run.status,
+        stage=run.stage,
+        progress_percent=run.progress_percent,
+        chunk_count=resolved_chunk_count,
+        entity_count=resolved_entity_count,
+        relationship_count=resolved_relationship_count,
+        error=run.error,
+        started_at=run.started_at,
+        completed_at=run.completed_at,
+    )
+
+
+def _resolve_run_count(
+    db: Session,
+    run: ExtractionRunModel,
+    *,
+    explicit_count: int | None,
+    stored_count: int,
+    counter,
+) -> int:
+    if explicit_count is not None:
+        return explicit_count
+    if stored_count > 0 or run.status != ExtractionStatus.COMPLETED.value:
+        return stored_count
+    return counter(db, run.id)
 
 
 def _count_chunks(db: Session, extraction_run_id: str) -> int:

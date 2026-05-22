@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from my_agents.knowledge.models import KnowledgeBaseScope
@@ -78,9 +80,14 @@ class ExtractionRunResponse(BaseModel):
     id: str
     document_id: str
     status: str
+    stage: str | None = None
+    progress_percent: int = Field(default=0, ge=0, le=100)
     chunk_count: int
     entity_count: int
     relationship_count: int
+    error: str | None = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
 
 
 class ChunkResponse(BaseModel):

@@ -588,8 +588,10 @@ assistant text나 citation을 저장하지 않으며, 중단된 user prompt는 g
 - `GET /knowledge-bases`
 - `POST /documents` — 기존 JSON 텍스트 문서 생성 경로
 - `POST /documents/upload` — multipart PDF/Markdown/plain text 업로드 생성 경로
-- `POST /documents/{document_id}/ingest` — bodyless ingestion 실행 경로
+- `POST /documents/{document_id}/ingest` — 기존 bodyless 동기 ingestion 실행 경로
+- `POST /documents/{document_id}/ingest/async` — `202 Accepted`와 queued extraction run을 반환하는 비동기 ingestion 시작 경로
 - `GET /documents/{document_id}/extraction-runs`
+- `GET /documents/{document_id}/extraction-runs/{run_id}` — 단일 run progress polling 경로
 
 텍스트 document 경로는 그대로 유지됩니다. 업로드 경로는 5 MiB 이하의 `.pdf`, `.md`,
 `.markdown`, `.txt` 파일을 받습니다. PDF는 `application/pdf` text-based PDF에서 `pypdf`
@@ -599,6 +601,7 @@ Markdown/plain text는 UTF-8 텍스트로 decoding하며 구조적 Markdown pars
 저장되고, ingestion chunk에는 `source_page`가 기록되어 이후 citation provenance에 사용할 수
 있습니다. conversation citation 응답은 이미 가능한 경우 `source_page`와 `source_filename`을
 함께 반환합니다. ingestion은 paragraph/sentence 기반 chunk, entity mention, JSON-backed embedding을 생성합니다.
+기존 동기 ingestion endpoint는 호환성을 유지하고, async ingestion endpoint는 in-process background thread에서 fresh DB session으로 실행됩니다. `ExtractionRunResponse`는 `status`(`pending|running|completed|failed`), `stage`, `progress_percent`, count, safe `error`, `started_at`, `completed_at`을 반환합니다. 이 V1 async path는 외부 queue/Redis/Celery 없는 local/demo 계약이며 process restart durability는 보장하지 않습니다.
 Postgres에서 Alembic migration을 적용하면 chunk에 pgvector `embedding_vector`도 저장되어,
 retrieval이 권한 필터가 적용된 SQL vector search를 먼저 수행하고 JSON cosine ranking으로 fallback할 수 있습니다.
 기본값은 offline test용 32차원 deterministic lexical-hash vector이며,
