@@ -9,13 +9,14 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 from my_agents.knowledge.embeddings import deterministic_embedding, get_embedding_provider
 from my_agents.knowledge.models import (
+    CitationModel,
     DocumentChunkModel,
     DocumentModel,
     EntityMentionModel,
@@ -82,6 +83,7 @@ class KnowledgeExtractionService:
         run_id = run.id
         try:
             self._mark_progress(run, status=ExtractionStatus.RUNNING, stage="chunking", percent=15)
+            self._clear_prior_extraction_artifacts(document.id)
             chunks = list(_chunk_document_text(document))
             run.chunk_count = len(chunks)
             self._db.commit()
@@ -181,6 +183,27 @@ class KnowledgeExtractionService:
                 run.completed_at = datetime.now(UTC)
                 self._db.commit()
             raise
+
+    def _clear_prior_extraction_artifacts(self, document_id: str) -> None:
+        """Remove stale document-derived rows so repeated ingest is idempotent.
+
+        Completed chat runs and assistant messages are preserved, but citations for old
+        chunk IDs are removed because they can no longer point at the refreshed chunk set
+        safely across databases with foreign-key enforcement.
+        """
+        self._db.execute(delete(CitationModel).where(CitationModel.document_id == document_id))
+        self._db.execute(
+            delete(EntityRelationshipModel).where(
+                EntityRelationshipModel.document_id == document_id
+            )
+        )
+        self._db.execute(
+            delete(EntityMentionModel).where(EntityMentionModel.document_id == document_id)
+        )
+        self._db.execute(
+            delete(DocumentChunkModel).where(DocumentChunkModel.document_id == document_id)
+        )
+        self._db.flush()
 
     def _mark_progress(
         self,

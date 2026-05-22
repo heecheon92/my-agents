@@ -622,6 +622,10 @@ Conversation run은 `knowledge_base_selection`을 받습니다. `mode: "all"`은
 ID가 없으면 `422`, all mode에 ID가 있으면 `422`, 권한 없거나 존재하지 않는 selected KB ID는
 `404`입니다. 응답, run detail, run history, stream event는 `knowledge_base_selection`과
 `resolved_knowledge_base_count`를 노출합니다.
+검색 결과는 같은 document 안의 중복 chunk ordinal/content를 dedupe해서, 과거 재-ingestion으로
+중복 chunk가 남아 있어도 top-k citation slot을 낭비하지 않습니다. Assistant reply에는 더 이상
+hard-truncated document prefix를 임의로 붙이지 않으며, grounding은 `citations`와 graph input의
+retrieved context를 통해 노출합니다.
 
 업로드 경로는 5 MiB 이하의 `.pdf`, `.md`,
 `.markdown`, `.txt` 파일을 받습니다. PDF는 `application/pdf` text-based PDF에서 `pypdf`

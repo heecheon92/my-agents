@@ -495,7 +495,7 @@ def test_assistant_message_replay_preserves_original_kb_selection(monkeypatch) -
     }
     assert payload["resolved_knowledge_base_count"] == 1
     assert {citation["knowledge_base_id"] for citation in payload["citations"]} == {kb_a}
-    assert "ReplayAlphaOnly" in payload["reply"]
+    assert any("ReplayAlphaOnly" in citation["snippet"] for citation in payload["citations"])
     assert "ReplayBetaOnly" not in payload["reply"]
     assert {context["document_id"] for context in graph.calls[-1]["retrieved_context"]} == {
         doc_a.json()["id"]
@@ -541,7 +541,7 @@ def test_assistant_message_replay_uses_request_kb_selection_when_original_run_mi
         "knowledge_base_ids": [kb_id],
     }
     assert payload["citations"]
-    assert "ReplayFallbackOnly" in payload["reply"]
+    assert any("ReplayFallbackOnly" in citation["snippet"] for citation in payload["citations"])
 
 
 def test_failed_conversation_run_detail_returns_conflict(monkeypatch) -> None:  # noqa: ANN001
@@ -671,7 +671,7 @@ def test_streaming_selected_kb_run_uses_fallback_only_in_selected_scope(monkeypa
     assert completed["knowledge_base_selection"] == selected_payload
     assert completed["resolved_knowledge_base_count"] == 1
     assert {citation["knowledge_base_id"] for citation in completed["citations"]} == {kb_a}
-    assert "AlphaStreamOnly" in completed["reply"]
+    assert any("AlphaStreamOnly" in citation["snippet"] for citation in completed["citations"])
     assert "BetaStreamOnly" not in completed["reply"]
     assert {context["document_id"] for context in graph.calls[-1]["retrieved_context"]} == {
         doc_a.json()["id"]

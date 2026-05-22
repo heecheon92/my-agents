@@ -66,10 +66,21 @@ class RetrievalService:
         for item in expanded:
             combined.setdefault(item.chunk.id, item)
         if not combined and _needs_personal_document_fallback(query):
-            return self._recent_authorized_chunks(
-                user_id=user_id, limit=limit, knowledge_base_ids=knowledge_base_ids
+            return _dedupe_retrieved_chunks(
+                self._recent_authorized_chunks(
+                    user_id=user_id, limit=limit, knowledge_base_ids=knowledge_base_ids
+                ),
+                limit=limit,
             )
-        return sorted(combined.values(), key=lambda item: (-item.score, item.chunk.ordinal))[:limit]
+        ranked = sorted(combined.values(), key=lambda item: (-item.score, item.chunk.ordinal))
+        if _needs_document_overview(query):
+            ranked = self._with_small_document_overview_chunks(
+                ranked,
+                user_id=user_id,
+                knowledge_base_ids=knowledge_base_ids,
+                char_budget=6000,
+            )
+        return _dedupe_retrieved_chunks(ranked, limit=limit)
 
     def authorized_document_count(
         self, *, user_id: str, knowledge_base_ids: Sequence[str] | None = None
@@ -257,6 +268,41 @@ class RetrievalService:
             )[:limit]
         ]
 
+    def _with_small_document_overview_chunks(
+        self,
+        ranked: list[RetrievedChunk],
+        *,
+        user_id: str,
+        knowledge_base_ids: Sequence[str] | None,
+        char_budget: int,
+    ) -> list[RetrievedChunk]:
+        """Supplement summary-style queries with broader coverage for small matched docs."""
+        if not ranked:
+            return ranked
+        matched_document_ids = {item.document.id for item in ranked}
+        existing_chunk_ids = {item.chunk.id for item in ranked}
+        used_chars = sum(len(item.chunk.content) for item in ranked)
+        supplemented = list(ranked)
+        for chunk, document in self._authorized_chunk_rows(
+            user_id, knowledge_base_ids=knowledge_base_ids
+        ):
+            if document.id not in matched_document_ids or chunk.id in existing_chunk_ids:
+                continue
+            next_size = len(chunk.content)
+            if used_chars + next_size > char_budget and supplemented:
+                continue
+            supplemented.append(
+                RetrievedChunk(
+                    chunk=chunk,
+                    document=document,
+                    score=0.05,
+                    source="document_overview",
+                )
+            )
+            existing_chunk_ids.add(chunk.id)
+            used_chars += next_size
+        return supplemented
+
     def _authorized_chunk_rows(
         self, user_id: str, *, knowledge_base_ids: Sequence[str] | None
     ) -> list[tuple[DocumentChunkModel, DocumentModel]]:
@@ -369,6 +415,55 @@ def _query_terms(query: str) -> set[str]:
 def _needs_personal_document_fallback(query: str) -> bool:
     normalized = query.casefold()
     return any(hint in normalized for hint in _PERSONAL_DOCUMENT_FALLBACK_HINTS)
+
+
+_DOCUMENT_OVERVIEW_HINTS = (
+    "summarize",
+    "summary",
+    "overview",
+    "what is this document",
+    "what does this document",
+    "what does my uploaded document",
+    "tell me about my uploaded document",
+    "문서 요약",
+    "요약",
+    "어떤 문서",
+    "업로드한 문서",
+)
+
+
+def _needs_document_overview(query: str) -> bool:
+    normalized = query.casefold()
+    return any(hint in normalized for hint in _DOCUMENT_OVERVIEW_HINTS)
+
+
+def _dedupe_retrieved_chunks(
+    chunks: Sequence[RetrievedChunk], *, limit: int
+) -> list[RetrievedChunk]:
+    deduped: list[RetrievedChunk] = []
+    seen_chunk_ids: set[str] = set()
+    seen_ordinals: set[tuple[str, int]] = set()
+    seen_content: set[tuple[str, str]] = set()
+    for item in chunks:
+        ordinal_key = (item.document.id, item.chunk.ordinal)
+        content_key = (item.document.id, _normalize_chunk_content(item.chunk.content))
+        if (
+            item.chunk.id in seen_chunk_ids
+            or ordinal_key in seen_ordinals
+            or content_key in seen_content
+        ):
+            continue
+        deduped.append(item)
+        seen_chunk_ids.add(item.chunk.id)
+        seen_ordinals.add(ordinal_key)
+        seen_content.add(content_key)
+        if len(deduped) >= limit:
+            break
+    return deduped
+
+
+def _normalize_chunk_content(content: str) -> str:
+    return " ".join(content.casefold().split())
 
 
 def _keyword_score(content: str, terms: set[str]) -> int:

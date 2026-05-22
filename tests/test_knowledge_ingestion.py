@@ -261,6 +261,43 @@ def test_personal_knowledge_base_document_ingestion_creates_extraction_artifacts
     assert {chunk.source_page for chunk in chunks} == {None}
 
 
+def test_reingesting_document_replaces_chunks_without_duplicate_ordinals(
+    monkeypatch,
+) -> None:  # noqa: ANN001
+    client = _client(monkeypatch)
+    _signup_login(client, "kb-reingest-owner@example.com")
+    kb_id = _create_knowledge_base(client, "Reingest KB")
+    document = _create_document(
+        client,
+        json={
+            "title": "Reingest Notes",
+            "content": "First reingest paragraph.\n\nSecond reingest paragraph.",
+            "knowledge_base_id": kb_id,
+        },
+    )
+    assert document.status_code == 201
+    document_id = document.json()["id"]
+
+    first = client.post(f"/documents/{document_id}/ingest")
+    second = client.post(f"/documents/{document_id}/ingest")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json()["chunk_count"] == 2
+    assert second.json()["chunk_count"] == 2
+    chunks = _database_rows(
+        select(DocumentChunkModel)
+        .where(DocumentChunkModel.document_id == document_id)
+        .order_by(DocumentChunkModel.ordinal)
+    )
+
+    assert [chunk.ordinal for chunk in chunks] == [0, 1]
+    assert [chunk.content for chunk in chunks] == [
+        "First reingest paragraph.",
+        "Second reingest paragraph.",
+    ]
+
+
 def test_legacy_document_create_without_knowledge_base_is_rejected(monkeypatch) -> None:  # noqa: ANN001
     client = _client(monkeypatch)
     _signup_login(client, "missing-kb-create@example.com")
@@ -724,7 +761,8 @@ def test_text_upload_persists_metadata_and_ingests_for_retrieval(
     assert run_payload["citations"]
     assert run_payload["citations"][0]["document_id"] == payload["id"]
     assert run_payload["citations"][0]["source_filename"] == filename
-    assert phrase in run_payload["reply"]
+    assert phrase in run_payload["citations"][0]["snippet"]
+    assert not run_payload["reply"].startswith("Based on authorized document context:")
 
 
 def test_langgraph_academy_pdf_regression_extracts_real_text_when_available() -> None:
@@ -785,7 +823,7 @@ def test_pdf_upload_ingest_and_conversation_retrieval_pipeline(monkeypatch) -> N
     assert payload["citations"]
     assert payload["citations"][0]["document_id"] == document.json()["id"]
     assert payload["citations"][0]["source_filename"] == "resume.pdf"
-    assert resume_phrase in payload["reply"]
+    assert resume_phrase in payload["citations"][0]["snippet"]
 
 
 def test_owner_can_delete_uploaded_pdf_and_cleanup_ingestion_artifacts(monkeypatch) -> None:  # noqa: ANN001

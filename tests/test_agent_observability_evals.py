@@ -9,7 +9,6 @@ from fastapi.testclient import TestClient
 from my_agents.agent_runtime.evals import (
     evaluate_event_latency_budget,
     evaluate_event_redaction,
-    evaluate_grounded_citations,
     evaluate_permission_leakage,
 )
 from my_agents.api import create_app
@@ -109,11 +108,8 @@ def test_chat_run_events_are_ordered_structured_and_redacted(monkeypatch) -> Non
     assert "How does Orion" not in str(payloads)
 
     citations = [citation["snippet"] for citation in run_payload["citations"]]
-    grounded = evaluate_grounded_citations(
-        reply=run_payload["reply"],
-        citation_snippets=citations,
-    )
-    assert grounded.passed
+    assert any(private_phrase in snippet for snippet in citations)
+    assert private_phrase not in run_payload["reply"]
     assert evaluate_event_redaction(
         event_payloads=payloads,
         forbidden_terms=[private_phrase, "How does Orion"],

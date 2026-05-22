@@ -1217,17 +1217,13 @@ def _compose_rag_reply(
     retrieved_chunks: list[RetrievedChunk],
     answer_mode: AnswerMode,
 ) -> str:
-    if not retrieved_chunks:
-        return base_reply
-    context_lines = [
-        f"- {item.document.title}: {item.chunk.content[:180]}" for item in retrieved_chunks[:3]
-    ]
-    heading = (
-        "Based on authorized document context:"
-        if answer_mode == "document_grounded"
-        else "Using relevant authorized document context plus general guidance:"
-    )
-    return heading + "\n" + "\n".join(context_lines) + "\n\n" + base_reply
+    """Return the model reply without prepending clipped retrieval snippets.
+
+    Grounding is exposed through structured citations and graph input context. Injecting
+    hard-truncated chunk prefixes into the assistant-visible answer made snippets look
+    like broken assistant prose and wasted the UI's citation affordance.
+    """
+    return base_reply
 
 
 def _count_retrieval_source(retrieved_chunks: list[RetrievedChunk], source: str) -> int:

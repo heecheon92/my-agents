@@ -626,6 +626,10 @@ KB, while `mode: "selected"` searches only the provided KB IDs as a hard retriev
 Selected mode with no IDs is `422`; all mode with IDs is `422`; unauthorized/nonexistent
 selected KB IDs return `404`. Responses, run detail, run history, and stream events expose
 `knowledge_base_selection` plus `resolved_knowledge_base_count`.
+Retrieval results dedupe duplicate chunk ordinals/content within the same document, so stale
+duplicates from historical re-ingestion do not waste top-k citation slots. Assistant replies no
+longer prepend hard-truncated document context; grounding is exposed through `citations` and the
+retrieved context passed to the graph.
 
 The upload path accepts `.pdf`, `.md`,
 `.markdown`, and `.txt` files up to 5 MiB. PDFs use `pypdf` for page text from
