@@ -366,3 +366,95 @@ def test_stream_selected_kb_chat_scope_filters_retrieval_and_metadata(monkeypatc
     assert (
         retrieval_event["data"]["knowledge_base_selection"] == completed["knowledge_base_selection"]
     )
+
+
+def test_stream_kb_selection_validation_matches_non_stream_path(monkeypatch) -> None:  # noqa: ANN001
+    graph = KbSpyGraph()
+    owner = _client(monkeypatch, graph)
+    outsider = _client(monkeypatch, graph)
+    _signup_login(owner, "kb-stream-validation-owner@example.com")
+    _signup_login(outsider, "kb-stream-validation-outsider@example.com")
+    kb_id = _create_kb(owner, "Stream Validation KB")
+    conversation_id = owner.post("/conversations", json={"title": "Stream validation"}).json()["id"]
+    outsider_conversation_id = outsider.post(
+        "/conversations", json={"title": "Stream outsider"}
+    ).json()["id"]
+
+    invalid_empty = owner.post(
+        f"/conversations/{conversation_id}/runs/stream",
+        json={"message": "uploaded document", "knowledge_base_selection": {"mode": "selected"}},
+    )
+    invalid_all = owner.post(
+        f"/conversations/{conversation_id}/runs/stream",
+        json={
+            "message": "uploaded document",
+            "knowledge_base_selection": {"mode": "all", "knowledge_base_ids": [kb_id]},
+        },
+    )
+    unauthorized = outsider.post(
+        f"/conversations/{outsider_conversation_id}/runs/stream",
+        json={
+            "message": "uploaded document",
+            "knowledge_base_selection": {"mode": "selected", "knowledge_base_ids": [kb_id]},
+        },
+    )
+
+    assert invalid_empty.status_code == 422
+    assert invalid_all.status_code == 422
+    assert unauthorized.status_code == 404
+    assert graph.calls == []
+
+
+def test_stream_all_kb_chat_scope_persists_completion_and_event_metadata(monkeypatch) -> None:  # noqa: ANN001
+    graph = KbSpyGraph()
+    client = _client(monkeypatch, graph)
+    _signup_login(client, "kb-stream-all@example.com")
+    kb_a = _create_kb(client, "Stream All KB A")
+    kb_b = _create_kb(client, "Stream All KB B")
+    doc_a = client.post(
+        f"/knowledge-bases/{kb_a}/documents",
+        json={"title": "Stream All Alpha", "content": "StreamAllAlpha source."},
+    )
+    doc_b = client.post(
+        f"/knowledge-bases/{kb_b}/documents",
+        json={"title": "Stream All Beta", "content": "StreamAllBeta source."},
+    )
+    assert (
+        client.post(f"/knowledge-bases/{kb_a}/documents/{doc_a.json()['id']}/ingest").status_code
+        == 200
+    )
+    assert (
+        client.post(f"/knowledge-bases/{kb_b}/documents/{doc_b.json()['id']}/ingest").status_code
+        == 200
+    )
+    conversation_id = client.post("/conversations", json={"title": "Stream all KBs"}).json()["id"]
+
+    with client.stream(
+        "POST",
+        f"/conversations/{conversation_id}/runs/stream",
+        json={"message": "Summarize my uploaded document."},
+    ) as response:
+        assert response.status_code == 200
+        events = _parse_sse(response.read().decode())
+
+    completed = events[-1]["data"]
+    detail = client.get(f"/conversations/{conversation_id}/runs/{completed['run_id']}")
+    run_events = client.get(f"/conversations/{conversation_id}/runs/{completed['run_id']}/events")
+    retrieval_event = next(
+        event for event in run_events.json() if event["event_type"] == "retrieval_completed"
+    )
+    answer_event = next(
+        event for event in run_events.json() if event["event_type"] == "answer_composed"
+    )
+
+    assert completed["knowledge_base_selection"] == {"mode": "all", "knowledge_base_ids": []}
+    assert completed["resolved_knowledge_base_count"] == 2
+    assert {citation["knowledge_base_id"] for citation in completed["citations"]} == {kb_a, kb_b}
+    assert detail.json()["knowledge_base_selection"] == completed["knowledge_base_selection"]
+    assert (
+        retrieval_event["payload"]["knowledge_base_selection"]
+        == completed["knowledge_base_selection"]
+    )
+    assert (
+        answer_event["payload"]["knowledge_base_selection"] == completed["knowledge_base_selection"]
+    )
