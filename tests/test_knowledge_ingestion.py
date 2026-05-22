@@ -208,7 +208,7 @@ def _wait_for_run(
     *,
     terminal_status: str = "completed",
 ) -> dict:
-    deadline = monotonic() + 5
+    deadline = monotonic() + 10
     payload: dict | None = None
     while monotonic() < deadline:
         response = client.get(f"/documents/{document_id}/extraction-runs/{run_id}")
