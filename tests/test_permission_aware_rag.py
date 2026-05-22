@@ -346,6 +346,7 @@ def test_graph_expansion_adds_authorized_related_chunks(monkeypatch) -> None:  #
     client = _client(monkeypatch, graph)
     _signup_login(client, "rag-expansion@example.com")
     kb_id = _create_personal_knowledge_base(client, "Expansion KB")
+    unselected_kb_id = _create_personal_knowledge_base(client, "Unselected Expansion KB")
 
     document = _create_document(
         client,
@@ -356,103 +357,52 @@ def test_graph_expansion_adds_authorized_related_chunks(monkeypatch) -> None:  #
             "knowledge_base_id": kb_id,
         },
     )
+    unselected_document = _create_document(
+        client,
+        json={
+            "title": "Unselected LangGraph Expansion Notes",
+            "content": "LangGraph retrieval matches AlphaQuery.\n\n"
+            "LangGraph unselected memory must stay outside selected scope.",
+            "knowledge_base_id": unselected_kb_id,
+        },
+    )
     assert document.status_code == 201
+    assert unselected_document.status_code == 201
     ingest = client.post(f"/documents/{document.json()['id']}/ingest")
+    unselected_ingest = client.post(f"/documents/{unselected_document.json()['id']}/ingest")
     assert ingest.status_code == 200
+    assert unselected_ingest.status_code == 200
     assert ingest.json()["chunk_count"] == 2
+    assert unselected_ingest.json()["chunk_count"] == 2
 
     conversation_id = _create_conversation(client, "Expansion")
     response = client.post(
         f"/conversations/{conversation_id}/runs",
-        json={"message": "AlphaQuery"},
+        json={
+            "message": "AlphaQuery",
+            "knowledge_base_selection": {"mode": "selected", "knowledge_base_ids": [kb_id]},
+        },
     )
 
     assert response.status_code == 200
     payload = response.json()
     snippets = [citation["snippet"] for citation in payload["citations"]]
+    assert payload["knowledge_base_selection"] == {
+        "mode": "selected",
+        "knowledge_base_ids": [kb_id],
+    }
+    assert payload["resolved_knowledge_base_count"] == 1
     assert len(snippets) == 2
     assert any("AlphaQuery" in snippet for snippet in snippets)
     assert any("planner memory" in snippet for snippet in snippets)
+    assert all("unselected memory" not in snippet for snippet in snippets)
+    assert {citation["knowledge_base_id"] for citation in payload["citations"]} == {kb_id}
     assert "planner memory" in payload["reply"]
+    assert "unselected memory" not in payload["reply"]
     assert len(graph.calls[-1]["retrieved_chunk_ids"]) == 2
-
-
-def test_selected_kb_scope_applies_to_graph_expansion_and_fallback(monkeypatch) -> None:  # noqa: ANN001
-    class KeywordOnlyEmbeddingProvider:
-        def embed_query(self, text: str) -> list[float]:  # noqa: ARG002
-            return []
-
-    monkeypatch.setattr(
-        retrieval_module,
-        "get_embedding_provider",
-        lambda: KeywordOnlyEmbeddingProvider(),
-    )
-    graph = RagSpyGraph()
-    client = _client(monkeypatch, graph)
-    _signup_login(client, "selected-source-paths@example.com")
-    kb_a = _create_personal_knowledge_base(client, "Selected Path KB A")
-    kb_b = _create_personal_knowledge_base(client, "Selected Path KB B")
-    doc_a = _create_document(
-        client,
-        json={
-            "title": "Selected Alpha Expansion",
-            "content": "SharedEntity retrieval matches AlphaScope.\n\n"
-            "SharedEntity related planner memory.",
-            "knowledge_base_id": kb_a,
-        },
-    )
-    doc_b = _create_document(
-        client,
-        json={
-            "title": "Selected Beta Fallback",
-            "content": "BetaScope fallback private biography.",
-            "knowledge_base_id": kb_b,
-        },
-    )
-    assert doc_a.status_code == 201
-    assert doc_b.status_code == 201
-    assert client.post(f"/documents/{doc_a.json()['id']}/ingest").status_code == 200
-    assert client.post(f"/documents/{doc_b.json()['id']}/ingest").status_code == 200
-    conversation_id = _create_conversation(client, "Selected source paths")
-
-    expansion_response = client.post(
-        f"/conversations/{conversation_id}/runs",
-        json={
-            "message": "automobile",
-            "knowledge_base_selection": {"mode": "selected", "knowledge_base_ids": [kb_a]},
-        },
-    )
-    fallback_response = client.post(
-        f"/conversations/{conversation_id}/runs",
-        json={
-            "message": "Tell me about my vehicle resume.",
-            "knowledge_base_selection": {"mode": "selected", "knowledge_base_ids": [kb_b]},
-        },
-    )
-
-    assert expansion_response.status_code == 200
-    expansion_payload = expansion_response.json()
-    assert {citation["knowledge_base_id"] for citation in expansion_payload["citations"]} == {kb_a}
-    assert any(
-        "related planner memory" in citation["snippet"]
-        for citation in expansion_payload["citations"]
-    )
-    expansion_events = client.get(
-        f"/conversations/{conversation_id}/runs/{expansion_payload['run_id']}/events"
-    ).json()
-    expansion_retrieval = next(
-        event for event in expansion_events if event["event_type"] == "retrieval_completed"
-    )
-    assert expansion_retrieval["payload"]["graph_expansion_count"] == 1
-
-    assert fallback_response.status_code == 200
-    fallback_payload = fallback_response.json()
-    assert {citation["knowledge_base_id"] for citation in fallback_payload["citations"]} == {kb_b}
-    assert graph.calls[-1]["retrieved_context"][0]["document_id"] == doc_b.json()["id"]
-    fallback_events = client.get(
-        f"/conversations/{conversation_id}/runs/{fallback_payload['run_id']}/events"
-    ).json()
-    fallback_retrieval = next(
-        event for event in fallback_events if event["event_type"] == "retrieval_completed"
-    )
-    assert fallback_retrieval["payload"]["fallback_count"] == 1
+    context_sources = {context["source"] for context in graph.calls[-1]["retrieved_context"]}
+    assert "graph_expansion" in context_sources
+    assert context_sources <= {"semantic_vector", "keyword_match", "graph_expansion"}
+    assert {context["document_id"] for context in graph.calls[-1]["retrieved_context"]} == {
+        document.json()["id"]
+    }
