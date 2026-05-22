@@ -87,7 +87,11 @@ def create_document_in_knowledge_base(
     settings: Settings,
 ) -> DocumentResponse:
     assert_guest_can_create_document(db, principal, settings)
-    group_id = resolve_kb_document_group_id(db, knowledge_base_id=knowledge_base_id, user_id=principal.user_id)
+    group_id = resolve_kb_document_group_id(
+        db,
+        knowledge_base_id=knowledge_base_id,
+        user_id=principal.user_id,
+    )
     document = DocumentModel(
         title=request.title.strip(),
         content=request.content,
@@ -119,7 +123,9 @@ async def upload_document(
 ) -> DocumentResponse:
     """Create a document from a safe upload and persist parser metadata."""
     if group_id is not None:
-        knowledge_base = get_authorized_knowledge_base_or_404(db, knowledge_base_id, principal.user_id)
+        knowledge_base = get_authorized_knowledge_base_or_404(
+            db, knowledge_base_id, principal.user_id
+        )
         if group_id != knowledge_base.group_id:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

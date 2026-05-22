@@ -5,9 +5,8 @@ from __future__ import annotations
 import json
 import math
 import re
-from dataclasses import dataclass
-
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 from sqlalchemy import and_, desc, false, func, or_, select
 from sqlalchemy.exc import SQLAlchemyError
@@ -96,12 +95,12 @@ class RetrievalService:
         query_embedding = self._embedding_provider.embed_query(query)
         if _uses_postgres(self._db):
             sql_matches = self._postgres_vector_authorized_matches(
-                    user_id=user_id,
-                    query_embedding=query_embedding,
-                    terms=terms,
-                    knowledge_base_ids=knowledge_base_ids,
-                    limit=20,
-                )
+                user_id=user_id,
+                query_embedding=query_embedding,
+                terms=terms,
+                knowledge_base_ids=knowledge_base_ids,
+                limit=20,
+            )
             if sql_matches:
                 return sql_matches
         return self._json_authorized_matches(

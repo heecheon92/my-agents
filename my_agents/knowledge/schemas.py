@@ -35,7 +35,7 @@ class KnowledgeBaseSelection(BaseModel):
     knowledge_base_ids: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def validate_selection_shape(self) -> "KnowledgeBaseSelection":
+    def validate_selection_shape(self) -> KnowledgeBaseSelection:
         if self.mode == "selected" and not self.knowledge_base_ids:
             raise ValueError("selected knowledge_base_ids must be non-empty")
         if self.mode == "all" and self.knowledge_base_ids:

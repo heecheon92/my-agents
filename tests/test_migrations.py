@@ -160,16 +160,23 @@ def test_sqlite_json_fallback_reads_chunks_created_before_pgvector_migration(
     now = datetime.now().isoformat(sep=" ")
     try:
         with engine.begin() as connection:
+            knowledge_base_id = str(uuid.uuid4())
+            connection.exec_driver_sql(
+                "insert into knowledge_bases "
+                "(id, name, scope, owner_user_id, created_at) values (?, ?, ?, ?, ?)",
+                (knowledge_base_id, "Legacy KB", "personal", "user-1", now),
+            )
             connection.exec_driver_sql(
                 "insert into documents "
-                "(id, title, content, source_type, owner_user_id, created_at) "
-                "values (?, ?, ?, ?, ?, ?)",
+                "(id, title, content, source_type, owner_user_id, knowledge_base_id, created_at) "
+                "values (?, ?, ?, ?, ?, ?, ?)",
                 (
                     document_id,
                     "Legacy Chunk",
                     "Legacy vector fallback mentions LangGraph.",
                     "text",
                     "user-1",
+                    knowledge_base_id,
                     now,
                 ),
             )

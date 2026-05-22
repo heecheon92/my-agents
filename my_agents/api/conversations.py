@@ -445,6 +445,7 @@ def _conversation_run_events(
                 reply=response.reply,
                 retrieval_decision=retrieval_context.decision,
                 answer_mode=retrieval_context.answer_mode,
+                selection_context=retrieval_context.knowledge_base_selection,
             ),
         )
         yield _sse_event("run_completed", response.model_dump(mode="json"))
@@ -470,6 +471,7 @@ def _conversation_run_events(
                     retrieved_chunks=retrieval_context.retrieved_chunks,
                     retrieval_decision=retrieval_context.decision,
                     answer_mode=retrieval_context.answer_mode,
+                    selection_context=retrieval_context.knowledge_base_selection,
                 )
                 _append_run_event(db, run.id, AgentEventType.GRAPH_INVOKED, graph_payload)
                 yield _sse_event(
@@ -580,6 +582,7 @@ def _persist_completed_run(
     reply: str,
     retrieval_decision: RetrievalRoutingDecision,
     answer_mode: AnswerMode,
+    selection_context: KnowledgeBaseSelectionContext,
 ) -> ConversationRunResponse:
     assistant_message = MessageModel(
         conversation_id=conversation_id,
@@ -618,6 +621,7 @@ def _persist_completed_run(
             reply=reply,
             retrieval_decision=retrieval_decision,
             answer_mode=answer_mode,
+            selection_context=selection_context,
         ),
         commit=False,
     )
@@ -634,10 +638,13 @@ def _persist_completed_run(
         retrieval_route=retrieval_decision.route,
         answer_mode=answer_mode,
         document_scope=retrieval_decision.document_scope,
+        knowledge_base_selection=_knowledge_base_selection_response(selection_context),
+        resolved_knowledge_base_count=selection_context.resolved_count,
         citations=[
             CitationResponse(
                 id=citation.id,
                 document_id=citation.document_id,
+                knowledge_base_id=item.document.knowledge_base_id,
                 chunk_id=citation.chunk_id,
                 snippet=citation.snippet,
                 source_page=item.chunk.source_page,
@@ -1044,6 +1051,26 @@ def _count_retrieval_source(retrieved_chunks: list[RetrievedChunk], source: str)
     return sum(1 for chunk in retrieved_chunks if chunk.source == source)
 
 
+def _knowledge_base_selection_response(
+    selection_context: KnowledgeBaseSelectionContext,
+) -> KnowledgeBaseSelection:
+    return KnowledgeBaseSelection(
+        mode=selection_context.mode,
+        knowledge_base_ids=list(selection_context.knowledge_base_ids),
+    )
+
+
+def _knowledge_base_selection_payload(
+    selection_context: KnowledgeBaseSelectionContext,
+) -> dict[str, object]:
+    return {
+        "knowledge_base_selection": _knowledge_base_selection_response(
+            selection_context
+        ).model_dump(mode="json"),
+        "resolved_knowledge_base_count": selection_context.resolved_count,
+    }
+
+
 def _user_message_stored_payload(*, message_id: str, content_length: int) -> dict:
     return {"message_id": message_id, "content_length": content_length}
 
@@ -1054,8 +1081,9 @@ def _retrieval_completed_payload(
     retrieval_latency_ms: float,
     retrieval_decision: RetrievalRoutingDecision,
     answer_mode: AnswerMode,
+    selection_context: KnowledgeBaseSelectionContext,
 ) -> dict:
-    return {
+    payload = {
         "retrieval_route": retrieval_decision.route,
         "answer_mode": answer_mode,
         "document_scope": retrieval_decision.document_scope,
@@ -1066,6 +1094,8 @@ def _retrieval_completed_payload(
         "fallback_count": _count_retrieval_source(retrieved_chunks, "document_fallback"),
         "latency_ms": retrieval_latency_ms,
     }
+    payload.update(_knowledge_base_selection_payload(selection_context))
+    return payload
 
 
 def _graph_invoked_payload(
@@ -1075,8 +1105,9 @@ def _graph_invoked_payload(
     retrieved_chunks: list[RetrievedChunk],
     retrieval_decision: RetrievalRoutingDecision,
     answer_mode: AnswerMode,
+    selection_context: KnowledgeBaseSelectionContext,
 ) -> dict:
-    return {
+    payload = {
         "route_label": route.label,
         "retrieval_route": retrieval_decision.route,
         "answer_mode": answer_mode,
@@ -1084,6 +1115,8 @@ def _graph_invoked_payload(
         "message_count": len(messages),
         "retrieved_chunk_count": len(retrieved_chunks),
     }
+    payload.update(_knowledge_base_selection_payload(selection_context))
+    return payload
 
 
 def _answer_composed_payload(
@@ -1092,14 +1125,17 @@ def _answer_composed_payload(
     reply: str,
     retrieval_decision: RetrievalRoutingDecision,
     answer_mode: AnswerMode,
+    selection_context: KnowledgeBaseSelectionContext,
 ) -> dict:
-    return {
+    payload = {
         "citation_count": citation_count,
         "reply_length": len(reply),
         "retrieval_route": retrieval_decision.route,
         "answer_mode": answer_mode,
         "document_scope": retrieval_decision.document_scope,
     }
+    payload.update(_knowledge_base_selection_payload(selection_context))
+    return payload
 
 
 def _persist_failed_run(
@@ -1147,11 +1183,17 @@ def _start_run(
     user_id: str,
     user_message_id: str,
     message_content_length: int,
+    selection_context: KnowledgeBaseSelectionContext,
 ) -> AgentRunModel:
     run = AgentRunModel(
         conversation_id=conversation_id,
         user_id=user_id,
         status=RunStatus.RUNNING.value,
+        knowledge_base_selection_mode=selection_context.mode,
+        selected_knowledge_base_ids_json=json.dumps(
+            list(selection_context.knowledge_base_ids), sort_keys=True
+        ),
+        resolved_knowledge_base_count=selection_context.resolved_count,
     )
     db.add(run)
     db.flush()
@@ -1159,7 +1201,12 @@ def _start_run(
         db,
         run.id,
         AgentEventType.RUN_STARTED,
-        {"run_id": run.id, "conversation_id": conversation_id, "status": run.status},
+        {
+            "run_id": run.id,
+            "conversation_id": conversation_id,
+            "status": run.status,
+            **_knowledge_base_selection_payload(selection_context),
+        },
         commit=False,
     )
     _append_run_event(
@@ -1208,6 +1255,7 @@ def _record_run_retrieval_metadata(
     *,
     retrieval_decision: RetrievalRoutingDecision,
     answer_mode: AnswerMode,
+    selection_context: KnowledgeBaseSelectionContext,
 ) -> None:
     run = db.get(AgentRunModel, run_id)
     if run is None:
@@ -1215,6 +1263,11 @@ def _record_run_retrieval_metadata(
     run.retrieval_route = retrieval_decision.route
     run.answer_mode = answer_mode
     run.document_scope = retrieval_decision.document_scope
+    run.knowledge_base_selection_mode = selection_context.mode
+    run.selected_knowledge_base_ids_json = json.dumps(
+        list(selection_context.knowledge_base_ids), sort_keys=True
+    )
+    run.resolved_knowledge_base_count = selection_context.resolved_count
     db.commit()
 
 
@@ -1288,6 +1341,19 @@ def _sse_event(event_name: str, payload: dict) -> str:
     return f"event: {event_name}\ndata: {data}\n\n"
 
 
+def _run_knowledge_base_selection(run: AgentRunModel) -> KnowledgeBaseSelection:
+    raw_ids = run.selected_knowledge_base_ids_json or "[]"
+    try:
+        parsed = json.loads(raw_ids)
+    except json.JSONDecodeError:
+        parsed = []
+    ids = [item for item in parsed if isinstance(item, str)] if isinstance(parsed, list) else []
+    return KnowledgeBaseSelection(
+        mode=run.knowledge_base_selection_mode or "all",
+        knowledge_base_ids=ids,
+    )
+
+
 def _conversation_response(conversation: ConversationModel) -> ConversationResponse:
     return ConversationResponse(
         id=conversation.id,
@@ -1303,6 +1369,8 @@ def _run_summary_response(run: AgentRunModel) -> AgentRunSummaryResponse:
         conversation_id=run.conversation_id,
         status=run.status,
         route_label=run.route_label,
+        knowledge_base_selection=_run_knowledge_base_selection(run),
+        resolved_knowledge_base_count=run.resolved_knowledge_base_count,
         created_at=run.created_at,
     )
 
@@ -1327,6 +1395,8 @@ def _run_detail_response(db: Session, run: AgentRunModel) -> ConversationRunResp
         retrieval_route=run.retrieval_route or "no_retrieval",
         answer_mode=run.answer_mode or "general_knowledge",
         document_scope=run.document_scope or "unknown",
+        knowledge_base_selection=_run_knowledge_base_selection(run),
+        resolved_knowledge_base_count=run.resolved_knowledge_base_count,
         citations=[_citation_response(db, citation) for citation in citations],
     )
 
@@ -1337,6 +1407,7 @@ def _citation_response(db: Session, citation: CitationModel) -> CitationResponse
     return CitationResponse(
         id=citation.id,
         document_id=citation.document_id,
+        knowledge_base_id=document.knowledge_base_id if document is not None else None,
         chunk_id=citation.chunk_id,
         snippet=citation.snippet,
         source_page=chunk.source_page if chunk is not None else None,

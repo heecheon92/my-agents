@@ -88,15 +88,11 @@ def get_knowledge_base(
     principal: Annotated[Principal, Depends(get_current_principal)],
     db: Annotated[Session, Depends(get_database_session)],
 ) -> KnowledgeBaseResponse:
-    knowledge_base = get_authorized_knowledge_base_or_404(
-        db, knowledge_base_id, principal.user_id
-    )
+    knowledge_base = get_authorized_knowledge_base_or_404(db, knowledge_base_id, principal.user_id)
     return _knowledge_base_response(knowledge_base)
 
 
-@knowledge_bases_router.get(
-    "/{knowledge_base_id}/documents", response_model=list[DocumentResponse]
-)
+@knowledge_bases_router.get("/{knowledge_base_id}/documents", response_model=list[DocumentResponse])
 def list_knowledge_base_documents(
     knowledge_base_id: str,
     principal: Annotated[Principal, Depends(get_current_principal)],

@@ -47,9 +47,7 @@ class ConversationRunRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     message: str = Field(min_length=1)
-    knowledge_base_selection: KnowledgeBaseSelection = Field(
-        default_factory=KnowledgeBaseSelection
-    )
+    knowledge_base_selection: KnowledgeBaseSelection = Field(default_factory=KnowledgeBaseSelection)
 
 
 class ConversationRunResponse(BaseModel):

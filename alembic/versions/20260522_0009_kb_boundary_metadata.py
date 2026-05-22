@@ -10,6 +10,7 @@ from __future__ import annotations
 import sqlalchemy as sa
 
 from alembic import op
+from alembic.runtime import migration
 
 revision = "20260522_0009"
 down_revision = "20260522_0008"
@@ -35,21 +36,37 @@ def upgrade() -> None:
             server_default="0",
         ),
     )
-    with op.batch_alter_table("documents") as batch_op:
-        batch_op.alter_column(
+    if migration.MigrationContext.get_current().as_sql:
+        op.alter_column(
+            "documents",
             "knowledge_base_id",
             existing_type=sa.String(length=36),
             nullable=False,
         )
+    else:
+        with op.batch_alter_table("documents") as batch_op:
+            batch_op.alter_column(
+                "knowledge_base_id",
+                existing_type=sa.String(length=36),
+                nullable=False,
+            )
 
 
 def downgrade() -> None:
-    with op.batch_alter_table("documents") as batch_op:
-        batch_op.alter_column(
+    if migration.MigrationContext.get_current().as_sql:
+        op.alter_column(
+            "documents",
             "knowledge_base_id",
             existing_type=sa.String(length=36),
             nullable=True,
         )
+    else:
+        with op.batch_alter_table("documents") as batch_op:
+            batch_op.alter_column(
+                "knowledge_base_id",
+                existing_type=sa.String(length=36),
+                nullable=True,
+            )
     op.drop_column("agent_runs", "resolved_knowledge_base_count")
     op.drop_column("agent_runs", "selected_knowledge_base_ids_json")
     op.drop_column("agent_runs", "knowledge_base_selection_mode")
