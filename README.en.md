@@ -586,18 +586,33 @@ limits.
 
 ### Knowledge-base ingestion foundation
 
-The text-based upload/ingestion slice is available:
+Knowledge bases are now the product-facing document library abstraction: create a KB, add
+files/documents to that KB, ingest them, then choose which KBs the assistant may search. The
+KB-nested API is the canonical path for user-facing clients:
 
 - `POST /knowledge-bases`
 - `GET /knowledge-bases`
-- `POST /documents` — existing JSON text-document creation path
-- `POST /documents/upload` — multipart PDF/Markdown/plain-text upload creation path
-- `POST /documents/{document_id}/ingest` — existing bodyless synchronous ingestion path
-- `POST /documents/{document_id}/ingest/async` — starts async ingestion and returns a `202 Accepted` queued extraction run
-- `GET /documents/{document_id}/extraction-runs`
-- `GET /documents/{document_id}/extraction-runs/{run_id}` — single-run progress polling path
+- `GET /knowledge-bases/{knowledge_base_id}`
+- `GET /knowledge-bases/{knowledge_base_id}/documents`
+- `POST /knowledge-bases/{knowledge_base_id}/documents` — JSON text-document creation in one KB
+- `POST /knowledge-bases/{knowledge_base_id}/documents/upload` — multipart PDF/Markdown/plain-text upload into one KB
+- `POST /knowledge-bases/{knowledge_base_id}/documents/{document_id}/ingest` — bodyless synchronous ingestion inside that KB
+- `POST /knowledge-bases/{knowledge_base_id}/documents/{document_id}/ingest/async` — starts async ingestion and returns a `202 Accepted` queued extraction run
+- `GET /knowledge-bases/{knowledge_base_id}/documents/{document_id}/extraction-runs`
+- `GET /knowledge-bases/{knowledge_base_id}/documents/{document_id}/extraction-runs/{run_id}` — single-run progress polling path
 
-The text-document path remains compatible. The upload path accepts `.pdf`, `.md`,
+Legacy `/documents` and `/documents/upload` write paths remain as standalone/developer
+compatibility surfaces, but now require an authorized `knowledge_base_id` and reject missing
+KBs with `422`. Nonexistent or unauthorized KBs are concealed with `404`; nested document
+operations against the wrong KB also return `404`.
+
+Conversation runs accept `knowledge_base_selection`: `mode: "all"` searches every authorized
+KB, while `mode: "selected"` searches only the provided KB IDs as a hard retrieval boundary.
+Selected mode with no IDs is `422`; all mode with IDs is `422`; unauthorized/nonexistent
+selected KB IDs return `404`. Responses, run detail, run history, and stream events expose
+`knowledge_base_selection` plus `resolved_knowledge_base_count`.
+
+The upload path accepts `.pdf`, `.md`,
 `.markdown`, and `.txt` files up to 5 MiB. PDFs use `pypdf` for page text from
 `application/pdf` text-based PDFs, while simple literal/FlateDecode page streams still
 have a deterministic fallback. Markdown/plain text is decoded as UTF-8 text; structural

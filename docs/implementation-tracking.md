@@ -182,21 +182,26 @@ The test harness sets `MY_AGENTS_ENV_FILE=` so a developer's local `.env` file c
 
 ## Recommended next workflow
 
-### Next milestone: strict V1 Phase 2 frontend gate, then Phase 3 citation/event contract
+### Next milestone: strict KB-first frontend gate
 
-Backend Phase 2 text-based upload/ingestion is now implemented in the backend. The immediate cross-repo gate is for the separate frontend to verify or minimally adapt to `POST /documents/upload`, preserve the bodyless `/documents/{id}/ingest` flow, and consume backend OpenAPI fields without inventing alternate upload contracts.
+Backend knowledge-base path work is now KB-first. The immediate cross-repo gate is for the
+separate frontend to replace direct document upload/ingest UX with: create/select KB → upload or
+create document inside that KB → ingest inside that KB → choose KB sources for chat. The handoff
+artifact is `docs/portfolio-chat-service/12-knowledge-base-path-openapi-handoff.md`, with a filtered
+OpenAPI contract JSON at `docs/portfolio-chat-service/12-knowledge-base-path-openapi-handoff.json`.
 
 Suggested order:
 
-1. Frontend verifies the upload contract from backend OpenAPI: multipart `POST /documents/upload` with `title`, optional `group_id`/`knowledge_base_id`, and a `.pdf`, `.md`, `.markdown`, or `.txt` `file`.
-2. Frontend preserves the existing text seeded/demo path and bodyless `/documents/{id}/ingest` behavior.
-3. Backend starts strict V1 Phase 3 after frontend gate feedback is recorded: richer citation provenance and event contract hardening.
+1. Frontend consumes KB-nested document routes from backend OpenAPI: `GET/POST /knowledge-bases/{id}/documents`, `POST /knowledge-bases/{id}/documents/upload`, nested sync/async ingest, and nested extraction-run reads.
+2. Frontend treats legacy `/documents` and `/documents/upload` writes as developer/compatibility paths only; they require `knowledge_base_id` and are not the user-facing primary path.
+3. Frontend adds chat source selection using `knowledge_base_selection`: explicit All KBs or selected KB IDs; selected IDs are a hard retrieval boundary.
+4. Backend starts any later citation/event polish only after frontend reports exact contract gaps against the KB-first OpenAPI handoff.
 
 Stop condition:
 
-- Frontend upload gate passes or reports exact backend contract gaps.
+- Frontend KB-first upload/ingest/chat-source gate passes or reports exact backend contract gaps.
 - Backend remains green on pytest, Ruff check, Ruff format check, and diff check.
-- Phase 3 does not begin by inventing frontend workarounds or expanding beyond citation/event contracts.
+- Frontend does not invent alternate document upload or KB selection contracts.
 
 ### Alternative next milestone: production RAG realism
 

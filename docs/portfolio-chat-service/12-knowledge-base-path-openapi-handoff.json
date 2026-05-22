@@ -1,0 +1,1244 @@
+{
+  "components": {
+    "schemas": {
+      "AgentRunSummaryResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "conversation_id": {
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "knowledge_base_selection": {
+            "$ref": "#/components/schemas/KnowledgeBaseSelection"
+          },
+          "resolved_knowledge_base_count": {
+            "default": 0,
+            "title": "Resolved Knowledge Base Count",
+            "type": "integer"
+          },
+          "route_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Route Label"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "conversation_id",
+          "status",
+          "route_label",
+          "knowledge_base_selection",
+          "created_at"
+        ],
+        "title": "AgentRunSummaryResponse",
+        "type": "object"
+      },
+      "ConversationRunRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "knowledge_base_selection": {
+            "$ref": "#/components/schemas/KnowledgeBaseSelection"
+          },
+          "message": {
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "title": "ConversationRunRequest",
+        "type": "object"
+      },
+      "ConversationRunResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "answer_mode": {
+            "enum": [
+              "general_knowledge",
+              "document_grounded",
+              "mixed"
+            ],
+            "title": "Answer Mode",
+            "type": "string"
+          },
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/CitationResponse"
+            },
+            "title": "Citations",
+            "type": "array"
+          },
+          "conversation_id": {
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "document_scope": {
+            "enum": [
+              "current_conversation",
+              "user_documents",
+              "group_documents",
+              "unknown"
+            ],
+            "title": "Document Scope",
+            "type": "string"
+          },
+          "handled_by": {
+            "title": "Handled By",
+            "type": "string"
+          },
+          "knowledge_base_selection": {
+            "$ref": "#/components/schemas/KnowledgeBaseSelection"
+          },
+          "reply": {
+            "title": "Reply",
+            "type": "string"
+          },
+          "resolved_knowledge_base_count": {
+            "default": 0,
+            "title": "Resolved Knowledge Base Count",
+            "type": "integer"
+          },
+          "retrieval_route": {
+            "enum": [
+              "no_retrieval",
+              "retrieval_required",
+              "retrieval_optional",
+              "clarification_required"
+            ],
+            "title": "Retrieval Route",
+            "type": "string"
+          },
+          "route": {
+            "$ref": "#/components/schemas/RouteDecision"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "conversation_id",
+          "reply",
+          "route",
+          "handled_by",
+          "retrieval_route",
+          "answer_mode",
+          "document_scope",
+          "knowledge_base_selection"
+        ],
+        "title": "ConversationRunResponse",
+        "type": "object"
+      },
+      "DocumentCreateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "default": "",
+            "title": "Content",
+            "type": "string"
+          },
+          "group_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Id"
+          },
+          "knowledge_base_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Knowledge Base Id"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "title": "DocumentCreateRequest",
+        "type": "object"
+      },
+      "DocumentResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "group_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Id"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "knowledge_base_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Knowledge Base Id"
+          },
+          "owner_user_id": {
+            "title": "Owner User Id",
+            "type": "string"
+          },
+          "parser_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parser Name"
+          },
+          "source_byte_size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Byte Size"
+          },
+          "source_content_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Content Type"
+          },
+          "source_filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Filename"
+          },
+          "source_page_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Page Count"
+          },
+          "source_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Sha256"
+          },
+          "source_type": {
+            "default": "text",
+            "title": "Source Type",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "owner_user_id",
+          "group_id",
+          "knowledge_base_id"
+        ],
+        "title": "DocumentResponse",
+        "type": "object"
+      },
+      "ExtractionRunResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "chunk_count": {
+            "title": "Chunk Count",
+            "type": "integer"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "document_id": {
+            "title": "Document Id",
+            "type": "string"
+          },
+          "entity_count": {
+            "title": "Entity Count",
+            "type": "integer"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "progress_percent": {
+            "default": 0,
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Progress Percent",
+            "type": "integer"
+          },
+          "relationship_count": {
+            "title": "Relationship Count",
+            "type": "integer"
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "document_id",
+          "status",
+          "chunk_count",
+          "entity_count",
+          "relationship_count"
+        ],
+        "title": "ExtractionRunResponse",
+        "type": "object"
+      },
+      "KnowledgeBaseCreateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "group_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Id"
+          },
+          "name": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/KnowledgeBaseScope",
+            "default": "personal"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "KnowledgeBaseCreateRequest",
+        "type": "object"
+      },
+      "KnowledgeBaseResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "group_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Id"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner_user_id": {
+            "title": "Owner User Id",
+            "type": "string"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/KnowledgeBaseScope"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "scope",
+          "owner_user_id",
+          "group_id"
+        ],
+        "title": "KnowledgeBaseResponse",
+        "type": "object"
+      },
+      "KnowledgeBaseSelection": {
+        "additionalProperties": false,
+        "properties": {
+          "knowledge_base_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Knowledge Base Ids",
+            "type": "array"
+          },
+          "mode": {
+            "default": "all",
+            "enum": [
+              "all",
+              "selected"
+            ],
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "title": "KnowledgeBaseSelection",
+        "type": "object"
+      }
+    }
+  },
+  "frontend_contract_notes": [
+    "Use KB-nested document routes as the user-facing create/upload/ingest path.",
+    "Legacy /documents writes require knowledge_base_id and are compatibility/developer surfaces.",
+    "ConversationRunRequest.knowledge_base_selection supports mode=all or mode=selected with IDs.",
+    "ConversationRunResponse, AgentRunSummaryResponse, and run events expose knowledge_base_selection plus resolved_knowledge_base_count."
+  ],
+  "paths": {
+    "/conversations/{conversation_id}/runs": {
+      "get": {
+        "description": "Return frontend-safe run history for an authorized conversation.",
+        "operationId": "list_runs_conversations__conversation_id__runs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AgentRunSummaryResponse"
+                  },
+                  "title": "Response List Runs Conversations  Conversation Id  Runs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Runs",
+        "tags": [
+          "conversations"
+        ]
+      },
+      "post": {
+        "operationId": "run_conversation_conversations__conversation_id__runs_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConversationRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationRunResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run Conversation",
+        "tags": [
+          "conversations"
+        ]
+      }
+    },
+    "/conversations/{conversation_id}/runs/stream": {
+      "post": {
+        "description": "Stream redacted conversation-run progress as Server-Sent Events.\n\nThe stream keeps progress events compatible, emits incremental `answer_delta` text\nwhile the graph/provider streams, then finishes with `run_completed` containing the\nsame response shape returned by the non-streaming `/runs` endpoint. If graph execution\nfails after streaming starts, the endpoint persists the failed run and emits\n`run_failed` plus `run_error` events instead of leaking raw prompts or provider\nexception text.",
+        "operationId": "stream_conversation_run_conversations__conversation_id__runs_stream_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConversationRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "text/event-stream": {
+                "example": "event: answer_delta\ndata: {\"delta\":\"Hello\",\"sequence\":1}\n\nevent: run_completed\ndata: {\"run_id\":\"...\",\"reply\":\"Hello\"}\n\n"
+              }
+            },
+            "description": "Server-Sent Events stream with progress, answer_delta, and run_completed events."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stream Conversation Run",
+        "tags": [
+          "conversations"
+        ]
+      }
+    },
+    "/conversations/{conversation_id}/runs/{run_id}": {
+      "get": {
+        "description": "Return a refresh-safe completed run with reply and persisted citations.",
+        "operationId": "get_run_conversations__conversation_id__runs__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationRunResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Run",
+        "tags": [
+          "conversations"
+        ]
+      }
+    },
+    "/conversations/{conversation_id}/runs/{run_id}/events": {
+      "get": {
+        "operationId": "list_run_events_conversations__conversation_id__runs__run_id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AgentEventResponse"
+                  },
+                  "title": "Response List Run Events Conversations  Conversation Id  Runs  Run Id  Events Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Run Events",
+        "tags": [
+          "conversations"
+        ]
+      }
+    },
+    "/knowledge-bases": {
+      "get": {
+        "operationId": "list_knowledge_bases_knowledge_bases_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/KnowledgeBaseResponse"
+                  },
+                  "title": "Response List Knowledge Bases Knowledge Bases Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Knowledge Bases",
+        "tags": [
+          "knowledge-bases"
+        ]
+      },
+      "post": {
+        "operationId": "create_knowledge_base_knowledge_bases_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KnowledgeBaseCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeBaseResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Knowledge Base",
+        "tags": [
+          "knowledge-bases"
+        ]
+      }
+    },
+    "/knowledge-bases/{knowledge_base_id}": {
+      "get": {
+        "operationId": "get_knowledge_base_knowledge_bases__knowledge_base_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "knowledge_base_id",
+            "required": true,
+            "schema": {
+              "title": "Knowledge Base Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeBaseResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Knowledge Base",
+        "tags": [
+          "knowledge-bases"
+        ]
+      }
+    },
+    "/knowledge-bases/{knowledge_base_id}/documents": {
+      "get": {
+        "operationId": "list_knowledge_base_documents_knowledge_bases__knowledge_base_id__documents_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "knowledge_base_id",
+            "required": true,
+            "schema": {
+              "title": "Knowledge Base Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DocumentResponse"
+                  },
+                  "title": "Response List Knowledge Base Documents Knowledge Bases  Knowledge Base Id  Documents Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Knowledge Base Documents",
+        "tags": [
+          "knowledge-bases"
+        ]
+      },
+      "post": {
+        "operationId": "create_knowledge_base_document_knowledge_bases__knowledge_base_id__documents_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "knowledge_base_id",
+            "required": true,
+            "schema": {
+              "title": "Knowledge Base Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Knowledge Base Document",
+        "tags": [
+          "knowledge-bases"
+        ]
+      }
+    },
+    "/knowledge-bases/{knowledge_base_id}/documents/upload": {
+      "post": {
+        "operationId": "upload_knowledge_base_document_knowledge_bases__knowledge_base_id__documents_upload_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "knowledge_base_id",
+            "required": true,
+            "schema": {
+              "title": "Knowledge Base Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_knowledge_base_document_knowledge_bases__knowledge_base_id__documents_upload_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload Knowledge Base Document",
+        "tags": [
+          "knowledge-bases"
+        ]
+      }
+    },
+    "/knowledge-bases/{knowledge_base_id}/documents/{document_id}/extraction-runs": {
+      "get": {
+        "operationId": "list_knowledge_base_document_extraction_runs_knowledge_bases__knowledge_base_id__documents__document_id__extraction_runs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "knowledge_base_id",
+            "required": true,
+            "schema": {
+              "title": "Knowledge Base Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ExtractionRunResponse"
+                  },
+                  "title": "Response List Knowledge Base Document Extraction Runs Knowledge Bases  Knowledge Base Id  Documents  Document Id  Extraction Runs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Knowledge Base Document Extraction Runs",
+        "tags": [
+          "knowledge-bases"
+        ]
+      }
+    },
+    "/knowledge-bases/{knowledge_base_id}/documents/{document_id}/extraction-runs/{run_id}": {
+      "get": {
+        "operationId": "get_knowledge_base_document_extraction_run_knowledge_bases__knowledge_base_id__documents__document_id__extraction_runs__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "knowledge_base_id",
+            "required": true,
+            "schema": {
+              "title": "Knowledge Base Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExtractionRunResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Knowledge Base Document Extraction Run",
+        "tags": [
+          "knowledge-bases"
+        ]
+      }
+    },
+    "/knowledge-bases/{knowledge_base_id}/documents/{document_id}/ingest": {
+      "post": {
+        "operationId": "ingest_knowledge_base_document_knowledge_bases__knowledge_base_id__documents__document_id__ingest_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "knowledge_base_id",
+            "required": true,
+            "schema": {
+              "title": "Knowledge Base Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExtractionRunResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ingest Knowledge Base Document",
+        "tags": [
+          "knowledge-bases"
+        ]
+      }
+    },
+    "/knowledge-bases/{knowledge_base_id}/documents/{document_id}/ingest/async": {
+      "post": {
+        "operationId": "ingest_knowledge_base_document_async_knowledge_bases__knowledge_base_id__documents__document_id__ingest_async_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "knowledge_base_id",
+            "required": true,
+            "schema": {
+              "title": "Knowledge Base Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExtractionRunResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ingest Knowledge Base Document Async",
+        "tags": [
+          "knowledge-bases"
+        ]
+      }
+    }
+  },
+  "source": "/openapi.json",
+  "title": "Knowledge Base Path OpenAPI Handoff"
+}

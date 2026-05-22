@@ -582,18 +582,33 @@ assistant text나 citation을 저장하지 않으며, 중단된 user prompt는 g
 
 ### Knowledge-base ingestion 기반
 
-텍스트 기반 upload/ingestion slice가 추가되었습니다.
+Knowledge base는 사용자에게 보이는 document library 추상화입니다. 사용자는 KB를 만들고,
+그 KB에 파일/문서를 추가한 뒤 ingest하며, chat 시 assistant가 검색할 KB를 선택합니다.
+사용자-facing client의 canonical 경로는 KB-nested API입니다.
 
 - `POST /knowledge-bases`
 - `GET /knowledge-bases`
-- `POST /documents` — 기존 JSON 텍스트 문서 생성 경로
-- `POST /documents/upload` — multipart PDF/Markdown/plain text 업로드 생성 경로
-- `POST /documents/{document_id}/ingest` — 기존 bodyless 동기 ingestion 실행 경로
-- `POST /documents/{document_id}/ingest/async` — `202 Accepted`와 queued extraction run을 반환하는 비동기 ingestion 시작 경로
-- `GET /documents/{document_id}/extraction-runs`
-- `GET /documents/{document_id}/extraction-runs/{run_id}` — 단일 run progress polling 경로
+- `GET /knowledge-bases/{knowledge_base_id}`
+- `GET /knowledge-bases/{knowledge_base_id}/documents`
+- `POST /knowledge-bases/{knowledge_base_id}/documents` — 특정 KB 안에 JSON 텍스트 문서 생성
+- `POST /knowledge-bases/{knowledge_base_id}/documents/upload` — 특정 KB 안에 multipart PDF/Markdown/plain text 업로드
+- `POST /knowledge-bases/{knowledge_base_id}/documents/{document_id}/ingest` — 해당 KB 안에서 bodyless 동기 ingestion 실행
+- `POST /knowledge-bases/{knowledge_base_id}/documents/{document_id}/ingest/async` — `202 Accepted`와 queued extraction run을 반환하는 비동기 ingestion 시작
+- `GET /knowledge-bases/{knowledge_base_id}/documents/{document_id}/extraction-runs`
+- `GET /knowledge-bases/{knowledge_base_id}/documents/{document_id}/extraction-runs/{run_id}` — 단일 run progress polling 경로
 
-텍스트 document 경로는 그대로 유지됩니다. 업로드 경로는 5 MiB 이하의 `.pdf`, `.md`,
+Legacy `/documents`, `/documents/upload` write path는 standalone/developer 호환 surface로
+남지만, 이제 authorized `knowledge_base_id`가 필수이며 누락 시 `422`를 반환합니다. 존재하지
+않거나 권한 없는 KB는 `404`로 conceal하고, nested document operation에서 document가 path KB에
+속하지 않으면 `404`를 반환합니다.
+
+Conversation run은 `knowledge_base_selection`을 받습니다. `mode: "all"`은 권한 있는 모든 KB를
+검색하고, `mode: "selected"`는 전달한 KB ID만 hard retrieval boundary로 검색합니다. selected mode에
+ID가 없으면 `422`, all mode에 ID가 있으면 `422`, 권한 없거나 존재하지 않는 selected KB ID는
+`404`입니다. 응답, run detail, run history, stream event는 `knowledge_base_selection`과
+`resolved_knowledge_base_count`를 노출합니다.
+
+업로드 경로는 5 MiB 이하의 `.pdf`, `.md`,
 `.markdown`, `.txt` 파일을 받습니다. PDF는 `application/pdf` text-based PDF에서 `pypdf`
 기반 page text를 추출하고, 단순 literal/FlateDecode page stream은 deterministic fallback으로도 처리합니다.
 Markdown/plain text는 UTF-8 텍스트로 decoding하며 구조적 Markdown parsing은 아직 하지 않습니다. 업로드 metadata
