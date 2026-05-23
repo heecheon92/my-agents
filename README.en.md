@@ -632,9 +632,10 @@ longer prepend hard-truncated document context; grounding is exposed through `ci
 retrieved context passed to the graph.
 
 The upload path accepts `.pdf`, `.md`,
-`.markdown`, and `.txt` files up to 5 MiB. PDFs use `pypdf` for page text from
-`application/pdf` text-based PDFs, while simple literal/FlateDecode page streams still
-have a deterministic fallback. Markdown/plain text is decoded as UTF-8 text; structural
+`.markdown`, and `.txt` files up to 5 MiB. PDFs now run through a classify → route → extract → clean → validate flow.
+For `application/pdf`, the parser first extracts fast page text with PyMuPDF (`pymupdf`). If PyMuPDF output is empty or fails quality checks, Docling (`docling`) becomes the structured primary fallback for Markdown/table candidates.
+If that still fails, the Tesseract OCR fallback renders page images with PyMuPDF and runs a command like `tesseract -l kor+eng --psm 6` for image-heavy PDFs. If OCR also fails, the pipeline keeps the existing `pypdf`, MIT-licensed `pdfplumber`, and simple literal/FlateDecode deterministic stream fallbacks for compatibility. Before any PDF text is persisted into PostgreSQL `text`, the pipeline rejects or removes NUL/control bytes, repeated locale metadata, known font boilerplate, and likely encoding garbage.
+PDFs that fail the quality gate, or image-heavy PDFs where Docling returns only `<!-- image -->` placeholders/bullet-only structure, return a safe `400` upload error instead of a DB insert 500 or empty chunks. Docling defaults to the CPU accelerator, OCR off, and a 30-second document timeout to avoid Apple MPS float64 crashes. Tune it with `MY_AGENTS_DOCLING_ACCELERATOR` (`cpu|cuda|auto|mps|xpu`), `MY_AGENTS_DOCLING_OCR_ENABLED`, `MY_AGENTS_DOCLING_TIMEOUT_SECONDS`, and `MY_AGENTS_DOCLING_THREADS`. For GPU Docker production, use `MY_AGENTS_DOCLING_ACCELERATOR=cuda` only with a CUDA-compatible image/runtime. Tune Tesseract with `MY_AGENTS_TESSERACT_ENABLED`, `MY_AGENTS_TESSERACT_LANGUAGES`, `MY_AGENTS_TESSERACT_PSM`, `MY_AGENTS_TESSERACT_RENDER_SCALE`, and `MY_AGENTS_TESSERACT_TIMEOUT_SECONDS`; Docker images need system packages such as `tesseract-ocr`, `tesseract-ocr-kor`, and `tesseract-ocr-eng`. PyMuPDF requires AGPL/commercial license review and is intentionally included here for the PDF extraction milestone. Markdown/plain text is decoded as UTF-8 text; structural
 Markdown parsing is not implemented yet. Upload
 metadata (`source_filename`, content type, byte size, SHA-256, page count, parser name)
 is persisted on the document, and ingestion chunks record `source_page` for later citation
@@ -644,8 +645,7 @@ embeddings. The existing sync ingestion endpoint remains compatible, while the a
 `embedding_vector` column so retrieval can run permission-filtered SQL vector search before
 falling back to JSON cosine ranking. By default embeddings are 32-dimensional deterministic
 lexical-hash vectors for offline tests; when `MY_AGENTS_EMBEDDING_MODE=openai`, ingestion uses
-`langchain-openai`/OpenAI embeddings such as `text-embedding-3-small`. This path still
-does not support scanned/encrypted/image-only PDFs, OCR, DOCX, HTML, or CSV/JSON structural
+`langchain-openai`/OpenAI embeddings such as `text-embedding-3-small`. Although the Docling dependency includes OCR capabilities, the current upload contract still uses request-time local extraction only; scanned/encrypted/image-only PDFs, guaranteed complex multi-column/layout reconstruction, DOCX, HTML, or CSV/JSON structural
 parsing; OpenAI extraction calls, ANN/vector indexes, and cross-encoder reranking are still
 future work.
 

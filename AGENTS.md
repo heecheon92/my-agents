@@ -65,7 +65,8 @@ If adding conversation memory later, prefer LangGraph checkpointers as the app-o
 ## Dependency policy
 
 - Use `uv` for dependency management.
-- Add dependencies only when they support a clearly implemented milestone.
+- Add dependencies only when they support a clearly implemented milestone and, unless the user has explicitly approved the dependency, do not add them.
+- For the approved PDF ingestion milestone, local extraction dependencies such as `pdfplumber`, `docling`, and user-approved PyMuPDF are allowed when they improve reliability; treat PyMuPDF licensing (AGPL/commercial) and Docling's heavyweight OCR/layout dependency footprint as explicit tradeoffs to document before further expansion. Avoid cloud-only extraction stacks unless the user explicitly approves that next stage.
 - Prefer existing standard library, FastAPI, Pydantic, LangGraph, and LangChain/OpenAI primitives before adding packages.
 - Do not add non-OpenAI LLM provider integrations unless the user explicitly reverses the current provider policy.
 

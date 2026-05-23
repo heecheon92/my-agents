@@ -13,6 +13,7 @@ Start here:
 7. [Parallel ingestion Postgres deadlock](./06-parallel-ingestion-postgres-deadlock.md)
 
 This directory is the owner's learning path archive. The root numbered notes are personal learning logs. Focused learning tracks can live in subfolders, such as [`agent-lab/`](./agent-lab/). Project architecture docs that are not primarily learning logs live outside this directory, for example [`docs/portfolio-chat-service/`](../portfolio-chat-service/).
+8. [PDF Upload Extraction Pipeline and NUL Byte Failures](./07-pdf-upload-extraction-pipeline-and-nul-byte-failures.md)
 
 ## Learning-doc workflow
 

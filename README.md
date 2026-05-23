@@ -628,8 +628,10 @@ hard-truncated document prefix를 임의로 붙이지 않으며, grounding은 `c
 retrieved context를 통해 노출합니다.
 
 업로드 경로는 5 MiB 이하의 `.pdf`, `.md`,
-`.markdown`, `.txt` 파일을 받습니다. PDF는 `application/pdf` text-based PDF에서 `pypdf`
-기반 page text를 추출하고, 단순 literal/FlateDecode page stream은 deterministic fallback으로도 처리합니다.
+`.markdown`, `.txt` 파일을 받습니다. PDF는 classify → route → extract → clean → validate 흐름으로 처리합니다.
+`application/pdf`는 먼저 PyMuPDF(`pymupdf`)로 빠른 page text를 추출합니다. PyMuPDF 결과가 비어 있거나 품질 검사를 통과하지 못하면 Docling(`docling`)이 구조화된 Markdown/table 후보를 추출하는 primary fallback이 됩니다.
+그 뒤에도 실패하면 Tesseract OCR fallback이 PyMuPDF로 page image를 렌더링한 뒤 `tesseract -l kor+eng --psm 6` 형태로 image-heavy PDF를 OCR합니다. OCR 뒤에도 실패하면 기존 `pypdf`, MIT 라이선스 `pdfplumber`, 단순 literal/FlateDecode deterministic stream fallback 순서로 호환성을 유지합니다. 모든 PDF 추출 결과는 PostgreSQL `text`에 저장하기 전에 NUL/control byte, 반복 locale metadata, 알려진 font boilerplate, encoding garbage 검사를 통과해야 합니다.
+품질 검사를 통과하지 못한 PDF나 Docling이 `<!-- image -->` placeholder/bullet-only 구조만 반환하는 image-heavy PDF는 DB insert 500 또는 빈 chunk 저장 대신 안전한 `400` upload error로 거부됩니다. Docling은 Apple MPS의 float64 미지원 crash를 피하기 위해 기본값이 CPU accelerator, OCR off, 30초 document timeout입니다. 이 값은 `MY_AGENTS_DOCLING_ACCELERATOR`(`cpu|cuda|auto|mps|xpu`), `MY_AGENTS_DOCLING_OCR_ENABLED`, `MY_AGENTS_DOCLING_TIMEOUT_SECONDS`, `MY_AGENTS_DOCLING_THREADS`로 조정할 수 있습니다. GPU Docker production에서는 CUDA-compatible image/runtime을 준비한 뒤 `MY_AGENTS_DOCLING_ACCELERATOR=cuda`를 명시하세요. Tesseract fallback은 `MY_AGENTS_TESSERACT_ENABLED`, `MY_AGENTS_TESSERACT_LANGUAGES`, `MY_AGENTS_TESSERACT_PSM`, `MY_AGENTS_TESSERACT_RENDER_SCALE`, `MY_AGENTS_TESSERACT_TIMEOUT_SECONDS`로 조정하며 Docker image에는 `tesseract-ocr`, `tesseract-ocr-kor`, `tesseract-ocr-eng` 같은 system package가 필요합니다. PyMuPDF는 AGPL/commercial license 검토가 필요한 의존성이고, 이 프로젝트에서는 PDF extraction milestone을 위해 명시적으로 도입했습니다.
 Markdown/plain text는 UTF-8 텍스트로 decoding하며 구조적 Markdown parsing은 아직 하지 않습니다. 업로드 metadata
 (`source_filename`, content type, byte size, SHA-256, page count, parser name)는 document에
 저장되고, ingestion chunk에는 `source_page`가 기록되어 이후 citation provenance에 사용할 수
@@ -640,8 +642,8 @@ Postgres에서 Alembic migration을 적용하면 chunk에 pgvector `embedding_ve
 retrieval이 권한 필터가 적용된 SQL vector search를 먼저 수행하고 JSON cosine ranking으로 fallback할 수 있습니다.
 기본값은 offline test용 32차원 deterministic lexical-hash vector이며,
 `MY_AGENTS_EMBEDDING_MODE=openai`일 때는 `langchain-openai`/OpenAI embedding
-(`text-embedding-3-small` 등)을 사용합니다. 이 경로는 scanned/encrypted/image-only PDF, OCR,
-DOCX, HTML, CSV/JSON structural parsing은 아직 지원하지 않으며, OpenAI extraction 호출,
+(`text-embedding-3-small` 등)을 사용합니다. Docling dependency는 OCR 기능을 포함하지만 현재 upload contract는 request-time local extraction만 사용하므로 scanned/encrypted/image-only PDF,
+복잡한 multi-column/layout 복원의 품질 보장, DOCX, HTML, CSV/JSON structural parsing은 아직 지원하지 않으며, OpenAI extraction 호출,
 ANN/vector index tuning, cross-encoder reranking은 아직 수행하지 않습니다.
 
 
