@@ -90,6 +90,15 @@ def test_embedding_settings_default_to_deterministic(monkeypatch: pytest.MonkeyP
     assert settings.openai_embedding_dimensions is None
     assert settings.embedding_batch_size == 32
     assert settings.openai_embedding_timeout_seconds == 30
+    assert settings.docling_accelerator == "cpu"
+    assert settings.docling_ocr_enabled is False
+    assert settings.docling_timeout_seconds == 30
+    assert settings.docling_threads == 4
+    assert settings.tesseract_enabled is True
+    assert settings.tesseract_languages == "kor+eng"
+    assert settings.tesseract_psm == 6
+    assert settings.tesseract_render_scale == 3.0
+    assert settings.tesseract_timeout_seconds == 15
 
 
 def test_openai_embedding_mode_requires_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -118,6 +127,46 @@ def test_openai_embedding_settings_accept_overrides(monkeypatch: pytest.MonkeyPa
     assert settings.openai_embedding_dimensions == 256
     assert settings.embedding_batch_size == 8
     assert settings.openai_embedding_timeout_seconds == 12
+
+
+def test_docling_settings_accept_production_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
+    monkeypatch.setenv("MY_AGENTS_DOCLING_ACCELERATOR", "cuda")
+    monkeypatch.setenv("MY_AGENTS_DOCLING_OCR_ENABLED", "true")
+    monkeypatch.setenv("MY_AGENTS_DOCLING_TIMEOUT_SECONDS", "45")
+    monkeypatch.setenv("MY_AGENTS_DOCLING_THREADS", "8")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.docling_accelerator == "cuda"
+    assert settings.docling_ocr_enabled is True
+    assert settings.docling_timeout_seconds == 45
+    assert settings.docling_threads == 8
+
+
+def test_tesseract_settings_accept_ocr_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
+    monkeypatch.setenv("MY_AGENTS_TESSERACT_ENABLED", "false")
+    monkeypatch.setenv("MY_AGENTS_TESSERACT_LANGUAGES", "eng")
+    monkeypatch.setenv("MY_AGENTS_TESSERACT_PSM", "11")
+    monkeypatch.setenv("MY_AGENTS_TESSERACT_RENDER_SCALE", "2.5")
+    monkeypatch.setenv("MY_AGENTS_TESSERACT_TIMEOUT_SECONDS", "30")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.tesseract_enabled is False
+    assert settings.tesseract_languages == "eng"
+    assert settings.tesseract_psm == 11
+    assert settings.tesseract_render_scale == 2.5
+    assert settings.tesseract_timeout_seconds == 30
+
+
+def test_docling_settings_reject_unknown_accelerator(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
+    monkeypatch.setenv("MY_AGENTS_DOCLING_ACCELERATOR", "metal")
+
+    with pytest.raises(ValidationError, match="DOCLING_ACCELERATOR"):
+        Settings(_env_file=None)
 
 
 def test_service_foundation_settings_have_safe_defaults(

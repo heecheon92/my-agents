@@ -8,7 +8,9 @@ from dataclasses import dataclass
 
 from my_agents.knowledge.pdf_uploads import (
     MAX_PDF_UPLOAD_BYTES,
+    DoclingExtractionConfig,
     PdfUploadError,
+    TesseractOcrConfig,
     parse_uploaded_pdf,
 )
 
@@ -49,12 +51,20 @@ def parse_uploaded_document(
     filename: str | None,
     content_type: str | None,
     content: bytes,
+    docling_config: DoclingExtractionConfig | None = None,
+    tesseract_config: TesseractOcrConfig | None = None,
 ) -> ParsedDocumentUpload:
     """Parse a supported upload into normalized text and source metadata."""
     safe_filename = _validate_upload_filename(filename)
     suffix = _filename_suffix(safe_filename)
     if suffix == ".pdf":
-        return _parse_pdf(filename=safe_filename, content_type=content_type, content=content)
+        return _parse_pdf(
+            filename=safe_filename,
+            content_type=content_type,
+            content=content,
+            docling_config=docling_config,
+            tesseract_config=tesseract_config,
+        )
     if suffix in _TEXT_UPLOAD_SUFFIXES:
         return _parse_text_file(
             filename=safe_filename,
@@ -70,9 +80,17 @@ def _parse_pdf(
     filename: str,
     content_type: str | None,
     content: bytes,
+    docling_config: DoclingExtractionConfig | None,
+    tesseract_config: TesseractOcrConfig | None,
 ) -> ParsedDocumentUpload:
     try:
-        parsed = parse_uploaded_pdf(filename=filename, content_type=content_type, content=content)
+        parsed = parse_uploaded_pdf(
+            filename=filename,
+            content_type=content_type,
+            content=content,
+            docling_config=docling_config,
+            tesseract_config=tesseract_config,
+        )
     except PdfUploadError as exc:
         if _is_pdf_unsupported_media_error(str(exc)):
             raise UnsupportedDocumentUploadError(str(exc)) from exc

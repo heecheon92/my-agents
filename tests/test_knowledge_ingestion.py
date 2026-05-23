@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 import my_agents.knowledge.extraction as extraction_module
+import my_agents.knowledge.pdf_uploads as pdf_uploads_module
 from my_agents.knowledge.extraction import (
     _chunk_pdf_text,
     _deterministic_embedding,
@@ -639,6 +640,137 @@ def test_pdf_parser_decodes_flate_streams() -> None:
     assert parsed.page_count == 1
 
 
+def test_pdf_parser_removes_postgres_unsafe_nul_bytes() -> None:
+    parsed = parse_uploaded_pdf(
+        filename="nul-byte.pdf",
+        content_type="application/pdf",
+        content=_raw_stream_pdf(r"BT /F1 12 Tf 72 720 Td (Alpha \000 Beta) Tj ET"),
+    )
+
+    assert parsed.content == "Alpha Beta"
+    assert "\x00" not in parsed.content
+    assert parsed.page_count == 1
+
+
+def test_pdf_parser_uses_docling_after_pymupdf_quality_failure(monkeypatch) -> None:  # noqa: ANN001
+    monkeypatch.setattr(pdf_uploads_module, "_extract_page_texts_with_pymupdf", lambda _: [])
+    monkeypatch.setattr(
+        pdf_uploads_module,
+        "_extract_page_texts_with_docling",
+        lambda filename, _, config: [  # noqa: ARG005
+            f"Docling extracted {filename} as Markdown."
+        ],
+    )
+
+    parsed = parse_uploaded_pdf(
+        filename="docling.pdf",
+        content_type="application/pdf",
+        content=_text_pdf("PyMuPDF would normally parse this."),
+    )
+
+    assert parsed.content == "Docling extracted docling.pdf as Markdown."
+    assert parsed.parser_name == "docling_markdown_v1"
+
+
+def test_docling_extractor_forces_cpu_accelerator(monkeypatch) -> None:  # noqa: ANN001
+    captured: dict[str, object] = {}
+
+    class FakeDocument:
+        def num_pages(self) -> int:
+            return 1
+
+        def export_to_markdown(self, *, page_no: int | None = None) -> str:  # noqa: ARG002
+            return "Docling CPU output mentions FastAPI."
+
+    class FakeConverter:
+        def __init__(self, *, format_options: dict) -> None:
+            pdf_options = next(iter(format_options.values())).pipeline_options
+            captured["device"] = pdf_options.accelerator_options.device
+            captured["do_ocr"] = pdf_options.do_ocr
+            captured["timeout"] = pdf_options.document_timeout
+
+        def convert(self, *args, **kwargs):  # noqa: ANN002, ANN003
+            return type("Result", (), {"document": FakeDocument()})()
+
+    monkeypatch.setattr(
+        pdf_uploads_module,
+        "_extract_page_texts_with_pymupdf",
+        lambda _: [],
+    )
+    monkeypatch.setattr(
+        "docling.document_converter.DocumentConverter",
+        FakeConverter,
+    )
+
+    parsed = parse_uploaded_pdf(
+        filename="docling-cpu.pdf",
+        content_type="application/pdf",
+        content=_text_pdf("force docling path"),
+    )
+
+    assert parsed.parser_name == "docling_markdown_v1"
+    assert parsed.content == "Docling CPU output mentions FastAPI."
+    assert str(captured["device"]).endswith("CPU")
+    assert captured["do_ocr"] is False
+    assert captured["timeout"] == 30.0
+
+
+def test_pdf_parser_uses_tesseract_after_docling_quality_failure(monkeypatch) -> None:  # noqa: ANN001
+    monkeypatch.setattr(pdf_uploads_module, "_extract_page_texts_with_pymupdf", lambda _: [])
+    monkeypatch.setattr(
+        pdf_uploads_module,
+        "_extract_page_texts_with_docling",
+        lambda filename, content, docling_config: ["<!-- image -->"],  # noqa: ARG005
+    )
+    monkeypatch.setattr(
+        pdf_uploads_module,
+        "_extract_page_texts_with_tesseract",
+        lambda content, config: [f"Tesseract OCR with {config.languages} found Korean text."],
+    )
+
+    parsed = parse_uploaded_pdf(
+        filename="ocr.pdf",
+        content_type="application/pdf",
+        content=_text_pdf("image-heavy fixture"),
+    )
+
+    assert parsed.content == "Tesseract OCR with kor+eng found Korean text."
+    assert parsed.parser_name == "tesseract_ocr_v1"
+
+
+def test_tesseract_extractor_returns_empty_when_disabled() -> None:
+    pages = pdf_uploads_module._extract_page_texts_with_tesseract(
+        _text_pdf("disabled OCR fixture"),
+        pdf_uploads_module.TesseractOcrConfig(enabled=False),
+    )
+
+    assert pages == []
+
+
+def test_pdf_parser_rejects_docling_image_placeholders_without_chunks(monkeypatch) -> None:  # noqa: ANN001
+    monkeypatch.setattr(pdf_uploads_module, "_extract_page_texts_with_pymupdf", lambda _: [])
+    monkeypatch.setattr(
+        pdf_uploads_module,
+        "_extract_page_texts_with_docling",
+        lambda filename, content, config: [  # noqa: ARG005
+            "<!-- image -->\n<!-- image -->",
+            "- ▪\n- ▪\n- ▪",
+            "<!-- image -->",
+        ],
+    )
+    monkeypatch.setattr(pdf_uploads_module, "_extract_page_texts_with_pypdf", lambda _: [])
+    monkeypatch.setattr(pdf_uploads_module, "_extract_page_texts_with_pdfplumber", lambda _: [])
+    monkeypatch.setattr(pdf_uploads_module, "_extract_page_texts_with_tesseract", lambda *_: [])
+    monkeypatch.setattr(pdf_uploads_module, "_legacy_extract_page_texts", lambda _: [])
+
+    with pytest.raises(PdfUploadError, match="does not contain extractable text"):
+        parse_uploaded_pdf(
+            filename="image-placeholder.pdf",
+            content_type="application/pdf",
+            content=_text_pdf("image placeholder fixture"),
+        )
+
+
 def test_pdf_parser_rejects_binary_literal_noise() -> None:
     with pytest.raises(PdfUploadError, match="does not contain extractable text"):
         parse_uploaded_pdf(
@@ -646,6 +778,25 @@ def test_pdf_parser_rejects_binary_literal_noise() -> None:
             content_type="application/pdf",
             content=_binary_noise_pdf(),
         )
+
+
+def test_nested_pdf_upload_rejects_garbled_locale_artifact_without_500(monkeypatch) -> None:  # noqa: ANN001
+    client = _client(monkeypatch)
+    _signup_login(client, "pdf-garble@example.com")
+    kb_id = _create_personal_knowledge_base(client, "PDF Garble KB")
+    locale_artifact = " ".join(["ko-KR"] * 30)
+    garbled_pdf = _raw_stream_pdf(
+        rf"BT /F1 12 Tf 72 720 Td ({locale_artifact} \000 Adobe UCS) Tj ET"
+    )
+
+    response = client.post(
+        f"/knowledge-bases/{kb_id}/documents/upload",
+        data={"title": "Garbled PDF"},
+        files={"file": ("garbled.pdf", garbled_pdf, "application/pdf")},
+    )
+
+    assert response.status_code == 400
+    assert "does not contain extractable text" in response.json()["detail"]
 
 
 def test_pdf_upload_persists_metadata_and_ingests_page_provenance(monkeypatch) -> None:  # noqa: ANN001
@@ -677,7 +828,7 @@ def test_pdf_upload_persists_metadata_and_ingests_page_provenance(monkeypatch) -
     assert payload["source_byte_size"] > 0
     assert len(payload["source_sha256"]) == 64
     assert payload["source_page_count"] == 2
-    assert payload["parser_name"] == "deterministic_stream_fallback_v1"
+    assert payload["parser_name"] == "pymupdf_text_v1"
 
     persisted = _database_rows(select(DocumentModel).where(DocumentModel.id == payload["id"]))
     assert persisted[0].content.count("\f") == 1

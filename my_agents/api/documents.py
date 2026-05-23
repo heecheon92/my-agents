@@ -28,6 +28,7 @@ from my_agents.knowledge.models import (
     ExtractionRunModel,
     ExtractionStatus,
 )
+from my_agents.knowledge.pdf_uploads import DoclingExtractionConfig, TesseractOcrConfig
 from my_agents.knowledge.schemas import (
     DocumentCreateRequest,
     DocumentPermissionPatchRequest,
@@ -161,6 +162,19 @@ async def upload_document_in_knowledge_base(
             filename=file.filename,
             content_type=file.content_type,
             content=content,
+            docling_config=DoclingExtractionConfig(
+                accelerator=settings.docling_accelerator,
+                ocr_enabled=settings.docling_ocr_enabled,
+                timeout_seconds=settings.docling_timeout_seconds,
+                threads=settings.docling_threads,
+            ),
+            tesseract_config=TesseractOcrConfig(
+                enabled=settings.tesseract_enabled,
+                languages=settings.tesseract_languages,
+                page_segmentation_mode=settings.tesseract_psm,
+                render_scale=settings.tesseract_render_scale,
+                timeout_seconds=settings.tesseract_timeout_seconds,
+            ),
         )
     except DocumentUploadError as exc:
         status_code = (

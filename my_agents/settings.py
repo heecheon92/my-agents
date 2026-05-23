@@ -16,6 +16,7 @@ SameSitePolicy = Literal["lax", "strict", "none"]
 DeploymentEnvironment = Literal["local", "preview", "production"]
 AuthEmailMode = Literal["local", "smtp"]
 EmbeddingMode = Literal["deterministic", "openai"]
+DoclingAccelerator = Literal["auto", "cpu", "cuda", "mps", "xpu"]
 
 
 class Settings(BaseSettings):
@@ -91,6 +92,53 @@ class Settings(BaseSettings):
         gt=0,
         le=120,
         validation_alias=AliasChoices("MY_AGENTS_OPENAI_EMBEDDING_TIMEOUT_SECONDS"),
+    )
+    docling_accelerator: DoclingAccelerator = Field(
+        default="cpu",
+        validation_alias=AliasChoices("MY_AGENTS_DOCLING_ACCELERATOR"),
+    )
+    docling_ocr_enabled: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("MY_AGENTS_DOCLING_OCR_ENABLED"),
+    )
+    docling_timeout_seconds: float = Field(
+        default=30.0,
+        gt=0,
+        le=300,
+        validation_alias=AliasChoices("MY_AGENTS_DOCLING_TIMEOUT_SECONDS"),
+    )
+    docling_threads: int = Field(
+        default=4,
+        ge=1,
+        le=64,
+        validation_alias=AliasChoices("MY_AGENTS_DOCLING_THREADS"),
+    )
+    tesseract_enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("MY_AGENTS_TESSERACT_ENABLED"),
+    )
+    tesseract_languages: str = Field(
+        default="kor+eng",
+        min_length=1,
+        validation_alias=AliasChoices("MY_AGENTS_TESSERACT_LANGUAGES"),
+    )
+    tesseract_psm: int = Field(
+        default=6,
+        ge=0,
+        le=13,
+        validation_alias=AliasChoices("MY_AGENTS_TESSERACT_PSM"),
+    )
+    tesseract_render_scale: float = Field(
+        default=3.0,
+        ge=1.0,
+        le=5.0,
+        validation_alias=AliasChoices("MY_AGENTS_TESSERACT_RENDER_SCALE"),
+    )
+    tesseract_timeout_seconds: float = Field(
+        default=15.0,
+        gt=0,
+        le=120,
+        validation_alias=AliasChoices("MY_AGENTS_TESSERACT_TIMEOUT_SECONDS"),
     )
     database_url: str = Field(
         default="sqlite+pysqlite:///:memory:",
@@ -257,6 +305,28 @@ class Settings(BaseSettings):
         if isinstance(value, str) and not value.strip():
             return None
         return value
+
+    @field_validator("docling_accelerator", mode="before")
+    @classmethod
+    def docling_accelerator_must_be_supported(cls, value: object) -> object:
+        """Keep Docling accelerator selection explicit and deployable."""
+        if not isinstance(value, str):
+            return value
+        normalized = value.strip().casefold()
+        if normalized not in {"auto", "cpu", "cuda", "mps", "xpu"}:
+            raise ValueError(
+                "MY_AGENTS_DOCLING_ACCELERATOR must be one of auto, cpu, cuda, mps, xpu"
+            )
+        return normalized
+
+    @field_validator("tesseract_languages")
+    @classmethod
+    def tesseract_languages_must_not_be_blank(cls, value: str) -> str:
+        """Require at least one Tesseract language code when OCR is enabled."""
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("MY_AGENTS_TESSERACT_LANGUAGES must not be blank")
+        return stripped
 
     @field_validator("cors_allowed_origins")
     @classmethod
