@@ -1,0 +1,373 @@
+"""Conversation run state transitions and synchronous execution."""
+
+from __future__ import annotations
+
+import json
+
+from fastapi import HTTPException, status
+from langchain_core.messages import BaseMessage
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from my_agents.agents.general_assistant.classifier import classify_messages
+from my_agents.agents.general_assistant.responders import ResponseProviderConfigurationError
+from my_agents.api.assistant import GraphRunner
+from my_agents.api.conversations.retrieval_context import (
+    chunks_used_for_answer,
+    clarification_reply,
+    compose_rag_reply,
+    graph_input_for_run,
+    prepare_retrieval_context,
+)
+from my_agents.api.conversations.run_events import (
+    answer_composed_payload,
+    append_run_event,
+    graph_invoked_payload,
+    retrieval_completed_payload,
+    sse_event,
+    user_message_stored_payload,
+)
+from my_agents.api.conversations.serializers import (
+    coerce_route,
+    completed_run_response,
+    knowledge_base_selection_payload,
+)
+from my_agents.conversations.models import (
+    AgentEventType,
+    AgentRunModel,
+    MessageModel,
+    MessageRole,
+    RunStatus,
+)
+from my_agents.conversations.schemas import ConversationRunResponse
+from my_agents.knowledge.auth import KnowledgeBaseSelectionContext
+from my_agents.knowledge.models import CitationModel
+from my_agents.knowledge.retrieval import RetrievedChunk
+from my_agents.knowledge.routing import AnswerMode, RetrievalRoutingDecision
+from my_agents.schemas import RouteDecision
+
+ACTIVE_RUN_STATUSES = (RunStatus.RUNNING.value, RunStatus.CANCELLING.value)
+
+
+def complete_sync_conversation_run(
+    *,
+    db: Session,
+    conversation_id: str,
+    user_id: str,
+    prompt: str,
+    messages: list[BaseMessage],
+    run: AgentRunModel,
+    selection_context: KnowledgeBaseSelectionContext,
+    graph_runner: GraphRunner,
+) -> ConversationRunResponse:
+    retrieval_context = prepare_retrieval_context(
+        db=db,
+        user_id=user_id,
+        message=prompt,
+        messages=messages,
+        selection_context=selection_context,
+    )
+    record_run_retrieval_metadata(
+        db,
+        run.id,
+        retrieval_decision=retrieval_context.decision,
+        answer_mode=retrieval_context.answer_mode,
+        selection_context=retrieval_context.knowledge_base_selection,
+    )
+    append_run_event(
+        db,
+        run.id,
+        AgentEventType.RETRIEVAL_COMPLETED,
+        retrieval_completed_payload(
+            retrieved_chunks=retrieval_context.retrieved_chunks,
+            retrieval_latency_ms=retrieval_context.retrieval_latency_ms,
+            retrieval_decision=retrieval_context.decision,
+            answer_mode=retrieval_context.answer_mode,
+            selection_context=retrieval_context.knowledge_base_selection,
+        ),
+    )
+    if retrieval_context.decision.route == "clarification_required":
+        route = classify_messages(messages)
+        return persist_completed_run(
+            db=db,
+            run_id=run.id,
+            conversation_id=conversation_id,
+            retrieved_chunks=[],
+            route=route,
+            reply=clarification_reply(retrieval_context.decision),
+            retrieval_decision=retrieval_context.decision,
+            answer_mode=retrieval_context.answer_mode,
+            selection_context=retrieval_context.knowledge_base_selection,
+        )
+    graph_input = graph_input_for_run(
+        messages=messages,
+        user_id=user_id,
+        conversation_id=conversation_id,
+        retrieval_context=retrieval_context,
+    )
+    append_run_event(
+        db,
+        run.id,
+        AgentEventType.GRAPH_INVOKED,
+        graph_invoked_payload(
+            route=classify_messages(messages),
+            messages=messages,
+            retrieved_chunks=retrieval_context.retrieved_chunks,
+            retrieval_decision=retrieval_context.decision,
+            answer_mode=retrieval_context.answer_mode,
+            selection_context=retrieval_context.knowledge_base_selection,
+        ),
+    )
+    try:
+        result = graph_runner.invoke(graph_input)
+    except ResponseProviderConfigurationError as exc:
+        persist_failed_run(
+            db=db,
+            run_id=run.id,
+            conversation_id=conversation_id,
+            error_type=type(exc).__name__,
+        )
+        raise HTTPException(status_code=503, detail="conversation run failed") from exc
+    except Exception as exc:
+        persist_failed_run(
+            db=db,
+            run_id=run.id,
+            conversation_id=conversation_id,
+            error_type=type(exc).__name__,
+        )
+        raise HTTPException(status_code=502, detail="conversation run failed") from exc
+    route = coerce_route(result["route"])
+    used_chunks = chunks_used_for_answer(retrieval_context)
+    reply = compose_rag_reply(result["reply"], used_chunks, retrieval_context.answer_mode)
+    if is_run_cancelling(db, run.id):
+        mark_run_cancelled(db, run.id)
+        raise HTTPException(status_code=409, detail="conversation run cancelled")
+    return persist_completed_run(
+        db=db,
+        run_id=run.id,
+        conversation_id=conversation_id,
+        retrieved_chunks=used_chunks,
+        route=route,
+        reply=reply,
+        retrieval_decision=retrieval_context.decision,
+        answer_mode=retrieval_context.answer_mode,
+        selection_context=retrieval_context.knowledge_base_selection,
+    )
+
+
+def persist_completed_run(
+    *,
+    db: Session,
+    run_id: str,
+    conversation_id: str,
+    retrieved_chunks: list[RetrievedChunk],
+    route: RouteDecision,
+    reply: str,
+    retrieval_decision: RetrievalRoutingDecision,
+    answer_mode: AnswerMode,
+    selection_context: KnowledgeBaseSelectionContext,
+) -> ConversationRunResponse:
+    assistant_message = MessageModel(
+        conversation_id=conversation_id,
+        role=MessageRole.ASSISTANT.value,
+        content=reply,
+    )
+    db.add(assistant_message)
+    db.flush()
+    run = db.get(AgentRunModel, run_id)
+    if run is None or run.conversation_id != conversation_id:
+        raise RuntimeError("started conversation run is unavailable")
+    run.status = RunStatus.COMPLETED.value
+    run.route_label = route.label
+    run.route_explanation = route.explanation
+    run.retrieval_route = retrieval_decision.route
+    run.answer_mode = answer_mode
+    run.document_scope = retrieval_decision.document_scope
+    run.assistant_message_id = assistant_message.id
+    db.flush()
+    citations = [
+        CitationModel(
+            run_id=run_id,
+            document_id=item.document.id,
+            chunk_id=item.chunk.id,
+            snippet=item.chunk.content[:240],
+        )
+        for item in retrieved_chunks
+    ]
+    db.add_all(citations)
+    append_run_event(
+        db,
+        run.id,
+        AgentEventType.ANSWER_COMPOSED,
+        answer_composed_payload(
+            citation_count=len(citations),
+            reply=reply,
+            retrieval_decision=retrieval_decision,
+            answer_mode=answer_mode,
+            selection_context=selection_context,
+        ),
+        commit=False,
+    )
+    db.commit()
+    db.refresh(run)
+    for citation in citations:
+        db.refresh(citation)
+    return completed_run_response(
+        run=run,
+        reply=reply,
+        route=route,
+        retrieval_decision=retrieval_decision,
+        answer_mode=answer_mode,
+        selection_context=selection_context,
+        citations=citations,
+        retrieved_chunks=retrieved_chunks,
+    )
+
+
+def persist_failed_run(
+    *,
+    db: Session,
+    run_id: str,
+    conversation_id: str,
+    error_type: str,
+) -> str:
+    run = db.get(AgentRunModel, run_id)
+    if run is None or run.conversation_id != conversation_id:
+        raise RuntimeError("started conversation run is unavailable")
+    run.status = RunStatus.FAILED.value
+    append_run_event(
+        db,
+        run.id,
+        AgentEventType.RUN_FAILED,
+        {"safe_error_type": error_type},
+        commit=False,
+    )
+    db.commit()
+    return run.id
+
+
+def assert_no_active_run(db: Session, conversation_id: str) -> None:
+    active_run = db.scalar(
+        select(AgentRunModel.id)
+        .where(
+            AgentRunModel.conversation_id == conversation_id,
+            AgentRunModel.status.in_(ACTIVE_RUN_STATUSES),
+        )
+        .limit(1)
+    )
+    if active_run is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="conversation run already active",
+        )
+
+
+def start_run(
+    *,
+    db: Session,
+    conversation_id: str,
+    user_id: str,
+    user_message_id: str,
+    message_content_length: int,
+    selection_context: KnowledgeBaseSelectionContext,
+) -> AgentRunModel:
+    run = AgentRunModel(
+        conversation_id=conversation_id,
+        user_id=user_id,
+        status=RunStatus.RUNNING.value,
+        knowledge_base_selection_mode=selection_context.mode,
+        selected_knowledge_base_ids_json=json.dumps(
+            list(selection_context.knowledge_base_ids), sort_keys=True
+        ),
+        resolved_knowledge_base_count=selection_context.resolved_count,
+    )
+    db.add(run)
+    db.flush()
+    append_run_event(
+        db,
+        run.id,
+        AgentEventType.RUN_STARTED,
+        {
+            "run_id": run.id,
+            "conversation_id": conversation_id,
+            "status": run.status,
+            **knowledge_base_selection_payload(selection_context),
+        },
+        commit=False,
+    )
+    append_run_event(
+        db,
+        run.id,
+        AgentEventType.USER_MESSAGE_STORED,
+        user_message_stored_payload(
+            message_id=user_message_id,
+            content_length=message_content_length,
+        ),
+        commit=False,
+    )
+    db.commit()
+    db.refresh(run)
+    return run
+
+
+def record_run_retrieval_metadata(
+    db: Session,
+    run_id: str,
+    *,
+    retrieval_decision: RetrievalRoutingDecision,
+    answer_mode: AnswerMode,
+    selection_context: KnowledgeBaseSelectionContext,
+) -> None:
+    run = db.get(AgentRunModel, run_id)
+    if run is None:
+        raise RuntimeError("started conversation run is unavailable")
+    run.retrieval_route = retrieval_decision.route
+    run.answer_mode = answer_mode
+    run.document_scope = retrieval_decision.document_scope
+    run.knowledge_base_selection_mode = selection_context.mode
+    run.selected_knowledge_base_ids_json = json.dumps(
+        list(selection_context.knowledge_base_ids), sort_keys=True
+    )
+    run.resolved_knowledge_base_count = selection_context.resolved_count
+    db.commit()
+
+
+def is_run_cancelling(db: Session, run_id: str) -> bool:
+    run = db.get(AgentRunModel, run_id, populate_existing=True)
+    return run is not None and run.status == RunStatus.CANCELLING.value
+
+
+def mark_run_cancelled(db: Session, run_id: str) -> AgentRunModel:
+    run = db.get(AgentRunModel, run_id, populate_existing=True)
+    if run is None:
+        raise RuntimeError("started conversation run is unavailable")
+    if run.status != RunStatus.CANCELLED.value:
+        run.status = RunStatus.CANCELLED.value
+        append_run_event(
+            db,
+            run.id,
+            AgentEventType.RUN_CANCELLED,
+            {
+                "run_id": run.id,
+                "conversation_id": run.conversation_id,
+                "status": RunStatus.CANCELLED.value,
+                "partial_reply_persisted": False,
+            },
+            commit=False,
+        )
+        db.commit()
+        db.refresh(run)
+    return run
+
+
+def cancelled_sse_event(db: Session, run_id: str) -> str:
+    run = mark_run_cancelled(db, run_id)
+    return sse_event(
+        AgentEventType.RUN_CANCELLED.value,
+        {
+            "run_id": run.id,
+            "conversation_id": run.conversation_id,
+            "status": run.status,
+            "partial_reply_persisted": False,
+        },
+    )
