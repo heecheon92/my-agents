@@ -395,3 +395,12 @@ def test_get_settings_can_load_explicit_env_file(
     settings = get_settings()
 
     assert settings.database_url == "sqlite+pysqlite:///./custom-test.sqlite3"
+
+
+def test_debug_knowledge_context_logging_env_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
+    monkeypatch.setenv("MY_AGENTS_DEBUG_KNOWLEDGE_CONTEXT_LOGGING", "true")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.debug_knowledge_context_logging is True

@@ -1,5 +1,7 @@
 """FastAPI application factory and route assembly for the assistant backend."""
 
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -10,12 +12,13 @@ from my_agents.api.documents import documents_router
 from my_agents.api.groups import groups_router
 from my_agents.api.health import health_router
 from my_agents.api.knowledge_bases import knowledge_bases_router
-from my_agents.settings import get_settings
+from my_agents.settings import Settings, get_settings
 
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     settings = get_settings()
+    configure_debug_logging(settings)
     app = FastAPI(title="my-agents", version="0.1.0")
     cors_allowed_origins = settings.cors_allowed_origin_list()
     if cors_allowed_origins:
@@ -34,6 +37,24 @@ def create_app() -> FastAPI:
     app.include_router(documents_router)
     app.include_router(assistant_router)
     return app
+
+
+def configure_debug_logging(settings: Settings) -> None:
+    """Enable sensitive retrieval-context logs only for explicit debug sessions."""
+    if not settings.debug_knowledge_context_logging:
+        return
+    logger = logging.getLogger("my_agents.api.conversations.retrieval_context")
+    logger.setLevel(logging.DEBUG)
+    logger.propagate = False
+    if any(
+        getattr(handler, "_my_agents_debug_context_handler", False) for handler in logger.handlers
+    ):
+        return
+    handler = logging.StreamHandler()
+    handler.setLevel(logging.DEBUG)
+    handler.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
+    handler._my_agents_debug_context_handler = True  # type: ignore[attr-defined]
+    logger.addHandler(handler)
 
 
 __all__ = ["GraphRunner", "create_app", "get_graph_runner"]

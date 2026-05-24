@@ -6,21 +6,41 @@
       "type": "debugpy",
       "request": "launch",
       "module": "uvicorn",
-      "args": ["main:app", "--reload", "--host", "127.0.0.1", "--port", "8000"],
+      "args": [
+        "main:app",
+        "--reload",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8000",
+        "--log-level",
+        "debug"
+      ],
       "cwd": "${workspaceFolder}",
       "envFile": "${workspaceFolder}/.env",
       "env": {
-        "MY_AGENTS_RESPONSE_MODE": "openai"
+        "MY_AGENTS_RESPONSE_MODE": "openai",
+        "MY_AGENTS_DEBUG_KNOWLEDGE_CONTEXT_LOGGING": "true"
       },
       "jinja": true,
-      "justMyCode": true
+      "justMyCode": true,
+      "console": "integratedTerminal"
     },
     {
       "name": "FastAPI: uvicorn main:app (local pgvector)",
       "type": "debugpy",
       "request": "launch",
       "module": "uvicorn",
-      "args": ["main:app", "--reload", "--host", "127.0.0.1", "--port", "8000"],
+      "args": [
+        "main:app",
+        "--reload",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8000",
+        "--log-level",
+        "debug"
+      ],
       "cwd": "${workspaceFolder}",
       "preLaunchTask": "pgvector: up + migrate",
       "envFile": "${workspaceFolder}/.env",
@@ -32,17 +52,21 @@
         "MY_AGENTS_SESSION_COOKIE_SECURE": "false",
         "MY_AGENTS_AUTH_EMAIL_MODE": "local",
         "MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED": "true",
-        "MY_AGENTS_CORS_ALLOWED_ORIGINS": "http://localhost:3000,http://127.0.0.1:3000"
+        "MY_AGENTS_CORS_ALLOWED_ORIGINS": "http://localhost:3000,http://127.0.0.1:3000",
+        "MY_AGENTS_DEBUG_KNOWLEDGE_CONTEXT_LOGGING": "true"
       },
       "jinja": true,
-      "justMyCode": true
+      "justMyCode": true,
+      "console": "integratedTerminal"
     },
     {
       "name": "Pytest: all tests",
       "type": "debugpy",
       "request": "launch",
       "module": "pytest",
-      "args": ["-q"],
+      "args": [
+        "-q"
+      ],
       "cwd": "${workspaceFolder}",
       "envFile": "${workspaceFolder}/.env",
       "env": {

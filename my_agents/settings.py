@@ -280,6 +280,10 @@ class Settings(BaseSettings):
         le=86400,
         validation_alias=AliasChoices("MY_AGENTS_AUTH_ABUSE_WINDOW_SECONDS"),
     )
+    debug_knowledge_context_logging: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("MY_AGENTS_DEBUG_KNOWLEDGE_CONTEXT_LOGGING"),
+    )
 
     @field_validator("openai_model", "openai_embedding_model")
     @classmethod
