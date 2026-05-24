@@ -41,7 +41,10 @@ from my_agents.api.conversations.run_lifecycle import (
     record_run_retrieval_metadata,
     start_run,
 )
-from my_agents.api.conversations.serializers import coerce_route
+from my_agents.api.conversations.serializers import (
+    coerce_route,
+    knowledge_base_selection_payload,
+)
 from my_agents.api.conversations.transcripts import messages_for_conversation, store_user_message
 from my_agents.auth.contracts import Principal
 from my_agents.auth.dependencies import get_current_principal
@@ -140,7 +143,12 @@ def conversation_run_events(
     )
     yield sse_event(
         AgentEventType.RUN_STARTED.value,
-        {"run_id": run.id, "conversation_id": conversation_id, "status": run.status},
+        {
+            "run_id": run.id,
+            "conversation_id": conversation_id,
+            "status": run.status,
+            **knowledge_base_selection_payload(selection_context),
+        },
     )
     user_message_payload = user_message_stored_payload(
         message_id=user_message.id,

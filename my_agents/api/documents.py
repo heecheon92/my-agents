@@ -223,7 +223,12 @@ def list_documents(
             )
         )
     ).all()
-    return [_document_response(document) for document in docs]
+    auth = AuthorizationService(db)
+    return [
+        _document_response(document)
+        for document in docs
+        if auth.can(user_id=principal.user_id, document=document, operation=DocumentOperation.READ)
+    ]
 
 
 def list_documents_in_knowledge_base(

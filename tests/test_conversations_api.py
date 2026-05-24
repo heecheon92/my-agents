@@ -625,6 +625,14 @@ def test_streaming_conversation_run_emits_events_and_persists_result(monkeypatch
         "answer_composed",
         "run_completed",
     ]
+    started = events[0]["data"]
+    assert started["conversation_id"] == conversation_id
+    assert started["knowledge_base_selection"] == {"mode": "all", "knowledge_base_ids": []}
+    assert started["source_context_group_id"] is None
+    assert started["mandatory_group_knowledge_base_count"] == 0
+    assert started["optional_personal_knowledge_base_count"] == 0
+    assert started["resolved_knowledge_base_count"] >= 0
+
     completed = events[-1]["data"]
     assert completed["conversation_id"] == conversation_id
     assert completed["reply"] == "saw 1 messages"
