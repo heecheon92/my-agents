@@ -19,7 +19,7 @@ from my_agents.api.documents import (
 )
 from my_agents.auth.contracts import Principal
 from my_agents.auth.dependencies import get_current_principal
-from my_agents.groups.models import MembershipModel
+from my_agents.groups.models import MembershipModel, MembershipRole
 from my_agents.knowledge.auth import (
     authorized_knowledge_base_filter,
     get_authorized_knowledge_base_or_404,
@@ -49,7 +49,7 @@ def create_knowledge_base(
     db: Annotated[Session, Depends(get_database_session)],
 ) -> KnowledgeBaseResponse:
     if request.scope == KnowledgeBaseScope.GROUP:
-        if request.group_id is None or not _has_group_membership(
+        if request.group_id is None or not _has_group_manager_access(
             db, request.group_id, principal.user_id
         ):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="not allowed")
@@ -226,16 +226,17 @@ def get_knowledge_base_document_extraction_run(
     )
 
 
-def _has_group_membership(db: Session, group_id: str, user_id: str) -> bool:
-    return (
-        db.scalar(
-            select(MembershipModel).where(
-                MembershipModel.group_id == group_id,
-                MembershipModel.user_id == user_id,
-            )
+def _has_group_manager_access(db: Session, group_id: str, user_id: str) -> bool:
+    membership = db.scalar(
+        select(MembershipModel).where(
+            MembershipModel.group_id == group_id,
+            MembershipModel.user_id == user_id,
         )
-        is not None
     )
+    return membership is not None and membership.role in {
+        MembershipRole.OWNER.value,
+        MembershipRole.ADMIN.value,
+    }
 
 
 def _knowledge_base_response(knowledge_base: KnowledgeBaseModel) -> KnowledgeBaseResponse:

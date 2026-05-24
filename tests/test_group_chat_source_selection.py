@@ -62,6 +62,18 @@ def _create_group_kb(client: TestClient, group_id: str, name: str) -> str:
     return response.json()["id"]
 
 
+def _first_group_kb(client: TestClient, group_id: str) -> str:
+    response = client.get("/knowledge-bases")
+    assert response.status_code == 200
+    group_kbs = [
+        knowledge_base
+        for knowledge_base in response.json()
+        if knowledge_base["scope"] == "group" and knowledge_base["group_id"] == group_id
+    ]
+    assert group_kbs
+    return group_kbs[0]["id"]
+
+
 def _create_document(client: TestClient, *, title: str, content: str, kb_id: str) -> str:
     response = client.post(
         "/documents",
@@ -71,6 +83,39 @@ def _create_document(client: TestClient, *, title: str, content: str, kb_id: str
     document_id = response.json()["id"]
     assert client.post(f"/documents/{document_id}/ingest").status_code == 200
     return document_id
+
+
+def _publish_personal_document_to_group(
+    *,
+    owner: TestClient,
+    requester: TestClient,
+    group_id: str,
+    target_kb_id: str,
+    title: str,
+    content: str,
+) -> str:
+    personal_kb = _create_personal_kb(requester, f"{title} Personal KB")
+    source_document = _create_document(
+        requester,
+        title=title,
+        content=content,
+        kb_id=personal_kb,
+    )
+    publish_request = requester.post(
+        f"/groups/{group_id}/publish-requests",
+        json={
+            "source_document_id": source_document,
+            "target_knowledge_base_id": target_kb_id,
+        },
+    )
+    assert publish_request.status_code == 201
+    approved = owner.post(
+        f"/groups/{group_id}/publish-requests/{publish_request.json()['id']}/approve"
+    )
+    assert approved.status_code == 200
+    published_document = approved.json()["published_document_id"]
+    assert published_document
+    return published_document
 
 
 def _remove_group_membership(group_id: str, user_id: str) -> None:
@@ -95,13 +140,15 @@ def test_group_chat_all_uses_mandatory_group_kb_only(monkeypatch) -> None:  # no
     client = _client(monkeypatch, graph)
     _signup_login(client, "group-source-owner@example.com")
     group_id = client.post("/groups", json={"name": "Source Group"}).json()["id"]
-    group_kb = _create_group_kb(client, group_id, "Mandatory Group KB")
+    group_kb = _first_group_kb(client, group_id)
     personal_kb = _create_personal_kb(client, "Private Personal KB")
-    group_document = _create_document(
-        client,
+    group_document = _publish_personal_document_to_group(
+        owner=client,
+        requester=client,
+        group_id=group_id,
+        target_kb_id=group_kb,
         title="Group Source",
         content="GroupAlpha mandatory group source note.",
-        kb_id=group_kb,
     )
     personal_document = _create_document(
         client,
@@ -140,10 +187,17 @@ def test_group_chat_optional_personal_kb_is_explicit_and_private(monkeypatch) ->
     _signup_login(owner, "optional-owner@example.com")
     _signup_login(other, "optional-other@example.com")
     group_id = owner.post("/groups", json={"name": "Optional Source Group"}).json()["id"]
-    group_kb = _create_group_kb(owner, group_id, "Mandatory Group KB")
+    group_kb = _first_group_kb(owner, group_id)
     owner_personal_kb = _create_personal_kb(owner, "Owner Optional KB")
     other_personal_kb = _create_personal_kb(other, "Other Private KB")
-    _create_document(owner, title="Group Source", content="GroupBeta shared note.", kb_id=group_kb)
+    _publish_personal_document_to_group(
+        owner=owner,
+        requester=owner,
+        group_id=group_id,
+        target_kb_id=group_kb,
+        title="Group Source",
+        content="GroupBeta shared note.",
+    )
     owner_doc = _create_document(
         owner,
         title="Owner Optional Source",
@@ -190,7 +244,7 @@ def test_group_chat_rejects_selected_group_kb_and_personal_chat_rejects_optional
     client = _client(monkeypatch, graph)
     _signup_login(client, "group-source-validation@example.com")
     group_id = client.post("/groups", json={"name": "Validation Group"}).json()["id"]
-    group_kb = _create_group_kb(client, group_id, "Validation Group KB")
+    group_kb = _first_group_kb(client, group_id)
     personal_kb = _create_personal_kb(client, "Validation Personal KB")
     group_conversation = client.post(
         "/conversations", json={"title": "Group validation", "group_id": group_id}
@@ -232,12 +286,14 @@ def test_group_kb_creator_loses_access_after_membership_removal(monkeypatch) -> 
         ).status_code
         == 204
     )
-    group_kb = _create_group_kb(creator, group_id, "Revoked Creator Group KB")
-    group_document = _create_document(
-        creator,
+    group_kb = _create_group_kb(owner, group_id, "Revoked Creator Group KB")
+    group_document = _publish_personal_document_to_group(
+        owner=owner,
+        requester=creator,
+        group_id=group_id,
+        target_kb_id=group_kb,
         title="Revoked Group Source",
         content="RevokedGroupGamma must not leak after membership removal.",
-        kb_id=group_kb,
     )
     conversation_id = creator.post(
         "/conversations", json={"title": "Personal after group removal"}

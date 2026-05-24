@@ -70,6 +70,39 @@ def _ingest(client: TestClient, *, kb_id: str, document_id: str) -> None:
     assert response.json()["status"] == "completed"
 
 
+def _publish_personal_document(
+    *,
+    owner: TestClient,
+    requester: TestClient,
+    group_id: str,
+    target_kb_id: str,
+    personal_kb_id: str,
+    title: str,
+    content: str,
+) -> str:
+    source_document_id = _create_document(
+        requester,
+        kb_id=personal_kb_id,
+        title=title,
+        content=content,
+    )
+    publish_request = requester.post(
+        f"/groups/{group_id}/publish-requests",
+        json={
+            "source_document_id": source_document_id,
+            "target_knowledge_base_id": target_kb_id,
+        },
+    )
+    assert publish_request.status_code == 201
+    approved = owner.post(
+        f"/groups/{group_id}/publish-requests/{publish_request.json()['id']}/approve"
+    )
+    assert approved.status_code == 200
+    published_document_id = approved.json()["published_document_id"]
+    assert published_document_id
+    return published_document_id
+
+
 def _group_retrieval_hits(user_id: str, *, kb_id: str, query: str) -> list[str]:
     session_generator = get_database_session()
     db = next(session_generator)
@@ -150,9 +183,13 @@ def test_publish_request_rejects_invalid_source_or_target_boundaries(monkeypatch
         title="Other personal",
         content="other owned",
     )
-    group_doc_id = _create_document(
-        owner,
-        kb_id=target_group_kb_id,
+    owner_personal_kb_id = _create_personal_kb(owner, "Owner Source KB")
+    group_doc_id = _publish_personal_document(
+        owner=owner,
+        requester=owner,
+        group_id=group_id,
+        target_kb_id=target_group_kb_id,
+        personal_kb_id=owner_personal_kb_id,
         title="Group source",
         content="already group scoped",
     )

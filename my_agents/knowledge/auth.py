@@ -113,14 +113,24 @@ def require_group_write_access(db: Session, group_id: str, user_id: str) -> None
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="not allowed")
 
 
-def resolve_kb_document_group_id(
+def require_personal_knowledge_base_for_document_write(
     db: Session, *, knowledge_base_id: str, user_id: str
-) -> str | None:
-    """Resolve and authorize the group_id that must be stamped on a KB document write."""
+) -> KnowledgeBaseModel:
+    """Return an authorized personal KB for direct document create/upload paths.
+
+    Group KBs are populated through the publish-review workflow so personal
+    documents cannot be directly wired into group-owned retrieval scope.
+    """
     knowledge_base = get_authorized_knowledge_base_or_404(db, knowledge_base_id, user_id)
-    if knowledge_base.group_id is not None:
-        require_group_write_access(db, knowledge_base.group_id, user_id)
-    return knowledge_base.group_id
+    if (
+        knowledge_base.scope != KnowledgeBaseScope.PERSONAL.value
+        or knowledge_base.group_id is not None
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="group knowledge bases accept documents through publish approval",
+        )
+    return knowledge_base
 
 
 def resolve_knowledge_base_selection(

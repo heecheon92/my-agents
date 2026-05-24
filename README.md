@@ -601,12 +601,12 @@ Knowledge base는 사용자에게 보이는 document library 추상화입니다.
 그 KB에 파일/문서를 추가한 뒤 ingest하며, chat 시 assistant가 검색할 KB를 선택합니다.
 사용자-facing client의 canonical 경로는 KB-nested API입니다.
 
-- `POST /knowledge-bases`
+- `POST /knowledge-bases` — personal KB 생성 또는 owner/admin 전용 추가 group KB 생성
 - `GET /knowledge-bases`
 - `GET /knowledge-bases/{knowledge_base_id}`
 - `GET /knowledge-bases/{knowledge_base_id}/documents`
-- `POST /knowledge-bases/{knowledge_base_id}/documents` — 특정 KB 안에 JSON 텍스트 문서 생성
-- `POST /knowledge-bases/{knowledge_base_id}/documents/upload` — 특정 KB 안에 multipart PDF/Markdown/plain text 업로드
+- `POST /knowledge-bases/{knowledge_base_id}/documents` — 특정 personal KB 안에 JSON 텍스트 문서 생성
+- `POST /knowledge-bases/{knowledge_base_id}/documents/upload` — 특정 personal KB 안에 multipart PDF/Markdown/plain text 업로드
 - `POST /knowledge-bases/{knowledge_base_id}/documents/{document_id}/ingest` — 해당 KB 안에서 bodyless 동기 ingestion 실행
 - `POST /knowledge-bases/{knowledge_base_id}/documents/{document_id}/ingest/async` — `202 Accepted`와 queued extraction run을 반환하는 비동기 ingestion 시작
 - `GET /knowledge-bases/{knowledge_base_id}/documents/{document_id}/extraction-runs`
@@ -617,6 +617,8 @@ Legacy `/documents`, `/documents/upload` write path는 standalone/developer 호�
 않거나 권한 없는 KB는 `404`로 conceal하고, nested document operation에서 document가 path KB에
 속하지 않으면 `404`를 반환합니다.
 
+새 그룹을 만들면 기본 group-scoped KB 하나가 함께 만들어집니다. Group owner/admin은 추가
+group KB를 만들 수 있지만, 직접 document create/upload 경로는 group KB target을 거부합니다.
 Group knowledge에는 personal document를 위한 명시적 publish-review workflow가 있습니다. Group
 member는 자신이 소유한 personal `source_document_id`와 group-scoped
 `target_knowledge_base_id`로 `POST /groups/{group_id}/publish-requests`를 만들 수 있습니다.

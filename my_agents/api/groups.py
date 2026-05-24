@@ -41,7 +41,8 @@ def create_group(
     principal: Annotated[Principal, Depends(get_current_principal)],
     db: Annotated[Session, Depends(get_database_session)],
 ) -> GroupResponse:
-    group = GroupModel(name=request.name.strip(), created_by_user_id=principal.user_id)
+    group_name = request.name.strip()
+    group = GroupModel(name=group_name, created_by_user_id=principal.user_id)
     db.add(group)
     db.flush()
     membership = MembershipModel(
@@ -50,6 +51,14 @@ def create_group(
         role=MembershipRole.OWNER.value,
     )
     db.add(membership)
+    db.add(
+        KnowledgeBaseModel(
+            name=_default_group_knowledge_base_name(group_name),
+            scope=KnowledgeBaseScope.GROUP.value,
+            owner_user_id=principal.user_id,
+            group_id=group.id,
+        )
+    )
     db.commit()
     db.refresh(group)
     return GroupResponse(id=group.id, name=group.name, role=MembershipRole.OWNER)
@@ -349,6 +358,10 @@ def _copy_document_for_group_knowledge_base(
         group_id=target_knowledge_base.group_id,
         knowledge_base_id=target_knowledge_base.id,
     )
+
+
+def _default_group_knowledge_base_name(group_name: str) -> str:
+    return f"{group_name} Knowledge"
 
 
 def _publish_request_response(

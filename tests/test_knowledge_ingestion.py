@@ -1136,10 +1136,27 @@ def test_upload_rejects_unsupported_or_unsafe_input(monkeypatch) -> None:  # noq
 
 def test_group_knowledge_base_requires_group_membership(monkeypatch) -> None:  # noqa: ANN001
     owner = _client(monkeypatch)
+    member = _client(monkeypatch)
     outsider = _client(monkeypatch)
     _signup_login(owner, "group-kb-owner@example.com")
+    member_id = _signup_login(member, "group-kb-member@example.com")
     _signup_login(outsider, "group-kb-outsider@example.com")
     group_id = owner.post("/groups", json={"name": "KB Group"}).json()["id"]
+    default_group_kbs = [
+        kb
+        for kb in owner.get("/knowledge-bases").json()
+        if kb["scope"] == "group" and kb["group_id"] == group_id
+    ]
+    assert len(default_group_kbs) == 1
+    assert default_group_kbs[0]["name"] == "KB Group Knowledge"
+
+    assert (
+        owner.post(
+            f"/groups/{group_id}/members",
+            json={"user_id": member_id, "role": "viewer"},
+        ).status_code
+        == 204
+    )
 
     kb = owner.post(
         "/knowledge-bases",
@@ -1148,9 +1165,45 @@ def test_group_knowledge_base_requires_group_membership(monkeypatch) -> None:  #
     assert kb.status_code == 201
     assert kb.json()["group_id"] == group_id
 
+    member_denied = member.post(
+        "/knowledge-bases",
+        json={"name": "Member Denied", "scope": "group", "group_id": group_id},
+    )
+    assert member_denied.status_code == 403
+
     denied = outsider.post(
         "/knowledge-bases",
         json={"name": "Denied", "scope": "group", "group_id": group_id},
     )
     assert denied.status_code == 403
     assert outsider.get("/knowledge-bases").json() == []
+
+
+def test_direct_document_writes_to_group_knowledge_base_are_rejected(monkeypatch) -> None:  # noqa: ANN001
+    owner = _client(monkeypatch)
+    _signup_login(owner, "group-kb-direct-write-owner@example.com")
+    group_id = owner.post("/groups", json={"name": "Direct Write Group"}).json()["id"]
+    group_kb = next(
+        kb
+        for kb in owner.get("/knowledge-bases").json()
+        if kb["scope"] == "group" and kb["group_id"] == group_id
+    )
+
+    create_response = owner.post(
+        f"/knowledge-bases/{group_kb['id']}/documents",
+        json={"title": "Direct group doc", "content": "should use publish workflow"},
+    )
+    upload_response = _upload_document(
+        owner,
+        data={"title": "Direct Upload", "knowledge_base_id": group_kb["id"]},
+        files={"file": ("direct.txt", b"group upload", "text/plain")},
+    )
+
+    assert create_response.status_code == 422
+    assert create_response.json()["detail"] == (
+        "group knowledge bases accept documents through publish approval"
+    )
+    assert upload_response.status_code == 422
+    assert upload_response.json()["detail"] == (
+        "group knowledge bases accept documents through publish approval"
+    )

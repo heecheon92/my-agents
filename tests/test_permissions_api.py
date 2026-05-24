@@ -30,6 +30,38 @@ def _create_personal_kb(client: TestClient, name: str = "Test KB") -> str:
     return response.json()["id"]
 
 
+def _publish_personal_document(
+    *,
+    owner: TestClient,
+    requester: TestClient,
+    group_id: str,
+    target_kb_id: str,
+    personal_kb_id: str,
+    title: str,
+    content: str,
+) -> str:
+    source_document = requester.post(
+        f"/knowledge-bases/{personal_kb_id}/documents",
+        json={"title": title, "content": content},
+    )
+    assert source_document.status_code == 201
+    publish_request = requester.post(
+        f"/groups/{group_id}/publish-requests",
+        json={
+            "source_document_id": source_document.json()["id"],
+            "target_knowledge_base_id": target_kb_id,
+        },
+    )
+    assert publish_request.status_code == 201
+    approved = owner.post(
+        f"/groups/{group_id}/publish-requests/{publish_request.json()['id']}/approve"
+    )
+    assert approved.status_code == 200
+    published_document_id = approved.json()["published_document_id"]
+    assert published_document_id
+    return published_document_id
+
+
 def test_group_owner_can_add_member_and_group_viewer_can_read_document(monkeypatch) -> None:  # noqa: ANN001
     owner = _client(monkeypatch)
     viewer = _client(monkeypatch)
@@ -55,18 +87,16 @@ def test_group_owner_can_add_member_and_group_viewer_can_read_document(monkeypat
     )
     assert kb.status_code == 201
     kb_id = kb.json()["id"]
-
-    document = owner.post(
-        "/documents",
-        json={
-            "title": "Group Plan",
-            "content": "shared",
-            "group_id": group_id,
-            "knowledge_base_id": kb_id,
-        },
+    owner_personal_kb_id = _create_personal_kb(owner, "Owner Source KB")
+    document_id = _publish_personal_document(
+        owner=owner,
+        requester=owner,
+        group_id=group_id,
+        target_kb_id=kb_id,
+        personal_kb_id=owner_personal_kb_id,
+        title="Group Plan",
+        content="shared",
     )
-    assert document.status_code == 201
-    document_id = document.json()["id"]
 
     assert viewer.get(f"/documents/{document_id}").status_code == 200
     assert outsider.get(f"/documents/{document_id}").status_code == 404
@@ -80,7 +110,11 @@ def test_group_owner_can_add_member_and_group_viewer_can_read_document(monkeypat
             "knowledge_base_id": kb_id,
         },
     )
-    assert viewer_create.status_code == 403
+    assert viewer_create.status_code == 422
+    assert (
+        viewer_create.json()["detail"]
+        == "group knowledge bases accept documents through publish approval"
+    )
 
 
 def test_document_owner_can_grant_explicit_user_read_permission(monkeypatch) -> None:  # noqa: ANN001

@@ -15,7 +15,7 @@ from my_agents.auth.guest_limits import assert_guest_access_active, assert_guest
 from my_agents.groups.models import MembershipModel
 from my_agents.knowledge.auth import (
     get_authorized_knowledge_base_or_404,
-    resolve_kb_document_group_id,
+    require_personal_knowledge_base_for_document_write,
 )
 from my_agents.knowledge.extraction import KnowledgeExtractionService
 from my_agents.knowledge.models import (
@@ -88,7 +88,7 @@ def create_document_in_knowledge_base(
     settings: Settings,
 ) -> DocumentResponse:
     assert_guest_can_create_document(db, principal, settings)
-    group_id = resolve_kb_document_group_id(
+    knowledge_base = require_personal_knowledge_base_for_document_write(
         db,
         knowledge_base_id=knowledge_base_id,
         user_id=principal.user_id,
@@ -98,8 +98,8 @@ def create_document_in_knowledge_base(
         content=request.content,
         source_type="text",
         owner_user_id=principal.user_id,
-        group_id=group_id,
-        knowledge_base_id=knowledge_base_id,
+        group_id=None,
+        knowledge_base_id=knowledge_base.id,
     )
     db.add(document)
     db.commit()
@@ -153,7 +153,7 @@ async def upload_document_in_knowledge_base(
 ) -> DocumentResponse:
     """Create an uploaded document inside an already path-selected KB."""
     assert_guest_can_create_document(db, principal, settings)
-    resolved_group_id = resolve_kb_document_group_id(
+    knowledge_base = require_personal_knowledge_base_for_document_write(
         db, knowledge_base_id=knowledge_base_id, user_id=principal.user_id
     )
     content = await file.read()
@@ -194,8 +194,8 @@ async def upload_document_in_knowledge_base(
         source_page_count=parsed.page_count,
         parser_name=parsed.parser_name,
         owner_user_id=principal.user_id,
-        group_id=resolved_group_id,
-        knowledge_base_id=knowledge_base_id,
+        group_id=None,
+        knowledge_base_id=knowledge_base.id,
     )
     db.add(document)
     db.commit()

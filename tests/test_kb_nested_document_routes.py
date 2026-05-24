@@ -54,13 +54,47 @@ def _create_kb(client: TestClient, name: str) -> str:
     return response.json()["id"]
 
 
-def _create_group_kb(client: TestClient, name: str, group_id: str) -> str:
-    response = client.post(
-        "/knowledge-bases",
-        json={"name": name, "scope": "group", "group_id": group_id},
+def _first_group_kb(client: TestClient, group_id: str) -> str:
+    response = client.get("/knowledge-bases")
+    assert response.status_code == 200
+    group_kbs = [
+        knowledge_base
+        for knowledge_base in response.json()
+        if knowledge_base["scope"] == "group" and knowledge_base["group_id"] == group_id
+    ]
+    assert group_kbs
+    return group_kbs[0]["id"]
+
+
+def _create_published_group_document(
+    client: TestClient,
+    *,
+    group_id: str,
+    group_kb_id: str,
+    title: str,
+    content: str,
+) -> str:
+    personal_kb_id = _create_kb(client, f"{title} Source KB")
+    source_document = client.post(
+        f"/knowledge-bases/{personal_kb_id}/documents",
+        json={"title": title, "content": content},
     )
-    assert response.status_code == 201
-    return response.json()["id"]
+    assert source_document.status_code == 201
+    publish_request = client.post(
+        f"/groups/{group_id}/publish-requests",
+        json={
+            "source_document_id": source_document.json()["id"],
+            "target_knowledge_base_id": group_kb_id,
+        },
+    )
+    assert publish_request.status_code == 201
+    approved = client.post(
+        f"/groups/{group_id}/publish-requests/{publish_request.json()['id']}/approve"
+    )
+    assert approved.status_code == 200
+    published_document_id = approved.json()["published_document_id"]
+    assert published_document_id
+    return published_document_id
 
 
 def _document_rows(document_id: str) -> list[DocumentModel]:
@@ -334,20 +368,21 @@ def test_group_conversation_all_mode_uses_mandatory_group_kb_only(monkeypatch) -
     member_id = _signup_login(member, "group-all-member@example.com")
     group_id = owner.post("/groups", json={"name": "Mandatory Group KB"}).json()["id"]
     owner.post(f"/groups/{group_id}/members", json={"user_id": member_id, "role": "viewer"})
-    group_kb = _create_group_kb(owner, "Mandatory Group Source", group_id)
+    group_kb = _first_group_kb(owner, group_id)
     personal_kb = _create_kb(owner, "Private Optional Source")
-    group_doc = owner.post(
-        f"/knowledge-bases/{group_kb}/documents",
-        json={"title": "Group Only", "content": "GroupOnlyAlpha mandatory group source."},
+    group_doc_id = _create_published_group_document(
+        owner,
+        group_id=group_id,
+        group_kb_id=group_kb,
+        title="Group Only",
+        content="GroupOnlyAlpha mandatory group source.",
     )
     personal_doc = owner.post(
         f"/knowledge-bases/{personal_kb}/documents",
         json={"title": "Personal Optional", "content": "PersonalOnlyBeta private source."},
     )
     assert (
-        owner.post(
-            f"/knowledge-bases/{group_kb}/documents/{group_doc.json()['id']}/ingest"
-        ).status_code
+        owner.post(f"/knowledge-bases/{group_kb}/documents/{group_doc_id}/ingest").status_code
         == 200
     )
     assert (
@@ -371,7 +406,7 @@ def test_group_conversation_all_mode_uses_mandatory_group_kb_only(monkeypatch) -
     assert payload["resolved_knowledge_base_count"] == 1
     assert {citation["knowledge_base_id"] for citation in payload["citations"]} == {group_kb}
     assert {context["document_id"] for context in graph.calls[-1]["retrieved_context"]} == {
-        group_doc.json()["id"]
+        group_doc_id
     }
     assert "PersonalOnlyBeta" not in payload["reply"]
 
@@ -383,21 +418,22 @@ def test_group_conversation_can_attach_owner_private_personal_kbs(monkeypatch) -
     _signup_login(owner, "group-optional-owner@example.com")
     _signup_login(outsider, "group-optional-outsider@example.com")
     group_id = owner.post("/groups", json={"name": "Optional Personal KB"}).json()["id"]
-    group_kb = _create_group_kb(owner, "Required Group Source", group_id)
+    group_kb = _first_group_kb(owner, group_id)
     personal_kb = _create_kb(owner, "Attached Personal Source")
     foreign_personal_kb = _create_kb(outsider, "Foreign Personal Source")
-    group_doc = owner.post(
-        f"/knowledge-bases/{group_kb}/documents",
-        json={"title": "Required Group", "content": "RequiredGroupAlpha source."},
+    group_doc_id = _create_published_group_document(
+        owner,
+        group_id=group_id,
+        group_kb_id=group_kb,
+        title="Required Group",
+        content="RequiredGroupAlpha source.",
     )
     personal_doc = owner.post(
         f"/knowledge-bases/{personal_kb}/documents",
         json={"title": "Attached Personal", "content": "AttachedPersonalBeta source."},
     )
     assert (
-        owner.post(
-            f"/knowledge-bases/{group_kb}/documents/{group_doc.json()['id']}/ingest"
-        ).status_code
+        owner.post(f"/knowledge-bases/{group_kb}/documents/{group_doc_id}/ingest").status_code
         == 200
     )
     assert (
@@ -442,7 +478,7 @@ def test_group_conversation_can_attach_owner_private_personal_kbs(monkeypatch) -
         personal_kb,
     }
     assert {context["document_id"] for context in graph.calls[-1]["retrieved_context"]} == {
-        group_doc.json()["id"],
+        group_doc_id,
         personal_doc.json()["id"],
     }
 

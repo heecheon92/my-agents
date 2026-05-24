@@ -605,12 +605,12 @@ Knowledge bases are now the product-facing document library abstraction: create 
 files/documents to that KB, ingest them, then choose which KBs the assistant may search. The
 KB-nested API is the canonical path for user-facing clients:
 
-- `POST /knowledge-bases`
+- `POST /knowledge-bases` — personal KB creation, or owner/admin-only creation of additional group KBs
 - `GET /knowledge-bases`
 - `GET /knowledge-bases/{knowledge_base_id}`
 - `GET /knowledge-bases/{knowledge_base_id}/documents`
-- `POST /knowledge-bases/{knowledge_base_id}/documents` — JSON text-document creation in one KB
-- `POST /knowledge-bases/{knowledge_base_id}/documents/upload` — multipart PDF/Markdown/plain-text upload into one KB
+- `POST /knowledge-bases/{knowledge_base_id}/documents` — JSON text-document creation in one personal KB
+- `POST /knowledge-bases/{knowledge_base_id}/documents/upload` — multipart PDF/Markdown/plain-text upload into one personal KB
 - `POST /knowledge-bases/{knowledge_base_id}/documents/{document_id}/ingest` — bodyless synchronous ingestion inside that KB
 - `POST /knowledge-bases/{knowledge_base_id}/documents/{document_id}/ingest/async` — starts async ingestion and returns a `202 Accepted` queued extraction run
 - `GET /knowledge-bases/{knowledge_base_id}/documents/{document_id}/extraction-runs`
@@ -621,8 +621,10 @@ compatibility surfaces, but now require an authorized `knowledge_base_id` and re
 KBs with `422`. Nonexistent or unauthorized KBs are concealed with `404`; nested document
 operations against the wrong KB also return `404`.
 
-Group knowledge now has an explicit publish-review workflow for personal documents. A group
-member can create `POST /groups/{group_id}/publish-requests` with a personal
+Each newly created group also creates one default group-scoped KB. Group owners/admins may
+create additional group KBs, but direct document create/upload paths intentionally reject
+group KB targets. Group knowledge has an explicit publish-review workflow for personal
+documents. A group member can create `POST /groups/{group_id}/publish-requests` with a personal
 `source_document_id` they own and a group-scoped `target_knowledge_base_id`. `GET
 /groups/{group_id}/publish-requests` shows owner/admins all requests and non-manager members
 only their own. `POST /groups/{group_id}/publish-requests/{request_id}/approve` and `/reject`
