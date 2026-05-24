@@ -22,6 +22,7 @@ from my_agents.api.conversations.retrieval_context import (
     clarification_reply,
     compose_rag_reply,
     graph_input_for_run,
+    log_retrieval_context_for_llm,
     prepare_retrieval_context,
 )
 from my_agents.api.conversations.run_events import (
@@ -215,6 +216,13 @@ def conversation_run_events(
         user_id=user_id,
         conversation_id=conversation_id,
         retrieval_context=retrieval_context,
+    )
+    log_retrieval_context_for_llm(
+        run_id=run.id,
+        conversation_id=conversation_id,
+        user_id=user_id,
+        retrieval_context=retrieval_context,
+        graph_input=graph_input,
     )
     stream_route = classify_messages(messages)
     graph_invoked = False

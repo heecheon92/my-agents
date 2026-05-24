@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import logging
 from dataclasses import dataclass
 from time import perf_counter
 
@@ -17,6 +19,8 @@ from my_agents.knowledge.routing import (
     is_relevant_retrieval_result,
     route_retrieval,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -133,6 +137,58 @@ def retrieved_context_for_graph(retrieved_chunks: list[RetrievedChunk]) -> list[
         }
         for item in retrieved_chunks
     ]
+
+
+def log_retrieval_context_for_llm(
+    *,
+    run_id: str,
+    conversation_id: str,
+    user_id: str,
+    retrieval_context: ConversationRetrievalContext,
+    graph_input: dict[str, object],
+) -> None:
+    """Emit debug-only visibility into KB data selected for LLM context."""
+    if not logger.isEnabledFor(logging.DEBUG):
+        return
+    payload = {
+        "event": "knowledge_context_injected_to_llm",
+        "run_id": run_id,
+        "conversation_id": conversation_id,
+        "user_id": user_id,
+        "retrieval_route": retrieval_context.decision.route,
+        "answer_mode": retrieval_context.answer_mode,
+        "document_scope": retrieval_context.decision.document_scope,
+        "rewritten_query": retrieval_context.decision.rewritten_query,
+        "retrieval_latency_ms": retrieval_context.retrieval_latency_ms,
+        "resolved_knowledge_base_ids": list(
+            retrieval_context.knowledge_base_selection.resolved_knowledge_base_ids
+        ),
+        "retrieved_chunk_count": len(retrieval_context.retrieved_chunks),
+        "injected_chunk_count": len(graph_input.get("retrieved_context", [])),
+        "retrieved_chunks": [
+            _debug_chunk_payload(item, snippet_limit=240)
+            for item in retrieval_context.retrieved_chunks
+        ],
+        "injected_context": graph_input.get("retrieved_context", []),
+    }
+    logger.debug(
+        "knowledge context injected to llm: %s",
+        json.dumps(payload, ensure_ascii=False, sort_keys=True),
+    )
+
+
+def _debug_chunk_payload(item: RetrievedChunk, *, snippet_limit: int) -> dict[str, object]:
+    return {
+        "document_id": item.document.id,
+        "knowledge_base_id": item.document.knowledge_base_id,
+        "chunk_id": item.chunk.id,
+        "title": item.document.title,
+        "source_filename": item.document.source_filename,
+        "source_page": item.chunk.source_page,
+        "source": item.source,
+        "score": item.score,
+        "snippet": item.chunk.content[:snippet_limit],
+    }
 
 
 def clarification_reply(decision: RetrievalRoutingDecision) -> str:

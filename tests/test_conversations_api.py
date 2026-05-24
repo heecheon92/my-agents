@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from fastapi.testclient import TestClient
@@ -220,6 +221,49 @@ def test_optional_retrieval_with_relevant_context_uses_mixed_mode(monkeypatch) -
     assert payload["citations"]
     assert graph.calls[-1]["answer_mode"] == "mixed"
     assert graph.calls[-1]["retrieved_context"]
+
+
+def test_debug_logging_exposes_retrieved_context_injected_to_llm(monkeypatch, caplog) -> None:  # noqa: ANN001
+    graph = SpyGraph()
+    client = _client(monkeypatch, graph)
+    _signup_login(client, "debug-retrieval@example.com")
+    kb_id = _create_knowledge_base(client, "Debug Retrieval KB")
+    document = _create_document(
+        client,
+        json={
+            "title": "Debug Retrieval Notes",
+            "content": "DebugRetrievalOnly injected chunk boundary note.",
+            "knowledge_base_id": kb_id,
+        },
+    )
+    assert document.status_code == 201
+    assert client.post(f"/documents/{document.json()['id']}/ingest").status_code == 200
+    conversation_id = client.post("/conversations", json={"title": "Debug logs"}).json()["id"]
+
+    caplog.set_level(logging.DEBUG, logger="my_agents.api.conversations.retrieval_context")
+    response = client.post(
+        f"/conversations/{conversation_id}/runs",
+        json={
+            "message": "Tell me about my uploaded document.",
+            "knowledge_base_selection": {"mode": "selected", "knowledge_base_ids": [kb_id]},
+        },
+    )
+
+    assert response.status_code == 200
+    log_record = next(
+        record
+        for record in caplog.records
+        if "knowledge context injected to llm:" in record.getMessage()
+    )
+    payload = json.loads(log_record.getMessage().split(": ", 1)[1])
+    assert payload["event"] == "knowledge_context_injected_to_llm"
+    assert payload["conversation_id"] == conversation_id
+    assert payload["resolved_knowledge_base_ids"] == [kb_id]
+    assert payload["retrieved_chunk_count"] >= 1
+    assert payload["injected_chunk_count"] >= 1
+    assert payload["retrieved_chunks"][0]["knowledge_base_id"] == kb_id
+    assert payload["injected_context"][0]["document_id"] == document.json()["id"]
+    assert "DebugRetrievalOnly" in payload["injected_context"][0]["snippet"]
 
 
 def test_ambiguous_document_scope_returns_clarification_without_graph(monkeypatch) -> None:  # noqa: ANN001
