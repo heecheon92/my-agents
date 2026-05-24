@@ -231,6 +231,31 @@ def test_owner_admin_approval_copies_and_ingests_group_document_without_exposing
     hits = _group_retrieval_hits(viewer_id, kb_id=target_kb_id, query="GKPublishUniqueAlpha")
     assert hits == [published_document_id]
 
+    requester_delete_copy = requester.delete(f"/documents/{published_document_id}")
+    assert requester_delete_copy.status_code == 404
+    requester_manage_copy = requester.patch(
+        f"/documents/{published_document_id}/permissions",
+        json={
+            "user_id": viewer_id,
+            "can_read": True,
+            "can_write": True,
+            "can_manage": True,
+            "can_ingest": True,
+        },
+    )
+    assert requester_manage_copy.status_code == 403
+    owner_manage_copy = owner.patch(
+        f"/documents/{published_document_id}/permissions",
+        json={
+            "user_id": viewer_id,
+            "can_read": True,
+            "can_write": False,
+            "can_manage": False,
+            "can_ingest": False,
+        },
+    )
+    assert owner_manage_copy.status_code == 200
+
     session_generator = get_database_session()
     db = next(session_generator)
     try:

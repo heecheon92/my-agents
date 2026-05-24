@@ -221,13 +221,14 @@ def approve_publish_request(
     )
     db.add(published_document)
     db.flush()
-    KnowledgeExtractionService(db).ingest_document(published_document)
     publish_request.status = KnowledgePublishRequestStatus.APPROVED.value
     publish_request.reviewer_user_id = principal.user_id
     publish_request.published_document_id = published_document.id
     publish_request.reviewed_at = datetime.now(UTC)
     db.add(publish_request)
     db.commit()
+    db.refresh(publish_request)
+    KnowledgeExtractionService(db).ingest_document(published_document)
     db.refresh(publish_request)
     return _publish_request_response(publish_request)
 
@@ -286,7 +287,7 @@ def _get_owned_personal_source_document(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="document not found")
     if source_document.group_id is not None:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="source document must be personal",
         )
     return source_document
@@ -302,7 +303,7 @@ def _get_target_group_knowledge_base(
         or knowledge_base.group_id != group_id
     ):
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="target knowledge base must belong to group",
         )
     return knowledge_base

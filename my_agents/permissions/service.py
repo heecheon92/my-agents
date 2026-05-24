@@ -18,7 +18,7 @@ class AuthorizationService:
 
     def can(self, *, user_id: str, document: DocumentModel, operation: DocumentOperation) -> bool:
         """Return whether a user can perform a document operation."""
-        if document.owner_user_id == user_id:
+        if document.group_id is None and document.owner_user_id == user_id:
             return True
 
         explicit = self._db.scalar(
