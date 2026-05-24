@@ -580,6 +580,58 @@ def test_assistant_message_replay_prunes_later_transcript_and_regenerates(monkey
     assert _row_count(CitationModel) == 0
 
 
+def test_assistant_message_replay_warns_when_original_sources_are_deleted(monkeypatch) -> None:  # noqa: ANN001
+    graph = SpyGraph()
+    client = _client(monkeypatch, graph)
+    _signup_login(client, "replay-missing-source@example.com")
+    kb_id = _create_knowledge_base(client, "Replay deleted source KB")
+    document = _create_document(
+        client,
+        json={
+            "title": "Replay deleted source",
+            "content": "ReplayDeletedOnly original source boundary note.",
+            "knowledge_base_id": kb_id,
+        },
+    )
+    assert document.status_code == 201
+    document_id = document.json()["id"]
+    assert client.post(f"/documents/{document_id}/ingest").status_code == 200
+    conversation_id = client.post("/conversations", json={"title": "Replay deleted doc"}).json()[
+        "id"
+    ]
+    original = client.post(
+        f"/conversations/{conversation_id}/runs",
+        json={
+            "message": "Tell me about my uploaded document.",
+            "knowledge_base_selection": {"mode": "selected", "knowledge_base_ids": [kb_id]},
+        },
+    )
+    assert original.status_code == 200
+    assert original.json()["citations"]
+    assert original.json()["warnings"] == []
+    assert _run_source_snapshot(original.json()["run_id"]) is not None
+    assistant_message_id = _assistant_message_id(original.json()["run_id"])
+
+    assert client.delete(f"/documents/{document_id}").status_code == 204
+    replay = client.post(f"/conversations/{conversation_id}/messages/{assistant_message_id}/replay")
+
+    assert replay.status_code == 200
+    payload = replay.json()
+    assert payload["warnings"] == [
+        {
+            "code": "regeneration_sources_unavailable",
+            "message": (
+                "Some sources used in the original answer are no longer available. "
+                "This regeneration used currently available knowledge only."
+            ),
+            "missing_document_ids": [document_id],
+            "missing_source_filenames": [],
+        }
+    ]
+    assert all(citation["document_id"] != document_id for citation in payload["citations"])
+    assert {context["document_id"] for context in graph.calls[-1]["retrieved_context"]} == set()
+
+
 def test_assistant_message_replay_preserves_original_kb_selection(monkeypatch) -> None:  # noqa: ANN001
     graph = SpyGraph()
     client = _client(monkeypatch, graph)
@@ -1090,6 +1142,17 @@ def _create_orphan_assistant_message(*, conversation_id: str, content: str) -> s
         db.commit()
         db.refresh(message)
         return message.id
+    finally:
+        session_generator.close()
+
+
+def _run_source_snapshot(run_id: str) -> str | None:
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        run = db.get(AgentRunModel, run_id)
+        assert run is not None
+        return run.retrieval_source_snapshot_json
     finally:
         session_generator.close()
 

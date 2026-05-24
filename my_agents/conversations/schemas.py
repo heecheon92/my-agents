@@ -43,6 +43,15 @@ class MessageResponse(BaseModel):
     content: str
 
 
+class ConversationRunWarning(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: Literal["regeneration_sources_unavailable"]
+    message: str
+    missing_document_ids: list[str] = Field(default_factory=list)
+    missing_source_filenames: list[str] = Field(default_factory=list)
+
+
 class ConversationRunRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -78,6 +87,7 @@ class ConversationRunResponse(BaseModel):
     resolved_knowledge_base_ids: list[str] = Field(default_factory=list)
     resolved_knowledge_base_count: int = 0
     citations: list[CitationResponse] = Field(default_factory=list)
+    warnings: list[ConversationRunWarning] = Field(default_factory=list)
 
 
 class ConversationRunCancelResponse(BaseModel):

@@ -13,6 +13,7 @@ from my_agents.conversations.schemas import (
     AgentRunSummaryResponse,
     ConversationResponse,
     ConversationRunResponse,
+    ConversationRunWarning,
     MessageResponse,
 )
 from my_agents.knowledge.auth import KnowledgeBaseSelectionContext
@@ -156,6 +157,7 @@ def completed_run_response(
     selection_context: KnowledgeBaseSelectionContext,
     citations: list[CitationModel],
     retrieved_chunks: list[RetrievedChunk],
+    warnings: list[ConversationRunWarning] | None = None,
 ) -> ConversationRunResponse:
     return ConversationRunResponse(
         run_id=run.id,
@@ -167,6 +169,7 @@ def completed_run_response(
         answer_mode=answer_mode,
         document_scope=retrieval_decision.document_scope,
         **knowledge_base_selection_payload(selection_context),
+        warnings=warnings or [],
         citations=[
             CitationResponse(
                 id=citation.id,

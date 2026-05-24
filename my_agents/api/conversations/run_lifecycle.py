@@ -39,7 +39,7 @@ from my_agents.conversations.models import (
     MessageRole,
     RunStatus,
 )
-from my_agents.conversations.schemas import ConversationRunResponse
+from my_agents.conversations.schemas import ConversationRunResponse, ConversationRunWarning
 from my_agents.knowledge.auth import KnowledgeBaseSelectionContext
 from my_agents.knowledge.models import CitationModel
 from my_agents.knowledge.retrieval import RetrievedChunk
@@ -59,6 +59,7 @@ def complete_sync_conversation_run(
     run: AgentRunModel,
     selection_context: KnowledgeBaseSelectionContext,
     graph_runner: GraphRunner,
+    warnings: list[ConversationRunWarning] | None = None,
 ) -> ConversationRunResponse:
     retrieval_context = prepare_retrieval_context(
         db=db,
@@ -98,6 +99,7 @@ def complete_sync_conversation_run(
             retrieval_decision=retrieval_context.decision,
             answer_mode=retrieval_context.answer_mode,
             selection_context=retrieval_context.knowledge_base_selection,
+            warnings=warnings,
         )
     graph_input = graph_input_for_run(
         messages=messages,
@@ -152,6 +154,7 @@ def complete_sync_conversation_run(
         retrieval_decision=retrieval_context.decision,
         answer_mode=retrieval_context.answer_mode,
         selection_context=retrieval_context.knowledge_base_selection,
+        warnings=warnings,
     )
 
 
@@ -166,6 +169,7 @@ def persist_completed_run(
     retrieval_decision: RetrievalRoutingDecision,
     answer_mode: AnswerMode,
     selection_context: KnowledgeBaseSelectionContext,
+    warnings: list[ConversationRunWarning] | None = None,
 ) -> ConversationRunResponse:
     assistant_message = MessageModel(
         conversation_id=conversation_id,
@@ -183,6 +187,7 @@ def persist_completed_run(
     run.retrieval_route = retrieval_decision.route
     run.answer_mode = answer_mode
     run.document_scope = retrieval_decision.document_scope
+    run.retrieval_source_snapshot_json = _retrieval_source_snapshot_json(retrieved_chunks)
     run.assistant_message_id = assistant_message.id
     db.flush()
     citations = [
@@ -221,7 +226,24 @@ def persist_completed_run(
         selection_context=selection_context,
         citations=citations,
         retrieved_chunks=retrieved_chunks,
+        warnings=warnings or [],
     )
+
+
+def _retrieval_source_snapshot_json(retrieved_chunks: list[RetrievedChunk]) -> str | None:
+    if not retrieved_chunks:
+        return None
+    unique_sources: dict[str, dict[str, str | None]] = {}
+    for item in retrieved_chunks:
+        unique_sources.setdefault(
+            item.document.id,
+            {
+                "document_id": item.document.id,
+                "knowledge_base_id": item.document.knowledge_base_id,
+                "source_filename": item.document.source_filename,
+            },
+        )
+    return json.dumps(list(unique_sources.values()), sort_keys=True)
 
 
 def persist_failed_run(
