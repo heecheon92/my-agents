@@ -20,10 +20,10 @@ flowchart LR
     V07 --> V1["v1 portfolio chat service"]
     V1 --> V11["v1.1 production-like DB/deploy path"]
     V11 --> V12["v1.2 ECS-lite portfolio deployment"]
-    V1 --> R1["retrieval agent track"]
-    R1 --> R1A["embedding + hybrid retrieval"]
-    R1A --> R1B["reranking + query expansion"]
-    R1B --> R1C["retrieval eval loop"]
+    V1 --> R1["dedicated RAG agent track"]
+    R1 --> R1A["query planning + source policy"]
+    R1A --> R1B["hybrid retrieval + reranking"]
+    R1B --> R1C["retrieval eval loop + observability"]
 
     V0 --> V0Done["Done"]
     V05 --> V05Done["Done"]
@@ -150,13 +150,15 @@ Current honest status:
 - [x] JSON-backed semantic cosine ranking over authorized chunks as the first real-embedding slice.
 - [x] pgvector schema columns and extension usage.
 - [x] Permission-filtered SQL vector search before ranking enters app memory on Postgres, with JSON/SQLite fallback.
+- [ ] **Dedicated RAG Agent milestone**: build a first-class document-grounded agent/service boundary rather than treating retrieval quality as scattered tuning work. The RAG agent owns query planning, source-boundary policy, hybrid candidate generation, reranking, context packing, citation quality, and retrieval observability before the general assistant composes an answer.
+- [ ] RAG source policy for personal KBs, mandatory group KBs, approved published KBs, and optional personal attachments in group chat; preserve current privacy rules, mandatory group retrieval, no transcript/source leakage, and no ghost knowledge from deleted documents.
 - [ ] Hybrid retrieval strategy: vector + keyword/full-text + graph/entity expansion, with tunable weights guided by [`docs/portfolio-chat-service/12-retrieval-agent-hybrid-reference.md`](./docs/portfolio-chat-service/12-retrieval-agent-hybrid-reference.md).
-- [ ] Dedicated retrieval-agent/service boundary that owns query planning, retrieval routing, hybrid candidate generation, reranking, context packing, and retrieval observability before the general assistant composes an answer.
 - [ ] Cross-encoder reranker stage over top-k authorized candidates after vector/full-text retrieval; keep it behind a provider/interface flag so local tests remain offline.
 - [ ] Query expansion stage for synonyms/related concepts while preserving original user intent.
 - [ ] HyDE-style hypothetical-document retrieval path for broad conceptual questions when normal hybrid search under-recovers.
-- [ ] Retrieval-quality eval set with precision/recall-style fixtures and before/after comparison for hybrid, reranked, and HyDE paths.
-- [ ] Citation UX metadata such as document title, offsets, page number, and source preview.
+- [ ] Retrieval-quality eval set with precision/recall-style fixtures, expected source/chunk fixtures, and before/after comparison for hybrid, reranked, and HyDE paths.
+- [ ] RAG observability/debug surface for retrieved chunks, injected chunks, rejected chunks, score/source/reason metadata, and “why this source was used” explanations.
+- [ ] Citation UX metadata such as document title, offsets, page number, source preview, and confidence/source-audit metadata.
 - [later] Neo4j/Graphiti or dedicated graph database if graph traversal becomes core product behavior.
 
 ## 7. Scoped instruction profiles
