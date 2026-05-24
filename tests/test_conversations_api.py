@@ -273,10 +273,11 @@ def test_conversation_messages_can_be_listed_in_server_owned_order(monkeypatch) 
     ]
 
 
-def test_conversation_access_is_scoped_to_owner_or_group_member(monkeypatch) -> None:  # noqa: ANN001
-    owner = _client(monkeypatch)
-    member = _client(monkeypatch)
-    outsider = _client(monkeypatch)
+def test_group_conversation_transcript_is_owner_only(monkeypatch) -> None:  # noqa: ANN001
+    graph = SpyGraph()
+    owner = _client(monkeypatch, graph)
+    member = _client(monkeypatch, graph)
+    outsider = _client(monkeypatch, graph)
     _signup_login(owner, "conv-owner@example.com")
     member_id = _signup_login(member, "conv-member@example.com")
     _signup_login(outsider, "conv-outsider@example.com")
@@ -285,11 +286,44 @@ def test_conversation_access_is_scoped_to_owner_or_group_member(monkeypatch) -> 
     owner.post(f"/groups/{group_id}/members", json={"user_id": member_id, "role": "viewer"})
     conversation_id = owner.post(
         "/conversations",
-        json={"title": "Group Conversation", "group_id": group_id},
+        json={"title": "Private Group Conversation", "group_id": group_id},
     ).json()["id"]
+    run = owner.post(
+        f"/conversations/{conversation_id}/runs",
+        json={"message": "Owner-only group transcript secret"},
+    )
+    run_id = run.json()["run_id"]
+    assistant_message_id = _assistant_message_id(run_id)
 
-    assert member.get(f"/conversations/{conversation_id}").status_code == 200
-    assert outsider.get(f"/conversations/{conversation_id}").status_code == 404
+    assert owner.get(f"/conversations/{conversation_id}").status_code == 200
+    assert owner.get(f"/conversations/{conversation_id}/messages").status_code == 200
+    assert owner.get(f"/conversations/{conversation_id}/runs").status_code == 200
+
+    listed_for_member = member.get("/conversations")
+    member_detail = member.get(f"/conversations/{conversation_id}")
+    member_messages = member.get(f"/conversations/{conversation_id}/messages")
+    member_runs = member.get(f"/conversations/{conversation_id}/runs")
+    member_run_detail = member.get(f"/conversations/{conversation_id}/runs/{run_id}")
+    member_events = member.get(f"/conversations/{conversation_id}/runs/{run_id}/events")
+    member_replay = member.post(
+        f"/conversations/{conversation_id}/messages/{assistant_message_id}/replay"
+    )
+    outsider_detail = outsider.get(f"/conversations/{conversation_id}")
+
+    assert listed_for_member.status_code == 200
+    assert conversation_id not in {conversation["id"] for conversation in listed_for_member.json()}
+    for response in (
+        member_detail,
+        member_messages,
+        member_runs,
+        member_run_detail,
+        member_events,
+        member_replay,
+        outsider_detail,
+    ):
+        assert response.status_code == 404
+        assert "Owner-only group transcript secret" not in response.text
+        assert "saw 1 messages" not in response.text
 
 
 def test_conversation_messages_are_hidden_from_unauthorized_users(monkeypatch) -> None:  # noqa: ANN001
