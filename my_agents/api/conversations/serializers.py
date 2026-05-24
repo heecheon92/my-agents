@@ -45,20 +45,55 @@ def knowledge_base_selection_payload(
         "knowledge_base_selection": knowledge_base_selection_response(selection_context).model_dump(
             mode="json"
         ),
+        "source_context_group_id": selection_context.source_context_group_id,
+        "mandatory_group_knowledge_base_ids": list(
+            selection_context.mandatory_group_knowledge_base_ids
+        ),
+        "mandatory_group_knowledge_base_count": len(
+            selection_context.mandatory_group_knowledge_base_ids
+        ),
+        "optional_personal_knowledge_base_ids": list(
+            selection_context.optional_personal_knowledge_base_ids
+        ),
+        "optional_personal_knowledge_base_count": len(
+            selection_context.optional_personal_knowledge_base_ids
+        ),
+        "resolved_knowledge_base_ids": list(selection_context.resolved_knowledge_base_ids),
         "resolved_knowledge_base_count": selection_context.resolved_count,
     }
 
 
-def run_knowledge_base_selection(run: AgentRunModel) -> KnowledgeBaseSelection:
-    raw_ids = run.selected_knowledge_base_ids_json or "[]"
+def _json_string_list(raw_json: str | None) -> list[str]:
     try:
-        parsed = json.loads(raw_ids)
+        parsed = json.loads(raw_json or "[]")
     except json.JSONDecodeError:
-        parsed = []
-    ids = [item for item in parsed if isinstance(item, str)] if isinstance(parsed, list) else []
+        return []
+    return [item for item in parsed if isinstance(item, str)] if isinstance(parsed, list) else []
+
+
+def run_knowledge_base_selection(run: AgentRunModel) -> KnowledgeBaseSelection:
+    ids = _json_string_list(run.selected_knowledge_base_ids_json)
     return KnowledgeBaseSelection(
         mode=run.knowledge_base_selection_mode or "all",
         knowledge_base_ids=ids,
+    )
+
+
+def run_knowledge_base_context(run: AgentRunModel) -> KnowledgeBaseSelectionContext:
+    selected_ids = tuple(_json_string_list(run.selected_knowledge_base_ids_json))
+    mandatory_group_ids = tuple(_json_string_list(run.mandatory_group_knowledge_base_ids_json))
+    optional_personal_ids = tuple(_json_string_list(run.optional_personal_knowledge_base_ids_json))
+    resolved_ids = tuple(_json_string_list(run.resolved_knowledge_base_ids_json))
+    if not resolved_ids and (run.knowledge_base_selection_mode == "selected"):
+        resolved_ids = selected_ids
+    return KnowledgeBaseSelectionContext(
+        mode=run.knowledge_base_selection_mode or "all",
+        knowledge_base_ids=selected_ids,
+        source_context_group_id=run.source_context_group_id,
+        mandatory_group_knowledge_base_ids=mandatory_group_ids,
+        optional_personal_knowledge_base_ids=optional_personal_ids,
+        resolved_knowledge_base_ids=resolved_ids,
+        resolved_count=run.resolved_knowledge_base_count,
     )
 
 
@@ -72,13 +107,14 @@ def conversation_response(conversation: ConversationModel) -> ConversationRespon
 
 
 def run_summary_response(run: AgentRunModel) -> AgentRunSummaryResponse:
+    source_payload = knowledge_base_selection_payload(run_knowledge_base_context(run))
+    source_payload["knowledge_base_selection"] = run_knowledge_base_selection(run)
     return AgentRunSummaryResponse(
         run_id=run.id,
         conversation_id=run.conversation_id,
         status=run.status,
         route_label=run.route_label,
-        knowledge_base_selection=run_knowledge_base_selection(run),
-        resolved_knowledge_base_count=run.resolved_knowledge_base_count,
+        **source_payload,
         created_at=run.created_at,
     )
 
@@ -94,6 +130,8 @@ def run_detail_response(db: Session, run: AgentRunModel) -> ConversationRunRespo
     citations = db.scalars(
         select(CitationModel).where(CitationModel.run_id == run.id).order_by(CitationModel.id)
     ).all()
+    source_payload = knowledge_base_selection_payload(run_knowledge_base_context(run))
+    source_payload["knowledge_base_selection"] = run_knowledge_base_selection(run)
     return ConversationRunResponse(
         run_id=run.id,
         conversation_id=run.conversation_id,
@@ -103,8 +141,7 @@ def run_detail_response(db: Session, run: AgentRunModel) -> ConversationRunRespo
         retrieval_route=run.retrieval_route or "no_retrieval",
         answer_mode=run.answer_mode or "general_knowledge",
         document_scope=run.document_scope or "unknown",
-        knowledge_base_selection=run_knowledge_base_selection(run),
-        resolved_knowledge_base_count=run.resolved_knowledge_base_count,
+        **source_payload,
         citations=[citation_response(db, citation) for citation in citations],
     )
 
@@ -129,8 +166,7 @@ def completed_run_response(
         retrieval_route=retrieval_decision.route,
         answer_mode=answer_mode,
         document_scope=retrieval_decision.document_scope,
-        knowledge_base_selection=knowledge_base_selection_response(selection_context),
-        resolved_knowledge_base_count=selection_context.resolved_count,
+        **knowledge_base_selection_payload(selection_context),
         citations=[
             CitationResponse(
                 id=citation.id,

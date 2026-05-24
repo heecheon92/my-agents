@@ -6,13 +6,19 @@ from fastapi import APIRouter, Body, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from my_agents.api.assistant import GraphRunner, get_graph_runner
-from my_agents.api.conversations.auth import get_authorized_conversation
+from my_agents.api.conversations.auth import (
+    get_authorized_conversation,
+    require_conversation_source_membership,
+)
 from my_agents.api.conversations.run_lifecycle import (
     assert_no_active_run,
     complete_sync_conversation_run,
     start_run,
 )
-from my_agents.api.conversations.serializers import run_knowledge_base_selection
+from my_agents.api.conversations.serializers import (
+    run_knowledge_base_context,
+    run_knowledge_base_selection,
+)
 from my_agents.api.conversations.transcripts import (
     base_messages_from_persisted,
     persisted_messages_for_conversation,
@@ -28,7 +34,7 @@ from my_agents.conversations.schemas import (
     ConversationReplayRequest,
     ConversationRunResponse,
 )
-from my_agents.knowledge.auth import resolve_knowledge_base_selection
+from my_agents.knowledge.auth import resolve_conversation_knowledge_context
 from my_agents.knowledge.schemas import KnowledgeBaseSelection
 from my_agents.persistence.database import get_database_session
 from my_agents.settings import Settings, get_settings
@@ -56,7 +62,8 @@ def replay_assistant_message(
     fresh run is created from the preceding user turn and earlier history.
     """
     assert_guest_can_send_prompt(db, principal, settings)
-    get_authorized_conversation(db, conversation_id, principal.user_id)
+    conversation = get_authorized_conversation(db, conversation_id, principal.user_id)
+    require_conversation_source_membership(db, conversation, principal.user_id)
     assert_no_active_run(db, conversation_id)
     target_message = db.get(MessageModel, message_id)
     if target_message is None or target_message.conversation_id != conversation_id:
@@ -85,17 +92,21 @@ def replay_assistant_message(
         )
 
     original_run = run_for_assistant_message(db, conversation_id, message_id)
-    requested_selection = (
-        run_knowledge_base_selection(original_run)
-        if original_run is not None
-        else request.knowledge_base_selection or KnowledgeBaseSelection()
-    )
-    selection_context = resolve_knowledge_base_selection(
-        db,
-        user_id=principal.user_id,
-        mode=requested_selection.mode,
-        knowledge_base_ids=requested_selection.knowledge_base_ids,
-    )
+    if original_run is not None and original_run.resolved_knowledge_base_ids_json is not None:
+        selection_context = run_knowledge_base_context(original_run)
+    else:
+        requested_selection = (
+            run_knowledge_base_selection(original_run)
+            if original_run is not None
+            else request.knowledge_base_selection or KnowledgeBaseSelection()
+        )
+        selection_context = resolve_conversation_knowledge_context(
+            db,
+            user_id=principal.user_id,
+            conversation=conversation,
+            requested_selection=requested_selection,
+            optional_personal_knowledge_base_ids=request.optional_personal_knowledge_base_ids,
+        )
     prune_conversation_from_message(
         db,
         conversation_id=conversation_id,

@@ -7,7 +7,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from my_agents.api.assistant import GraphRunner, get_graph_runner
-from my_agents.api.conversations.auth import get_authorized_conversation
+from my_agents.api.conversations.auth import (
+    get_authorized_conversation,
+    require_conversation_source_membership,
+)
 from my_agents.api.conversations.run_lifecycle import (
     assert_no_active_run,
     complete_sync_conversation_run,
@@ -24,7 +27,7 @@ from my_agents.conversations.schemas import (
     ConversationRunRequest,
     ConversationRunResponse,
 )
-from my_agents.knowledge.auth import resolve_knowledge_base_selection
+from my_agents.knowledge.auth import resolve_conversation_knowledge_context
 from my_agents.persistence.database import get_database_session
 from my_agents.settings import Settings, get_settings
 
@@ -41,13 +44,15 @@ def run_conversation(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> ConversationRunResponse:
     assert_guest_can_send_prompt(db, principal, settings)
-    get_authorized_conversation(db, conversation_id, principal.user_id)
+    conversation = get_authorized_conversation(db, conversation_id, principal.user_id)
+    require_conversation_source_membership(db, conversation, principal.user_id)
     assert_no_active_run(db, conversation_id)
-    selection_context = resolve_knowledge_base_selection(
+    selection_context = resolve_conversation_knowledge_context(
         db,
         user_id=principal.user_id,
-        mode=request.knowledge_base_selection.mode,
-        knowledge_base_ids=request.knowledge_base_selection.knowledge_base_ids,
+        conversation=conversation,
+        requested_selection=request.knowledge_base_selection,
+        optional_personal_knowledge_base_ids=request.optional_personal_knowledge_base_ids,
     )
     user_message = store_user_message(db, conversation_id, request.message)
     run = start_run(

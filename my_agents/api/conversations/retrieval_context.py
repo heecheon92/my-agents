@@ -39,9 +39,7 @@ def prepare_retrieval_context(
     selection_context: KnowledgeBaseSelectionContext,
 ) -> ConversationRetrievalContext:
     service = RetrievalService(db)
-    selected_ids = (
-        selection_context.knowledge_base_ids if selection_context.mode == "selected" else None
-    )
+    selected_ids = selection_context.retrieval_knowledge_base_ids
     document_count = service.authorized_document_count(
         user_id=user_id,
         knowledge_base_ids=selected_ids,

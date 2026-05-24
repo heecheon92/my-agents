@@ -12,7 +12,10 @@ from sqlalchemy.orm import Session
 from my_agents.agents.general_assistant.classifier import classify_messages
 from my_agents.agents.general_assistant.responders import ResponseProviderConfigurationError
 from my_agents.api.assistant import GraphRunner, get_graph_runner
-from my_agents.api.conversations.auth import get_authorized_conversation
+from my_agents.api.conversations.auth import (
+    get_authorized_conversation,
+    require_conversation_source_membership,
+)
 from my_agents.api.conversations.graph_streaming import fallback_answer_deltas, stream_graph_items
 from my_agents.api.conversations.retrieval_context import (
     chunks_used_for_answer,
@@ -45,7 +48,10 @@ from my_agents.auth.dependencies import get_current_principal
 from my_agents.auth.guest_limits import assert_guest_can_send_prompt
 from my_agents.conversations.models import AgentEventType
 from my_agents.conversations.schemas import ConversationRunRequest
-from my_agents.knowledge.auth import KnowledgeBaseSelectionContext, resolve_knowledge_base_selection
+from my_agents.knowledge.auth import (
+    KnowledgeBaseSelectionContext,
+    resolve_conversation_knowledge_context,
+)
 from my_agents.persistence.database import get_database_session
 from my_agents.settings import Settings, get_settings
 
@@ -90,13 +96,15 @@ def stream_conversation_run(
     exception text.
     """
     assert_guest_can_send_prompt(db, principal, settings)
-    get_authorized_conversation(db, conversation_id, principal.user_id)
+    conversation = get_authorized_conversation(db, conversation_id, principal.user_id)
+    require_conversation_source_membership(db, conversation, principal.user_id)
     assert_no_active_run(db, conversation_id)
-    selection_context = resolve_knowledge_base_selection(
+    selection_context = resolve_conversation_knowledge_context(
         db,
         user_id=principal.user_id,
-        mode=request.knowledge_base_selection.mode,
-        knowledge_base_ids=request.knowledge_base_selection.knowledge_base_ids,
+        conversation=conversation,
+        requested_selection=request.knowledge_base_selection,
+        optional_personal_knowledge_base_ids=request.optional_personal_knowledge_base_ids,
     )
     return StreamingResponse(
         conversation_run_events(

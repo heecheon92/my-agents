@@ -32,6 +32,7 @@ def test_openapi_exposes_kb_first_document_and_chat_selection_contract() -> None
     assert request_schema["properties"]["knowledge_base_selection"] == {
         "$ref": "#/components/schemas/KnowledgeBaseSelection"
     }
+    assert request_schema["properties"]["optional_personal_knowledge_base_ids"]["type"] == "array"
     assert run_response_schema["properties"]["knowledge_base_selection"] == {
         "$ref": "#/components/schemas/KnowledgeBaseSelection"
     }
@@ -42,6 +43,16 @@ def test_openapi_exposes_kb_first_document_and_chat_selection_contract() -> None
         "$ref": "#/components/schemas/KnowledgeBaseSelection"
     }
     assert run_response_schema["properties"]["resolved_knowledge_base_count"]["type"] == "integer"
+    assert (
+        run_response_schema["properties"]["source_context_group_id"]["anyOf"][0]["type"] == "string"
+    )
+    assert (
+        run_response_schema["properties"]["mandatory_group_knowledge_base_ids"]["type"] == "array"
+    )
+    assert (
+        run_response_schema["properties"]["optional_personal_knowledge_base_ids"]["type"] == "array"
+    )
+    assert run_response_schema["properties"]["resolved_knowledge_base_ids"]["type"] == "array"
     assert run_summary_schema["properties"]["resolved_knowledge_base_count"]["type"] == "integer"
     assert selection_schema["properties"]["mode"]["enum"] == ["all", "selected"]
     assert selection_schema["properties"]["knowledge_base_ids"]["type"] == "array"

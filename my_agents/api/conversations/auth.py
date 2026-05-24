@@ -11,16 +11,24 @@ from my_agents.groups.models import MembershipModel
 def get_authorized_conversation(
     db: Session, conversation_id: str, user_id: str
 ) -> ConversationModel:
+    """Return only conversations owned by the requester.
+
+    `ConversationModel.group_id` is a source-context pointer for group knowledge,
+    not a transcript-sharing grant. Group members must never gain access to
+    another member's private chat transcript, runs, events, or replay surface.
+    """
     conversation = db.get(ConversationModel, conversation_id)
-    if conversation is None:
+    if conversation is None or conversation.owner_user_id != user_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="conversation not found")
-    if conversation.owner_user_id == user_id:
-        return conversation
-    if conversation.group_id is not None and has_group_membership(
-        db, conversation.group_id, user_id
-    ):
-        return conversation
-    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="conversation not found")
+    return conversation
+
+
+def require_conversation_source_membership(
+    db: Session, conversation: ConversationModel, user_id: str
+) -> None:
+    """Require current membership before mutating/running a group-context chat."""
+    if conversation.group_id is not None:
+        require_group_membership(db, conversation.group_id, user_id)
 
 
 def require_group_membership(db: Session, group_id: str, user_id: str) -> None:

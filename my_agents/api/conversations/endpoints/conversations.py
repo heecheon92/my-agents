@@ -3,7 +3,7 @@
 from typing import Annotated
 
 from fastapi import Depends
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from my_agents.api.conversations.auth import get_authorized_conversation, require_group_membership
@@ -16,7 +16,6 @@ from my_agents.auth.guest_limits import (
 )
 from my_agents.conversations.models import ConversationModel
 from my_agents.conversations.schemas import ConversationCreateRequest, ConversationResponse
-from my_agents.groups.models import MembershipModel
 from my_agents.persistence.database import get_database_session
 from my_agents.settings import Settings, get_settings
 
@@ -46,14 +45,8 @@ def list_conversations(
     db: Annotated[Session, Depends(get_database_session)],
 ) -> list[ConversationResponse]:
     assert_guest_access_active(db, principal)
-    group_ids = select(MembershipModel.group_id).where(MembershipModel.user_id == principal.user_id)
     conversations = db.scalars(
-        select(ConversationModel).where(
-            or_(
-                ConversationModel.owner_user_id == principal.user_id,
-                ConversationModel.group_id.in_(group_ids),
-            )
-        )
+        select(ConversationModel).where(ConversationModel.owner_user_id == principal.user_id)
     ).all()
     return [conversation_response(conversation) for conversation in conversations]
 
