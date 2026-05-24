@@ -621,6 +621,15 @@ compatibility surfaces, but now require an authorized `knowledge_base_id` and re
 KBs with `422`. Nonexistent or unauthorized KBs are concealed with `404`; nested document
 operations against the wrong KB also return `404`.
 
+Group knowledge now has an explicit publish-review workflow for personal documents. A group
+member can create `POST /groups/{group_id}/publish-requests` with a personal
+`source_document_id` they own and a group-scoped `target_knowledge_base_id`. `GET
+/groups/{group_id}/publish-requests` shows owner/admins all requests and non-manager members
+only their own. `POST /groups/{group_id}/publish-requests/{request_id}/approve` and `/reject`
+are owner/admin-only. Pending and rejected requests are metadata-only and have no retrieval
+effect; approval creates and ingests a separate group-owned document copy under the target KB,
+leaving the original personal document private.
+
 Conversation runs accept `knowledge_base_selection`: `mode: "all"` searches every authorized
 KB, while `mode: "selected"` searches only the provided KB IDs as a hard retrieval boundary.
 Selected mode with no IDs is `422`; all mode with IDs is `422`; unauthorized/nonexistent

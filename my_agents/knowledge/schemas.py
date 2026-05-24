@@ -7,7 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from my_agents.knowledge.models import KnowledgeBaseScope
+from my_agents.knowledge.models import KnowledgeBaseScope, KnowledgePublishRequestStatus
 
 
 class KnowledgeBaseCreateRequest(BaseModel):
@@ -26,6 +26,28 @@ class KnowledgeBaseResponse(BaseModel):
     scope: KnowledgeBaseScope
     owner_user_id: str
     group_id: str | None
+
+
+class KnowledgePublishRequestCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_document_id: str = Field(min_length=1)
+    target_knowledge_base_id: str = Field(min_length=1)
+
+
+class KnowledgePublishRequestResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    requester_user_id: str
+    target_group_id: str
+    target_knowledge_base_id: str
+    source_document_id: str
+    status: KnowledgePublishRequestStatus
+    reviewer_user_id: str | None
+    published_document_id: str | None
+    created_at: datetime
+    reviewed_at: datetime | None
 
 
 class KnowledgeBaseSelection(BaseModel):

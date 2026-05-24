@@ -48,6 +48,14 @@ class ExtractionStatus(StrEnum):
     FAILED = "failed"
 
 
+class KnowledgePublishRequestStatus(StrEnum):
+    """Review lifecycle for personal-to-group knowledge publish requests."""
+
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
 class KnowledgeBaseModel(Base):
     """Personal or group knowledge-base container."""
 
@@ -104,6 +112,35 @@ class DocumentPermissionModel(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )
+
+
+class KnowledgePublishRequestModel(Base):
+    """Request to publish a personal document as an approved group-owned copy."""
+
+    __tablename__ = "knowledge_publish_requests"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    requester_user_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    target_group_id: Mapped[str] = mapped_column(
+        ForeignKey("groups.id"), nullable=False, index=True
+    )
+    target_knowledge_base_id: Mapped[str] = mapped_column(
+        ForeignKey("knowledge_bases.id"), nullable=False, index=True
+    )
+    source_document_id: Mapped[str] = mapped_column(
+        ForeignKey("documents.id"), nullable=False, index=True
+    )
+    status: Mapped[str] = mapped_column(
+        String(20), default=KnowledgePublishRequestStatus.PENDING.value, nullable=False, index=True
+    )
+    reviewer_user_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    published_document_id: Mapped[str | None] = mapped_column(
+        ForeignKey("documents.id"), nullable=True, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class ExtractionRunModel(Base):

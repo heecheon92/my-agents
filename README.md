@@ -617,6 +617,15 @@ Legacy `/documents`, `/documents/upload` write path는 standalone/developer 호�
 않거나 권한 없는 KB는 `404`로 conceal하고, nested document operation에서 document가 path KB에
 속하지 않으면 `404`를 반환합니다.
 
+Group knowledge에는 personal document를 위한 명시적 publish-review workflow가 있습니다. Group
+member는 자신이 소유한 personal `source_document_id`와 group-scoped
+`target_knowledge_base_id`로 `POST /groups/{group_id}/publish-requests`를 만들 수 있습니다.
+`GET /groups/{group_id}/publish-requests`는 owner/admin에게 모든 request를, 일반 member에게는
+자기 request만 보여줍니다. `POST /groups/{group_id}/publish-requests/{request_id}/approve`와
+`/reject`는 owner/admin 전용입니다. Pending/rejected request는 metadata일 뿐 retrieval 효과가
+없고, approve 시 target KB 아래에 별도 group-owned document copy를 만들고 ingest합니다. 원본
+personal document는 계속 private 상태로 남습니다.
+
 Conversation run은 `knowledge_base_selection`을 받습니다. `mode: "all"`은 권한 있는 모든 KB를
 검색하고, `mode: "selected"`는 전달한 KB ID만 hard retrieval boundary로 검색합니다. selected mode에
 ID가 없으면 `422`, all mode에 ID가 있으면 `422`, 권한 없거나 존재하지 않는 selected KB ID는

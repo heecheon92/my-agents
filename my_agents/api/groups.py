@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -16,6 +17,18 @@ from my_agents.groups.schemas import (
     GroupResponse,
     MemberPatchRequest,
     MemberUpsertRequest,
+)
+from my_agents.knowledge.extraction import KnowledgeExtractionService
+from my_agents.knowledge.models import (
+    DocumentModel,
+    KnowledgeBaseModel,
+    KnowledgeBaseScope,
+    KnowledgePublishRequestModel,
+    KnowledgePublishRequestStatus,
+)
+from my_agents.knowledge.schemas import (
+    KnowledgePublishRequestCreateRequest,
+    KnowledgePublishRequestResponse,
 )
 from my_agents.persistence.database import get_database_session
 
@@ -118,6 +131,130 @@ def update_member(
     db.commit()
 
 
+@groups_router.post(
+    "/{group_id}/publish-requests",
+    response_model=KnowledgePublishRequestResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_publish_request(
+    group_id: str,
+    request: KnowledgePublishRequestCreateRequest,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    db: Annotated[Session, Depends(get_database_session)],
+) -> KnowledgePublishRequestResponse:
+    """Request owner/admin review before copying personal knowledge into group KB."""
+    _get_group_and_membership(db, group_id, principal.user_id)
+    source_document = _get_owned_personal_source_document(
+        db,
+        document_id=request.source_document_id,
+        requester_user_id=principal.user_id,
+    )
+    target_knowledge_base = _get_target_group_knowledge_base(
+        db,
+        knowledge_base_id=request.target_knowledge_base_id,
+        group_id=group_id,
+    )
+    publish_request = KnowledgePublishRequestModel(
+        requester_user_id=principal.user_id,
+        target_group_id=group_id,
+        target_knowledge_base_id=target_knowledge_base.id,
+        source_document_id=source_document.id,
+        status=KnowledgePublishRequestStatus.PENDING.value,
+    )
+    db.add(publish_request)
+    db.commit()
+    db.refresh(publish_request)
+    return _publish_request_response(publish_request)
+
+
+@groups_router.get(
+    "/{group_id}/publish-requests",
+    response_model=list[KnowledgePublishRequestResponse],
+)
+def list_publish_requests(
+    group_id: str,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    db: Annotated[Session, Depends(get_database_session)],
+) -> list[KnowledgePublishRequestResponse]:
+    """List publish requests, scoped to manager visibility or the requester's own rows."""
+    _, membership = _get_group_and_membership(db, group_id, principal.user_id)
+    statement = select(KnowledgePublishRequestModel).where(
+        KnowledgePublishRequestModel.target_group_id == group_id
+    )
+    if membership.role not in (MembershipRole.OWNER.value, MembershipRole.ADMIN.value):
+        statement = statement.where(
+            KnowledgePublishRequestModel.requester_user_id == principal.user_id
+        )
+    publish_requests = db.scalars(statement.order_by(KnowledgePublishRequestModel.created_at)).all()
+    return [_publish_request_response(publish_request) for publish_request in publish_requests]
+
+
+@groups_router.post(
+    "/{group_id}/publish-requests/{request_id}/approve",
+    response_model=KnowledgePublishRequestResponse,
+)
+def approve_publish_request(
+    group_id: str,
+    request_id: str,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    db: Annotated[Session, Depends(get_database_session)],
+) -> KnowledgePublishRequestResponse:
+    """Approve by creating and ingesting a separate group-owned document copy."""
+    _require_group_manager(db, group_id, principal.user_id)
+    publish_request = _get_publish_request_or_404(db, group_id=group_id, request_id=request_id)
+    _require_pending_publish_request(publish_request)
+    source_document = db.get(DocumentModel, publish_request.source_document_id)
+    if source_document is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="source document not found",
+        )
+    target_knowledge_base = _get_target_group_knowledge_base(
+        db,
+        knowledge_base_id=publish_request.target_knowledge_base_id,
+        group_id=group_id,
+    )
+    published_document = _copy_document_for_group_knowledge_base(
+        source_document=source_document,
+        target_knowledge_base=target_knowledge_base,
+        requester_user_id=publish_request.requester_user_id,
+    )
+    db.add(published_document)
+    db.flush()
+    KnowledgeExtractionService(db).ingest_document(published_document)
+    publish_request.status = KnowledgePublishRequestStatus.APPROVED.value
+    publish_request.reviewer_user_id = principal.user_id
+    publish_request.published_document_id = published_document.id
+    publish_request.reviewed_at = datetime.now(UTC)
+    db.add(publish_request)
+    db.commit()
+    db.refresh(publish_request)
+    return _publish_request_response(publish_request)
+
+
+@groups_router.post(
+    "/{group_id}/publish-requests/{request_id}/reject",
+    response_model=KnowledgePublishRequestResponse,
+)
+def reject_publish_request(
+    group_id: str,
+    request_id: str,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    db: Annotated[Session, Depends(get_database_session)],
+) -> KnowledgePublishRequestResponse:
+    """Reject without copying content, leaving retrieval scope unchanged."""
+    _require_group_manager(db, group_id, principal.user_id)
+    publish_request = _get_publish_request_or_404(db, group_id=group_id, request_id=request_id)
+    _require_pending_publish_request(publish_request)
+    publish_request.status = KnowledgePublishRequestStatus.REJECTED.value
+    publish_request.reviewer_user_id = principal.user_id
+    publish_request.reviewed_at = datetime.now(UTC)
+    db.add(publish_request)
+    db.commit()
+    db.refresh(publish_request)
+    return _publish_request_response(publish_request)
+
+
 def _get_group_and_membership(
     db: Session, group_id: str, user_id: str
 ) -> tuple[GroupModel, MembershipModel]:
@@ -139,3 +276,92 @@ def _require_group_manager(db: Session, group_id: str, user_id: str) -> Membersh
     if membership.role not in (MembershipRole.OWNER.value, MembershipRole.ADMIN.value):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="not allowed")
     return membership
+
+
+def _get_owned_personal_source_document(
+    db: Session, *, document_id: str, requester_user_id: str
+) -> DocumentModel:
+    source_document = db.get(DocumentModel, document_id)
+    if source_document is None or source_document.owner_user_id != requester_user_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="document not found")
+    if source_document.group_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="source document must be personal",
+        )
+    return source_document
+
+
+def _get_target_group_knowledge_base(
+    db: Session, *, knowledge_base_id: str, group_id: str
+) -> KnowledgeBaseModel:
+    knowledge_base = db.get(KnowledgeBaseModel, knowledge_base_id)
+    if (
+        knowledge_base is None
+        or knowledge_base.scope != KnowledgeBaseScope.GROUP.value
+        or knowledge_base.group_id != group_id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="target knowledge base must belong to group",
+        )
+    return knowledge_base
+
+
+def _get_publish_request_or_404(
+    db: Session, *, group_id: str, request_id: str
+) -> KnowledgePublishRequestModel:
+    publish_request = db.get(KnowledgePublishRequestModel, request_id)
+    if publish_request is None or publish_request.target_group_id != group_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="publish request not found",
+        )
+    return publish_request
+
+
+def _require_pending_publish_request(publish_request: KnowledgePublishRequestModel) -> None:
+    if publish_request.status != KnowledgePublishRequestStatus.PENDING.value:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="publish request already reviewed",
+        )
+
+
+def _copy_document_for_group_knowledge_base(
+    *,
+    source_document: DocumentModel,
+    target_knowledge_base: KnowledgeBaseModel,
+    requester_user_id: str,
+) -> DocumentModel:
+    return DocumentModel(
+        title=source_document.title,
+        content=source_document.content,
+        source_type=source_document.source_type,
+        source_filename=source_document.source_filename,
+        source_content_type=source_document.source_content_type,
+        source_byte_size=source_document.source_byte_size,
+        source_sha256=source_document.source_sha256,
+        source_page_count=source_document.source_page_count,
+        parser_name=source_document.parser_name,
+        owner_user_id=requester_user_id,
+        group_id=target_knowledge_base.group_id,
+        knowledge_base_id=target_knowledge_base.id,
+    )
+
+
+def _publish_request_response(
+    publish_request: KnowledgePublishRequestModel,
+) -> KnowledgePublishRequestResponse:
+    return KnowledgePublishRequestResponse(
+        id=publish_request.id,
+        requester_user_id=publish_request.requester_user_id,
+        target_group_id=publish_request.target_group_id,
+        target_knowledge_base_id=publish_request.target_knowledge_base_id,
+        source_document_id=publish_request.source_document_id,
+        status=KnowledgePublishRequestStatus(publish_request.status),
+        reviewer_user_id=publish_request.reviewer_user_id,
+        published_document_id=publish_request.published_document_id,
+        created_at=publish_request.created_at,
+        reviewed_at=publish_request.reviewed_at,
+    )

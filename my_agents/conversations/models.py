@@ -90,6 +90,12 @@ class AgentRunModel(Base):
     document_scope: Mapped[str | None] = mapped_column(String(40), nullable=True)
     knowledge_base_selection_mode: Mapped[str | None] = mapped_column(String(20), nullable=True)
     selected_knowledge_base_ids_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_context_group_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    mandatory_group_knowledge_base_ids_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    optional_personal_knowledge_base_ids_json: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )
+    resolved_knowledge_base_ids_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     resolved_knowledge_base_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     assistant_message_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(
