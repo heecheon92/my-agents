@@ -2,12 +2,14 @@
 
 from typing import Annotated
 
-from fastapi import Depends
+from fastapi import Depends, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from my_agents.api.conversations.auth import get_authorized_conversation, require_group_membership
+from my_agents.api.conversations.run_lifecycle import assert_no_active_run
 from my_agents.api.conversations.serializers import conversation_response
+from my_agents.api.conversations.transcripts import delete_conversation_tree
 from my_agents.auth.contracts import Principal
 from my_agents.auth.dependencies import get_current_principal
 from my_agents.auth.guest_limits import (
@@ -59,3 +61,16 @@ def get_conversation(
     assert_guest_access_active(db, principal)
     conversation = get_authorized_conversation(db, conversation_id, principal.user_id)
     return conversation_response(conversation)
+
+
+def delete_conversation(
+    conversation_id: str,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    db: Annotated[Session, Depends(get_database_session)],
+) -> Response:
+    """Remove an authorized conversation and its server-owned transcript artifacts."""
+    assert_guest_access_active(db, principal)
+    conversation = get_authorized_conversation(db, conversation_id, principal.user_id)
+    assert_no_active_run(db, conversation_id)
+    delete_conversation_tree(db, conversation)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

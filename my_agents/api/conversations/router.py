@@ -4,6 +4,7 @@ from fastapi import APIRouter, status
 
 from my_agents.api.conversations.endpoints.conversations import (
     create_conversation,
+    delete_conversation,
     get_conversation,
     list_conversations,
 )
@@ -35,6 +36,12 @@ conversations_router.add_api_route(
     get_conversation,
     methods=["GET"],
     response_model=ConversationResponse,
+)
+conversations_router.add_api_route(
+    "/{conversation_id}",
+    delete_conversation,
+    methods=["DELETE"],
+    status_code=status.HTTP_204_NO_CONTENT,
 )
 conversations_router.include_router(message_routes)
 conversations_router.include_router(stream_routes)

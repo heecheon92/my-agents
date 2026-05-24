@@ -547,6 +547,7 @@ runs. The current conversation surface includes:
 - `POST /conversations`
 - `GET /conversations`
 - `GET /conversations/{conversation_id}`
+- `DELETE /conversations/{conversation_id}`
 - `POST /conversations/{conversation_id}/messages`
 - `GET /conversations/{conversation_id}/messages`
 - `POST /conversations/{conversation_id}/messages/{message_id}/replay`
@@ -576,6 +577,12 @@ Frontend clients can read the stored transcript through
 `GET /conversations/{conversation_id}/messages` after the same conversation access check,
 and can inspect completed/failed/cancelled run history through
 `GET /conversations/{conversation_id}/runs`.
+
+`DELETE /conversations/{conversation_id}` is owner-only and returns `204` after deleting
+the conversation, transcript messages, runs, redacted run events, and run citations. Missing
+or foreign conversations return `404` without leaking transcript content. Deletion during an
+active/cancelling run returns `409` with `detail: "conversation run already active"` so clients
+should cancel or wait for the run before deleting the chat.
 
 `POST /conversations/{conversation_id}/messages/{message_id}/replay` regenerates an existing
 assistant message inside the linear transcript. The body may be omitted or `{}`. When the

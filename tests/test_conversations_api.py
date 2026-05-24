@@ -10,7 +10,13 @@ from sqlalchemy import func, select
 
 from my_agents.api import create_app
 from my_agents.api.assistant import get_graph_runner
-from my_agents.conversations.models import AgentEventModel, AgentRunModel, MessageModel, RunStatus
+from my_agents.conversations.models import (
+    AgentEventModel,
+    AgentRunModel,
+    ConversationModel,
+    MessageModel,
+    RunStatus,
+)
 from my_agents.knowledge.models import CitationModel
 from my_agents.knowledge.retrieval import RetrievalService
 from my_agents.persistence.database import get_database_session
@@ -344,6 +350,98 @@ def test_conversation_messages_are_hidden_from_unauthorized_users(monkeypatch) -
 
     assert response.status_code == 404
     assert "private transcript" not in response.text
+
+
+def test_delete_conversation_removes_transcript_runs_events_and_citations(monkeypatch) -> None:  # noqa: ANN001
+    graph = SpyGraph()
+    client = _client(monkeypatch, graph)
+    _signup_login(client, "delete-cascade@example.com")
+    kb_id = _create_knowledge_base(client, "Delete cascade KB")
+    document = _create_document(
+        client,
+        json={
+            "title": "Delete cascade source",
+            "content": "DeleteCascadeOnly citation boundary note.",
+            "knowledge_base_id": kb_id,
+        },
+    )
+    assert document.status_code == 201
+    assert client.post(f"/documents/{document.json()['id']}/ingest").status_code == 200
+    conversation_id = client.post("/conversations", json={"title": "Delete me"}).json()["id"]
+    run = client.post(
+        f"/conversations/{conversation_id}/runs",
+        json={
+            "message": "Tell me about my uploaded document.",
+            "knowledge_base_selection": {"mode": "selected", "knowledge_base_ids": [kb_id]},
+        },
+    )
+    assert run.status_code == 200
+    assert run.json()["citations"]
+
+    response = client.delete(f"/conversations/{conversation_id}")
+
+    assert response.status_code == 204
+    assert client.get(f"/conversations/{conversation_id}").status_code == 404
+    assert client.get(f"/conversations/{conversation_id}/messages").status_code == 404
+    assert client.get(f"/conversations/{conversation_id}/runs").status_code == 404
+    assert (
+        client.get(f"/conversations/{conversation_id}/runs/{run.json()['run_id']}").status_code
+        == 404
+    )
+    assert client.delete(f"/conversations/{conversation_id}").status_code == 404
+    assert _row_count(ConversationModel) == 0
+    assert _row_count(MessageModel) == 0
+    assert _row_count(AgentRunModel) == 0
+    assert _row_count(AgentEventModel) == 0
+    assert _row_count(CitationModel) == 0
+
+
+def test_delete_conversation_is_owner_only(monkeypatch) -> None:  # noqa: ANN001
+    owner = _client(monkeypatch)
+    outsider = _client(monkeypatch)
+    _signup_login(owner, "delete-owner@example.com")
+    _signup_login(outsider, "delete-outsider@example.com")
+    conversation_id = owner.post("/conversations", json={"title": "Keep private"}).json()["id"]
+    owner.post(
+        f"/conversations/{conversation_id}/messages",
+        json={"content": "private delete transcript"},
+    )
+
+    response = outsider.delete(f"/conversations/{conversation_id}")
+
+    assert response.status_code == 404
+    assert "private delete transcript" not in response.text
+    assert owner.get(f"/conversations/{conversation_id}").status_code == 200
+    assert _row_count(ConversationModel) == 1
+    assert _row_count(MessageModel) == 1
+
+
+def test_delete_conversation_requires_auth(monkeypatch) -> None:  # noqa: ANN001
+    owner = _client(monkeypatch)
+    anonymous = _client(monkeypatch)
+    _signup_login(owner, "delete-auth@example.com")
+    conversation_id = owner.post("/conversations", json={"title": "Requires auth"}).json()["id"]
+
+    response = anonymous.delete(f"/conversations/{conversation_id}")
+
+    assert response.status_code == 401
+    assert owner.get(f"/conversations/{conversation_id}").status_code == 200
+    assert _row_count(ConversationModel) == 1
+
+
+def test_delete_conversation_rejects_active_run(monkeypatch) -> None:  # noqa: ANN001
+    client = _client(monkeypatch)
+    user_id = _signup_login(client, "delete-active@example.com")
+    conversation_id = client.post("/conversations", json={"title": "Active"}).json()["id"]
+    _create_running_run(conversation_id=conversation_id, user_id=user_id)
+
+    response = client.delete(f"/conversations/{conversation_id}")
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "conversation run already active"}
+    assert client.get(f"/conversations/{conversation_id}").status_code == 200
+    assert _row_count(ConversationModel) == 1
+    assert _row_count(AgentRunModel) == 1
 
 
 def test_conversation_runs_can_be_listed_without_event_details(monkeypatch) -> None:  # noqa: ANN001

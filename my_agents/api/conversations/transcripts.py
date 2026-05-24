@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from my_agents.conversations.models import (
     AgentEventModel,
     AgentRunModel,
+    ConversationModel,
     MessageModel,
     MessageRole,
 )
@@ -97,6 +98,20 @@ def prune_conversation_from_message(
         db.execute(delete(AgentRunModel).where(AgentRunModel.id.in_(run_ids_to_prune)))
     if removed_message_ids:
         db.execute(delete(MessageModel).where(MessageModel.id.in_(removed_message_ids)))
+    db.commit()
+
+
+def delete_conversation_tree(db: Session, conversation: ConversationModel) -> None:
+    """Delete a conversation and every transcript/run row that depends on it."""
+    run_ids = db.scalars(
+        select(AgentRunModel.id).where(AgentRunModel.conversation_id == conversation.id)
+    ).all()
+    if run_ids:
+        db.execute(delete(CitationModel).where(CitationModel.run_id.in_(run_ids)))
+        db.execute(delete(AgentEventModel).where(AgentEventModel.run_id.in_(run_ids)))
+        db.execute(delete(AgentRunModel).where(AgentRunModel.id.in_(run_ids)))
+    db.execute(delete(MessageModel).where(MessageModel.conversation_id == conversation.id))
+    db.delete(conversation)
     db.commit()
 
 

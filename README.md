@@ -545,6 +545,7 @@ conversation run으로 이동하고 있습니다. 현재 conversation surface는
 - `POST /conversations`
 - `GET /conversations`
 - `GET /conversations/{conversation_id}`
+- `DELETE /conversations/{conversation_id}`
 - `POST /conversations/{conversation_id}/messages`
 - `GET /conversations/{conversation_id}/messages`
 - `POST /conversations/{conversation_id}/messages/{message_id}/replay`
@@ -573,6 +574,12 @@ KB 접근을 위한 제품용 chat surface가 되어서는 안 됩니다.
 프론트엔드는 `GET /conversations/{conversation_id}/messages`로 서버가 저장한 transcript를
 권한 확인 후 다시 읽고, `GET /conversations/{conversation_id}/runs`로 completed/failed/cancelled
 run history를 확인할 수 있습니다.
+
+`DELETE /conversations/{conversation_id}`는 owner-only endpoint이며, 성공 시 `204`를 반환하고
+conversation, transcript message, run, redacted run event, run citation을 함께 삭제합니다.
+존재하지 않거나 다른 사용자의 conversation은 transcript 내용을 노출하지 않고 `404`를 반환합니다.
+active/cancelling run 중 삭제는 `409` 및 `detail: "conversation run already active"`로 거부하므로,
+클라이언트는 chat을 삭제하기 전에 run을 취소하거나 완료될 때까지 기다려야 합니다.
 
 `POST /conversations/{conversation_id}/messages/{message_id}/replay`는 기존 assistant message를
 linear transcript 안에서 다시 생성합니다. body는 생략하거나 `{}`를 보낼 수 있으며, 원래
