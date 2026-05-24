@@ -8,12 +8,15 @@ import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from sqlalchemy import and_, desc, false, func, or_, select
+from sqlalchemy import and_, desc, false, func, inspect, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from my_agents.groups.models import MembershipModel
-from my_agents.knowledge.auth import authorized_knowledge_base_filter
+from my_agents.knowledge.auth import (
+    authorized_knowledge_base_filter,
+    published_personal_knowledge_base_ids_for_user,
+)
 from my_agents.knowledge.embeddings import EmbeddingProvider, get_embedding_provider
 from my_agents.knowledge.models import (
     DocumentChunkModel,
@@ -307,10 +310,17 @@ class RetrievalService:
     def _authorized_chunk_rows(
         self, user_id: str, *, knowledge_base_ids: Sequence[str] | None
     ) -> list[tuple[DocumentChunkModel, DocumentModel]]:
+        include_published_personal_kbs = _schema_has_knowledge_base_publications(self._db)
         statement = (
             select(DocumentChunkModel, DocumentModel)
             .join(DocumentModel, DocumentChunkModel.document_id == DocumentModel.id)
-            .where(_authorized_document_filter(user_id, knowledge_base_ids=knowledge_base_ids))
+            .where(
+                _authorized_document_filter(
+                    user_id,
+                    knowledge_base_ids=knowledge_base_ids,
+                    include_published_personal_kbs=include_published_personal_kbs,
+                )
+            )
             .order_by(desc(DocumentModel.created_at), DocumentChunkModel.ordinal)
         )
         return list(self._db.execute(statement).all())
@@ -338,28 +348,62 @@ def _postgres_vector_authorized_statement(
     )
 
 
-def _authorized_document_filter(user_id: str, *, knowledge_base_ids: Sequence[str] | None = None):
+def _authorized_document_filter(
+    user_id: str,
+    *,
+    knowledge_base_ids: Sequence[str] | None = None,
+    include_published_personal_kbs: bool = True,
+):
     group_ids = select(MembershipModel.group_id).where(MembershipModel.user_id == user_id)
     explicit_doc_ids = select(DocumentPermissionModel.document_id).where(
         DocumentPermissionModel.user_id == user_id,
         DocumentPermissionModel.can_read.is_(True),
     )
+    readable_document_predicates = [
+        and_(DocumentModel.group_id.is_(None), DocumentModel.owner_user_id == user_id),
+        DocumentModel.group_id.in_(group_ids),
+        DocumentModel.id.in_(explicit_doc_ids),
+    ]
+    if include_published_personal_kbs:
+        readable_document_predicates.append(
+            DocumentModel.knowledge_base_id.in_(
+                published_personal_knowledge_base_ids_for_user(user_id)
+            )
+        )
     return and_(
-        _knowledge_base_scope_filter(user_id, knowledge_base_ids),
-        or_(
-            and_(DocumentModel.group_id.is_(None), DocumentModel.owner_user_id == user_id),
-            DocumentModel.group_id.in_(group_ids),
-            DocumentModel.id.in_(explicit_doc_ids),
+        _knowledge_base_scope_filter(
+            user_id,
+            knowledge_base_ids,
+            include_published_personal_kbs=include_published_personal_kbs,
         ),
+        or_(*readable_document_predicates),
     )
 
 
-def _knowledge_base_scope_filter(user_id: str, knowledge_base_ids: Sequence[str] | None = None):
+def _knowledge_base_scope_filter(
+    user_id: str,
+    knowledge_base_ids: Sequence[str] | None = None,
+    *,
+    include_published_personal_kbs: bool = True,
+):
     from my_agents.knowledge.models import KnowledgeBaseModel
 
-    authorized_kb_ids = select(KnowledgeBaseModel.id).where(
-        authorized_knowledge_base_filter(user_id)
-    )
+    if include_published_personal_kbs:
+        authorized_filter = authorized_knowledge_base_filter(user_id)
+    else:
+        group_ids = select(MembershipModel.group_id).where(MembershipModel.user_id == user_id)
+        authorized_filter = or_(
+            and_(
+                KnowledgeBaseModel.scope == "personal",
+                KnowledgeBaseModel.group_id.is_(None),
+                KnowledgeBaseModel.owner_user_id == user_id,
+            ),
+            and_(
+                KnowledgeBaseModel.scope == "group",
+                KnowledgeBaseModel.group_id.in_(group_ids),
+            ),
+        )
+    authorized_kb_ids = select(KnowledgeBaseModel.id).where(authorized_filter)
     if knowledge_base_ids is None:
         return DocumentModel.knowledge_base_id.in_(authorized_kb_ids)
     unique_ids = tuple(dict.fromkeys(knowledge_base_ids))
@@ -369,6 +413,10 @@ def _knowledge_base_scope_filter(user_id: str, knowledge_base_ids: Sequence[str]
         DocumentModel.knowledge_base_id.in_(unique_ids),
         DocumentModel.knowledge_base_id.in_(authorized_kb_ids),
     )
+
+
+def _schema_has_knowledge_base_publications(db: Session) -> bool:
+    return inspect(db.get_bind()).has_table("knowledge_base_publications")
 
 
 def _uses_postgres(db: Session) -> bool:

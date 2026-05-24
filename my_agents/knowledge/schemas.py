@@ -26,13 +26,27 @@ class KnowledgeBaseResponse(BaseModel):
     scope: KnowledgeBaseScope
     owner_user_id: str
     group_id: str | None
+    published_group_ids: list[str] = Field(default_factory=list)
 
 
 class KnowledgePublishRequestCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    source_document_id: str = Field(min_length=1)
-    target_knowledge_base_id: str = Field(min_length=1)
+    source_document_id: str | None = Field(default=None, min_length=1)
+    target_knowledge_base_id: str | None = Field(default=None, min_length=1)
+    source_knowledge_base_id: str | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def validate_publish_shape(self) -> KnowledgePublishRequestCreateRequest:
+        has_document_source = self.source_document_id is not None
+        has_knowledge_base_source = self.source_knowledge_base_id is not None
+        if has_document_source == has_knowledge_base_source:
+            raise ValueError("submit exactly one personal document or personal knowledge base")
+        if has_document_source and self.target_knowledge_base_id is None:
+            raise ValueError("document publish requests require target_knowledge_base_id")
+        if has_knowledge_base_source and self.target_knowledge_base_id is not None:
+            raise ValueError("knowledge-base publish requests target the group, not a group KB")
+        return self
 
 
 class KnowledgePublishRequestResponse(BaseModel):
@@ -41,11 +55,13 @@ class KnowledgePublishRequestResponse(BaseModel):
     id: str
     requester_user_id: str
     target_group_id: str
-    target_knowledge_base_id: str
-    source_document_id: str
+    target_knowledge_base_id: str | None
+    source_document_id: str | None
+    source_knowledge_base_id: str | None
     status: KnowledgePublishRequestStatus
     reviewer_user_id: str | None
     published_document_id: str | None
+    published_knowledge_base_id: str | None
     created_at: datetime
     reviewed_at: datetime | None
 

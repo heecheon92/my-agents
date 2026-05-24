@@ -48,6 +48,7 @@ EXPECTED_SERVICE_TABLES = {
     "agent_runs",
     "agent_events",
     "knowledge_bases",
+    "knowledge_base_publications",
     "knowledge_publish_requests",
     "documents",
     "document_permissions",
@@ -142,7 +143,9 @@ def test_alembic_offline_sql_generation_covers_initial_schema(monkeypatch) -> No
     assert "20260522_0009" in sql
     assert "20260524_0010" in sql
     assert "20260524_0011" in sql
+    assert "20260524_0012" in sql
     assert "CREATE TABLE knowledge_publish_requests" in sql
+    assert "CREATE TABLE knowledge_base_publications" in sql
     assert "embedding_vector" in sql
     assert "progress_percent" in sql
     assert "completed_at" in sql

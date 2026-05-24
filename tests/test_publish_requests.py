@@ -6,7 +6,11 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from my_agents.api import create_app
-from my_agents.knowledge.models import DocumentModel, KnowledgePublishRequestModel
+from my_agents.knowledge.models import (
+    DocumentModel,
+    KnowledgeBasePublicationModel,
+    KnowledgePublishRequestModel,
+)
 from my_agents.knowledge.retrieval import RetrievalService
 from my_agents.persistence.database import get_database_session
 
@@ -119,6 +123,22 @@ def _group_retrieval_hits(user_id: str, *, kb_id: str, query: str) -> list[str]:
         session_generator.close()
 
 
+def _retrieval_hits(user_id: str, *, kb_ids: list[str], query: str) -> list[str]:
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        return [
+            item.document.id
+            for item in RetrievalService(db).retrieve_scoped(
+                user_id=user_id,
+                query=query,
+                knowledge_base_ids=kb_ids,
+            )
+        ]
+    finally:
+        session_generator.close()
+
+
 def test_member_can_create_pending_publish_request_for_own_personal_document(monkeypatch) -> None:  # noqa: ANN001
     owner = _client(monkeypatch)
     requester = _client(monkeypatch)
@@ -146,9 +166,11 @@ def test_member_can_create_pending_publish_request_for_own_personal_document(mon
     assert payload["target_group_id"] == group_id
     assert payload["target_knowledge_base_id"] == target_kb_id
     assert payload["source_document_id"] == source_document_id
+    assert payload["source_knowledge_base_id"] is None
     assert payload["status"] == "pending"
     assert payload["reviewer_user_id"] is None
     assert payload["published_document_id"] is None
+    assert payload["published_knowledge_base_id"] is None
 
     requester_list = requester.get(f"/groups/{group_id}/publish-requests")
     assert requester_list.status_code == 200
@@ -220,6 +242,29 @@ def test_publish_request_rejects_invalid_source_or_target_boundaries(monkeypatch
     )
     assert non_group_target.status_code == 422
     assert non_group_target.json()["detail"] == "target knowledge base must belong to group"
+
+    both_sources = requester.post(
+        f"/groups/{group_id}/publish-requests",
+        json={
+            "source_document_id": requester_personal_doc_id,
+            "source_knowledge_base_id": requester_personal_kb_id,
+            "target_knowledge_base_id": target_group_kb_id,
+        },
+    )
+    assert both_sources.status_code == 422
+
+    missing_target = requester.post(
+        f"/groups/{group_id}/publish-requests",
+        json={"source_document_id": requester_personal_doc_id},
+    )
+    assert missing_target.status_code == 422
+
+    group_kb_source = owner.post(
+        f"/groups/{group_id}/publish-requests",
+        json={"source_knowledge_base_id": target_group_kb_id},
+    )
+    assert group_kb_source.status_code == 422
+    assert group_kb_source.json()["detail"] == "source knowledge base must be personal"
 
 
 def test_owner_admin_approval_copies_and_ingests_group_document_without_exposing_original(
@@ -350,3 +395,103 @@ def test_rejected_publish_request_has_zero_retrieval_effect(monkeypatch) -> None
     assert rejected.json()["published_document_id"] is None
 
     assert _group_retrieval_hits(viewer_id, kb_id=target_kb_id, query="GKPublishUniqueBeta") == []
+
+
+def test_owner_approval_publishes_entire_personal_kb_as_group_source(monkeypatch) -> None:  # noqa: ANN001
+    owner = _client(monkeypatch)
+    requester = _client(monkeypatch)
+    viewer = _client(monkeypatch)
+    owner_id = _signup_login(owner, "publish-kb-owner@example.com")
+    requester_id = _signup_login(requester, "publish-kb-requester@example.com")
+    viewer_id = _signup_login(viewer, "publish-kb-viewer@example.com")
+    group_id = _create_group(owner, name="Published Personal KB Group")
+    _add_member(owner, group_id, requester_id, "viewer")
+    _add_member(owner, group_id, viewer_id, "viewer")
+    personal_kb_id = _create_personal_kb(requester, "Requester Public Candidate KB")
+    source_document_id = _create_document(
+        requester,
+        kb_id=personal_kb_id,
+        title="Whole Personal KB Source",
+        content="GKPublishedPersonalKbAlpha should become a shared group source.",
+    )
+    _ingest(requester, kb_id=personal_kb_id, document_id=source_document_id)
+
+    request = requester.post(
+        f"/groups/{group_id}/publish-requests",
+        json={"source_knowledge_base_id": personal_kb_id},
+    )
+    assert request.status_code == 201
+    request_payload = request.json()
+    assert request_payload["source_document_id"] is None
+    assert request_payload["target_knowledge_base_id"] is None
+    assert request_payload["source_knowledge_base_id"] == personal_kb_id
+    assert request_payload["published_knowledge_base_id"] is None
+    assert (
+        _retrieval_hits(
+            viewer_id,
+            kb_ids=[personal_kb_id],
+            query="GKPublishedPersonalKbAlpha",
+        )
+        == []
+    )
+
+    viewer_approve = viewer.post(
+        f"/groups/{group_id}/publish-requests/{request_payload['id']}/approve"
+    )
+    assert viewer_approve.status_code == 403
+
+    approved = owner.post(f"/groups/{group_id}/publish-requests/{request_payload['id']}/approve")
+    assert approved.status_code == 200
+    approved_payload = approved.json()
+    assert approved_payload["status"] == "approved"
+    assert approved_payload["reviewer_user_id"] == owner_id
+    assert approved_payload["published_document_id"] is None
+    assert approved_payload["published_knowledge_base_id"] == personal_kb_id
+    assert _retrieval_hits(
+        viewer_id,
+        kb_ids=[personal_kb_id],
+        query="GKPublishedPersonalKbAlpha",
+    ) == [source_document_id]
+
+    listed_knowledge_bases = viewer.get("/knowledge-bases").json()
+    listed_ids = {knowledge_base["id"] for knowledge_base in listed_knowledge_bases}
+    assert personal_kb_id in listed_ids
+    listed_published_kb = next(
+        knowledge_base
+        for knowledge_base in listed_knowledge_bases
+        if knowledge_base["id"] == personal_kb_id
+    )
+    assert listed_published_kb["published_group_ids"] == [group_id]
+
+    direct_write = viewer.post(
+        f"/knowledge-bases/{personal_kb_id}/documents",
+        json={"title": "Viewer write", "content": "must not write"},
+    )
+    assert direct_write.status_code == 422
+    assert (
+        direct_write.json()["detail"]
+        == "direct document writes require an owned personal knowledge base"
+    )
+
+    duplicate = requester.post(
+        f"/groups/{group_id}/publish-requests",
+        json={"source_knowledge_base_id": personal_kb_id},
+    )
+    assert duplicate.status_code == 409
+    assert duplicate.json()["detail"] == "knowledge base already published to group"
+
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        publication = db.scalar(
+            select(KnowledgeBasePublicationModel).where(
+                KnowledgeBasePublicationModel.group_id == group_id,
+                KnowledgeBasePublicationModel.knowledge_base_id == personal_kb_id,
+            )
+        )
+        assert publication is not None
+        assert publication.requester_user_id == requester_id
+        assert publication.approved_by_user_id == owner_id
+        assert publication.publish_request_id == request_payload["id"]
+    finally:
+        session_generator.close()

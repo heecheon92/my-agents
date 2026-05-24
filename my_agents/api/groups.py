@@ -22,6 +22,7 @@ from my_agents.knowledge.extraction import KnowledgeExtractionService
 from my_agents.knowledge.models import (
     DocumentModel,
     KnowledgeBaseModel,
+    KnowledgeBasePublicationModel,
     KnowledgeBaseScope,
     KnowledgePublishRequestModel,
     KnowledgePublishRequestStatus,
@@ -151,23 +152,43 @@ def create_publish_request(
     principal: Annotated[Principal, Depends(get_current_principal)],
     db: Annotated[Session, Depends(get_database_session)],
 ) -> KnowledgePublishRequestResponse:
-    """Request owner/admin review before copying personal knowledge into group KB."""
+    """Request owner/admin review before sharing personal knowledge with a group."""
     _get_group_and_membership(db, group_id, principal.user_id)
-    source_document = _get_owned_personal_source_document(
-        db,
-        document_id=request.source_document_id,
-        requester_user_id=principal.user_id,
-    )
-    target_knowledge_base = _get_target_group_knowledge_base(
-        db,
-        knowledge_base_id=request.target_knowledge_base_id,
-        group_id=group_id,
-    )
+    source_document_id: str | None = None
+    target_knowledge_base_id: str | None = None
+    source_knowledge_base_id: str | None = None
+    if request.source_document_id is not None:
+        source_document = _get_owned_personal_source_document(
+            db,
+            document_id=request.source_document_id,
+            requester_user_id=principal.user_id,
+        )
+        target_knowledge_base = _get_target_group_knowledge_base(
+            db,
+            knowledge_base_id=request.target_knowledge_base_id or "",
+            group_id=group_id,
+        )
+        source_document_id = source_document.id
+        target_knowledge_base_id = target_knowledge_base.id
+    else:
+        source_knowledge_base = _get_owned_personal_source_knowledge_base(
+            db,
+            knowledge_base_id=request.source_knowledge_base_id or "",
+            requester_user_id=principal.user_id,
+        )
+        _require_publishable_personal_knowledge_base_request(
+            db,
+            group_id=group_id,
+            knowledge_base_id=source_knowledge_base.id,
+        )
+        source_knowledge_base_id = source_knowledge_base.id
+
     publish_request = KnowledgePublishRequestModel(
         requester_user_id=principal.user_id,
         target_group_id=group_id,
-        target_knowledge_base_id=target_knowledge_base.id,
-        source_document_id=source_document.id,
+        target_knowledge_base_id=target_knowledge_base_id,
+        source_document_id=source_document_id,
+        source_knowledge_base_id=source_knowledge_base_id,
         status=KnowledgePublishRequestStatus.PENDING.value,
     )
     db.add(publish_request)
@@ -208,10 +229,17 @@ def approve_publish_request(
     principal: Annotated[Principal, Depends(get_current_principal)],
     db: Annotated[Session, Depends(get_database_session)],
 ) -> KnowledgePublishRequestResponse:
-    """Approve by creating and ingesting a separate group-owned document copy."""
+    """Approve a document copy or personal-KB publication for group retrieval."""
     _require_group_manager(db, group_id, principal.user_id)
     publish_request = _get_publish_request_or_404(db, group_id=group_id, request_id=request_id)
     _require_pending_publish_request(publish_request)
+    if publish_request.source_knowledge_base_id is not None:
+        return _approve_knowledge_base_publish_request(
+            db,
+            publish_request=publish_request,
+            reviewer_user_id=principal.user_id,
+        )
+
     source_document = db.get(DocumentModel, publish_request.source_document_id)
     if source_document is None:
         raise HTTPException(
@@ -220,7 +248,7 @@ def approve_publish_request(
         )
     target_knowledge_base = _get_target_group_knowledge_base(
         db,
-        knowledge_base_id=publish_request.target_knowledge_base_id,
+        knowledge_base_id=publish_request.target_knowledge_base_id or "",
         group_id=group_id,
     )
     published_document = _copy_document_for_group_knowledge_base(
@@ -302,6 +330,57 @@ def _get_owned_personal_source_document(
     return source_document
 
 
+def _get_owned_personal_source_knowledge_base(
+    db: Session, *, knowledge_base_id: str, requester_user_id: str
+) -> KnowledgeBaseModel:
+    source_knowledge_base = db.get(KnowledgeBaseModel, knowledge_base_id)
+    if source_knowledge_base is None or source_knowledge_base.owner_user_id != requester_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="knowledge base not found",
+        )
+    if (
+        source_knowledge_base.scope != KnowledgeBaseScope.PERSONAL.value
+        or source_knowledge_base.group_id is not None
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="source knowledge base must be personal",
+        )
+    return source_knowledge_base
+
+
+def _require_publishable_personal_knowledge_base_request(
+    db: Session, *, group_id: str, knowledge_base_id: str, exclude_request_id: str | None = None
+) -> None:
+    existing_publication = db.scalar(
+        select(KnowledgeBasePublicationModel).where(
+            KnowledgeBasePublicationModel.group_id == group_id,
+            KnowledgeBasePublicationModel.knowledge_base_id == knowledge_base_id,
+        )
+    )
+    if existing_publication is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="knowledge base already published to group",
+        )
+    pending_statement = select(KnowledgePublishRequestModel).where(
+        KnowledgePublishRequestModel.target_group_id == group_id,
+        KnowledgePublishRequestModel.source_knowledge_base_id == knowledge_base_id,
+        KnowledgePublishRequestModel.status == KnowledgePublishRequestStatus.PENDING.value,
+    )
+    if exclude_request_id is not None:
+        pending_statement = pending_statement.where(
+            KnowledgePublishRequestModel.id != exclude_request_id
+        )
+    existing_pending_request = db.scalar(pending_statement)
+    if existing_pending_request is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="knowledge base publish request already pending",
+        )
+
+
 def _get_target_group_knowledge_base(
     db: Session, *, knowledge_base_id: str, group_id: str
 ) -> KnowledgeBaseModel:
@@ -360,6 +439,51 @@ def _copy_document_for_group_knowledge_base(
     )
 
 
+def _approve_knowledge_base_publish_request(
+    db: Session,
+    *,
+    publish_request: KnowledgePublishRequestModel,
+    reviewer_user_id: str,
+) -> KnowledgePublishRequestResponse:
+    source_knowledge_base = db.get(KnowledgeBaseModel, publish_request.source_knowledge_base_id)
+    if source_knowledge_base is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="source knowledge base not found",
+        )
+    if (
+        source_knowledge_base.scope != KnowledgeBaseScope.PERSONAL.value
+        or source_knowledge_base.group_id is not None
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="source knowledge base must be personal",
+        )
+    _require_publishable_personal_knowledge_base_request(
+        db,
+        group_id=publish_request.target_group_id,
+        knowledge_base_id=source_knowledge_base.id,
+        exclude_request_id=publish_request.id,
+    )
+    publication = KnowledgeBasePublicationModel(
+        group_id=publish_request.target_group_id,
+        knowledge_base_id=source_knowledge_base.id,
+        requester_user_id=publish_request.requester_user_id,
+        approved_by_user_id=reviewer_user_id,
+        publish_request_id=publish_request.id,
+    )
+    db.add(publication)
+    db.flush()
+    publish_request.status = KnowledgePublishRequestStatus.APPROVED.value
+    publish_request.reviewer_user_id = reviewer_user_id
+    publish_request.published_knowledge_base_id = source_knowledge_base.id
+    publish_request.reviewed_at = datetime.now(UTC)
+    db.add(publish_request)
+    db.commit()
+    db.refresh(publish_request)
+    return _publish_request_response(publish_request)
+
+
 def _default_group_knowledge_base_name(group_name: str) -> str:
     return f"{group_name} Knowledge"
 
@@ -373,9 +497,11 @@ def _publish_request_response(
         target_group_id=publish_request.target_group_id,
         target_knowledge_base_id=publish_request.target_knowledge_base_id,
         source_document_id=publish_request.source_document_id,
+        source_knowledge_base_id=publish_request.source_knowledge_base_id,
         status=KnowledgePublishRequestStatus(publish_request.status),
         reviewer_user_id=publish_request.reviewer_user_id,
         published_document_id=publish_request.published_document_id,
+        published_knowledge_base_id=publish_request.published_knowledge_base_id,
         created_at=publish_request.created_at,
         reviewed_at=publish_request.reviewed_at,
     )

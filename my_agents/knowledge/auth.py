@@ -10,7 +10,11 @@ from sqlalchemy.orm import Session
 
 from my_agents.conversations.models import ConversationModel
 from my_agents.groups.models import MembershipModel, MembershipRole
-from my_agents.knowledge.models import KnowledgeBaseModel, KnowledgeBaseScope
+from my_agents.knowledge.models import (
+    KnowledgeBaseModel,
+    KnowledgeBasePublicationModel,
+    KnowledgeBaseScope,
+)
 from my_agents.knowledge.schemas import KnowledgeBaseSelection
 
 
@@ -56,7 +60,24 @@ def user_can_select_knowledge_base(
 ) -> bool:
     """Return whether a user can use a KB as a source boundary."""
     if knowledge_base.scope == KnowledgeBaseScope.PERSONAL.value:
-        return knowledge_base.group_id is None and knowledge_base.owner_user_id == user_id
+        if knowledge_base.group_id is not None:
+            return False
+        if knowledge_base.owner_user_id == user_id:
+            return True
+        return (
+            db.scalar(
+                select(KnowledgeBasePublicationModel.id)
+                .join(
+                    MembershipModel,
+                    MembershipModel.group_id == KnowledgeBasePublicationModel.group_id,
+                )
+                .where(
+                    KnowledgeBasePublicationModel.knowledge_base_id == knowledge_base.id,
+                    MembershipModel.user_id == user_id,
+                )
+            )
+            is not None
+        )
     if knowledge_base.scope == KnowledgeBaseScope.GROUP.value:
         return knowledge_base.group_id is not None and has_group_membership(
             db, knowledge_base.group_id, user_id
@@ -71,6 +92,7 @@ def authorized_knowledge_base_filter(user_id: str):
     the original creator does not retain access after membership is removed.
     """
     group_ids = select(MembershipModel.group_id).where(MembershipModel.user_id == user_id)
+    published_personal_kb_ids = published_personal_knowledge_base_ids_for_user(user_id)
     return or_(
         and_(
             KnowledgeBaseModel.scope == KnowledgeBaseScope.PERSONAL.value,
@@ -81,6 +103,18 @@ def authorized_knowledge_base_filter(user_id: str):
             KnowledgeBaseModel.scope == KnowledgeBaseScope.GROUP.value,
             KnowledgeBaseModel.group_id.in_(group_ids),
         ),
+        and_(
+            KnowledgeBaseModel.scope == KnowledgeBaseScope.PERSONAL.value,
+            KnowledgeBaseModel.id.in_(published_personal_kb_ids),
+        ),
+    )
+
+
+def published_personal_knowledge_base_ids_for_user(user_id: str):
+    """Return KB IDs published into any group where the user is currently a member."""
+    group_ids = select(MembershipModel.group_id).where(MembershipModel.user_id == user_id)
+    return select(KnowledgeBasePublicationModel.knowledge_base_id).where(
+        KnowledgeBasePublicationModel.group_id.in_(group_ids)
     )
 
 
@@ -129,6 +163,11 @@ def require_personal_knowledge_base_for_document_write(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="group knowledge bases accept documents through publish approval",
+        )
+    if knowledge_base.owner_user_id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="direct document writes require an owned personal knowledge base",
         )
     return knowledge_base
 
@@ -217,7 +256,7 @@ def authorized_knowledge_base_count(db: Session, *, user_id: str) -> int:
 
 
 def _group_knowledge_base_ids(db: Session, group_id: str) -> tuple[str, ...]:
-    rows = db.scalars(
+    group_rows = db.scalars(
         select(KnowledgeBaseModel.id)
         .where(
             KnowledgeBaseModel.group_id == group_id,
@@ -225,7 +264,20 @@ def _group_knowledge_base_ids(db: Session, group_id: str) -> tuple[str, ...]:
         )
         .order_by(KnowledgeBaseModel.created_at, KnowledgeBaseModel.id)
     ).all()
-    return tuple(rows)
+    published_personal_rows = db.scalars(
+        select(KnowledgeBasePublicationModel.knowledge_base_id)
+        .join(
+            KnowledgeBaseModel,
+            KnowledgeBaseModel.id == KnowledgeBasePublicationModel.knowledge_base_id,
+        )
+        .where(
+            KnowledgeBasePublicationModel.group_id == group_id,
+            KnowledgeBaseModel.scope == KnowledgeBaseScope.PERSONAL.value,
+            KnowledgeBaseModel.group_id.is_(None),
+        )
+        .order_by(KnowledgeBasePublicationModel.created_at, KnowledgeBasePublicationModel.id)
+    ).all()
+    return tuple(dict.fromkeys((*group_rows, *published_personal_rows)))
 
 
 def _validate_optional_personal_knowledge_base_ids(

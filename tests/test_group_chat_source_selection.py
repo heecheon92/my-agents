@@ -118,6 +118,25 @@ def _publish_personal_document_to_group(
     return published_document
 
 
+def _publish_personal_kb_to_group(
+    *,
+    owner: TestClient,
+    requester: TestClient,
+    group_id: str,
+    knowledge_base_id: str,
+) -> None:
+    publish_request = requester.post(
+        f"/groups/{group_id}/publish-requests",
+        json={"source_knowledge_base_id": knowledge_base_id},
+    )
+    assert publish_request.status_code == 201
+    approved = owner.post(
+        f"/groups/{group_id}/publish-requests/{publish_request.json()['id']}/approve"
+    )
+    assert approved.status_code == 200
+    assert approved.json()["published_knowledge_base_id"] == knowledge_base_id
+
+
 def _remove_group_membership(group_id: str, user_id: str) -> None:
     session_generator = get_database_session()
     db = next(session_generator)
@@ -235,6 +254,53 @@ def test_group_chat_optional_personal_kb_is_explicit_and_private(monkeypatch) ->
         owner_personal_kb,
     }
     assert owner_doc in {context["document_id"] for context in graph.calls[-1]["retrieved_context"]}
+
+
+def test_group_chat_uses_approved_personal_kb_as_mandatory_group_source(monkeypatch) -> None:  # noqa: ANN001
+    graph = RagSpyGraph()
+    owner = _client(monkeypatch, graph)
+    requester = _client(monkeypatch, graph)
+    viewer = _client(monkeypatch, graph)
+    _signup_login(owner, "published-kb-group-owner@example.com")
+    requester_id = _signup_login(requester, "published-kb-requester@example.com")
+    viewer_id = _signup_login(viewer, "published-kb-viewer@example.com")
+    group_id = owner.post("/groups", json={"name": "Published KB Source Group"}).json()["id"]
+    owner.post(f"/groups/{group_id}/members", json={"user_id": requester_id, "role": "viewer"})
+    owner.post(f"/groups/{group_id}/members", json={"user_id": viewer_id, "role": "viewer"})
+    default_group_kb = _first_group_kb(owner, group_id)
+    requester_personal_kb = _create_personal_kb(requester, "Requester Published Personal KB")
+    requester_doc = _create_document(
+        requester,
+        title="Requester published whole KB",
+        content="PublishedPersonalKbGamma is shared after owner approval.",
+        kb_id=requester_personal_kb,
+    )
+    _publish_personal_kb_to_group(
+        owner=owner,
+        requester=requester,
+        group_id=group_id,
+        knowledge_base_id=requester_personal_kb,
+    )
+    conversation_id = viewer.post(
+        "/conversations", json={"title": "Published personal KB group chat", "group_id": group_id}
+    ).json()["id"]
+
+    response = viewer.post(
+        f"/conversations/{conversation_id}/runs",
+        json={"message": "Tell me about PublishedPersonalKbGamma."},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["mandatory_group_knowledge_base_ids"] == [
+        default_group_kb,
+        requester_personal_kb,
+    ]
+    assert payload["optional_personal_knowledge_base_ids"] == []
+    assert set(payload["resolved_knowledge_base_ids"]) == {default_group_kb, requester_personal_kb}
+    assert requester_doc in {
+        context["document_id"] for context in graph.calls[-1]["retrieved_context"]
+    }
 
 
 def test_group_chat_rejects_selected_group_kb_and_personal_chat_rejects_optional_personal(

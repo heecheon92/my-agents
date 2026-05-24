@@ -24,7 +24,11 @@ from my_agents.knowledge.auth import (
     authorized_knowledge_base_filter,
     get_authorized_knowledge_base_or_404,
 )
-from my_agents.knowledge.models import KnowledgeBaseModel, KnowledgeBaseScope
+from my_agents.knowledge.models import (
+    KnowledgeBaseModel,
+    KnowledgeBasePublicationModel,
+    KnowledgeBaseScope,
+)
 from my_agents.knowledge.schemas import (
     DocumentCreateRequest,
     DocumentResponse,
@@ -65,7 +69,7 @@ def create_knowledge_base(
     db.add(knowledge_base)
     db.commit()
     db.refresh(knowledge_base)
-    return _knowledge_base_response(knowledge_base)
+    return _knowledge_base_response(db, knowledge_base, user_id=principal.user_id)
 
 
 @knowledge_bases_router.get("", response_model=list[KnowledgeBaseResponse])
@@ -76,7 +80,7 @@ def list_knowledge_bases(
     knowledge_bases = db.scalars(
         select(KnowledgeBaseModel).where(authorized_knowledge_base_filter(principal.user_id))
     ).all()
-    return [_knowledge_base_response(kb) for kb in knowledge_bases]
+    return [_knowledge_base_response(db, kb, user_id=principal.user_id) for kb in knowledge_bases]
 
 
 @knowledge_bases_router.get("/{knowledge_base_id}", response_model=KnowledgeBaseResponse)
@@ -86,7 +90,7 @@ def get_knowledge_base(
     db: Annotated[Session, Depends(get_database_session)],
 ) -> KnowledgeBaseResponse:
     knowledge_base = get_authorized_knowledge_base_or_404(db, knowledge_base_id, principal.user_id)
-    return _knowledge_base_response(knowledge_base)
+    return _knowledge_base_response(db, knowledge_base, user_id=principal.user_id)
 
 
 @knowledge_bases_router.get("/{knowledge_base_id}/documents", response_model=list[DocumentResponse])
@@ -239,11 +243,36 @@ def _has_group_manager_access(db: Session, group_id: str, user_id: str) -> bool:
     }
 
 
-def _knowledge_base_response(knowledge_base: KnowledgeBaseModel) -> KnowledgeBaseResponse:
+def _knowledge_base_response(
+    db: Session, knowledge_base: KnowledgeBaseModel, *, user_id: str
+) -> KnowledgeBaseResponse:
     return KnowledgeBaseResponse(
         id=knowledge_base.id,
         name=knowledge_base.name,
         scope=KnowledgeBaseScope(knowledge_base.scope),
         owner_user_id=knowledge_base.owner_user_id,
         group_id=knowledge_base.group_id,
+        published_group_ids=_published_group_ids_for_user(
+            db,
+            knowledge_base_id=knowledge_base.id,
+            user_id=user_id,
+        ),
+    )
+
+
+def _published_group_ids_for_user(
+    db: Session, *, knowledge_base_id: str, user_id: str
+) -> list[str]:
+    return list(
+        db.scalars(
+            select(KnowledgeBasePublicationModel.group_id)
+            .join(
+                MembershipModel, MembershipModel.group_id == KnowledgeBasePublicationModel.group_id
+            )
+            .where(
+                KnowledgeBasePublicationModel.knowledge_base_id == knowledge_base_id,
+                MembershipModel.user_id == user_id,
+            )
+            .order_by(KnowledgeBasePublicationModel.created_at, KnowledgeBasePublicationModel.id)
+        ).all()
     )

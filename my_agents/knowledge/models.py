@@ -115,7 +115,7 @@ class DocumentPermissionModel(Base):
 
 
 class KnowledgePublishRequestModel(Base):
-    """Request to publish a personal document as an approved group-owned copy."""
+    """Request to publish personal knowledge into a group-owned source boundary."""
 
     __tablename__ = "knowledge_publish_requests"
 
@@ -124,11 +124,14 @@ class KnowledgePublishRequestModel(Base):
     target_group_id: Mapped[str] = mapped_column(
         ForeignKey("groups.id"), nullable=False, index=True
     )
-    target_knowledge_base_id: Mapped[str] = mapped_column(
-        ForeignKey("knowledge_bases.id"), nullable=False, index=True
+    target_knowledge_base_id: Mapped[str | None] = mapped_column(
+        ForeignKey("knowledge_bases.id"), nullable=True, index=True
     )
-    source_document_id: Mapped[str] = mapped_column(
-        ForeignKey("documents.id"), nullable=False, index=True
+    source_document_id: Mapped[str | None] = mapped_column(
+        ForeignKey("documents.id"), nullable=True, index=True
+    )
+    source_knowledge_base_id: Mapped[str | None] = mapped_column(
+        ForeignKey("knowledge_bases.id"), nullable=True, index=True
     )
     status: Mapped[str] = mapped_column(
         String(20), default=KnowledgePublishRequestStatus.PENDING.value, nullable=False, index=True
@@ -137,10 +140,36 @@ class KnowledgePublishRequestModel(Base):
     published_document_id: Mapped[str | None] = mapped_column(
         ForeignKey("documents.id"), nullable=True, index=True
     )
+    published_knowledge_base_id: Mapped[str | None] = mapped_column(
+        ForeignKey("knowledge_bases.id"), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class KnowledgeBasePublicationModel(Base):
+    """Approved personal KB binding that makes a member KB a mandatory group source."""
+
+    __tablename__ = "knowledge_base_publications"
+    __table_args__ = (
+        UniqueConstraint("group_id", "knowledge_base_id", name="uq_kb_publication_group_kb"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    group_id: Mapped[str] = mapped_column(ForeignKey("groups.id"), nullable=False, index=True)
+    knowledge_base_id: Mapped[str] = mapped_column(
+        ForeignKey("knowledge_bases.id"), nullable=False, index=True
+    )
+    requester_user_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    approved_by_user_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    publish_request_id: Mapped[str | None] = mapped_column(
+        ForeignKey("knowledge_publish_requests.id"), nullable=True, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
 
 
 class ExtractionRunModel(Base):

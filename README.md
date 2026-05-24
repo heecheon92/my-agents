@@ -619,14 +619,16 @@ Legacy `/documents`, `/documents/upload` write path는 standalone/developer 호�
 
 새 그룹을 만들면 기본 group-scoped KB 하나가 함께 만들어집니다. Group owner/admin은 추가
 group KB를 만들 수 있지만, 직접 document create/upload 경로는 group KB target을 거부합니다.
-Group knowledge에는 personal document를 위한 명시적 publish-review workflow가 있습니다. Group
-member는 자신이 소유한 personal `source_document_id`와 group-scoped
-`target_knowledge_base_id`로 `POST /groups/{group_id}/publish-requests`를 만들 수 있습니다.
-`GET /groups/{group_id}/publish-requests`는 owner/admin에게 모든 request를, 일반 member에게는
-자기 request만 보여줍니다. `POST /groups/{group_id}/publish-requests/{request_id}/approve`와
-`/reject`는 owner/admin 전용입니다. Pending/rejected request는 metadata일 뿐 retrieval 효과가
-없고, approve 시 target KB 아래에 별도 group-owned document copy를 만들고 ingest합니다. 원본
-personal document는 계속 private 상태로 남습니다.
+Group knowledge에는 두 가지 personal source publish-review workflow가 있습니다. Member는
+전체 Personal KB를 게시하기 위해 `source_knowledge_base_id`를 보낼 수 있고, 단일 문서만
+복사하려면 personal `source_document_id`와 group-scoped `target_knowledge_base_id`를 함께
+보낼 수 있습니다. `GET /groups/{group_id}/publish-requests`는 owner/admin에게 모든 request를,
+일반 member에게는 자기 request만 보여줍니다.
+`POST /groups/{group_id}/publish-requests/{request_id}/approve`와 `/reject`는 owner/admin
+전용입니다. Pending/rejected request는 metadata일 뿐 retrieval 효과가 없습니다. Personal KB
+approve는 해당 KB를 group chat retrieval의 필수 group source로 묶고, document approve는 target
+Group KB 아래에 별도 group-owned document copy를 만들고 ingest합니다. 다른 멤버의 승인된
+Personal KB에 직접 write하는 것은 계속 거부됩니다.
 
 Conversation run은 `knowledge_base_selection`을 받습니다. `mode: "all"`은 권한 있는 모든 KB를
 검색하고, `mode: "selected"`는 전달한 KB ID만 hard retrieval boundary로 검색합니다. selected mode에

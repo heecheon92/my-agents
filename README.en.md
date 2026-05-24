@@ -623,14 +623,16 @@ operations against the wrong KB also return `404`.
 
 Each newly created group also creates one default group-scoped KB. Group owners/admins may
 create additional group KBs, but direct document create/upload paths intentionally reject
-group KB targets. Group knowledge has an explicit publish-review workflow for personal
-documents. A group member can create `POST /groups/{group_id}/publish-requests` with a personal
-`source_document_id` they own and a group-scoped `target_knowledge_base_id`. `GET
+group KB targets. Group knowledge has an explicit publish-review workflow for two personal
+source shapes: a member may request publication of an entire Personal KB by sending
+`source_knowledge_base_id`, or request a one-document copy by sending personal
+`source_document_id` plus a group-scoped `target_knowledge_base_id`. `GET
 /groups/{group_id}/publish-requests` shows owner/admins all requests and non-manager members
 only their own. `POST /groups/{group_id}/publish-requests/{request_id}/approve` and `/reject`
 are owner/admin-only. Pending and rejected requests are metadata-only and have no retrieval
-effect; approval creates and ingests a separate group-owned document copy under the target KB,
-leaving the original personal document private.
+effect. Approval of a Personal KB binds that KB as a mandatory group source for group chat
+retrieval; approval of a document creates and ingests a separate group-owned document copy under
+the target Group KB. Direct writes into someone else's approved Personal KB remain rejected.
 
 Conversation runs accept `knowledge_base_selection`: `mode: "all"` searches every authorized
 KB, while `mode: "selected"` searches only the provided KB IDs as a hard retrieval boundary.
