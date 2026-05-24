@@ -223,7 +223,7 @@ def test_optional_retrieval_with_relevant_context_uses_mixed_mode(monkeypatch) -
     assert graph.calls[-1]["retrieved_context"]
 
 
-def test_debug_logging_exposes_retrieved_context_injected_to_llm(monkeypatch, caplog) -> None:  # noqa: ANN001
+def test_debug_logging_exposes_retrieved_context_injected_to_llm(monkeypatch, capsys) -> None:  # noqa: ANN001
     graph = SpyGraph()
     client = _client(monkeypatch, graph)
     _signup_login(client, "debug-retrieval@example.com")
@@ -240,7 +240,7 @@ def test_debug_logging_exposes_retrieved_context_injected_to_llm(monkeypatch, ca
     assert client.post(f"/documents/{document.json()['id']}/ingest").status_code == 200
     conversation_id = client.post("/conversations", json={"title": "Debug logs"}).json()["id"]
 
-    caplog.set_level(logging.DEBUG, logger="my_agents.api.conversations.retrieval_context")
+    logging.getLogger("my_agents.api.conversations.retrieval_context").setLevel(logging.DEBUG)
     response = client.post(
         f"/conversations/{conversation_id}/runs",
         json={
@@ -250,12 +250,10 @@ def test_debug_logging_exposes_retrieved_context_injected_to_llm(monkeypatch, ca
     )
 
     assert response.status_code == 200
-    log_record = next(
-        record
-        for record in caplog.records
-        if "knowledge context injected to llm:" in record.getMessage()
-    )
-    payload = json.loads(log_record.getMessage().split(": ", 1)[1])
+    captured = capsys.readouterr().out
+    assert "knowledge context injected to llm" in captured
+    payload_start = captured.index("{")
+    payload = json.loads(captured[payload_start:].replace("\n", "").strip())
     assert payload["event"] == "knowledge_context_injected_to_llm"
     assert payload["conversation_id"] == conversation_id
     assert payload["resolved_knowledge_base_ids"] == [kb_id]

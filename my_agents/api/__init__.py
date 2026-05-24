@@ -40,21 +40,10 @@ def create_app() -> FastAPI:
 
 
 def configure_debug_logging(settings: Settings) -> None:
-    """Enable sensitive retrieval-context logs only for explicit debug sessions."""
+    """Enable sensitive rich debug prints only for explicit debug sessions."""
     if not settings.debug_knowledge_context_logging:
         return
-    logger = logging.getLogger("my_agents.api.conversations.retrieval_context")
-    logger.setLevel(logging.DEBUG)
-    logger.propagate = False
-    if any(
-        getattr(handler, "_my_agents_debug_context_handler", False) for handler in logger.handlers
-    ):
-        return
-    handler = logging.StreamHandler()
-    handler.setLevel(logging.DEBUG)
-    handler.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
-    handler._my_agents_debug_context_handler = True  # type: ignore[attr-defined]
-    logger.addHandler(handler)
+    logging.getLogger("my_agents.api.conversations.retrieval_context").setLevel(logging.DEBUG)
 
 
 __all__ = ["GraphRunner", "create_app", "get_graph_runner"]
