@@ -13,6 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from my_agents.groups.models import MembershipModel
+from my_agents.knowledge.auth import authorized_knowledge_base_filter
 from my_agents.knowledge.embeddings import EmbeddingProvider, get_embedding_provider
 from my_agents.knowledge.models import (
     DocumentChunkModel,
@@ -346,7 +347,7 @@ def _authorized_document_filter(user_id: str, *, knowledge_base_ids: Sequence[st
     return and_(
         _knowledge_base_scope_filter(user_id, knowledge_base_ids),
         or_(
-            DocumentModel.owner_user_id == user_id,
+            and_(DocumentModel.group_id.is_(None), DocumentModel.owner_user_id == user_id),
             DocumentModel.group_id.in_(group_ids),
             DocumentModel.id.in_(explicit_doc_ids),
         ),
@@ -356,12 +357,8 @@ def _authorized_document_filter(user_id: str, *, knowledge_base_ids: Sequence[st
 def _knowledge_base_scope_filter(user_id: str, knowledge_base_ids: Sequence[str] | None = None):
     from my_agents.knowledge.models import KnowledgeBaseModel
 
-    group_ids = select(MembershipModel.group_id).where(MembershipModel.user_id == user_id)
     authorized_kb_ids = select(KnowledgeBaseModel.id).where(
-        or_(
-            KnowledgeBaseModel.owner_user_id == user_id,
-            KnowledgeBaseModel.group_id.in_(group_ids),
-        )
+        authorized_knowledge_base_filter(user_id)
     )
     if knowledge_base_ids is None:
         return DocumentModel.knowledge_base_id.in_(authorized_kb_ids)

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from my_agents.api.documents import (
@@ -20,7 +20,10 @@ from my_agents.api.documents import (
 from my_agents.auth.contracts import Principal
 from my_agents.auth.dependencies import get_current_principal
 from my_agents.groups.models import MembershipModel
-from my_agents.knowledge.auth import get_authorized_knowledge_base_or_404
+from my_agents.knowledge.auth import (
+    authorized_knowledge_base_filter,
+    get_authorized_knowledge_base_or_404,
+)
 from my_agents.knowledge.models import KnowledgeBaseModel, KnowledgeBaseScope
 from my_agents.knowledge.schemas import (
     DocumentCreateRequest,
@@ -70,14 +73,8 @@ def list_knowledge_bases(
     principal: Annotated[Principal, Depends(get_current_principal)],
     db: Annotated[Session, Depends(get_database_session)],
 ) -> list[KnowledgeBaseResponse]:
-    group_ids = select(MembershipModel.group_id).where(MembershipModel.user_id == principal.user_id)
     knowledge_bases = db.scalars(
-        select(KnowledgeBaseModel).where(
-            or_(
-                KnowledgeBaseModel.owner_user_id == principal.user_id,
-                KnowledgeBaseModel.group_id.in_(group_ids),
-            )
-        )
+        select(KnowledgeBaseModel).where(authorized_knowledge_base_filter(principal.user_id))
     ).all()
     return [_knowledge_base_response(kb) for kb in knowledge_bases]
 

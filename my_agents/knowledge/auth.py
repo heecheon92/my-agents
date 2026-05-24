@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from my_agents.conversations.models import ConversationModel
@@ -55,11 +55,33 @@ def user_can_select_knowledge_base(
     db: Session, *, knowledge_base: KnowledgeBaseModel, user_id: str
 ) -> bool:
     """Return whether a user can use a KB as a source boundary."""
-    if knowledge_base.owner_user_id == user_id:
-        return True
-    if knowledge_base.group_id is None:
-        return False
-    return has_group_membership(db, knowledge_base.group_id, user_id)
+    if knowledge_base.scope == KnowledgeBaseScope.PERSONAL.value:
+        return knowledge_base.group_id is None and knowledge_base.owner_user_id == user_id
+    if knowledge_base.scope == KnowledgeBaseScope.GROUP.value:
+        return knowledge_base.group_id is not None and has_group_membership(
+            db, knowledge_base.group_id, user_id
+        )
+    return False
+
+
+def authorized_knowledge_base_filter(user_id: str):
+    """Return the SQL predicate for KBs selectable by a user.
+
+    Personal KBs remain owner-scoped. Group KBs are group-authority scoped:
+    the original creator does not retain access after membership is removed.
+    """
+    group_ids = select(MembershipModel.group_id).where(MembershipModel.user_id == user_id)
+    return or_(
+        and_(
+            KnowledgeBaseModel.scope == KnowledgeBaseScope.PERSONAL.value,
+            KnowledgeBaseModel.group_id.is_(None),
+            KnowledgeBaseModel.owner_user_id == user_id,
+        ),
+        and_(
+            KnowledgeBaseModel.scope == KnowledgeBaseScope.GROUP.value,
+            KnowledgeBaseModel.group_id.in_(group_ids),
+        ),
+    )
 
 
 def has_group_membership(db: Session, group_id: str, user_id: str) -> bool:
@@ -174,12 +196,10 @@ def resolve_conversation_knowledge_context(
 
 def authorized_knowledge_base_count(db: Session, *, user_id: str) -> int:
     """Return how many KBs a user may select in all-KBs mode."""
-    group_ids = select(MembershipModel.group_id).where(MembershipModel.user_id == user_id)
     return (
         db.scalar(
             select(func.count(KnowledgeBaseModel.id)).where(
-                (KnowledgeBaseModel.owner_user_id == user_id)
-                | (KnowledgeBaseModel.group_id.in_(group_ids))
+                authorized_knowledge_base_filter(user_id)
             )
         )
         or 0

@@ -5,9 +5,12 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from my_agents.api import create_app
 from my_agents.api.assistant import get_graph_runner
+from my_agents.groups.models import MembershipModel
+from my_agents.persistence.database import get_database_session
 from my_agents.schemas import RouteDecision
 
 from .conftest import verify_latest_auth_email
@@ -68,6 +71,23 @@ def _create_document(client: TestClient, *, title: str, content: str, kb_id: str
     document_id = response.json()["id"]
     assert client.post(f"/documents/{document_id}/ingest").status_code == 200
     return document_id
+
+
+def _remove_group_membership(group_id: str, user_id: str) -> None:
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        membership = db.scalar(
+            select(MembershipModel).where(
+                MembershipModel.group_id == group_id,
+                MembershipModel.user_id == user_id,
+            )
+        )
+        assert membership is not None
+        db.delete(membership)
+        db.commit()
+    finally:
+        session_generator.close()
 
 
 def test_group_chat_all_uses_mandatory_group_kb_only(monkeypatch) -> None:  # noqa: ANN001
@@ -196,3 +216,58 @@ def test_group_chat_rejects_selected_group_kb_and_personal_chat_rejects_optional
 
     assert selected_group.status_code == 422
     assert optional_in_personal.status_code == 422
+
+
+def test_group_kb_creator_loses_access_after_membership_removal(monkeypatch) -> None:  # noqa: ANN001
+    graph = RagSpyGraph()
+    owner = _client(monkeypatch, graph)
+    creator = _client(monkeypatch, graph)
+    _signup_login(owner, "group-kb-auth-owner@example.com")
+    creator_user_id = _signup_login(creator, "removed-group-kb-creator@example.com")
+    group_id = owner.post("/groups", json={"name": "Revoked KB Group"}).json()["id"]
+    assert (
+        owner.post(
+            f"/groups/{group_id}/members",
+            json={"user_id": creator_user_id, "role": "editor"},
+        ).status_code
+        == 204
+    )
+    group_kb = _create_group_kb(creator, group_id, "Revoked Creator Group KB")
+    group_document = _create_document(
+        creator,
+        title="Revoked Group Source",
+        content="RevokedGroupGamma must not leak after membership removal.",
+        kb_id=group_kb,
+    )
+    conversation_id = creator.post(
+        "/conversations", json={"title": "Personal after group removal"}
+    ).json()["id"]
+
+    _remove_group_membership(group_id, creator_user_id)
+
+    listed_ids = {kb["id"] for kb in creator.get("/knowledge-bases").json()}
+    selected_response = creator.post(
+        f"/conversations/{conversation_id}/runs",
+        json={
+            "message": "Tell me about RevokedGroupGamma.",
+            "knowledge_base_selection": {
+                "mode": "selected",
+                "knowledge_base_ids": [group_kb],
+            },
+        },
+    )
+    all_response = creator.post(
+        f"/conversations/{conversation_id}/runs",
+        json={"message": "Tell me about RevokedGroupGamma."},
+    )
+
+    assert group_kb not in listed_ids
+    assert creator.get(f"/knowledge-bases/{group_kb}").status_code == 404
+    assert selected_response.status_code == 404
+    assert all_response.status_code == 200
+    assert group_document not in {
+        context["document_id"] for context in graph.calls[-1]["retrieved_context"]
+    }
+    assert group_kb not in {
+        citation["knowledge_base_id"] for citation in all_response.json()["citations"]
+    }
