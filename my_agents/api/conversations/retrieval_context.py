@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass
 from time import perf_counter
 
 from langchain_core.messages import BaseMessage
 from rich import print as rich_print
-from rich.text import Text
 from sqlalchemy.orm import Session
 
 from my_agents.knowledge.auth import KnowledgeBaseSelectionContext
@@ -175,7 +173,7 @@ def log_retrieval_context_for_llm(
     }
     rich_print(
         "[bold cyan]knowledge context injected to llm[/bold cyan]",
-        Text(json.dumps(payload, ensure_ascii=False, sort_keys=True), no_wrap=True),
+        payload,
     )
 
 
