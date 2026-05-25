@@ -99,6 +99,7 @@ def test_embedding_settings_default_to_deterministic(monkeypatch: pytest.MonkeyP
     assert settings.tesseract_psm == 6
     assert settings.tesseract_render_scale == 3.0
     assert settings.tesseract_timeout_seconds == 15
+    assert settings.tesseract_max_pages == 3
 
 
 def test_openai_embedding_mode_requires_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -151,6 +152,7 @@ def test_tesseract_settings_accept_ocr_overrides(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setenv("MY_AGENTS_TESSERACT_PSM", "11")
     monkeypatch.setenv("MY_AGENTS_TESSERACT_RENDER_SCALE", "2.5")
     monkeypatch.setenv("MY_AGENTS_TESSERACT_TIMEOUT_SECONDS", "30")
+    monkeypatch.setenv("MY_AGENTS_TESSERACT_MAX_PAGES", "4")
 
     settings = Settings(_env_file=None)
 
@@ -159,6 +161,7 @@ def test_tesseract_settings_accept_ocr_overrides(monkeypatch: pytest.MonkeyPatch
     assert settings.tesseract_psm == 11
     assert settings.tesseract_render_scale == 2.5
     assert settings.tesseract_timeout_seconds == 30
+    assert settings.tesseract_max_pages == 4
 
 
 def test_docling_settings_reject_unknown_accelerator(monkeypatch: pytest.MonkeyPatch) -> None:

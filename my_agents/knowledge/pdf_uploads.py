@@ -73,6 +73,7 @@ class TesseractOcrConfig:
     page_segmentation_mode: int = 6
     render_scale: float = 3.0
     timeout_seconds: float = 15.0
+    max_pages: int = 3
 
 
 @dataclass(frozen=True)
@@ -221,9 +222,16 @@ def _extraction_attempts(
     # heavier model startup cost.
     yield _ExtractionAttempt(PYMUPDF_PARSER_NAME, _extract_page_texts_with_pymupdf(content))
 
-    # Docling is the structured primary fallback for PDFs where fast text extraction
+    # Keep the lightweight extractors before heavier model/OCR fallback so malformed or
+    # image-heavy PDFs do not pay Docling/Tesseract costs when simple text extraction works.
+    if classification.doc_type in {"native_text", "mixed_or_low_text"}:
+        yield _ExtractionAttempt(PDF_PARSER_NAME, _extract_page_texts_with_pypdf(content))
+    yield _ExtractionAttempt(PDFPLUMBER_PARSER_NAME, _extract_page_texts_with_pdfplumber(content))
+
+    # Docling is the structured fallback for PDFs where fast text extraction
     # is empty or fails the quality gate. It can produce RAG-friendly Markdown and
-    # table structure while still staying local.
+    # table structure while still staying local, but model startup is intentionally
+    # later in the chain.
     yield _ExtractionAttempt(
         DOCLING_PARSER_NAME,
         _extract_page_texts_with_docling(filename, content, docling_config),
@@ -235,11 +243,6 @@ def _extraction_attempts(
         TESSERACT_PARSER_NAME,
         _extract_page_texts_with_tesseract(content, tesseract_config),
     )
-
-    # Keep the previous lightweight extractors as compatibility fallbacks.
-    if classification.doc_type in {"native_text", "mixed_or_low_text"}:
-        yield _ExtractionAttempt(PDF_PARSER_NAME, _extract_page_texts_with_pypdf(content))
-    yield _ExtractionAttempt(PDFPLUMBER_PARSER_NAME, _extract_page_texts_with_pdfplumber(content))
 
     # Keep the deterministic legacy fallback so tiny fixture PDFs and simple literal streams
     # remain supported without pretending it is a robust production extractor.
@@ -328,6 +331,8 @@ def _extract_page_texts_with_tesseract(
     runtime_root = Path.cwd() / "tmp" / "ocr-runtime"
     runtime_root.mkdir(parents=True, exist_ok=True)
     try:
+        if config.max_pages <= 0 or document.page_count > config.max_pages:
+            return []
         with tempfile.TemporaryDirectory(prefix="tesseract-", dir=runtime_root) as temp_dir:
             temp_path = Path(temp_dir)
             pages: list[str] = []

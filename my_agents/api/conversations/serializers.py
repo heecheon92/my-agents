@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from my_agents.conversations.models import AgentRunModel, ConversationModel, MessageModel
 from my_agents.conversations.schemas import (
     AgentRunSummaryResponse,
+    ConversationClarificationRequest,
     ConversationResponse,
     ConversationRunResponse,
     ConversationRunWarning,
@@ -144,6 +145,7 @@ def run_detail_response(db: Session, run: AgentRunModel) -> ConversationRunRespo
         document_scope=run.document_scope or "unknown",
         **source_payload,
         citations=[citation_response(db, citation) for citation in citations],
+        clarification=_run_clarification_request(run),
     )
 
 
@@ -158,6 +160,7 @@ def completed_run_response(
     citations: list[CitationModel],
     retrieved_chunks: list[RetrievedChunk],
     warnings: list[ConversationRunWarning] | None = None,
+    clarification: ConversationClarificationRequest | None = None,
 ) -> ConversationRunResponse:
     return ConversationRunResponse(
         run_id=run.id,
@@ -170,6 +173,7 @@ def completed_run_response(
         document_scope=retrieval_decision.document_scope,
         **knowledge_base_selection_payload(selection_context),
         warnings=warnings or [],
+        clarification=clarification,
         citations=[
             CitationResponse(
                 id=citation.id,
@@ -182,6 +186,15 @@ def completed_run_response(
             )
             for citation, item in zip(citations, retrieved_chunks, strict=True)
         ],
+    )
+
+
+def _run_clarification_request(run: AgentRunModel) -> ConversationClarificationRequest | None:
+    if run.retrieval_route != "clarification_required":
+        return None
+    return ConversationClarificationRequest(
+        retrieval_route="clarification_required",
+        document_scope=run.document_scope or "unknown",
     )
 
 

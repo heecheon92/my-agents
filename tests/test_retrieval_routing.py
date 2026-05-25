@@ -44,3 +44,13 @@ def test_ambiguous_document_reference_requires_clarification_with_multiple_docs(
 
     assert decision.route == "clarification_required"
     assert decision.document_scope == "unknown"
+
+
+def test_filename_like_document_reference_skips_clarification_with_multiple_docs() -> None:
+    decision = route_retrieval(
+        message="그럼 NCT06159946_Prot_000 이 문서에 대해 설명해줘",
+        authorized_document_count=2,
+    )
+
+    assert decision.route == "retrieval_required"
+    assert decision.document_scope == "unknown"

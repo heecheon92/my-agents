@@ -91,15 +91,19 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 - Text document ingestion remains compatible.
 - Text-based upload path for PDF, Markdown, and plain text with safe metadata persistence; PDFs keep page provenance and FlateDecode text-stream fallback support.
 - Deterministic chunks, provider-backed JSON embeddings (deterministic by default, OpenAI opt-in), entity mentions, and co-occurrence relationships.
-- Deterministic retrieval routing supports `no_retrieval`, `retrieval_required`, `retrieval_optional`, and `clarification_required`.
+- ContextForge now owns the conversation-run retrieval orchestration boundary through `my_agents/agents/context_forge/`, with deterministic query planning, source-boundary handoff, candidate fusion, deterministic default or optional cross-encoder reranking, high-recall context packing, redacted retrieval evidence, and opt-in Rich debug traces for role handoff messages.
+- Retrieval candidate gathering includes authorized document title/source-filename metadata matching, so filename-only user references can find the matching uploaded document even when the filename is absent from chunk content.
+- Ingestion stores structured knowledge entities for API endpoints, config keys, shell commands, error codes, and database table references with document/chunk/run/page/offset provenance.
+- Deterministic retrieval routing supports `no_retrieval`, `retrieval_required`, `retrieval_optional`, and `clarification_required`; clarification runs now return `reply: ""` plus a language-neutral `clarification` contract for human-in-the-loop localization instead of static English prose.
 - Permission-aware retrieval filters candidate chunks before ranking/expansion/composition.
+- Structured enumeration prompts such as “list API endpoints in this document” can retrieve by extracted entity type instead of relying only on vector/keyword wording overlap.
 - Broad personal-document fallback now retrieves recent authorized chunks for resume/profile/uploaded-document questions when exact term matching returns nothing.
 - Authorized retrieved context plus `answer_mode` is passed into the general assistant graph/provider prompt, then citation-backed replies are persisted only when context is used.
 
 ### Persistence and migrations
 
-- SQLAlchemy models cover auth, auth lifecycle tokens, sessions, groups, documents, knowledge artifacts, conversations, runs, events, and citations.
-- Alembic migrations cover the initial service schema, auth lifecycle, run detail refresh fields, PDF upload provenance fields, guest access state, retrieval-routing run metadata, pgvector chunk embeddings, and async extraction-run progress fields.
+- SQLAlchemy models cover auth, auth lifecycle tokens, sessions, groups, documents, knowledge artifacts, structured knowledge entities, conversations, runs, events, and citations.
+- Alembic migrations cover the initial service schema, auth lifecycle, run detail refresh fields, PDF upload provenance fields, guest access state, retrieval-routing run metadata, pgvector chunk embeddings, async extraction-run progress fields, and structured knowledge entities.
 - SQLite in-memory auto-create supports offline tests.
 - Postgres/Neon readiness is documented, with external DB tests skipped unless configured.
 
@@ -107,6 +111,7 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 
 - Bilingual root README pair: `README.md`, `README.en.md`.
 - General assistant README pair under `my_agents/agents/general_assistant/`.
+- ContextForge README pair under `my_agents/agents/context_forge/`.
 - Portfolio architecture notes under `docs/portfolio-chat-service/`.
 - Personal learning logs and agent-lab notes under `docs/learning/`.
 - Simulated-agent candidate materials exist for future learning/practice ideas.
@@ -154,8 +159,8 @@ The test harness sets `MY_AGENTS_ENV_FILE=` so a developer's local `.env` file c
 - Scanned/encrypted/image-only PDFs, OCR, docx, HTML, and CSV/JSON structural parsing are intentionally unsupported.
 - Async ingestion progress is available through an additive in-process background endpoint (`POST /documents/{id}/ingest/async`) plus direct run polling; no durable external queue yet.
 - Embeddings use a provider boundary: deterministic 32-dimensional lexical-hash vectors by default, or opt-in OpenAI embeddings through `langchain-openai` when `MY_AGENTS_EMBEDDING_MODE=openai`; Postgres chunks also store a pgvector `embedding_vector` through Alembic migration `20260521_0007`.
-- Retrieval ranking is permission-first pgvector SQL vector search on Postgres with JSON cosine fallback for SQLite/tests, blended lexical score, entity expansion, and a narrow personal-document fallback; LLM query rewrite, ANN/vector index tuning, and cross-encoder reranking are still future work.
-- A dedicated RetrievalGraph is intentionally deferred until retrieval needs query rewrite, metadata planning, hybrid/vector search, reranking, context compression, or branch-level retrieval observability; hard authorization should remain in `RetrievalService` even then.
+- Retrieval ranking is permission-first ContextForge orchestration over pgvector SQL vector search on Postgres, JSON cosine fallback for SQLite/tests, blended lexical score, entity expansion, structured entity retrieval, deterministic fusion/reranking, optional cross-encoder second-stage reranking over bounded authorized candidates, and a narrow personal-document fallback; LLM query rewrite, ANN/vector index tuning, production reranker packaging, and latency evals are still future work.
+- ContextForge is the dedicated retrieval-agent service boundary. A future LangGraph `RetrievalGraph` remains deferred until role-node orchestration adds value beyond the current package-level roles; hard authorization should remain in `RetrievalService` even then.
 - Entity extraction is deterministic regex/technical-term extraction, not production NLP/LLM extraction. Canonical entity creation is conflict-safe for concurrent async ingestion: names are pre-collected in stable order and inserted with dialect-aware `ON CONFLICT DO NOTHING` to avoid Postgres unique-index lock cycles.
 
 ### Agent/product behavior
@@ -212,7 +217,7 @@ Suggested order:
 1. [done] Add file-upload metadata and text extraction boundaries.
 2. [done] Keep parsers local/deterministic first.
 3. [done] Add pgvector-backed ranking behind the existing permission filter.
-4. Add cross-encoder reranking only as a second-stage pass over top-k authorized candidates; do not let a reranker see unauthorized chunks.
+4. Cross-encoder reranking is now available only as a second-stage pass over top-k authorized candidates; next work is production packaging, latency budgets, and eval fixtures. Do not let a reranker see unauthorized chunks.
 5. Add LLM query rewrite or context compression only after measuring retrieval quality.
 6. [done] Add ingestion status transitions for queued/running/completed/failed.
 7. Add tests proving unauthorized chunks never enter reranking, context, citations, or events.
@@ -233,6 +238,9 @@ limits.
 
 | Date | Milestone | Evidence |
 | --- | --- | --- |
+| 2026-05-24 | Added ContextForge as the dedicated RAG retrieval-agent service boundary with structured entity extraction and endpoint enumeration retrieval. | `my_agents/agents/context_forge/`; `my_agents/knowledge/models.py`; `my_agents/knowledge/extraction.py`; `my_agents/knowledge/retrieval.py`; `my_agents/api/conversations/retrieval_context.py`; `my_agents/api/conversations/run_events.py`; `alembic/versions/20260524_0014_structured_knowledge_entities.py`; `tests/test_context_forge_contracts.py`; `tests/test_context_forge_structured_retrieval.py`; README pair; ContextForge README pair; `ROADMAP.md`. |
+| 2026-05-24 | Added an OCR page cap for the Tesseract PDF fallback and moved lightweight text extractors before heavyweight Docling/OCR fallback, preventing image-heavy PDFs from monopolizing synchronous upload requests. | `my_agents/knowledge/pdf_uploads.py`; `my_agents/api/documents.py`; `my_agents/settings.py`; `.env.example`; `tests/test_knowledge_ingestion.py`; `tests/test_settings.py`; README pair. |
+| 2026-05-24 | Added optional ContextForge cross-encoder reranking and Rich role-handoff debug traces behind env settings while preserving deterministic offline defaults. | `my_agents/agents/context_forge/reranking.py`; `my_agents/agents/context_forge/debug.py`; `my_agents/agents/context_forge/service.py`; `my_agents/settings.py`; `.env.example`; `tests/test_context_forge_reranking.py`; README pair; ContextForge README pair; `ROADMAP.md`. |
 | 2026-05-21 | Added a local Docker pgvector helper for pulling DockerHub pgvector/Postgres, writing ignored backend env wiring, running Alembic, and executing the gated migration smoke. | `scripts/dev_pgvector.py`; `tests/test_dev_pgvector_script.py`; `.env.example`; README pair; `docs/portfolio-chat-service/08-postgres-alembic-neon.md`. |
 | 2026-05-22 | Fixed and documented the Postgres parallel-ingestion deadlock caused by shared entity names racing on `entities.name`. | `my_agents/knowledge/extraction.py`; `tests/test_knowledge_ingestion.py`; `docs/learning/06-parallel-ingestion-postgres-deadlock.md`; `docs/portfolio-chat-service/05-knowledge-ingestion-extraction.md`; `docs/portfolio-chat-service/08-postgres-alembic-neon.md`. |
 | 2026-05-22 | Added additive async document ingestion with extraction-run progress fields, direct polling, in-process background execution, and permission-safe tests. | `my_agents/api/documents.py`; `my_agents/knowledge/extraction.py`; `my_agents/knowledge/models.py`; `my_agents/knowledge/schemas.py`; `alembic/versions/20260522_0008_async_extraction_progress.py`; `tests/test_knowledge_ingestion.py`; `tests/test_migrations.py`; README pair; `docs/portfolio-chat-service/05-knowledge-ingestion-extraction.md`. |

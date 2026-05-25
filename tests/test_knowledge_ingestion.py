@@ -26,6 +26,7 @@ from my_agents.knowledge.models import (
     EntityRelationshipModel,
     ExtractionRunModel,
     KnowledgeBaseModel,
+    StructuredKnowledgeEntityModel,
 )
 from my_agents.knowledge.pdf_uploads import PdfUploadError, parse_uploaded_pdf
 from my_agents.persistence.database import get_database_session
@@ -654,6 +655,8 @@ def test_pdf_parser_removes_postgres_unsafe_nul_bytes() -> None:
 
 def test_pdf_parser_uses_docling_after_pymupdf_quality_failure(monkeypatch) -> None:  # noqa: ANN001
     monkeypatch.setattr(pdf_uploads_module, "_extract_page_texts_with_pymupdf", lambda _: [])
+    monkeypatch.setattr(pdf_uploads_module, "_extract_page_texts_with_pypdf", lambda _: [])
+    monkeypatch.setattr(pdf_uploads_module, "_extract_page_texts_with_pdfplumber", lambda _: [])
     monkeypatch.setattr(
         pdf_uploads_module,
         "_extract_page_texts_with_docling",
@@ -697,6 +700,8 @@ def test_docling_extractor_forces_cpu_accelerator(monkeypatch) -> None:  # noqa:
         "_extract_page_texts_with_pymupdf",
         lambda _: [],
     )
+    monkeypatch.setattr(pdf_uploads_module, "_extract_page_texts_with_pypdf", lambda _: [])
+    monkeypatch.setattr(pdf_uploads_module, "_extract_page_texts_with_pdfplumber", lambda _: [])
     monkeypatch.setattr(
         "docling.document_converter.DocumentConverter",
         FakeConverter,
@@ -717,6 +722,8 @@ def test_docling_extractor_forces_cpu_accelerator(monkeypatch) -> None:  # noqa:
 
 def test_pdf_parser_uses_tesseract_after_docling_quality_failure(monkeypatch) -> None:  # noqa: ANN001
     monkeypatch.setattr(pdf_uploads_module, "_extract_page_texts_with_pymupdf", lambda _: [])
+    monkeypatch.setattr(pdf_uploads_module, "_extract_page_texts_with_pypdf", lambda _: [])
+    monkeypatch.setattr(pdf_uploads_module, "_extract_page_texts_with_pdfplumber", lambda _: [])
     monkeypatch.setattr(
         pdf_uploads_module,
         "_extract_page_texts_with_docling",
@@ -742,6 +749,22 @@ def test_tesseract_extractor_returns_empty_when_disabled() -> None:
     pages = pdf_uploads_module._extract_page_texts_with_tesseract(
         _text_pdf("disabled OCR fixture"),
         pdf_uploads_module.TesseractOcrConfig(enabled=False),
+    )
+
+    assert pages == []
+
+
+def test_tesseract_extractor_skips_pdfs_over_max_page_cap(monkeypatch) -> None:  # noqa: ANN001
+    monkeypatch.setattr(pdf_uploads_module.shutil, "which", lambda _: "/usr/bin/tesseract")
+    monkeypatch.setattr(
+        pdf_uploads_module,
+        "_run_tesseract_page_ocr",
+        lambda *_, **__: pytest.fail("large PDFs must not spawn per-page OCR"),
+    )
+
+    pages = pdf_uploads_module._extract_page_texts_with_tesseract(
+        _text_pdf("first page", "second page"),
+        pdf_uploads_module.TesseractOcrConfig(enabled=True, max_pages=1),
     )
 
     assert pages == []
@@ -990,7 +1013,7 @@ def test_owner_can_delete_uploaded_pdf_and_cleanup_ingestion_artifacts(monkeypat
         files={
             "file": (
                 "delete-me.pdf",
-                _text_pdf("Delete Cleanup PDF mentions FastAPI and LangGraph."),
+                _text_pdf("Delete Cleanup PDF mentions FastAPI and GET /cleanup."),
                 "application/pdf",
             )
         },
@@ -1029,6 +1052,11 @@ def test_owner_can_delete_uploaded_pdf_and_cleanup_ingestion_artifacts(monkeypat
         select(EntityRelationshipModel).where(EntityRelationshipModel.document_id == document_id)
     )
     assert _database_rows(
+        select(StructuredKnowledgeEntityModel).where(
+            StructuredKnowledgeEntityModel.document_id == document_id
+        )
+    )
+    assert _database_rows(
         select(DocumentPermissionModel).where(DocumentPermissionModel.document_id == document_id)
     )
     assert _database_rows(select(CitationModel).where(CitationModel.document_id == document_id))
@@ -1060,6 +1088,14 @@ def test_owner_can_delete_uploaded_pdf_and_cleanup_ingestion_artifacts(monkeypat
         _database_rows(
             select(EntityRelationshipModel).where(
                 EntityRelationshipModel.document_id == document_id
+            )
+        )
+        == []
+    )
+    assert (
+        _database_rows(
+            select(StructuredKnowledgeEntityModel).where(
+                StructuredKnowledgeEntityModel.document_id == document_id
             )
         )
         == []

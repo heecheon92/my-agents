@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Literal
 
@@ -118,8 +119,11 @@ def route_retrieval(
     normalized = _normalize(query)
     document_scope = _document_scope(normalized)
 
-    if _has_any(normalized, _AMBIGUOUS_DOCUMENT_REFERENCES) and (
-        authorized_document_count is not None and authorized_document_count > 1
+    if (
+        _has_any(normalized, _AMBIGUOUS_DOCUMENT_REFERENCES)
+        and authorized_document_count is not None
+        and authorized_document_count > 1
+        and not _has_specific_document_reference(query)
     ):
         return RetrievalRoutingDecision(
             route="clarification_required",
@@ -198,6 +202,11 @@ def _clean_query(message: str) -> str:
 
 def _normalize(value: str) -> str:
     return value.casefold()
+
+
+def _has_specific_document_reference(value: str) -> bool:
+    """Detect filename/code-like handles that can disambiguate "this document" prompts."""
+    return bool(re.search(r"\b(?=[A-Za-z0-9._-]*[0-9._-])[A-Za-z0-9][A-Za-z0-9._-]{4,}\b", value))
 
 
 def _has_any(value: str, hints: tuple[str, ...]) -> bool:

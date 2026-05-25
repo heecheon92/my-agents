@@ -14,7 +14,7 @@ from my_agents.agents.general_assistant.responders import ResponseProviderConfig
 from my_agents.api.assistant import GraphRunner
 from my_agents.api.conversations.retrieval_context import (
     chunks_used_for_answer,
-    clarification_reply,
+    clarification_request,
     compose_rag_reply,
     graph_input_for_run,
     log_retrieval_context_for_llm,
@@ -40,7 +40,11 @@ from my_agents.conversations.models import (
     MessageRole,
     RunStatus,
 )
-from my_agents.conversations.schemas import ConversationRunResponse, ConversationRunWarning
+from my_agents.conversations.schemas import (
+    ConversationClarificationRequest,
+    ConversationRunResponse,
+    ConversationRunWarning,
+)
 from my_agents.knowledge.auth import KnowledgeBaseSelectionContext
 from my_agents.knowledge.models import CitationModel
 from my_agents.knowledge.retrieval import RetrievedChunk
@@ -65,6 +69,7 @@ def complete_sync_conversation_run(
     retrieval_context = prepare_retrieval_context(
         db=db,
         user_id=user_id,
+        conversation_id=conversation_id,
         message=prompt,
         messages=messages,
         selection_context=selection_context,
@@ -86,21 +91,24 @@ def complete_sync_conversation_run(
             retrieval_decision=retrieval_context.decision,
             answer_mode=retrieval_context.answer_mode,
             selection_context=retrieval_context.knowledge_base_selection,
+            retrieval_evidence=retrieval_context.retrieval_evidence,
         ),
     )
     if retrieval_context.decision.route == "clarification_required":
         route = classify_messages(messages)
+        clarification = clarification_request(retrieval_context.decision)
         return persist_completed_run(
             db=db,
             run_id=run.id,
             conversation_id=conversation_id,
             retrieved_chunks=[],
             route=route,
-            reply=clarification_reply(retrieval_context.decision),
+            reply="",
             retrieval_decision=retrieval_context.decision,
             answer_mode=retrieval_context.answer_mode,
             selection_context=retrieval_context.knowledge_base_selection,
             warnings=warnings,
+            clarification=clarification,
         )
     graph_input = graph_input_for_run(
         messages=messages,
@@ -178,6 +186,7 @@ def persist_completed_run(
     answer_mode: AnswerMode,
     selection_context: KnowledgeBaseSelectionContext,
     warnings: list[ConversationRunWarning] | None = None,
+    clarification: ConversationClarificationRequest | None = None,
 ) -> ConversationRunResponse:
     assistant_message = MessageModel(
         conversation_id=conversation_id,
@@ -218,6 +227,7 @@ def persist_completed_run(
             retrieval_decision=retrieval_decision,
             answer_mode=answer_mode,
             selection_context=selection_context,
+            clarification=clarification,
         ),
         commit=False,
     )
@@ -235,6 +245,7 @@ def persist_completed_run(
         citations=citations,
         retrieved_chunks=retrieved_chunks,
         warnings=warnings or [],
+        clarification=clarification,
     )
 
 

@@ -19,7 +19,7 @@ from my_agents.api.conversations.auth import (
 from my_agents.api.conversations.graph_streaming import fallback_answer_deltas, stream_graph_items
 from my_agents.api.conversations.retrieval_context import (
     chunks_used_for_answer,
-    clarification_reply,
+    clarification_request,
     compose_rag_reply,
     graph_input_for_run,
     log_retrieval_context_for_llm,
@@ -161,6 +161,7 @@ def conversation_run_events(
     retrieval_context = prepare_retrieval_context(
         db=db,
         user_id=user_id,
+        conversation_id=conversation_id,
         message=request.message,
         messages=messages,
         selection_context=selection_context,
@@ -178,6 +179,7 @@ def conversation_run_events(
         retrieval_decision=retrieval_context.decision,
         answer_mode=retrieval_context.answer_mode,
         selection_context=retrieval_context.knowledge_base_selection,
+        retrieval_evidence=retrieval_context.retrieval_evidence,
     )
     append_run_event(db, run.id, AgentEventType.RETRIEVAL_COMPLETED, retrieval_payload)
     yield sse_event(AgentEventType.RETRIEVAL_COMPLETED.value, retrieval_payload)
@@ -187,16 +189,18 @@ def conversation_run_events(
 
     if retrieval_context.decision.route == "clarification_required":
         route = classify_messages(messages)
+        clarification = clarification_request(retrieval_context.decision)
         response = persist_completed_run(
             db=db,
             run_id=run.id,
             conversation_id=conversation_id,
             retrieved_chunks=[],
             route=route,
-            reply=clarification_reply(retrieval_context.decision),
+            reply="",
             retrieval_decision=retrieval_context.decision,
             answer_mode=retrieval_context.answer_mode,
             selection_context=retrieval_context.knowledge_base_selection,
+            clarification=clarification,
         )
         yield sse_event(
             AgentEventType.ANSWER_COMPOSED.value,
@@ -206,6 +210,7 @@ def conversation_run_events(
                 retrieval_decision=retrieval_context.decision,
                 answer_mode=retrieval_context.answer_mode,
                 selection_context=retrieval_context.knowledge_base_selection,
+                clarification=clarification,
             ),
         )
         yield sse_event("run_completed", response.model_dump(mode="json"))

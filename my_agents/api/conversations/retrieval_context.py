@@ -4,20 +4,20 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from time import perf_counter
 
 from langchain_core.messages import BaseMessage
 from rich import print as rich_print
 from sqlalchemy.orm import Session
 
+from my_agents.agents.context_forge import ContextForgeService
+from my_agents.agents.context_forge.contracts import ContextForgeRequest, RetrievalEvidence
+from my_agents.conversations.schemas import ConversationClarificationRequest
 from my_agents.knowledge.auth import KnowledgeBaseSelectionContext
-from my_agents.knowledge.retrieval import RetrievalService, RetrievedChunk
+from my_agents.knowledge.retrieval import RetrievedChunk
 from my_agents.knowledge.routing import (
     AnswerMode,
     RetrievalRoutingDecision,
-    answer_mode_for_route,
     is_relevant_retrieval_result,
-    route_retrieval,
 )
 
 logger = logging.getLogger(__name__)
@@ -32,59 +32,34 @@ class ConversationRetrievalContext:
     retrieved_chunks: list[RetrievedChunk]
     retrieval_latency_ms: float
     knowledge_base_selection: KnowledgeBaseSelectionContext
+    retrieval_evidence: RetrievalEvidence | None = None
 
 
 def prepare_retrieval_context(
     *,
     db: Session,
     user_id: str,
+    conversation_id: str,
     message: str,
     messages: list[BaseMessage],
     selection_context: KnowledgeBaseSelectionContext,
 ) -> ConversationRetrievalContext:
-    service = RetrievalService(db)
-    selected_ids = selection_context.retrieval_knowledge_base_ids
-    document_count = service.authorized_document_count(
-        user_id=user_id,
-        knowledge_base_ids=selected_ids,
-    )
-    decision = route_retrieval(
-        message=message,
-        history=messages,
-        authorized_document_count=document_count,
-    )
-    if decision.route in {"no_retrieval", "clarification_required"}:
-        return ConversationRetrievalContext(
-            decision=decision,
-            answer_mode=answer_mode_for_route(decision=decision, relevant_context_found=False),
-            retrieved_chunks=[],
-            retrieval_latency_ms=0.0,
-            knowledge_base_selection=selection_context,
+    result = ContextForgeService(db).retrieve(
+        ContextForgeRequest(
+            user_id=user_id,
+            conversation_id=conversation_id,
+            query=message,
+            messages=messages,
+            selection_context=selection_context,
         )
-    retrieval_started = perf_counter()
-    retrieved_chunks = service.retrieve_scoped(
-        user_id=user_id,
-        query=decision.rewritten_query,
-        knowledge_base_ids=selected_ids,
-    )
-    retrieval_latency_ms = round((perf_counter() - retrieval_started) * 1000, 3)
-    relevant_context_found = any(
-        is_relevant_retrieval_result(
-            route=decision.route,
-            source=item.source,
-            score=item.score,
-        )
-        for item in retrieved_chunks
     )
     return ConversationRetrievalContext(
-        decision=decision,
-        answer_mode=answer_mode_for_route(
-            decision=decision,
-            relevant_context_found=relevant_context_found,
-        ),
-        retrieved_chunks=retrieved_chunks,
-        retrieval_latency_ms=retrieval_latency_ms,
+        decision=result.decision,
+        answer_mode=result.answer_mode,
+        retrieved_chunks=result.retrieved_chunks,
+        retrieval_latency_ms=result.retrieval_latency_ms,
         knowledge_base_selection=selection_context,
+        retrieval_evidence=result.evidence,
     )
 
 
@@ -191,11 +166,16 @@ def _debug_chunk_payload(item: RetrievedChunk, *, snippet_limit: int) -> dict[st
     }
 
 
-def clarification_reply(decision: RetrievalRoutingDecision) -> str:
-    return (
-        "I need one more detail before using uploaded documents: which document or file "
-        "should I use? I will only search documents you are authorized to access."
-        f" Retrieval route: `{decision.route}`."
+def clarification_request(
+    decision: RetrievalRoutingDecision,
+) -> ConversationClarificationRequest | None:
+    """Return language-neutral HITL state for routes that require user clarification."""
+    if decision.route != "clarification_required":
+        return None
+    return ConversationClarificationRequest(
+        retrieval_route=decision.route,
+        document_scope=decision.document_scope,
+        rewritten_query=decision.rewritten_query,
     )
 
 

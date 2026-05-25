@@ -196,6 +196,16 @@ MY_AGENTS_OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 # MY_AGENTS_OPENAI_EMBEDDING_DIMENSIONS=
 MY_AGENTS_EMBEDDING_BATCH_SIZE=32
 MY_AGENTS_OPENAI_EMBEDDING_TIMEOUT_SECONDS=30
+
+# ContextForge reranking은 기본적으로 deterministic/offline입니다.
+# sentence-transformers를 설치한 runtime에서만 cross_encoder로 전환합니다.
+MY_AGENTS_RERANKER_MODE=deterministic
+MY_AGENTS_CROSS_ENCODER_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2
+MY_AGENTS_CROSS_ENCODER_BATCH_SIZE=16
+# MY_AGENTS_CROSS_ENCODER_DEVICE=mps
+
+# 민감한 로컬 디버그 전용: ContextForge 역할 handoff와 LLM에 전달되는 검색 context를 Rich print로 출력합니다.
+MY_AGENTS_DEBUG_KNOWLEDGE_CONTEXT_LOGGING=false
 ```
 
 포트폴리오용 채팅 서비스 로드맵을 위한 서비스 기반 설정도 포함되어 있습니다.
@@ -437,7 +447,8 @@ password reset request/confirm endpoint, 그리고 signup/login/verification-tok
 permission-aware retrieval, JSON-backed semantic embedding ranking, citation-backed answer
 composition, structured agent activity event, JSON/SQLite fallback을 유지하는 Postgres pgvector
 vector search, SSE conversation-run stream의 얇은 end-to-end 흐름은 구현되어 있습니다.
-production parser, ANN/vector index tuning, cross-encoder reranking은 이후 마일스톤입니다.
+production parser, ANN/vector index tuning, retrieval-quality eval은 이후 마일스톤입니다.
+Cross-encoder reranking은 optional ContextForge mode로 제공되지만 기본값은 offline deterministic reranker입니다.
 
 구현된 auth endpoint:
 
@@ -560,6 +571,10 @@ conversation history와 principal/conversation context를 현재 LangGraph assis
 검색이 필요한 경우에만 `RetrievalService`가 권한이 확인된 document chunk를 검색하고,
 entity mention으로 연결된 권한 내 관련 chunk를 확장합니다. 응답은 `answer_mode`
 (`general_knowledge`, `document_grounded`, `mixed`)와 citation을 함께 저장/반환합니다.
+`clarification_required`는 특정 언어의 정적 assistant 문장을 만들지 않고,
+`reply: ""`와 `clarification` 객체(`message_key`, `reason_code`, `input_slot`)를 반환합니다.
+클라이언트/사람이 이 구조화된 상태를 현지화해 사용자에게 보여주고, 사용자가 다음 turn에서
+문서/파일 참조를 지정하는 human-in-the-loop 흐름을 책임집니다.
 기존 `/assistant/chat` endpoint는 legacy/dev smoke surface로 남아 있으며, personal/group
 KB 접근을 위한 제품용 chat surface가 되어서는 안 됩니다.
 
@@ -571,6 +586,8 @@ KB 접근을 위한 제품용 chat surface가 되어서는 안 됩니다.
 `run_completed` event를 보냅니다. stream 시작 후 graph 실행이 실패하면 failed run을
 저장하고 raw prompt나 provider exception text를 노출하지 않는 `run_failed` 및
 `run_error` event를 보냅니다.
+`clarification_required` stream은 `graph_invoked`나 `answer_delta` 없이 `answer_composed`와
+`run_completed`에 같은 `clarification` 객체를 담아 완료됩니다.
 프론트엔드는 `GET /conversations/{conversation_id}/messages`로 서버가 저장한 transcript를
 권한 확인 후 다시 읽고, `GET /conversations/{conversation_id}/runs`로 completed/failed/cancelled
 run history를 확인할 수 있습니다.
@@ -649,9 +666,8 @@ retrieved context를 통해 노출합니다.
 
 업로드 경로는 5 MiB 이하의 `.pdf`, `.md`,
 `.markdown`, `.txt` 파일을 받습니다. PDF는 classify → route → extract → clean → validate 흐름으로 처리합니다.
-`application/pdf`는 먼저 PyMuPDF(`pymupdf`)로 빠른 page text를 추출합니다. PyMuPDF 결과가 비어 있거나 품질 검사를 통과하지 못하면 Docling(`docling`)이 구조화된 Markdown/table 후보를 추출하는 primary fallback이 됩니다.
-그 뒤에도 실패하면 Tesseract OCR fallback이 PyMuPDF로 page image를 렌더링한 뒤 `tesseract -l kor+eng --psm 6` 형태로 image-heavy PDF를 OCR합니다. OCR 뒤에도 실패하면 기존 `pypdf`, MIT 라이선스 `pdfplumber`, 단순 literal/FlateDecode deterministic stream fallback 순서로 호환성을 유지합니다. 모든 PDF 추출 결과는 PostgreSQL `text`에 저장하기 전에 NUL/control byte, 반복 locale metadata, 알려진 font boilerplate, encoding garbage 검사를 통과해야 합니다.
-품질 검사를 통과하지 못한 PDF나 Docling이 `<!-- image -->` placeholder/bullet-only 구조만 반환하는 image-heavy PDF는 DB insert 500 또는 빈 chunk 저장 대신 안전한 `400` upload error로 거부됩니다. Docling은 Apple MPS의 float64 미지원 crash를 피하기 위해 기본값이 CPU accelerator, OCR off, 30초 document timeout입니다. 이 값은 `MY_AGENTS_DOCLING_ACCELERATOR`(`cpu|cuda|auto|mps|xpu`), `MY_AGENTS_DOCLING_OCR_ENABLED`, `MY_AGENTS_DOCLING_TIMEOUT_SECONDS`, `MY_AGENTS_DOCLING_THREADS`로 조정할 수 있습니다. GPU Docker production에서는 CUDA-compatible image/runtime을 준비한 뒤 `MY_AGENTS_DOCLING_ACCELERATOR=cuda`를 명시하세요. Tesseract fallback은 `MY_AGENTS_TESSERACT_ENABLED`, `MY_AGENTS_TESSERACT_LANGUAGES`, `MY_AGENTS_TESSERACT_PSM`, `MY_AGENTS_TESSERACT_RENDER_SCALE`, `MY_AGENTS_TESSERACT_TIMEOUT_SECONDS`로 조정하며 Docker image에는 `tesseract-ocr`, `tesseract-ocr-kor`, `tesseract-ocr-eng` 같은 system package가 필요합니다. PyMuPDF는 AGPL/commercial license 검토가 필요한 의존성이고, 이 프로젝트에서는 PDF extraction milestone을 위해 명시적으로 도입했습니다.
+`application/pdf`는 먼저 PyMuPDF(`pymupdf`)로 빠른 page text를 추출합니다. PyMuPDF 결과가 비어 있거나 품질 검사를 통과하지 못하면 가벼운 `pypdf`, MIT 라이선스 `pdfplumber` fallback을 먼저 시도하고, 그래도 실패하면 Docling(`docling`)으로 구조화된 Markdown/table 후보를 추출합니다. 마지막 OCR fallback은 PyMuPDF로 page image를 렌더링한 뒤 `tesseract -l kor+eng --psm 6` 형태로 image-heavy PDF를 OCR합니다. OCR 뒤에도 실패하면 단순 literal/FlateDecode deterministic stream fallback 순서로 호환성을 유지합니다. 모든 PDF 추출 결과는 PostgreSQL `text`에 저장하기 전에 NUL/control byte, 반복 locale metadata, 알려진 font boilerplate, encoding garbage 검사를 통과해야 합니다.
+품질 검사를 통과하지 못한 PDF나 Docling이 `<!-- image -->` placeholder/bullet-only 구조만 반환하는 image-heavy PDF는 DB insert 500 또는 빈 chunk 저장 대신 안전한 `400` upload error로 거부됩니다. Docling은 Apple MPS의 float64 미지원 crash를 피하기 위해 기본값이 CPU accelerator, OCR off, 30초 document timeout입니다. 이 값은 `MY_AGENTS_DOCLING_ACCELERATOR`(`cpu|cuda|auto|mps|xpu`), `MY_AGENTS_DOCLING_OCR_ENABLED`, `MY_AGENTS_DOCLING_TIMEOUT_SECONDS`, `MY_AGENTS_DOCLING_THREADS`로 조정할 수 있습니다. GPU Docker production에서는 CUDA-compatible image/runtime을 준비한 뒤 `MY_AGENTS_DOCLING_ACCELERATOR=cuda`를 명시하세요. Tesseract fallback은 `MY_AGENTS_TESSERACT_ENABLED`, `MY_AGENTS_TESSERACT_LANGUAGES`, `MY_AGENTS_TESSERACT_PSM`, `MY_AGENTS_TESSERACT_RENDER_SCALE`, `MY_AGENTS_TESSERACT_TIMEOUT_SECONDS`, `MY_AGENTS_TESSERACT_MAX_PAGES`로 조정합니다. 기본 OCR cap은 3 pages라서 image-heavy clinical protocol 같은 큰 PDF가 synchronous upload request를 장시간 점유하지 못하고 안전하게 fallback/400으로 종료됩니다. Docker image에는 `tesseract-ocr`, `tesseract-ocr-kor`, `tesseract-ocr-eng` 같은 system package가 필요합니다. PyMuPDF는 AGPL/commercial license 검토가 필요한 의존성이고, 이 프로젝트에서는 PDF extraction milestone을 위해 명시적으로 도입했습니다.
 Markdown/plain text는 UTF-8 텍스트로 decoding하며 구조적 Markdown parsing은 아직 하지 않습니다. 업로드 metadata
 (`source_filename`, content type, byte size, SHA-256, page count, parser name)는 document에
 저장되고, ingestion chunk에는 `source_page`가 기록되어 이후 citation provenance에 사용할 수
@@ -664,21 +680,24 @@ retrieval이 권한 필터가 적용된 SQL vector search를 먼저 수행하고
 `MY_AGENTS_EMBEDDING_MODE=openai`일 때는 `langchain-openai`/OpenAI embedding
 (`text-embedding-3-small` 등)을 사용합니다. Docling dependency는 OCR 기능을 포함하지만 현재 upload contract는 request-time local extraction만 사용하므로 scanned/encrypted/image-only PDF,
 복잡한 multi-column/layout 복원의 품질 보장, DOCX, HTML, CSV/JSON structural parsing은 아직 지원하지 않으며, OpenAI extraction 호출,
-ANN/vector index tuning, cross-encoder reranking은 아직 수행하지 않습니다.
+ANN/vector index tuning은 아직 수행하지 않습니다. Cross-encoder reranking은 `MY_AGENTS_RERANKER_MODE=cross_encoder`로 켜는 optional second-stage seam으로 제공되며, 기본 offline/test 경로는 deterministic reranker입니다.
 
 
 ### Permission-aware RAG 및 citation 기반 응답
 
-제품용 conversation run에는 retrieval routing이 포함된 permission-aware RAG slice가 포함되어 있습니다.
+제품용 conversation run에는 `my_agents/agents/context_forge/` 아래의 전용 retrieval-agent service boundary인 **ContextForge**를 통한 permission-aware RAG slice가 포함되어 있습니다.
 
 1. `my_agents/knowledge/routing.py`가 질문을 `no_retrieval`, `retrieval_required`,
    `retrieval_optional`, `clarification_required`로 분류합니다.
-2. `no_retrieval`은 RetrievalService를 호출하지 않고 `answer_mode=general_knowledge`로 답합니다.
-3. `retrieval_required`/`retrieval_optional`만 `RetrievalService`를 호출하며, 서비스는 현재 사용자에게 읽기 권한이 있는 document chunk 후보만 먼저 선택합니다.
-4. 설정된 provider로 query embedding을 만들고, Postgres에서는 권한이 확인된 row set 안에서 pgvector SQL vector search로 top-k 후보를 먼저 좁힙니다. SQLite/tests 또는 pgvector 후보가 없으면 기존 JSON-backed cosine similarity fallback을 사용합니다. 최종 후보는 lexical score와 섞어 ranking하며, personal-document 질문은 최신 권한 내 chunk fallback을 사용할 수 있습니다.
-5. 직접 검색된 chunk의 entity mention을 기준으로, 같은 entity를 공유하는 권한 내 chunk를 graph expansion context로 추가합니다.
-6. optional 검색 결과가 관련 있으면 `answer_mode=mixed`, required 검색 결과가 관련 있으면 `answer_mode=document_grounded`가 됩니다. 관련 context가 없으면 일반 지식 답변으로 남고 citation을 만들지 않습니다.
-7. 권한이 확인된 compact context payload만 `general_assistant` graph/provider prompt에 전달하고, 응답 payload에는 `retrieval_route`, `answer_mode`, `document_scope`, `citations`를 함께 반환합니다.
+2. ContextForge의 Query Cartographer는 “이 문서의 API endpoints를 나열해줘” 같은 structured enumeration 질문을 intent-aware retrieval plan으로 승격합니다.
+3. `clarification_required`는 static English reply 대신 `clarification` payload를 반환하고 graph/provider 호출을 중단합니다.
+4. `no_retrieval`은 candidate retrieval을 건너뛰고 `answer_mode=general_knowledge`로 답합니다.
+5. `retrieval_required`/`retrieval_optional`만 후보를 수집하며, low-level `RetrievalService`는 여전히 현재 사용자에게 읽기 권한이 있는 document chunk만 먼저 선택합니다.
+6. Candidate Scouts는 사용자가 `NCT06159946_Prot_000`처럼 파일명/제목으로 문서를 부르는 경우를 위해 승인된 document `title`/`source_filename` metadata도 검색합니다. 파일명 자체가 본문에 없어도 matching document의 chunk를 후보로 올립니다.
+7. Candidate Scouts는 endpoint/config/command/error/table 질문을 위해 pgvector/JSON vector search, lexical scoring, entity expansion, structured entity retrieval을 결합합니다.
+8. ContextForge는 후보를 fusion하고 기본 deterministic rerank 또는 optional cross-encoder rerank 후 명시적 budget 안에서 high-recall context를 packing하며, intent, reranker, candidate count, injected count, rejected count, structured entity type, latency 같은 redacted evidence를 이벤트로 남깁니다. `MY_AGENTS_DEBUG_KNOWLEDGE_CONTEXT_LOGGING=true`인 로컬 디버그 세션에서는 각 역할 handoff와 assistant graph로 전달되는 context payload도 Rich print로 볼 수 있습니다.
+9. optional 검색 결과가 관련 있으면 `answer_mode=mixed`, required 검색 결과가 관련 있으면 `answer_mode=document_grounded`가 됩니다. 관련 context가 없으면 일반 지식 답변으로 남고 citation을 만들지 않습니다.
+10. 권한이 확인된 compact context payload만 `general_assistant` graph/provider prompt에 전달하고, 응답 payload에는 `retrieval_route`, `answer_mode`, `document_scope`, `citations`를 함께 반환합니다.
 
 예시 응답 일부:
 

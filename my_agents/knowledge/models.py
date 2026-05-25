@@ -56,6 +56,16 @@ class KnowledgePublishRequestStatus(StrEnum):
     REJECTED = "rejected"
 
 
+class StructuredKnowledgeEntityType(StrEnum):
+    """Typed document facts that support structured retrieval intents."""
+
+    API_ENDPOINT = "api_endpoint"
+    CONFIG_KEY = "config_key"
+    COMMAND = "command"
+    ERROR_CODE = "error_code"
+    DATABASE_TABLE = "database_table"
+
+
 class KnowledgeBaseModel(Base):
     """Personal or group knowledge-base container."""
 
@@ -257,6 +267,31 @@ class EntityRelationshipModel(Base):
         ForeignKey("extraction_runs.id"), nullable=False, index=True
     )
     confidence: Mapped[str] = mapped_column(String(20), default="deterministic", nullable=False)
+
+
+class StructuredKnowledgeEntityModel(Base):
+    """Typed extracted fact with source chunk provenance for enumeration retrieval."""
+
+    __tablename__ = "structured_knowledge_entities"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    document_id: Mapped[str] = mapped_column(ForeignKey("documents.id"), nullable=False, index=True)
+    chunk_id: Mapped[str] = mapped_column(
+        ForeignKey("document_chunks.id"), nullable=False, index=True
+    )
+    extraction_run_id: Mapped[str] = mapped_column(
+        ForeignKey("extraction_runs.id"), nullable=False, index=True
+    )
+    entity_type: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    label: Mapped[str] = mapped_column(String(240), nullable=False, index=True)
+    attributes_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
+    source_page: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    start_offset: Mapped[int] = mapped_column(Integer, nullable=False)
+    end_offset: Mapped[int] = mapped_column(Integer, nullable=False)
+    confidence: Mapped[str] = mapped_column(String(40), default="deterministic", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
 
 
 class CitationModel(Base):

@@ -1,6 +1,6 @@
 ---
 created: 2026-05-17
-updated: 2026-05-21
+updated: 2026-05-25
 status: active
 topics:
   - rag
@@ -9,6 +9,7 @@ topics:
   - graphrag
 related_code:
   - my_agents/api/conversations.py
+  - my_agents/api/conversations/retrieval_context.py
   - my_agents/knowledge/retrieval.py
   - my_agents/knowledge/routing.py
   - my_agents/knowledge/models.py
@@ -32,6 +33,10 @@ The current implementation is intentionally deterministic so tests stay offline:
 - direct retrieval uses term matching over authorized chunks only when routing calls for retrieval;
 - graph expansion uses extracted entity mentions to add related authorized chunks;
 - answer mode is explicit: `general_knowledge`, `document_grounded`, or `mixed`;
+- ambiguous document references return a language-neutral `clarification` contract for
+  human-in-the-loop localization instead of hard-coded English prose;
+- filename/title-like document references are matched against authorized document metadata
+  before body-only retrieval, so visible upload names can resolve even when absent from text;
 - citations are stored against the `AgentRunModel` only when retrieved chunks are actually used;
 - the response payload returns routing metadata plus citation IDs, document IDs, chunk IDs, and snippets.
 
@@ -50,12 +55,17 @@ sequenceDiagram
     API->>Auth: resolve current principal
     API->>DB: persist user message
     API->>API: route no/required/optional/clarification
-    API->>R: retrieve(user_id, query) only for required/optional
-    R->>DB: select chunks from authorized documents only
-    R->>DB: expand through authorized entity mentions
-    API->>G: invoke with server-owned messages, answer_mode, and authorized context
-    API->>DB: persist assistant message, run, citations
-    API-->>UI: reply + citations
+    alt clarification required
+        API->>DB: persist empty assistant message + clarification run state
+        API-->>UI: reply "" + clarification object for localized human prompt
+    else retrieval/answer path
+        API->>R: retrieve(user_id, query) only for required/optional
+        R->>DB: select chunks from authorized documents only
+        R->>DB: expand through authorized entity mentions
+        API->>G: invoke with server-owned messages, answer_mode, and authorized context
+        API->>DB: persist assistant message, run, citations
+        API-->>UI: reply + citations
+    end
 ```
 
 ## Why permission filtering happens first
@@ -87,7 +97,7 @@ an entity with an authorized chunk.
 ## Current limitations
 
 - Retrieval routing is deterministic; Postgres ranking now uses pgvector SQL vector search after permission filtering, with JSON-backed cosine similarity as the SQLite/test fallback.
-- LLM query planning, full-text fusion, ANN/vector index tuning, and cross-encoder reranking are still future work.
+- LLM query planning, full-text fusion, and ANN/vector index tuning are still future work.
 - The reply composition is a thin service-layer scaffold, not a polished answer synthesis prompt.
 - Citations include snippets but not character offsets in the API response yet.
 - Streaming exists, but frontend display of retrieval route/answer mode still belongs to the separate frontend repository.
@@ -112,7 +122,8 @@ justify graph orchestration, for example:
 - cross-encoder reranking as a second-stage pass over top-k already-authorized candidates;
 - reranking;
 - context compression/packaging;
-- clarification/fallback branches that need their own observability.
+- richer clarification options, such as returning authorized document choices after a
+  separate product/privacy review.
 
 Even then, hard authorization should remain in `RetrievalService`, not in graph prompts,
 agent reasoning, vector-store configuration, or cross-encoder prompts. A future shape can be:
@@ -140,6 +151,8 @@ flowchart LR
 
 ## Revision history
 
+- 2026-05-25: Clarification-required runs now return structured human-in-the-loop state instead of deterministic English text.
+- 2026-05-25: Added authorized title/source-filename metadata matching for filename-only document references.
 - 2026-05-21: Added deterministic retrieval routing, answer modes, clarification route, and response/event metadata.
 - 2026-05-17: Updated limitations after adding structured run events in the next slice.
 - 2026-05-17: Created after adding thin permission-aware retrieval, graph expansion, and citations.

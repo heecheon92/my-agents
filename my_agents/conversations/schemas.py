@@ -52,6 +52,23 @@ class ConversationRunWarning(BaseModel):
     missing_source_filenames: list[str] = Field(default_factory=list)
 
 
+class ConversationClarificationRequest(BaseModel):
+    """Language-neutral clarification contract for human-in-the-loop replies."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    required: Literal[True] = True
+    kind: Literal["document_scope"] = "document_scope"
+    reason_code: Literal["ambiguous_document_reference"] = "ambiguous_document_reference"
+    message_key: Literal["clarification.document_scope.select_source"] = (
+        "clarification.document_scope.select_source"
+    )
+    input_slot: Literal["document_reference"] = "document_reference"
+    retrieval_route: RetrievalRoute
+    document_scope: DocumentScope
+    rewritten_query: str | None = None
+
+
 class ConversationRunRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -88,6 +105,7 @@ class ConversationRunResponse(BaseModel):
     resolved_knowledge_base_count: int = 0
     citations: list[CitationResponse] = Field(default_factory=list)
     warnings: list[ConversationRunWarning] = Field(default_factory=list)
+    clarification: ConversationClarificationRequest | None = None
 
 
 class ConversationRunCancelResponse(BaseModel):

@@ -17,6 +17,7 @@ DeploymentEnvironment = Literal["local", "preview", "production"]
 AuthEmailMode = Literal["local", "smtp"]
 EmbeddingMode = Literal["deterministic", "openai"]
 DoclingAccelerator = Literal["auto", "cpu", "cuda", "mps", "xpu"]
+RerankerMode = Literal["deterministic", "cross_encoder"]
 
 
 class Settings(BaseSettings):
@@ -87,6 +88,25 @@ class Settings(BaseSettings):
         le=1000,
         validation_alias=AliasChoices("MY_AGENTS_EMBEDDING_BATCH_SIZE"),
     )
+    reranker_mode: RerankerMode = Field(
+        default="deterministic",
+        validation_alias=AliasChoices("MY_AGENTS_RERANKER_MODE"),
+    )
+    cross_encoder_model: str = Field(
+        default="cross-encoder/ms-marco-MiniLM-L-6-v2",
+        min_length=1,
+        validation_alias=AliasChoices("MY_AGENTS_CROSS_ENCODER_MODEL"),
+    )
+    cross_encoder_batch_size: int = Field(
+        default=16,
+        ge=1,
+        le=128,
+        validation_alias=AliasChoices("MY_AGENTS_CROSS_ENCODER_BATCH_SIZE"),
+    )
+    cross_encoder_device: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("MY_AGENTS_CROSS_ENCODER_DEVICE"),
+    )
     openai_embedding_timeout_seconds: float = Field(
         default=30.0,
         gt=0,
@@ -139,6 +159,12 @@ class Settings(BaseSettings):
         gt=0,
         le=120,
         validation_alias=AliasChoices("MY_AGENTS_TESSERACT_TIMEOUT_SECONDS"),
+    )
+    tesseract_max_pages: int = Field(
+        default=3,
+        ge=0,
+        le=20,
+        validation_alias=AliasChoices("MY_AGENTS_TESSERACT_MAX_PAGES"),
     )
     database_url: str = Field(
         default="sqlite+pysqlite:///:memory:",
@@ -285,13 +311,13 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("MY_AGENTS_DEBUG_KNOWLEDGE_CONTEXT_LOGGING"),
     )
 
-    @field_validator("openai_model", "openai_embedding_model")
+    @field_validator("openai_model", "openai_embedding_model", "cross_encoder_model")
     @classmethod
-    def openai_model_must_not_be_blank(cls, value: str) -> str:
+    def model_name_must_not_be_blank(cls, value: str) -> str:
         """Keep model selection env-driven without accepting empty model slugs."""
         stripped = value.strip()
         if not stripped:
-            raise ValueError("MY_AGENTS_OPENAI_MODEL must not be blank")
+            raise ValueError("model selection settings must not be blank")
         return stripped
 
     @field_validator("openai_api_key", mode="before")
@@ -358,6 +384,7 @@ class Settings(BaseSettings):
         "auth_smtp_username",
         "auth_smtp_password",
         "auth_smtp_from_email",
+        "cross_encoder_device",
         mode="before",
     )
     @classmethod

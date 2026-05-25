@@ -44,6 +44,7 @@ def configure_debug_logging(settings: Settings) -> None:
     if not settings.debug_knowledge_context_logging:
         return
     logging.getLogger("my_agents.api.conversations.retrieval_context").setLevel(logging.DEBUG)
+    logging.getLogger("my_agents.agents.context_forge.debug").setLevel(logging.DEBUG)
 
 
 __all__ = ["GraphRunner", "create_app", "get_graph_runner"]

@@ -98,7 +98,22 @@ the graph is still running. Deterministic/local graph spies can also emit multip
 so frontend tests can verify incremental rendering without real credentials.
 
 
-`retrieval_completed`, `graph_invoked`, and `answer_composed` payloads include redacted routing metadata: `retrieval_route`, `answer_mode`, and `document_scope`. Retrieval counts use source names such as `semantic_vector_count`, `keyword_match_count`, `graph_expansion_count`, and `fallback_count`. A `clarification_required` route can complete without `graph_invoked` because the backend asks the user which document to use instead of broadly searching all accessible documents.
+`retrieval_completed`, `graph_invoked`, and `answer_composed` payloads include redacted routing metadata: `retrieval_route`, `answer_mode`, and `document_scope`. Retrieval counts use source names such as `semantic_vector_count`, `keyword_match_count`, `document_metadata_count`, `graph_expansion_count`, and `fallback_count`. A `clarification_required` route completes without `graph_invoked` or `answer_delta`; instead, `answer_composed` and `run_completed` carry `reply: ""` plus a language-neutral `clarification` object such as:
+
+```json
+{
+  "required": true,
+  "kind": "document_scope",
+  "reason_code": "ambiguous_document_reference",
+  "message_key": "clarification.document_scope.select_source",
+  "input_slot": "document_reference",
+  "retrieval_route": "clarification_required",
+  "document_scope": "unknown",
+  "rewritten_query": "..."
+}
+```
+
+Frontend clients should localize `message_key` and collect the missing document/file reference from the human user rather than rendering backend-authored English prose.
 
 The final `run_completed` event contains the same response shape as
 `POST /conversations/{conversation_id}/runs`:

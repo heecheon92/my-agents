@@ -288,8 +288,78 @@ def test_ambiguous_document_scope_returns_clarification_without_graph(monkeypatc
     assert payload["retrieval_route"] == "clarification_required"
     assert payload["answer_mode"] == "general_knowledge"
     assert payload["citations"] == []
-    assert "which document or file" in payload["reply"]
+    assert payload["reply"] == ""
+    assert payload["clarification"] == {
+        "required": True,
+        "kind": "document_scope",
+        "reason_code": "ambiguous_document_reference",
+        "message_key": "clarification.document_scope.select_source",
+        "input_slot": "document_reference",
+        "retrieval_route": "clarification_required",
+        "document_scope": "unknown",
+        "rewritten_query": "이 문서 기준으로 개선점을 알려줘",
+    }
     assert graph.calls == []
+
+    run_id = payload["run_id"]
+    detail = client.get(f"/conversations/{conversation_id}/runs/{run_id}")
+    assert detail.status_code == 200
+    assert detail.json()["reply"] == ""
+    assert detail.json()["clarification"]["message_key"] == (
+        "clarification.document_scope.select_source"
+    )
+
+
+def test_filename_reference_retrieves_matching_document_metadata(monkeypatch) -> None:  # noqa: ANN001
+    graph = SpyGraph()
+    client = _client(monkeypatch, graph)
+    _signup_login(client, "filename-lookup@example.com")
+    kb_id = _create_knowledge_base(client, "Clinical Protocol KB")
+    target = client.post(
+        "/documents/upload",
+        data={"title": "Clinical Trial Protocol", "knowledge_base_id": kb_id},
+        files={
+            "file": (
+                "NCT06159946_Prot_000.txt",
+                b"Clinical protocol discusses eligibility, dosing, and visit schedule.",
+                "text/plain",
+            )
+        },
+    )
+    distractor = _create_document(
+        client,
+        json={
+            "title": "Other Protocol",
+            "content": "Another protocol discusses unrelated monitoring.",
+            "knowledge_base_id": kb_id,
+        },
+    )
+    assert target.status_code == 201
+    assert distractor.status_code == 201
+    assert client.post(f"/documents/{target.json()['id']}/ingest").status_code == 200
+    assert client.post(f"/documents/{distractor.json()['id']}/ingest").status_code == 200
+    conversation_id = client.post("/conversations", json={"title": "Filename lookup"}).json()["id"]
+
+    response = client.post(
+        f"/conversations/{conversation_id}/runs",
+        json={"message": "그럼 NCT06159946_Prot_000 이 문서에 대해 설명해줘"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["retrieval_route"] == "retrieval_required"
+    assert payload["answer_mode"] == "document_grounded"
+    assert payload["clarification"] is None
+    assert payload["citations"][0]["document_id"] == target.json()["id"]
+    assert payload["citations"][0]["source_filename"] == "NCT06159946_Prot_000.txt"
+    assert graph.calls[-1]["retrieved_context"][0]["document_id"] == target.json()["id"]
+    assert graph.calls[-1]["retrieved_context"][0]["source"] == "document_metadata"
+
+    events = client.get(f"/conversations/{conversation_id}/runs/{payload['run_id']}/events")
+    retrieval_event = next(
+        event for event in events.json() if event["event_type"] == "retrieval_completed"
+    )
+    assert retrieval_event["payload"]["document_metadata_count"] >= 1
 
 
 def test_conversation_messages_can_be_listed_in_server_owned_order(monkeypatch) -> None:  # noqa: ANN001
@@ -843,6 +913,56 @@ def test_streaming_conversation_run_emits_events_and_persists_result(monkeypatch
         "graph_invoked",
         "answer_composed",
     ]
+
+
+def test_streaming_ambiguous_document_scope_emits_human_clarification_state(
+    monkeypatch,
+) -> None:  # noqa: ANN001
+    graph = SpyGraph()
+    client = _client(monkeypatch, graph)
+    _signup_login(client, "stream-clarify-docs@example.com")
+    kb_id = _create_knowledge_base(client, "Stream Clarify Docs KB")
+    for title in ("Stream Doc A", "Stream Doc B"):
+        response = _create_document(
+            client,
+            json={
+                "title": title,
+                "content": f"{title} content",
+                "knowledge_base_id": kb_id,
+            },
+        )
+        assert response.status_code == 201
+    conversation_id = client.post("/conversations", json={"title": "Stream clarify"}).json()["id"]
+
+    with client.stream(
+        "POST",
+        f"/conversations/{conversation_id}/runs/stream",
+        json={"message": "이 문서 기준으로 개선점을 알려줘"},
+    ) as response:
+        assert response.status_code == 200
+        events = _parse_sse(response.read().decode())
+
+    event_names = [event["event"] for event in events]
+    events_by_name = {event["event"]: event["data"] for event in events}
+    answer_composed = events_by_name["answer_composed"]
+    completed = events_by_name["run_completed"]
+
+    assert event_names == [
+        "run_started",
+        "user_message_stored",
+        "retrieval_completed",
+        "answer_composed",
+        "run_completed",
+    ]
+    assert "graph_invoked" not in event_names
+    assert graph.calls == []
+    assert answer_composed["reply_length"] == 0
+    assert answer_composed["clarification_required"] is True
+    assert answer_composed["clarification"]["message_key"] == (
+        "clarification.document_scope.select_source"
+    )
+    assert completed["reply"] == ""
+    assert completed["clarification"]["input_slot"] == "document_reference"
 
 
 def test_streaming_selected_kb_run_uses_fallback_only_in_selected_scope(monkeypatch) -> None:  # noqa: ANN001

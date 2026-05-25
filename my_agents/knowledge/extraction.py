@@ -24,6 +24,8 @@ from my_agents.knowledge.models import (
     EntityRelationshipModel,
     ExtractionRunModel,
     ExtractionStatus,
+    StructuredKnowledgeEntityModel,
+    StructuredKnowledgeEntityType,
 )
 from my_agents.knowledge.pdf_uploads import PDF_PAGE_SEPARATOR
 
@@ -32,6 +34,17 @@ _ENTITY_PATTERN = re.compile(
     r"(?:\s+(?:[A-Z][A-Za-z0-9]*(?:[-_][A-Za-z0-9]+)*|[A-Z]{2,})){0,3}\b"
 )
 _TECH_TERM_PATTERN = re.compile(r"\b[A-Za-z][A-Za-z0-9]*(?:Graph|Chain|Lang|API|SQL|DB)\b")
+_API_ENDPOINT_PATTERN = re.compile(
+    r"\b(?P<method>GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+"
+    r"(?P<path>/[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;={}\-%]+)"
+)
+_CONFIG_KEY_PATTERN = re.compile(r"\b[A-Z][A-Z0-9]{2,}(?:_[A-Z0-9]+)+\b")
+_SHELL_COMMAND_PATTERN = re.compile(r"(?m)^\s*(?:\$|>)\s*(?P<command>[A-Za-z][^\n]{2,160})$")
+_ERROR_CODE_PATTERN = re.compile(r"\b(?:HTTP\s*)?(?:[45]\d{2}|ERR_[A-Z0-9_]+)\b")
+_DATABASE_TABLE_PATTERN = re.compile(
+    r"\b(?:table|from|join|into|update)\s+[`\"]?(?P<table>[A-Za-z][A-Za-z0-9_]{2,})[`\"]?",
+    flags=re.IGNORECASE,
+)
 _CHUNK_TARGET_CHARS = 900
 _CHUNK_OVERLAP_CHARS = 120
 
@@ -44,6 +57,18 @@ class ExtractionSummary:
     chunk_count: int
     entity_count: int
     relationship_count: int
+
+
+@dataclass(frozen=True)
+class StructuredEntityExtraction:
+    """One deterministic structured fact extracted from a chunk."""
+
+    entity_type: StructuredKnowledgeEntityType
+    label: str
+    attributes: dict[str, str]
+    start: int
+    end: int
+    confidence: str
 
 
 class KnowledgeExtractionService:
@@ -156,6 +181,25 @@ class KnowledgeExtractionService:
                         )
                     )
                     relationship_count += 1
+                for structured in _extract_structured_entities(content):
+                    self._db.add(
+                        StructuredKnowledgeEntityModel(
+                            document_id=document.id,
+                            chunk_id=chunk.id,
+                            extraction_run_id=run.id,
+                            entity_type=structured.entity_type.value,
+                            label=structured.label,
+                            attributes_json=json.dumps(
+                                structured.attributes,
+                                ensure_ascii=False,
+                                sort_keys=True,
+                            ),
+                            source_page=source_page,
+                            start_offset=start + structured.start,
+                            end_offset=start + structured.end,
+                            confidence=structured.confidence,
+                        )
+                    )
 
             run.status = ExtractionStatus.COMPLETED.value
             run.stage = "completed"
@@ -199,6 +243,11 @@ class KnowledgeExtractionService:
         )
         self._db.execute(
             delete(EntityMentionModel).where(EntityMentionModel.document_id == document_id)
+        )
+        self._db.execute(
+            delete(StructuredKnowledgeEntityModel).where(
+                StructuredKnowledgeEntityModel.document_id == document_id
+            )
         )
         self._db.execute(
             delete(DocumentChunkModel).where(DocumentChunkModel.document_id == document_id)
@@ -330,6 +379,86 @@ def _extract_entity_names(text: str) -> list[str]:
             continue
         seen.add(name.casefold())
         entities.append(name)
+    return entities
+
+
+def _extract_structured_entities(text: str) -> list[StructuredEntityExtraction]:
+    seen: set[tuple[str, str]] = set()
+    entities: list[StructuredEntityExtraction] = []
+
+    def add(entity: StructuredEntityExtraction) -> None:
+        key = (entity.entity_type.value, entity.label.casefold())
+        if key in seen:
+            return
+        seen.add(key)
+        entities.append(entity)
+
+    for match in _API_ENDPOINT_PATTERN.finditer(text):
+        method = match.group("method").upper()
+        path = match.group("path").rstrip(".,);")
+        add(
+            StructuredEntityExtraction(
+                entity_type=StructuredKnowledgeEntityType.API_ENDPOINT,
+                label=f"{method} {path}",
+                attributes={"method": method, "path": path},
+                start=match.start(),
+                end=match.start() + len(f"{method} {path}"),
+                confidence="pattern:http_method_path",
+            )
+        )
+
+    for match in _CONFIG_KEY_PATTERN.finditer(text):
+        key = match.group(0)
+        add(
+            StructuredEntityExtraction(
+                entity_type=StructuredKnowledgeEntityType.CONFIG_KEY,
+                label=key,
+                attributes={"key": key},
+                start=match.start(),
+                end=match.end(),
+                confidence="pattern:uppercase_key",
+            )
+        )
+
+    for match in _SHELL_COMMAND_PATTERN.finditer(text):
+        command = match.group("command").strip()
+        add(
+            StructuredEntityExtraction(
+                entity_type=StructuredKnowledgeEntityType.COMMAND,
+                label=command.split()[0],
+                attributes={"command": command},
+                start=match.start("command"),
+                end=match.end("command"),
+                confidence="pattern:shell_prompt",
+            )
+        )
+
+    for match in _ERROR_CODE_PATTERN.finditer(text):
+        code = match.group(0)
+        add(
+            StructuredEntityExtraction(
+                entity_type=StructuredKnowledgeEntityType.ERROR_CODE,
+                label=code,
+                attributes={"code": code},
+                start=match.start(),
+                end=match.end(),
+                confidence="pattern:error_code",
+            )
+        )
+
+    for match in _DATABASE_TABLE_PATTERN.finditer(text):
+        table_name = match.group("table")
+        add(
+            StructuredEntityExtraction(
+                entity_type=StructuredKnowledgeEntityType.DATABASE_TABLE,
+                label=table_name,
+                attributes={"table": table_name},
+                start=match.start("table"),
+                end=match.end("table"),
+                confidence="pattern:sql_table_reference",
+            )
+        )
+
     return entities
 
 

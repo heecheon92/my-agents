@@ -196,6 +196,17 @@ MY_AGENTS_OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 # MY_AGENTS_OPENAI_EMBEDDING_DIMENSIONS=
 MY_AGENTS_EMBEDDING_BATCH_SIZE=32
 MY_AGENTS_OPENAI_EMBEDDING_TIMEOUT_SECONDS=30
+
+# ContextForge reranking defaults to deterministic/offline.
+# Switch to cross_encoder only in runtimes with sentence-transformers installed.
+MY_AGENTS_RERANKER_MODE=deterministic
+MY_AGENTS_CROSS_ENCODER_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2
+MY_AGENTS_CROSS_ENCODER_BATCH_SIZE=16
+# MY_AGENTS_CROSS_ENCODER_DEVICE=mps
+
+# Sensitive local debugging only: Rich-print ContextForge role handoffs and
+# the retrieval context sent into the LLM prompt.
+MY_AGENTS_DEBUG_KNOWLEDGE_CONTEXT_LOGGING=false
 ```
 
 Service-foundation knobs are present for the portfolio chat-service roadmap. SQLite is
@@ -438,7 +449,8 @@ server-owned conversations, text KB ingestion, permission-aware retrieval,
 JSON-backed semantic embedding ranking, citation-backed answer composition, structured
 agent activity events, pgvector-backed Postgres vector search with JSON/SQLite fallback,
 and an SSE conversation-run stream. Production parsers, ANN/vector index tuning, and
-cross-encoder reranking remain later milestones.
+retrieval-quality evals remain later milestones. Cross-encoder reranking is available as an
+optional ContextForge mode, while the default remains the offline deterministic reranker.
 
 Implemented auth endpoints:
 
@@ -562,7 +574,11 @@ principal/conversation context. A deterministic retrieval-routing policy first c
 Only when retrieval is needed does `RetrievalService` search authorized document chunks
 and expand related authorized chunks through entity mentions. Responses persist and return
 `answer_mode` (`general_knowledge`, `document_grounded`, or `mixed`) plus citations when
-authorized context is actually used. The older `/assistant/chat` endpoint remains as a
+authorized context is actually used. `clarification_required` does not generate static
+English assistant prose; it returns `reply: ""` plus a structured `clarification` object
+(`message_key`, `reason_code`, and `input_slot`). The client/human-in-the-loop layer
+localizes that state for the user's language and the user supplies the document/file
+reference in a later turn. The older `/assistant/chat` endpoint remains as a
 legacy/dev smoke surface and should not become the product chat surface for personal/group
 KB access.
 
@@ -573,6 +589,9 @@ KB access.
 and a final `run_completed` event with the same response shape as `/runs`. If graph
 execution fails after the stream starts, the backend persists a failed run and emits
 `run_failed` plus `run_error` without leaking raw prompts or provider exception text.
+For `clarification_required`, the stream completes with `answer_composed` and
+`run_completed` carrying the same `clarification` object, without `graph_invoked` or
+`answer_delta`.
 Frontend clients can read the stored transcript through
 `GET /conversations/{conversation_id}/messages` after the same conversation access check,
 and can inspect completed/failed/cancelled run history through
@@ -653,35 +672,41 @@ retrieved context passed to the graph.
 
 The upload path accepts `.pdf`, `.md`,
 `.markdown`, and `.txt` files up to 5 MiB. PDFs now run through a classify → route → extract → clean → validate flow.
-For `application/pdf`, the parser first extracts fast page text with PyMuPDF (`pymupdf`). If PyMuPDF output is empty or fails quality checks, Docling (`docling`) becomes the structured primary fallback for Markdown/table candidates.
-If that still fails, the Tesseract OCR fallback renders page images with PyMuPDF and runs a command like `tesseract -l kor+eng --psm 6` for image-heavy PDFs. If OCR also fails, the pipeline keeps the existing `pypdf`, MIT-licensed `pdfplumber`, and simple literal/FlateDecode deterministic stream fallbacks for compatibility. Before any PDF text is persisted into PostgreSQL `text`, the pipeline rejects or removes NUL/control bytes, repeated locale metadata, known font boilerplate, and likely encoding garbage.
-PDFs that fail the quality gate, or image-heavy PDFs where Docling returns only `<!-- image -->` placeholders/bullet-only structure, return a safe `400` upload error instead of a DB insert 500 or empty chunks. Docling defaults to the CPU accelerator, OCR off, and a 30-second document timeout to avoid Apple MPS float64 crashes. Tune it with `MY_AGENTS_DOCLING_ACCELERATOR` (`cpu|cuda|auto|mps|xpu`), `MY_AGENTS_DOCLING_OCR_ENABLED`, `MY_AGENTS_DOCLING_TIMEOUT_SECONDS`, and `MY_AGENTS_DOCLING_THREADS`. For GPU Docker production, use `MY_AGENTS_DOCLING_ACCELERATOR=cuda` only with a CUDA-compatible image/runtime. Tune Tesseract with `MY_AGENTS_TESSERACT_ENABLED`, `MY_AGENTS_TESSERACT_LANGUAGES`, `MY_AGENTS_TESSERACT_PSM`, `MY_AGENTS_TESSERACT_RENDER_SCALE`, and `MY_AGENTS_TESSERACT_TIMEOUT_SECONDS`; Docker images need system packages such as `tesseract-ocr`, `tesseract-ocr-kor`, and `tesseract-ocr-eng`. PyMuPDF requires AGPL/commercial license review and is intentionally included here for the PDF extraction milestone. Markdown/plain text is decoded as UTF-8 text; structural
+For `application/pdf`, the parser first extracts fast page text with PyMuPDF (`pymupdf`). If PyMuPDF output is empty or fails quality checks, it tries lightweight `pypdf` and MIT-licensed `pdfplumber` fallbacks before starting heavier Docling (`docling`) Markdown/table extraction. The final OCR fallback renders page images with PyMuPDF and runs a command like `tesseract -l kor+eng --psm 6` for image-heavy PDFs. If OCR also fails, the pipeline keeps the simple literal/FlateDecode deterministic stream fallback for compatibility. Before any PDF text is persisted into PostgreSQL `text`, the pipeline rejects or removes NUL/control bytes, repeated locale metadata, known font boilerplate, and likely encoding garbage.
+PDFs that fail the quality gate, or image-heavy PDFs where Docling returns only `<!-- image -->` placeholders/bullet-only structure, return a safe `400` upload error instead of a DB insert 500 or empty chunks. Docling defaults to the CPU accelerator, OCR off, and a 30-second document timeout to avoid Apple MPS float64 crashes. Tune it with `MY_AGENTS_DOCLING_ACCELERATOR` (`cpu|cuda|auto|mps|xpu`), `MY_AGENTS_DOCLING_OCR_ENABLED`, `MY_AGENTS_DOCLING_TIMEOUT_SECONDS`, and `MY_AGENTS_DOCLING_THREADS`. For GPU Docker production, use `MY_AGENTS_DOCLING_ACCELERATOR=cuda` only with a CUDA-compatible image/runtime. Tune Tesseract with `MY_AGENTS_TESSERACT_ENABLED`, `MY_AGENTS_TESSERACT_LANGUAGES`, `MY_AGENTS_TESSERACT_PSM`, `MY_AGENTS_TESSERACT_RENDER_SCALE`, `MY_AGENTS_TESSERACT_TIMEOUT_SECONDS`, and `MY_AGENTS_TESSERACT_MAX_PAGES`. The default OCR cap is 3 pages so large image-heavy PDFs such as clinical protocols cannot monopolize the synchronous upload request; they fall through to other extractors or return a safe `400`. Docker images need system packages such as `tesseract-ocr`, `tesseract-ocr-kor`, and `tesseract-ocr-eng`. PyMuPDF requires AGPL/commercial license review and is intentionally included here for the PDF extraction milestone. Markdown/plain text is decoded as UTF-8 text; structural
 Markdown parsing is not implemented yet. Upload
 metadata (`source_filename`, content type, byte size, SHA-256, page count, parser name)
 is persisted on the document, and ingestion chunks record `source_page` for later citation
 provenance. Conversation citation responses now include `source_page` and `source_filename`
-when known. Ingestion creates paragraph/sentence-aware chunks, entity mentions, and JSON-backed
+when known. Ingestion creates paragraph/sentence-aware chunks, entity mentions, structured
+knowledge entities for endpoint/config/command/error/table enumeration, and JSON-backed
 embeddings. The existing sync ingestion endpoint remains compatible, while the async ingestion endpoint runs in an in-process background thread with a fresh DB session. `ExtractionRunResponse` returns `status` (`pending|running|completed|failed`), `stage`, `progress_percent`, counts, a safe `error`, `started_at`, and `completed_at`. This V1 async path is a local/demo contract without an external queue/Redis/Celery and is not durable across process restarts. On Postgres after Alembic migrations, chunks also persist a pgvector
 `embedding_vector` column so retrieval can run permission-filtered SQL vector search before
 falling back to JSON cosine ranking. By default embeddings are 32-dimensional deterministic
 lexical-hash vectors for offline tests; when `MY_AGENTS_EMBEDDING_MODE=openai`, ingestion uses
 `langchain-openai`/OpenAI embeddings such as `text-embedding-3-small`. Although the Docling dependency includes OCR capabilities, the current upload contract still uses request-time local extraction only; scanned/encrypted/image-only PDFs, guaranteed complex multi-column/layout reconstruction, DOCX, HTML, or CSV/JSON structural
-parsing; OpenAI extraction calls, ANN/vector indexes, and cross-encoder reranking are still
-future work.
+parsing; OpenAI extraction calls and ANN/vector indexes are still future work.
+Cross-encoder reranking is available as an optional second-stage seam behind
+`MY_AGENTS_RERANKER_MODE=cross_encoder`; the default offline/test path remains the deterministic
+reranker.
 
 
 ### Permission-aware RAG and citation-backed answers
 
-The product conversation run includes a permission-aware RAG slice with retrieval routing.
+The product conversation run includes a permission-aware RAG slice through **ContextForge**,
+the dedicated retrieval-agent service boundary under `my_agents/agents/context_forge/`.
 
 1. `my_agents/knowledge/routing.py` classifies each prompt as `no_retrieval`,
    `retrieval_required`, `retrieval_optional`, or `clarification_required`.
-2. `no_retrieval` skips `RetrievalService` and answers with `answer_mode=general_knowledge`.
-3. Only `retrieval_required` and `retrieval_optional` call `RetrievalService`; the service first selects only document chunks the current user can read.
-4. It embeds the query with the configured provider. On Postgres, it first narrows authorized rows through pgvector SQL vector search; SQLite/tests and empty pgvector candidate sets fall back to JSON-backed cosine ranking. The final candidate list is blended with lexical score, and personal-document prompts may fall back to recent authorized chunks.
-5. It expands through entity mentions to related chunks that are still inside the authorized set.
-6. Optional retrieval with relevant context uses `answer_mode=mixed`; required retrieval with relevant context uses `answer_mode=document_grounded`. If no relevant context is found, the response stays general and creates no citations.
-7. It passes only compact authorized context into the `general_assistant` graph/provider prompt and returns `retrieval_route`, `answer_mode`, `document_scope`, and `citations` in the response payload.
+2. ContextForge's Query Cartographer upgrades structured enumeration prompts such as “list API endpoints in this document” into an intent-aware retrieval plan.
+3. `clarification_required` returns a structured `clarification` payload instead of static English prose and stops before graph/provider invocation.
+4. `no_retrieval` skips candidate retrieval and answers with `answer_mode=general_knowledge`.
+5. Only `retrieval_required` and `retrieval_optional` gather candidates; low-level `RetrievalService` still first selects only document chunks the current user can read.
+6. Candidate Scouts also search authorized document `title`/`source_filename` metadata, so a prompt naming a file such as `NCT06159946_Prot_000` can retrieve that document even when the filename is not present in the extracted body text.
+7. Candidate Scouts combine pgvector/JSON vector search, lexical scoring, entity expansion, and structured entity retrieval for endpoint/config/command/error/table questions.
+8. ContextForge fuses candidates, applies the default deterministic reranker or optional cross-encoder reranker, packs high-recall context under explicit budgets, then emits redacted evidence such as intent, reranker, candidate count, injected count, rejected count, structured entity types, and latency. In local debug sessions with `MY_AGENTS_DEBUG_KNOWLEDGE_CONTEXT_LOGGING=true`, each role handoff and the context payload sent into the assistant graph are also printed with Rich.
+9. Optional retrieval with relevant context uses `answer_mode=mixed`; required retrieval with relevant context uses `answer_mode=document_grounded`. If no relevant context is found, the response stays general and creates no citations.
+10. It passes only compact authorized context into the `general_assistant` graph/provider prompt and returns `retrieval_route`, `answer_mode`, `document_scope`, and `citations` in the response payload.
 
 Example response excerpt:
 

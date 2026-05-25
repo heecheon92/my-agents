@@ -7,6 +7,7 @@ import math
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
+from difflib import SequenceMatcher
 
 from sqlalchemy import and_, desc, false, func, inspect, or_, select
 from sqlalchemy.exc import SQLAlchemyError
@@ -23,6 +24,7 @@ from my_agents.knowledge.models import (
     DocumentModel,
     DocumentPermissionModel,
     EntityMentionModel,
+    StructuredKnowledgeEntityModel,
 )
 
 
@@ -34,6 +36,17 @@ class RetrievedChunk:
     document: DocumentModel
     score: float
     source: str
+
+
+@dataclass(frozen=True)
+class RetrievedStructuredEntity:
+    """Authorized structured fact with chunk/document provenance."""
+
+    entity: StructuredKnowledgeEntityModel
+    chunk: DocumentChunkModel
+    document: DocumentModel
+    score: float
+    source: str = "structured_entity"
 
 
 class RetrievalService:
@@ -55,18 +68,32 @@ class RetrievalService:
         knowledge_base_ids: Sequence[str] | None = None,
     ) -> list[RetrievedChunk]:
         terms = _query_terms(query)
-        direct = self._direct_authorized_matches(
+        metadata_matches = self._document_metadata_matches(
             user_id=user_id,
             query=query,
             terms=terms,
             knowledge_base_ids=knowledge_base_ids,
+            limit=limit,
         )
+        direct = [
+            *metadata_matches,
+            *self._direct_authorized_matches(
+                user_id=user_id,
+                query=query,
+                terms=terms,
+                knowledge_base_ids=knowledge_base_ids,
+            ),
+        ]
         expanded = self._expand_authorized_related(
             user_id=user_id,
             direct=direct,
             knowledge_base_ids=knowledge_base_ids,
         )
-        combined: dict[str, RetrievedChunk] = {item.chunk.id: item for item in direct}
+        combined: dict[str, RetrievedChunk] = {}
+        for item in direct:
+            existing = combined.get(item.chunk.id)
+            if existing is None or _prefer_retrieved_chunk(item, existing):
+                combined[item.chunk.id] = item
         for item in expanded:
             combined.setdefault(item.chunk.id, item)
         if not combined and _needs_personal_document_fallback(query):
@@ -98,6 +125,49 @@ class RetrievalService:
             )
             or 0
         )
+
+    def retrieve_structured_entities(
+        self,
+        *,
+        user_id: str,
+        query: str,
+        entity_types: Sequence[str],
+        limit: int = 50,
+        knowledge_base_ids: Sequence[str] | None = None,
+    ) -> list[RetrievedStructuredEntity]:
+        """Return authorized structured facts for intent-aware enumeration retrieval."""
+        unique_entity_types = tuple(dict.fromkeys(entity_types))
+        if not unique_entity_types:
+            return []
+        statement = (
+            select(StructuredKnowledgeEntityModel, DocumentChunkModel, DocumentModel)
+            .join(
+                DocumentChunkModel,
+                StructuredKnowledgeEntityModel.chunk_id == DocumentChunkModel.id,
+            )
+            .join(DocumentModel, StructuredKnowledgeEntityModel.document_id == DocumentModel.id)
+            .where(
+                _authorized_document_filter(user_id, knowledge_base_ids=knowledge_base_ids),
+                StructuredKnowledgeEntityModel.entity_type.in_(unique_entity_types),
+            )
+            .order_by(
+                DocumentModel.created_at.desc(),
+                DocumentChunkModel.ordinal,
+                StructuredKnowledgeEntityModel.start_offset,
+            )
+            .limit(limit)
+        )
+        terms = _query_terms(query)
+        matches = [
+            RetrievedStructuredEntity(
+                entity=entity,
+                chunk=chunk,
+                document=document,
+                score=_structured_entity_score(entity, terms),
+            )
+            for entity, chunk, document in self._db.execute(statement).all()
+        ]
+        return sorted(matches, key=lambda item: (-item.score, item.chunk.ordinal))
 
     def _direct_authorized_matches(
         self,
@@ -270,6 +340,53 @@ class RetrievalService:
             for chunk, document in self._authorized_chunk_rows(
                 user_id, knowledge_base_ids=knowledge_base_ids
             )[:limit]
+        ]
+
+    def _document_metadata_matches(
+        self,
+        *,
+        user_id: str,
+        query: str,
+        terms: set[str],
+        knowledge_base_ids: Sequence[str] | None,
+        limit: int,
+    ) -> list[RetrievedChunk]:
+        """Return chunks from authorized documents whose title/filename matches the query."""
+        signal_terms = _metadata_signal_terms(terms)
+        if not signal_terms:
+            return []
+        documents: dict[str, tuple[DocumentModel, float]] = {}
+        for _, document in self._authorized_chunk_rows(
+            user_id, knowledge_base_ids=knowledge_base_ids
+        ):
+            if document.id in documents:
+                continue
+            score = _document_metadata_score(
+                query=query,
+                signal_terms=signal_terms,
+                title=document.title,
+                source_filename=document.source_filename,
+            )
+            if score > 0:
+                documents[document.id] = (document, score)
+        if not documents:
+            return []
+        rows = [
+            (chunk, document, documents[document.id][1])
+            for chunk, document in self._authorized_chunk_rows(
+                user_id, knowledge_base_ids=knowledge_base_ids
+            )
+            if document.id in documents
+        ]
+        rows.sort(key=lambda row: (-row[2], -row[1].created_at.timestamp(), row[0].ordinal))
+        return [
+            RetrievedChunk(
+                chunk=chunk,
+                document=document,
+                score=round(max(score - (chunk.ordinal * 0.001), 0.01), 6),
+                source="document_metadata",
+            )
+            for chunk, document, score in rows[:limit]
         ]
 
     def _with_small_document_overview_chunks(
@@ -453,6 +570,96 @@ _PERSONAL_DOCUMENT_FALLBACK_HINTS = (
 )
 
 
+_DOCUMENT_METADATA_STOPWORDS = {
+    "about",
+    "according",
+    "based",
+    "does",
+    "document",
+    "file",
+    "from",
+    "give",
+    "me",
+    "my",
+    "please",
+    "say",
+    "tell",
+    "that",
+    "the",
+    "this",
+    "uploaded",
+    "what",
+    "which",
+    "with",
+    "그럼",
+    "기준으로",
+    "대해",
+    "대해서",
+    "문서",
+    "보여줘",
+    "설명",
+    "설명해줘",
+    "알려줘",
+    "자료",
+    "파일",
+    "해당",
+}
+
+
+def _metadata_signal_terms(terms: set[str]) -> set[str]:
+    return {term for term in terms if term not in _DOCUMENT_METADATA_STOPWORDS}
+
+
+def _document_metadata_score(
+    *,
+    query: str,
+    signal_terms: set[str],
+    title: str,
+    source_filename: str | None,
+) -> float:
+    metadata_values = [title]
+    if source_filename:
+        metadata_values.append(source_filename)
+        metadata_values.append(source_filename.rsplit(".", 1)[0])
+    metadata_terms = {
+        term for value in metadata_values for term in _metadata_terms(value) if len(term) > 1
+    }
+    if not metadata_terms:
+        return 0.0
+    normalized_query = _normalize_metadata_text(query)
+    normalized_metadata_values = [
+        normalized for value in metadata_values if (normalized := _normalize_metadata_text(value))
+    ]
+    if any(value and value in normalized_query for value in normalized_metadata_values):
+        return 1.2
+    overlap = signal_terms & metadata_terms
+    overlap_score = len(overlap) / max(len(signal_terms), 1)
+    compact_query = "".join(
+        term for term in _metadata_terms(query) if term not in _DOCUMENT_METADATA_STOPWORDS
+    )
+    fuzzy_score = max(
+        (
+            SequenceMatcher(None, compact_query, "".join(_metadata_terms(value))).ratio()
+            for value in metadata_values
+            if value and any(char.isdigit() for char in value)
+        ),
+        default=0.0,
+    )
+    if fuzzy_score >= 0.72:
+        return round(min(1.0, 0.75 + (0.25 * fuzzy_score)), 6)
+    if len(overlap) < 2:
+        return 0.0
+    return round(min(0.85, 0.55 + (0.3 * overlap_score)), 6)
+
+
+def _metadata_terms(value: str) -> list[str]:
+    return [term.casefold() for term in re.findall(r"[A-Za-z0-9가-힣]+", value)]
+
+
+def _normalize_metadata_text(value: str) -> str:
+    return " ".join(_metadata_terms(value))
+
+
 def _query_terms(query: str) -> set[str]:
     return {term.casefold() for term in re.findall(r"[A-Za-z0-9가-힣]+", query) if len(term) > 1}
 
@@ -463,6 +670,7 @@ def _needs_personal_document_fallback(query: str) -> bool:
 
 
 _DOCUMENT_OVERVIEW_HINTS = (
+    "explain",
     "summarize",
     "summary",
     "overview",
@@ -471,6 +679,7 @@ _DOCUMENT_OVERVIEW_HINTS = (
     "what does my uploaded document",
     "tell me about my uploaded document",
     "문서 요약",
+    "설명",
     "요약",
     "어떤 문서",
     "업로드한 문서",
@@ -507,6 +716,22 @@ def _dedupe_retrieved_chunks(
     return deduped
 
 
+def _prefer_retrieved_chunk(candidate: RetrievedChunk, existing: RetrievedChunk) -> bool:
+    candidate_priority = _retrieval_source_priority(candidate.source)
+    existing_priority = _retrieval_source_priority(existing.source)
+    if candidate_priority != existing_priority:
+        return candidate_priority > existing_priority
+    return candidate.score > existing.score
+
+
+def _retrieval_source_priority(source: str) -> int:
+    if source == "document_metadata":
+        return 30
+    if source.startswith("structured_entity:"):
+        return 20
+    return 10
+
+
 def _normalize_chunk_content(content: str) -> str:
     return " ".join(content.casefold().split())
 
@@ -520,6 +745,11 @@ def _normalized_keyword_score(score: int, terms: set[str]) -> float:
     if not terms:
         return 0.0
     return min(score / len(terms), 1.0)
+
+
+def _structured_entity_score(entity: StructuredKnowledgeEntityModel, terms: set[str]) -> float:
+    label_score = _normalized_keyword_score(_keyword_score(entity.label, terms), terms)
+    return round(0.9 + (0.1 * label_score), 6)
 
 
 def _embedding_from_json(value: str) -> list[float]:

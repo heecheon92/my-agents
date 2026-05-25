@@ -27,6 +27,7 @@ from my_agents.knowledge.models import (
     EntityRelationshipModel,
     ExtractionRunModel,
     ExtractionStatus,
+    StructuredKnowledgeEntityModel,
 )
 from my_agents.knowledge.pdf_uploads import DoclingExtractionConfig, TesseractOcrConfig
 from my_agents.knowledge.schemas import (
@@ -174,6 +175,7 @@ async def upload_document_in_knowledge_base(
                 page_segmentation_mode=settings.tesseract_psm,
                 render_scale=settings.tesseract_render_scale,
                 timeout_seconds=settings.tesseract_timeout_seconds,
+                max_pages=settings.tesseract_max_pages,
             ),
         )
     except DocumentUploadError as exc:
@@ -587,6 +589,11 @@ def get_document_in_knowledge_base_or_404(
 def _delete_document_dependencies(db: Session, document_id: str) -> None:
     """Remove rows that hold foreign keys to a document or its chunks/runs."""
     db.execute(delete(CitationModel).where(CitationModel.document_id == document_id))
+    db.execute(
+        delete(StructuredKnowledgeEntityModel).where(
+            StructuredKnowledgeEntityModel.document_id == document_id
+        )
+    )
     db.execute(
         delete(EntityRelationshipModel).where(EntityRelationshipModel.document_id == document_id)
     )

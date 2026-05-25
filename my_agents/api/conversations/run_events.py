@@ -8,9 +8,10 @@ from langchain_core.messages import BaseMessage
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from my_agents.agents.context_forge.contracts import RetrievalEvidence
 from my_agents.api.conversations.serializers import knowledge_base_selection_payload
 from my_agents.conversations.models import AgentEventModel, AgentEventType
-from my_agents.conversations.schemas import AgentEventResponse
+from my_agents.conversations.schemas import AgentEventResponse, ConversationClarificationRequest
 from my_agents.knowledge.auth import KnowledgeBaseSelectionContext
 from my_agents.knowledge.retrieval import RetrievedChunk
 from my_agents.knowledge.routing import AnswerMode, RetrievalRoutingDecision
@@ -32,6 +33,7 @@ def retrieval_completed_payload(
     retrieval_decision: RetrievalRoutingDecision,
     answer_mode: AnswerMode,
     selection_context: KnowledgeBaseSelectionContext,
+    retrieval_evidence: RetrievalEvidence | None = None,
 ) -> dict:
     payload = {
         "retrieval_route": retrieval_decision.route,
@@ -40,10 +42,28 @@ def retrieval_completed_payload(
         "authorized_context_count": len(retrieved_chunks),
         "semantic_vector_count": count_retrieval_source(retrieved_chunks, "semantic_vector"),
         "keyword_match_count": count_retrieval_source(retrieved_chunks, "keyword_match"),
+        "document_metadata_count": count_retrieval_source(retrieved_chunks, "document_metadata"),
         "graph_expansion_count": count_retrieval_source(retrieved_chunks, "graph_expansion"),
         "fallback_count": count_retrieval_source(retrieved_chunks, "document_fallback"),
         "latency_ms": retrieval_latency_ms,
     }
+    if retrieval_evidence is not None:
+        payload.update(
+            {
+                "contextforge_intent": retrieval_evidence.intent,
+                "contextforge_reranker": retrieval_evidence.reranker,
+                "candidate_count": retrieval_evidence.candidate_count,
+                "injected_count": retrieval_evidence.injected_count,
+                "rejected_count": retrieval_evidence.rejected_count,
+                "structured_entity_types": list(retrieval_evidence.structured_entity_types),
+                "budget_truncated": retrieval_evidence.budget_truncated,
+                "structured_entity_count": sum(
+                    count
+                    for source, count in retrieval_evidence.source_counts.items()
+                    if source.startswith("structured_entity:")
+                ),
+            }
+        )
     payload.update(knowledge_base_selection_payload(selection_context))
     return payload
 
@@ -76,6 +96,7 @@ def answer_composed_payload(
     retrieval_decision: RetrievalRoutingDecision,
     answer_mode: AnswerMode,
     selection_context: KnowledgeBaseSelectionContext,
+    clarification: ConversationClarificationRequest | None = None,
 ) -> dict:
     payload = {
         "citation_count": citation_count,
@@ -84,6 +105,9 @@ def answer_composed_payload(
         "answer_mode": answer_mode,
         "document_scope": retrieval_decision.document_scope,
     }
+    if clarification is not None:
+        payload["clarification_required"] = True
+        payload["clarification"] = clarification.model_dump(mode="json")
     payload.update(knowledge_base_selection_payload(selection_context))
     return payload
 

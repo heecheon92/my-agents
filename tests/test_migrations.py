@@ -57,6 +57,7 @@ EXPECTED_SERVICE_TABLES = {
     "entities",
     "entity_mentions",
     "entity_relationships",
+    "structured_knowledge_entities",
     "citations",
 }
 
@@ -144,8 +145,11 @@ def test_alembic_offline_sql_generation_covers_initial_schema(monkeypatch) -> No
     assert "20260524_0010" in sql
     assert "20260524_0011" in sql
     assert "20260524_0012" in sql
+    assert "20260524_0013" in sql
+    assert "20260524_0014" in sql
     assert "CREATE TABLE knowledge_publish_requests" in sql
     assert "CREATE TABLE knowledge_base_publications" in sql
+    assert "CREATE TABLE structured_knowledge_entities" in sql
     assert "embedding_vector" in sql
     assert "progress_percent" in sql
     assert "completed_at" in sql
