@@ -21,6 +21,7 @@ from my_agents.knowledge.extraction import KnowledgeExtractionService
 from my_agents.knowledge.models import (
     CitationModel,
     DocumentChunkModel,
+    DocumentMetadataProfileModel,
     DocumentModel,
     DocumentPermissionModel,
     EntityMentionModel,
@@ -592,6 +593,11 @@ def _delete_document_dependencies(db: Session, document_id: str) -> None:
     db.execute(
         delete(StructuredKnowledgeEntityModel).where(
             StructuredKnowledgeEntityModel.document_id == document_id
+        )
+    )
+    db.execute(
+        delete(DocumentMetadataProfileModel).where(
+            DocumentMetadataProfileModel.document_id == document_id
         )
     )
     db.execute(

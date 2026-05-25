@@ -21,6 +21,7 @@ from my_agents.knowledge.auth import (
 from my_agents.knowledge.embeddings import EmbeddingProvider, get_embedding_provider
 from my_agents.knowledge.models import (
     DocumentChunkModel,
+    DocumentMetadataProfileModel,
     DocumentModel,
     DocumentPermissionModel,
     EntityMentionModel,
@@ -75,6 +76,13 @@ class RetrievalService:
             knowledge_base_ids=knowledge_base_ids,
             limit=limit,
         )
+        metadata_profile_matches = self._document_metadata_profile_matches(
+            user_id=user_id,
+            query=query,
+            terms=terms,
+            knowledge_base_ids=knowledge_base_ids,
+            limit=limit,
+        )
         direct = [
             *metadata_matches,
             *self._direct_authorized_matches(
@@ -83,6 +91,7 @@ class RetrievalService:
                 terms=terms,
                 knowledge_base_ids=knowledge_base_ids,
             ),
+            *metadata_profile_matches,
         ]
         expanded = self._expand_authorized_related(
             user_id=user_id,
@@ -424,6 +433,84 @@ class RetrievalService:
             used_chars += next_size
         return supplemented
 
+    def _document_metadata_profile_matches(
+        self,
+        *,
+        user_id: str,
+        query: str,
+        terms: set[str],
+        knowledge_base_ids: Sequence[str] | None,
+        limit: int,
+    ) -> list[RetrievedChunk]:
+        """Return representative chunks from documents matched by generated metadata."""
+        if not _schema_has_document_metadata_profiles(self._db):
+            return []
+        signal_terms = _metadata_signal_terms(terms)
+        if not signal_terms:
+            return []
+        query_embedding = self._embedding_provider.embed_query(query)
+        if not query_embedding:
+            return []
+        document_scores: dict[str, tuple[DocumentModel, float]] = {}
+        for profile, document in self._authorized_metadata_profile_rows(
+            user_id, knowledge_base_ids=knowledge_base_ids
+        ):
+            profile_embedding = _embedding_from_json(profile.embedding_json)
+            keyword_rank = _normalized_keyword_score(
+                _keyword_score(profile.search_text, signal_terms), signal_terms
+            )
+            if not _compatible_embeddings(query_embedding, profile_embedding):
+                if keyword_rank <= 0:
+                    continue
+                score = 0.55 * keyword_rank
+            else:
+                cosine = max(_cosine_similarity(query_embedding, profile_embedding), 0.0)
+                score = (0.8 * cosine) + (0.2 * keyword_rank)
+            if score <= 0.05:
+                continue
+            existing = document_scores.get(document.id)
+            rounded = round(score, 6)
+            if existing is None or rounded > existing[1]:
+                document_scores[document.id] = (document, rounded)
+        if not document_scores:
+            return []
+        rows = [
+            (chunk, document, document_scores[document.id][1])
+            for chunk, document in self._authorized_chunk_rows(
+                user_id, knowledge_base_ids=knowledge_base_ids
+            )
+            if document.id in document_scores
+        ]
+        rows.sort(key=lambda row: (-row[2], -row[1].created_at.timestamp(), row[0].ordinal))
+        matches: list[RetrievedChunk] = []
+        seen_document_ids: set[str] = set()
+        for chunk, document, score in rows:
+            if document.id in seen_document_ids:
+                continue
+            matches.append(
+                RetrievedChunk(
+                    chunk=chunk,
+                    document=document,
+                    score=round(max(score - (chunk.ordinal * 0.001), 0.01), 6),
+                    source="document_metadata_profile",
+                )
+            )
+            seen_document_ids.add(document.id)
+            if len(matches) >= limit:
+                break
+        return matches
+
+    def _authorized_metadata_profile_rows(
+        self, user_id: str, *, knowledge_base_ids: Sequence[str] | None
+    ) -> list[tuple[DocumentMetadataProfileModel, DocumentModel]]:
+        statement = (
+            select(DocumentMetadataProfileModel, DocumentModel)
+            .join(DocumentModel, DocumentMetadataProfileModel.document_id == DocumentModel.id)
+            .where(_authorized_document_filter(user_id, knowledge_base_ids=knowledge_base_ids))
+            .order_by(desc(DocumentModel.created_at), desc(DocumentMetadataProfileModel.created_at))
+        )
+        return list(self._db.execute(statement).all())
+
     def _authorized_chunk_rows(
         self, user_id: str, *, knowledge_base_ids: Sequence[str] | None
     ) -> list[tuple[DocumentChunkModel, DocumentModel]]:
@@ -534,6 +621,10 @@ def _knowledge_base_scope_filter(
 
 def _schema_has_knowledge_base_publications(db: Session) -> bool:
     return inspect(db.get_bind()).has_table("knowledge_base_publications")
+
+
+def _schema_has_document_metadata_profiles(db: Session) -> bool:
+    return inspect(db.get_bind()).has_table("document_metadata_profiles")
 
 
 def _uses_postgres(db: Session) -> bool:
@@ -726,9 +817,13 @@ def _prefer_retrieved_chunk(candidate: RetrievedChunk, existing: RetrievedChunk)
 
 def _retrieval_source_priority(source: str) -> int:
     if source == "document_metadata":
-        return 30
+        return 40
     if source.startswith("structured_entity:"):
+        return 30
+    if source == "semantic_vector":
         return 20
+    if source == "document_metadata_profile":
+        return 15
     return 10
 
 

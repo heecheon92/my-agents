@@ -1,5 +1,11 @@
 # ContextForge changelog
 
+## 2026-05-25 — Add generated document metadata profile retrieval
+
+- **Why:** Chunk-only vector search can miss documents when the user asks by purpose, domain, alias, or another language and the important meaning is distributed across a large PDF.
+- **Behavior / contract impact:** Ingestion now stores one search-oriented metadata profile per extraction run with generated title, description, summary, keywords, topics, entities, language, generator/model/prompt provenance, and a profile embedding. Candidate Scouts search those profiles as `document_metadata_profile` source evidence, but still inject original chunks so citations remain grounded in source text.
+- **Verification evidence:** Added regression coverage proving a document can be retrieved by metadata-only oncology terms absent from its body text, plus migration/settings coverage for the new table and knobs.
+
 ## 2026-05-25 — Retrieve documents by uploaded filename metadata
 
 - **Why:** Users may refer to an uploaded file by its visible filename/title, while that filename often does not appear inside the extracted PDF/text body.

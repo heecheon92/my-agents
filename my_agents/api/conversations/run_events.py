@@ -43,6 +43,9 @@ def retrieval_completed_payload(
         "semantic_vector_count": count_retrieval_source(retrieved_chunks, "semantic_vector"),
         "keyword_match_count": count_retrieval_source(retrieved_chunks, "keyword_match"),
         "document_metadata_count": count_retrieval_source(retrieved_chunks, "document_metadata"),
+        "document_metadata_profile_count": count_retrieval_source(
+            retrieved_chunks, "document_metadata_profile"
+        ),
         "graph_expansion_count": count_retrieval_source(retrieved_chunks, "graph_expansion"),
         "fallback_count": count_retrieval_source(retrieved_chunks, "document_fallback"),
         "latency_ms": retrieval_latency_ms,

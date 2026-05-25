@@ -51,6 +51,13 @@ ContextForge Candidate Scouts는 본문 chunk뿐 아니라 권한이 확인된 d
 document의 chunk를 `document_metadata` 후보로 올립니다. 이 경로도 기존 KB/source 권한 경계를
 먼저 통과한 문서만 대상으로 합니다.
 
+Ingestion은 검색 친화적인 generated document metadata profile도 생성합니다. 이 profile에는 title,
+description, summary, keywords, topics, entities와 profile embedding이 포함됩니다. Candidate Scouts는
+이 profile을 `document_metadata_profile` 후보로 검색합니다. profile text는 vector searchability를 위해
+사용자가 입력할 법한 term, alias, abbreviation, multilingual hint, domain vocabulary 중심으로 생성됩니다.
+profile이 match하더라도 ContextForge는 원문 document chunk를 주입하므로 최종 답변과 citation은 생성 metadata가
+아니라 source text에 grounded됩니다.
+
 ## 구조화 검색
 
 ContextForge는 “API endpoints를 나열해줘” 같은 enumeration 질문을 ingestion 시 추출한 structured entity로 라우팅할 수 있습니다. 첫 structured entity 타입은 다음과 같습니다.

@@ -15,9 +15,15 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 from my_agents.knowledge.embeddings import deterministic_embedding, get_embedding_provider
+from my_agents.knowledge.metadata_enrichment import (
+    DeterministicDocumentMetadataGenerator,
+    build_document_metadata_generator,
+    metadata_json,
+)
 from my_agents.knowledge.models import (
     CitationModel,
     DocumentChunkModel,
+    DocumentMetadataProfileModel,
     DocumentModel,
     EntityMentionModel,
     EntityModel,
@@ -28,6 +34,7 @@ from my_agents.knowledge.models import (
     StructuredKnowledgeEntityType,
 )
 from my_agents.knowledge.pdf_uploads import PDF_PAGE_SEPARATOR
+from my_agents.settings import get_settings
 
 _ENTITY_PATTERN = re.compile(
     r"\b(?:[A-Z][A-Za-z0-9]*(?:[-_][A-Za-z0-9]+)*|[A-Z]{2,})"
@@ -153,7 +160,9 @@ class KnowledgeExtractionService:
                 self._db.add(chunk)
                 self._db.flush()
                 if stores_sql_vector:
-                    self._store_sql_embedding_vector(chunk_id=chunk.id, embedding=embedding)
+                    self._store_sql_embedding_vector(
+                        table=DocumentChunkModel.__table__, row_id=chunk.id, embedding=embedding
+                    )
                 chunk_entity_ids = []
                 for entity_name in entity_names_by_chunk[ordinal]:
                     entity = entity_by_name[entity_name]
@@ -201,6 +210,14 @@ class KnowledgeExtractionService:
                         )
                     )
 
+            self._mark_progress(
+                run,
+                status=ExtractionStatus.RUNNING,
+                stage="metadata",
+                percent=95,
+            )
+            self._store_document_metadata_profile(document=document, run=run)
+
             run.status = ExtractionStatus.COMPLETED.value
             run.stage = "completed"
             run.progress_percent = 100
@@ -247,6 +264,11 @@ class KnowledgeExtractionService:
         self._db.execute(
             delete(StructuredKnowledgeEntityModel).where(
                 StructuredKnowledgeEntityModel.document_id == document_id
+            )
+        )
+        self._db.execute(
+            delete(DocumentMetadataProfileModel).where(
+                DocumentMetadataProfileModel.document_id == document_id
             )
         )
         self._db.execute(
@@ -308,12 +330,49 @@ class KnowledgeExtractionService:
             )
         self._db.execute(statement)
 
-    def _store_sql_embedding_vector(self, *, chunk_id: str, embedding: list[float]) -> None:
-        embedding_vector = DocumentChunkModel.__table__.c.embedding_vector
+    def _store_document_metadata_profile(
+        self, *, document: DocumentModel, run: ExtractionRunModel
+    ) -> None:
+        settings = get_settings()
+        generator = build_document_metadata_generator(settings)
+        try:
+            profile = generator.generate(document)
+        except Exception:
+            if settings.document_metadata_enrichment_mode == "openai":
+                raise
+            fallback = DeterministicDocumentMetadataGenerator(
+                max_input_chars=settings.document_metadata_max_input_chars
+            )
+            profile = fallback.generate(document)
+        embedding = self._embedding_provider.embed_documents([profile.search_text])[0]
+        row = DocumentMetadataProfileModel(
+            document_id=document.id,
+            extraction_run_id=run.id,
+            generated_title=profile.metadata.title,
+            description=profile.metadata.description,
+            summary=profile.metadata.summary,
+            keywords_json=metadata_json(profile.metadata.keywords),
+            topics_json=metadata_json(profile.metadata.topics),
+            entities_json=metadata_json(profile.metadata.entities),
+            language=profile.metadata.language,
+            confidence=profile.metadata.confidence,
+            generator=profile.generator,
+            model=profile.model,
+            prompt_version=profile.prompt_version,
+            search_text=profile.search_text,
+            embedding_json=json.dumps(embedding),
+        )
+        self._db.add(row)
+        self._db.flush()
+        if _stores_sql_embedding_vector(self._db):
+            self._store_sql_embedding_vector(
+                table=DocumentMetadataProfileModel.__table__, row_id=row.id, embedding=embedding
+            )
+
+    def _store_sql_embedding_vector(self, *, table, row_id: str, embedding: list[float]) -> None:
+        embedding_vector = table.c.embedding_vector
         self._db.execute(
-            update(DocumentChunkModel.__table__)
-            .where(DocumentChunkModel.__table__.c.id == chunk_id)
-            .values({embedding_vector: embedding})
+            update(table).where(table.c.id == row_id).values({embedding_vector: embedding})
         )
 
 

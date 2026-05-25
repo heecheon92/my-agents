@@ -30,6 +30,9 @@ def _embedding_vector_type() -> Vector:
 DOCUMENT_CHUNK_EMBEDDING_VECTOR_COLUMN = Column(
     "embedding_vector", _embedding_vector_type(), nullable=True
 )
+DOCUMENT_METADATA_EMBEDDING_VECTOR_COLUMN = Column(
+    "embedding_vector", _embedding_vector_type(), nullable=True
+)
 
 
 class KnowledgeBaseScope(StrEnum):
@@ -101,6 +104,36 @@ class DocumentModel(Base):
     knowledge_base_id: Mapped[str] = mapped_column(
         ForeignKey("knowledge_bases.id"), nullable=False, index=True
     )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+
+
+class DocumentMetadataProfileModel(Base):
+    """Generated document-level search profile used as a retrieval lane."""
+
+    __tablename__ = "document_metadata_profiles"
+    __table_args__ = (DOCUMENT_METADATA_EMBEDDING_VECTOR_COLUMN,)
+    __mapper_args__ = {"exclude_properties": ["embedding_vector"]}
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    document_id: Mapped[str] = mapped_column(ForeignKey("documents.id"), nullable=False, index=True)
+    extraction_run_id: Mapped[str] = mapped_column(
+        ForeignKey("extraction_runs.id"), nullable=False, index=True
+    )
+    generated_title: Mapped[str] = mapped_column(String(240), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    keywords_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    topics_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    entities_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    language: Mapped[str] = mapped_column(String(40), default="unknown", nullable=False)
+    confidence: Mapped[str] = mapped_column(String(40), nullable=False)
+    generator: Mapped[str] = mapped_column(String(40), nullable=False)
+    model: Mapped[str] = mapped_column(String(120), nullable=False)
+    prompt_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    search_text: Mapped[str] = mapped_column(Text, nullable=False)
+    embedding_json: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )

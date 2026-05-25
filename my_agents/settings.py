@@ -18,6 +18,7 @@ AuthEmailMode = Literal["local", "smtp"]
 EmbeddingMode = Literal["deterministic", "openai"]
 DoclingAccelerator = Literal["auto", "cpu", "cuda", "mps", "xpu"]
 RerankerMode = Literal["deterministic", "cross_encoder"]
+DocumentMetadataEnrichmentMode = Literal["auto", "deterministic", "openai"]
 
 
 class Settings(BaseSettings):
@@ -306,6 +307,20 @@ class Settings(BaseSettings):
         le=86400,
         validation_alias=AliasChoices("MY_AGENTS_AUTH_ABUSE_WINDOW_SECONDS"),
     )
+    document_metadata_enrichment_mode: DocumentMetadataEnrichmentMode = Field(
+        default="auto",
+        validation_alias=AliasChoices("MY_AGENTS_DOCUMENT_METADATA_ENRICHMENT_MODE"),
+    )
+    document_metadata_model: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("MY_AGENTS_DOCUMENT_METADATA_MODEL"),
+    )
+    document_metadata_max_input_chars: int = Field(
+        default=24000,
+        ge=2000,
+        le=120000,
+        validation_alias=AliasChoices("MY_AGENTS_DOCUMENT_METADATA_MAX_INPUT_CHARS"),
+    )
     debug_knowledge_context_logging: bool = Field(
         default=False,
         validation_alias=AliasChoices("MY_AGENTS_DEBUG_KNOWLEDGE_CONTEXT_LOGGING"),
@@ -385,6 +400,7 @@ class Settings(BaseSettings):
         "auth_smtp_password",
         "auth_smtp_from_email",
         "cross_encoder_device",
+        "document_metadata_model",
         mode="before",
     )
     @classmethod
@@ -443,6 +459,10 @@ class Settings(BaseSettings):
             raise ValueError("OPENAI_API_KEY is required when MY_AGENTS_RESPONSE_MODE=openai")
         if self.embedding_mode == "openai" and self.openai_api_key is None:
             raise ValueError("OPENAI_API_KEY is required when MY_AGENTS_EMBEDDING_MODE=openai")
+        if self.document_metadata_enrichment_mode == "openai" and self.openai_api_key is None:
+            raise ValueError(
+                "OPENAI_API_KEY is required when MY_AGENTS_DOCUMENT_METADATA_ENRICHMENT_MODE=openai"
+            )
         if self.session_cookie_samesite == "none" and not self.session_cookie_secure:
             raise ValueError(
                 "MY_AGENTS_SESSION_COOKIE_SECURE=true is required when "

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException, status
 from langchain_core.messages import BaseMessage
@@ -52,9 +53,60 @@ from my_agents.knowledge.routing import AnswerMode, RetrievalRoutingDecision
 from my_agents.schemas import RouteDecision
 
 ACTIVE_RUN_STATUSES = (RunStatus.RUNNING.value, RunStatus.CANCELLING.value)
+ACTIVE_RUN_STALE_AFTER = timedelta(minutes=15)
 
 
 def complete_sync_conversation_run(
+    *,
+    db: Session,
+    conversation_id: str,
+    user_id: str,
+    prompt: str,
+    messages: list[BaseMessage],
+    run: AgentRunModel,
+    selection_context: KnowledgeBaseSelectionContext,
+    graph_runner: GraphRunner,
+    warnings: list[ConversationRunWarning] | None = None,
+) -> ConversationRunResponse:
+    try:
+        return _complete_sync_conversation_run(
+            db=db,
+            conversation_id=conversation_id,
+            user_id=user_id,
+            prompt=prompt,
+            messages=messages,
+            run=run,
+            selection_context=selection_context,
+            graph_runner=graph_runner,
+            warnings=warnings,
+        )
+    except HTTPException:
+        fail_active_run(
+            db=db,
+            run_id=run.id,
+            conversation_id=conversation_id,
+            error_type="HTTPException",
+        )
+        raise
+    except ResponseProviderConfigurationError as exc:
+        fail_active_run(
+            db=db,
+            run_id=run.id,
+            conversation_id=conversation_id,
+            error_type=type(exc).__name__,
+        )
+        raise HTTPException(status_code=503, detail="conversation run failed") from exc
+    except Exception as exc:
+        fail_active_run(
+            db=db,
+            run_id=run.id,
+            conversation_id=conversation_id,
+            error_type=type(exc).__name__,
+        )
+        raise HTTPException(status_code=502, detail="conversation run failed") from exc
+
+
+def _complete_sync_conversation_run(
     *,
     db: Session,
     conversation_id: str,
@@ -265,6 +317,32 @@ def _retrieval_source_snapshot_json(retrieved_chunks: list[RetrievedChunk]) -> s
     return json.dumps(list(unique_sources.values()), sort_keys=True)
 
 
+def fail_active_run(
+    *,
+    db: Session,
+    run_id: str,
+    conversation_id: str,
+    error_type: str,
+) -> str | None:
+    try:
+        db.rollback()
+    except Exception:
+        pass
+    if not is_run_active(db, run_id):
+        return None
+    return persist_failed_run(
+        db=db,
+        run_id=run_id,
+        conversation_id=conversation_id,
+        error_type=error_type,
+    )
+
+
+def is_run_active(db: Session, run_id: str) -> bool:
+    run = db.get(AgentRunModel, run_id, populate_existing=True)
+    return run is not None and run.status in ACTIVE_RUN_STATUSES
+
+
 def persist_failed_run(
     *,
     db: Session,
@@ -272,9 +350,11 @@ def persist_failed_run(
     conversation_id: str,
     error_type: str,
 ) -> str:
-    run = db.get(AgentRunModel, run_id)
+    run = db.get(AgentRunModel, run_id, populate_existing=True)
     if run is None or run.conversation_id != conversation_id:
         raise RuntimeError("started conversation run is unavailable")
+    if run.status not in ACTIVE_RUN_STATUSES:
+        return run.id
     run.status = RunStatus.FAILED.value
     append_run_event(
         db,
@@ -288,6 +368,7 @@ def persist_failed_run(
 
 
 def assert_no_active_run(db: Session, conversation_id: str) -> None:
+    cleanup_stale_active_runs(db, conversation_id)
     active_run = db.scalar(
         select(AgentRunModel.id)
         .where(
@@ -301,6 +382,47 @@ def assert_no_active_run(db: Session, conversation_id: str) -> None:
             status_code=status.HTTP_409_CONFLICT,
             detail="conversation run already active",
         )
+
+
+def cleanup_stale_active_runs(db: Session, conversation_id: str) -> None:
+    cutoff = datetime.now(UTC) - ACTIVE_RUN_STALE_AFTER
+    stale_runs = db.scalars(
+        select(AgentRunModel).where(
+            AgentRunModel.conversation_id == conversation_id,
+            AgentRunModel.status.in_(ACTIVE_RUN_STATUSES),
+            AgentRunModel.created_at < cutoff,
+        )
+    ).all()
+    for run in stale_runs:
+        if run.status == RunStatus.CANCELLING.value:
+            run.status = RunStatus.CANCELLED.value
+            append_run_event(
+                db,
+                run.id,
+                AgentEventType.RUN_CANCELLED,
+                {
+                    "run_id": run.id,
+                    "conversation_id": run.conversation_id,
+                    "status": RunStatus.CANCELLED.value,
+                    "partial_reply_persisted": False,
+                    "stale_active_run_cleanup": True,
+                },
+                commit=False,
+            )
+            continue
+        run.status = RunStatus.FAILED.value
+        append_run_event(
+            db,
+            run.id,
+            AgentEventType.RUN_FAILED,
+            {
+                "safe_error_type": "StaleActiveRun",
+                "stale_active_run_cleanup": True,
+            },
+            commit=False,
+        )
+    if stale_runs:
+        db.commit()
 
 
 def start_run(

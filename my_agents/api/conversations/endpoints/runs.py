@@ -13,6 +13,7 @@ from my_agents.api.conversations.auth import (
 )
 from my_agents.api.conversations.run_lifecycle import (
     assert_no_active_run,
+    cleanup_stale_active_runs,
     complete_sync_conversation_run,
     start_run,
 )
@@ -88,6 +89,7 @@ def list_runs(
     """Return frontend-safe run history for an authorized conversation."""
     assert_guest_access_active(db, principal)
     get_authorized_conversation(db, conversation_id, principal.user_id)
+    cleanup_stale_active_runs(db, conversation_id)
     runs = db.scalars(
         select(AgentRunModel)
         .where(AgentRunModel.conversation_id == conversation_id)

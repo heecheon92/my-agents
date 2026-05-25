@@ -43,7 +43,11 @@ def fuse_candidates(chunks: Sequence[RetrievedChunk]) -> list[RetrievalCandidate
 
 def _source_priority(source: str) -> int:
     if source.startswith("structured_entity:"):
-        return 40
+        return 50
     if source == "document_metadata":
-        return 30
+        return 40
+    if source == "semantic_vector":
+        return 20
+    if source == "document_metadata_profile":
+        return 15
     return 10

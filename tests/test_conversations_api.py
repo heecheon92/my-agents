@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi.testclient import TestClient
@@ -11,6 +12,7 @@ from sqlalchemy import func, select
 
 from my_agents.api import create_app
 from my_agents.api.assistant import get_graph_runner
+from my_agents.api.conversations.endpoints.stream import conversation_run_events
 from my_agents.conversations.models import (
     AgentEventModel,
     AgentRunModel,
@@ -18,6 +20,8 @@ from my_agents.conversations.models import (
     MessageModel,
     RunStatus,
 )
+from my_agents.conversations.schemas import ConversationRunRequest
+from my_agents.knowledge.auth import KnowledgeBaseSelectionContext
 from my_agents.knowledge.models import CitationModel
 from my_agents.knowledge.retrieval import RetrievalService
 from my_agents.persistence.database import get_database_session
@@ -1200,6 +1204,152 @@ def test_active_run_rejects_parallel_conversation_run(monkeypatch) -> None:  # n
     assert graph.calls == []
 
 
+def test_stale_active_run_is_terminalized_before_new_run(monkeypatch) -> None:  # noqa: ANN001
+    graph = SpyGraph()
+    client = _client(monkeypatch, graph)
+    user_id = _signup_login(client, "stale-run@example.com")
+    conversation_id = client.post("/conversations", json={"title": "Stale run"}).json()["id"]
+    stale_run_id = _create_running_run(
+        conversation_id=conversation_id,
+        user_id=user_id,
+        created_at=datetime.now(UTC) - timedelta(minutes=30),
+    )
+
+    response = client.post(
+        f"/conversations/{conversation_id}/runs", json={"message": "After stale"}
+    )
+
+    assert response.status_code == 200
+    runs = client.get(f"/conversations/{conversation_id}/runs").json()
+    runs_by_id = {run["run_id"]: run for run in runs}
+    assert runs_by_id[stale_run_id]["status"] == "failed"
+    assert response.json()["run_id"] in runs_by_id
+    assert runs_by_id[response.json()["run_id"]]["status"] == "completed"
+
+    stale_events = client.get(f"/conversations/{conversation_id}/runs/{stale_run_id}/events")
+    assert stale_events.status_code == 200
+    assert stale_events.json()[-1]["event_type"] == "run_failed"
+    assert stale_events.json()[-1]["payload"] == {
+        "safe_error_type": "StaleActiveRun",
+        "stale_active_run_cleanup": True,
+    }
+
+
+def test_list_runs_terminalizes_stale_active_run(monkeypatch) -> None:  # noqa: ANN001
+    client = _client(monkeypatch, SpyGraph())
+    user_id = _signup_login(client, "stale-run-list@example.com")
+    conversation_id = client.post("/conversations", json={"title": "Stale run list"}).json()["id"]
+    stale_run_id = _create_running_run(
+        conversation_id=conversation_id,
+        user_id=user_id,
+        created_at=datetime.now(UTC) - timedelta(minutes=30),
+    )
+
+    runs = client.get(f"/conversations/{conversation_id}/runs")
+
+    assert runs.status_code == 200
+    payload = runs.json()
+    assert len(payload) == 1
+    assert payload[0]["run_id"] == stale_run_id
+    assert payload[0]["conversation_id"] == conversation_id
+    assert payload[0]["status"] == "failed"
+    assert payload[0]["route_label"] is None
+
+    response = client.post(f"/conversations/{conversation_id}/runs", json={"message": "Recovered"})
+    assert response.status_code == 200
+
+    stale_events = client.get(f"/conversations/{conversation_id}/runs/{stale_run_id}/events")
+    assert stale_events.status_code == 200
+    assert stale_events.json()[-1]["event_type"] == "run_failed"
+    assert stale_events.json()[-1]["payload"] == {
+        "safe_error_type": "StaleActiveRun",
+        "stale_active_run_cleanup": True,
+    }
+
+
+def test_sync_post_start_failure_terminalizes_run(monkeypatch) -> None:  # noqa: ANN001
+    graph = SpyGraph()
+    client = _client(monkeypatch, graph, raise_server_exceptions=False)
+    _signup_login(client, "post-start-failure@example.com")
+    conversation_id = client.post("/conversations", json={"title": "Post-start failure"}).json()[
+        "id"
+    ]
+
+    from my_agents.api.conversations import run_lifecycle
+
+    original_prepare_retrieval_context = run_lifecycle.prepare_retrieval_context
+
+    def fail_retrieval_context(**kwargs: Any):  # noqa: ANN401, ARG001
+        raise RuntimeError("retrieval failed after run start")
+
+    monkeypatch.setattr(run_lifecycle, "prepare_retrieval_context", fail_retrieval_context)
+
+    failed = client.post(
+        f"/conversations/{conversation_id}/runs", json={"message": "Fail after start"}
+    )
+
+    assert failed.status_code == 502
+    assert failed.json() == {"detail": "conversation run failed"}
+    failed_run = client.get(f"/conversations/{conversation_id}/runs").json()[0]
+    assert failed_run["status"] == "failed"
+    events = client.get(f"/conversations/{conversation_id}/runs/{failed_run['run_id']}/events")
+    assert [event["event_type"] for event in events.json()] == [
+        "run_started",
+        "user_message_stored",
+        "run_failed",
+    ]
+    assert events.json()[-1]["payload"] == {"safe_error_type": "RuntimeError"}
+
+    monkeypatch.setattr(
+        run_lifecycle,
+        "prepare_retrieval_context",
+        original_prepare_retrieval_context,
+    )
+    recovered = client.post(f"/conversations/{conversation_id}/runs", json={"message": "Recovered"})
+    assert recovered.status_code == 200
+
+
+def test_stream_generator_close_after_start_cancels_without_partial_assistant(monkeypatch) -> None:  # noqa: ANN001
+    client = _client(monkeypatch, StreamingSpyGraph())
+    user_id = _signup_login(client, "stream-close@example.com")
+    conversation_id = client.post("/conversations", json={"title": "Stream close"}).json()["id"]
+    session_generator = get_database_session()
+    db = next(session_generator)
+    stream = conversation_run_events(
+        db=db,
+        conversation_id=conversation_id,
+        request=ConversationRunRequest(message="Close after start"),
+        user_id=user_id,
+        selection_context=KnowledgeBaseSelectionContext(
+            mode="all",
+            knowledge_base_ids=(),
+            resolved_count=0,
+        ),
+        graph_runner=StreamingSpyGraph(),
+    )
+
+    try:
+        first_event = next(stream)
+        run_id = _parse_sse(first_event)[0]["data"]["run_id"]
+        stream.close()
+    finally:
+        session_generator.close()
+
+    transcript = client.get(f"/conversations/{conversation_id}/messages").json()
+    runs = client.get(f"/conversations/{conversation_id}/runs").json()
+    run_events = client.get(f"/conversations/{conversation_id}/runs/{run_id}/events").json()
+
+    assert [(message["role"], message["content"]) for message in transcript] == [
+        ("user", "Close after start"),
+    ]
+    assert runs[0]["status"] == "cancelled"
+    assert [event["event_type"] for event in run_events] == [
+        "run_started",
+        "user_message_stored",
+        "run_cancelled",
+    ]
+
+
 def test_streaming_cancelled_run_does_not_persist_partial_assistant(monkeypatch) -> None:  # noqa: ANN001
     client = _client(monkeypatch, CancellingStreamingGraph())
     _signup_login(client, "stream-cancel@example.com")
@@ -1259,7 +1409,12 @@ def test_legacy_assistant_chat_remains_dev_surface_without_product_run_fields(mo
     assert "citations" not in payload
 
 
-def _create_running_run(*, conversation_id: str, user_id: str) -> str:
+def _create_running_run(
+    *,
+    conversation_id: str,
+    user_id: str,
+    created_at: datetime | None = None,
+) -> str:
     session_generator = get_database_session()
     db = next(session_generator)
     try:
@@ -1268,6 +1423,8 @@ def _create_running_run(*, conversation_id: str, user_id: str) -> str:
             user_id=user_id,
             status=RunStatus.RUNNING.value,
         )
+        if created_at is not None:
+            run.created_at = created_at
         db.add(run)
         db.commit()
         db.refresh(run)

@@ -36,6 +36,8 @@ from my_agents.api.conversations.run_events import (
 from my_agents.api.conversations.run_lifecycle import (
     assert_no_active_run,
     cancelled_sse_event,
+    fail_active_run,
+    is_run_active,
     is_run_cancelling,
     persist_completed_run,
     persist_failed_run,
@@ -142,203 +144,236 @@ def conversation_run_events(
         message_content_length=message_content_length,
         selection_context=selection_context,
     )
-    yield sse_event(
-        AgentEventType.RUN_STARTED.value,
-        {
-            "run_id": run.id,
-            "conversation_id": conversation_id,
-            "status": run.status,
-            **knowledge_base_selection_payload(selection_context),
-        },
-    )
-    user_message_payload = user_message_stored_payload(
-        message_id=user_message.id,
-        content_length=message_content_length,
-    )
-    yield sse_event(AgentEventType.USER_MESSAGE_STORED.value, user_message_payload)
+    try:
+        yield sse_event(
+            AgentEventType.RUN_STARTED.value,
+            {
+                "run_id": run.id,
+                "conversation_id": conversation_id,
+                "status": run.status,
+                **knowledge_base_selection_payload(selection_context),
+            },
+        )
+        user_message_payload = user_message_stored_payload(
+            message_id=user_message.id,
+            content_length=message_content_length,
+        )
+        yield sse_event(AgentEventType.USER_MESSAGE_STORED.value, user_message_payload)
 
-    messages = messages_for_conversation(db, conversation_id)
-    retrieval_context = prepare_retrieval_context(
-        db=db,
-        user_id=user_id,
-        conversation_id=conversation_id,
-        message=request.message,
-        messages=messages,
-        selection_context=selection_context,
-    )
-    record_run_retrieval_metadata(
-        db,
-        run.id,
-        retrieval_decision=retrieval_context.decision,
-        answer_mode=retrieval_context.answer_mode,
-        selection_context=retrieval_context.knowledge_base_selection,
-    )
-    retrieval_payload = retrieval_completed_payload(
-        retrieved_chunks=retrieval_context.retrieved_chunks,
-        retrieval_latency_ms=retrieval_context.retrieval_latency_ms,
-        retrieval_decision=retrieval_context.decision,
-        answer_mode=retrieval_context.answer_mode,
-        selection_context=retrieval_context.knowledge_base_selection,
-        retrieval_evidence=retrieval_context.retrieval_evidence,
-    )
-    append_run_event(db, run.id, AgentEventType.RETRIEVAL_COMPLETED, retrieval_payload)
-    yield sse_event(AgentEventType.RETRIEVAL_COMPLETED.value, retrieval_payload)
-    if is_run_cancelling(db, run.id):
-        yield cancelled_sse_event(db, run.id)
-        return
-
-    if retrieval_context.decision.route == "clarification_required":
-        route = classify_messages(messages)
-        clarification = clarification_request(retrieval_context.decision)
-        response = persist_completed_run(
+        messages = messages_for_conversation(db, conversation_id)
+        retrieval_context = prepare_retrieval_context(
             db=db,
-            run_id=run.id,
+            user_id=user_id,
             conversation_id=conversation_id,
-            retrieved_chunks=[],
-            route=route,
-            reply="",
+            message=request.message,
+            messages=messages,
+            selection_context=selection_context,
+        )
+        record_run_retrieval_metadata(
+            db,
+            run.id,
             retrieval_decision=retrieval_context.decision,
             answer_mode=retrieval_context.answer_mode,
             selection_context=retrieval_context.knowledge_base_selection,
-            clarification=clarification,
         )
-        yield sse_event(
-            AgentEventType.ANSWER_COMPOSED.value,
-            answer_composed_payload(
-                citation_count=0,
-                reply=response.reply,
+        retrieval_payload = retrieval_completed_payload(
+            retrieved_chunks=retrieval_context.retrieved_chunks,
+            retrieval_latency_ms=retrieval_context.retrieval_latency_ms,
+            retrieval_decision=retrieval_context.decision,
+            answer_mode=retrieval_context.answer_mode,
+            selection_context=retrieval_context.knowledge_base_selection,
+            retrieval_evidence=retrieval_context.retrieval_evidence,
+        )
+        append_run_event(db, run.id, AgentEventType.RETRIEVAL_COMPLETED, retrieval_payload)
+        yield sse_event(AgentEventType.RETRIEVAL_COMPLETED.value, retrieval_payload)
+        if is_run_cancelling(db, run.id):
+            yield cancelled_sse_event(db, run.id)
+            return
+
+        if retrieval_context.decision.route == "clarification_required":
+            route = classify_messages(messages)
+            clarification = clarification_request(retrieval_context.decision)
+            response = persist_completed_run(
+                db=db,
+                run_id=run.id,
+                conversation_id=conversation_id,
+                retrieved_chunks=[],
+                route=route,
+                reply="",
                 retrieval_decision=retrieval_context.decision,
                 answer_mode=retrieval_context.answer_mode,
                 selection_context=retrieval_context.knowledge_base_selection,
                 clarification=clarification,
-            ),
-        )
-        yield sse_event("run_completed", response.model_dump(mode="json"))
-        return
-
-    graph_input = graph_input_for_run(
-        messages=messages,
-        user_id=user_id,
-        conversation_id=conversation_id,
-        retrieval_context=retrieval_context,
-    )
-    log_retrieval_context_for_llm(
-        run_id=run.id,
-        conversation_id=conversation_id,
-        user_id=user_id,
-        retrieval_context=retrieval_context,
-        graph_input=graph_input,
-    )
-    stream_route = classify_messages(messages)
-    graph_invoked = False
-    delta_sequence = 0
-    streamed_base_reply_parts: list[str] = []
-    result: dict[str, Any] | None = None
-    try:
-        for item in stream_graph_items(graph_runner=graph_runner, graph_input=graph_input):
-            if not graph_invoked:
-                graph_payload = graph_invoked_payload(
-                    route=stream_route,
-                    messages=messages,
-                    retrieved_chunks=retrieval_context.retrieved_chunks,
+            )
+            yield sse_event(
+                AgentEventType.ANSWER_COMPOSED.value,
+                answer_composed_payload(
+                    citation_count=0,
+                    reply=response.reply,
                     retrieval_decision=retrieval_context.decision,
                     answer_mode=retrieval_context.answer_mode,
                     selection_context=retrieval_context.knowledge_base_selection,
-                )
-                append_run_event(db, run.id, AgentEventType.GRAPH_INVOKED, graph_payload)
-                yield sse_event(
-                    AgentEventType.GRAPH_INVOKED.value,
-                    graph_payload,
-                )
-                graph_invoked = True
-            if is_run_cancelling(db, run.id):
-                yield cancelled_sse_event(db, run.id)
-                return
-            if item.kind == "delta":
-                delta_sequence += 1
-                streamed_base_reply_parts.append(item.delta)
-                yield sse_event(
-                    "answer_delta",
-                    {"delta": item.delta, "sequence": delta_sequence},
-                )
-                continue
-            result = item.result
-    except ResponseProviderConfigurationError as exc:
-        run_id = persist_failed_run(
-            db=db,
-            run_id=run.id,
-            conversation_id=conversation_id,
-            error_type=type(exc).__name__,
-        )
-        yield sse_event(
-            AgentEventType.RUN_FAILED.value,
-            {"run_id": run_id, "safe_error_type": type(exc).__name__},
-        )
-        yield sse_event("run_error", {"run_id": run_id, "status_code": 503})
-        return
-    except Exception as exc:
-        run_id = persist_failed_run(
-            db=db,
-            run_id=run.id,
-            conversation_id=conversation_id,
-            error_type=type(exc).__name__,
-        )
-        yield sse_event(
-            AgentEventType.RUN_FAILED.value,
-            {"run_id": run_id, "safe_error_type": type(exc).__name__},
-        )
-        yield sse_event("run_error", {"run_id": run_id, "status_code": 502})
-        return
+                    clarification=clarification,
+                ),
+            )
+            yield sse_event("run_completed", response.model_dump(mode="json"))
+            return
 
-    if result is None:
-        raise RuntimeError("conversation graph stream ended without a final result")
-    route = coerce_route(result["route"])
-    base_reply = result.get("reply") or "".join(streamed_base_reply_parts).strip()
-    used_chunks = chunks_used_for_answer(retrieval_context)
-    reply = compose_rag_reply(base_reply, used_chunks, retrieval_context.answer_mode)
-    if not graph_invoked:
-        graph_payload = graph_invoked_payload(
-            route=route,
+        graph_input = graph_input_for_run(
             messages=messages,
-            retrieved_chunks=retrieval_context.retrieved_chunks,
-            retrieval_decision=retrieval_context.decision,
-            answer_mode=retrieval_context.answer_mode,
-            selection_context=retrieval_context.knowledge_base_selection,
+            user_id=user_id,
+            conversation_id=conversation_id,
+            retrieval_context=retrieval_context,
         )
-        append_run_event(db, run.id, AgentEventType.GRAPH_INVOKED, graph_payload)
-        yield sse_event(
-            AgentEventType.GRAPH_INVOKED.value,
-            graph_payload,
+        log_retrieval_context_for_llm(
+            run_id=run.id,
+            conversation_id=conversation_id,
+            user_id=user_id,
+            retrieval_context=retrieval_context,
+            graph_input=graph_input,
         )
-    if not streamed_base_reply_parts:
-        for delta in fallback_answer_deltas(base_reply):
-            if is_run_cancelling(db, run.id):
-                yield cancelled_sse_event(db, run.id)
-                return
-            delta_sequence += 1
-            yield sse_event("answer_delta", {"delta": delta, "sequence": delta_sequence})
-    if is_run_cancelling(db, run.id):
-        yield cancelled_sse_event(db, run.id)
-        return
-    response = persist_completed_run(
-        db=db,
-        run_id=run.id,
-        conversation_id=conversation_id,
-        retrieved_chunks=used_chunks,
-        route=route,
-        reply=reply,
-        retrieval_decision=retrieval_context.decision,
-        answer_mode=retrieval_context.answer_mode,
-        selection_context=retrieval_context.knowledge_base_selection,
-    )
-    yield sse_event(
-        AgentEventType.ANSWER_COMPOSED.value,
-        answer_composed_payload(
-            citation_count=len(response.citations),
+        stream_route = classify_messages(messages)
+        graph_invoked = False
+        delta_sequence = 0
+        streamed_base_reply_parts: list[str] = []
+        result: dict[str, Any] | None = None
+        try:
+            for item in stream_graph_items(graph_runner=graph_runner, graph_input=graph_input):
+                if not graph_invoked:
+                    graph_payload = graph_invoked_payload(
+                        route=stream_route,
+                        messages=messages,
+                        retrieved_chunks=retrieval_context.retrieved_chunks,
+                        retrieval_decision=retrieval_context.decision,
+                        answer_mode=retrieval_context.answer_mode,
+                        selection_context=retrieval_context.knowledge_base_selection,
+                    )
+                    append_run_event(db, run.id, AgentEventType.GRAPH_INVOKED, graph_payload)
+                    yield sse_event(
+                        AgentEventType.GRAPH_INVOKED.value,
+                        graph_payload,
+                    )
+                    graph_invoked = True
+                if is_run_cancelling(db, run.id):
+                    yield cancelled_sse_event(db, run.id)
+                    return
+                if item.kind == "delta":
+                    delta_sequence += 1
+                    streamed_base_reply_parts.append(item.delta)
+                    yield sse_event(
+                        "answer_delta",
+                        {"delta": item.delta, "sequence": delta_sequence},
+                    )
+                    continue
+                result = item.result
+        except ResponseProviderConfigurationError as exc:
+            run_id = persist_failed_run(
+                db=db,
+                run_id=run.id,
+                conversation_id=conversation_id,
+                error_type=type(exc).__name__,
+            )
+            yield sse_event(
+                AgentEventType.RUN_FAILED.value,
+                {"run_id": run_id, "safe_error_type": type(exc).__name__},
+            )
+            yield sse_event("run_error", {"run_id": run_id, "status_code": 503})
+            return
+        except Exception as exc:
+            run_id = persist_failed_run(
+                db=db,
+                run_id=run.id,
+                conversation_id=conversation_id,
+                error_type=type(exc).__name__,
+            )
+            yield sse_event(
+                AgentEventType.RUN_FAILED.value,
+                {"run_id": run_id, "safe_error_type": type(exc).__name__},
+            )
+            yield sse_event("run_error", {"run_id": run_id, "status_code": 502})
+            return
+
+        if result is None:
+            raise RuntimeError("conversation graph stream ended without a final result")
+        route = coerce_route(result["route"])
+        base_reply = result.get("reply") or "".join(streamed_base_reply_parts).strip()
+        used_chunks = chunks_used_for_answer(retrieval_context)
+        reply = compose_rag_reply(base_reply, used_chunks, retrieval_context.answer_mode)
+        if not graph_invoked:
+            graph_payload = graph_invoked_payload(
+                route=route,
+                messages=messages,
+                retrieved_chunks=retrieval_context.retrieved_chunks,
+                retrieval_decision=retrieval_context.decision,
+                answer_mode=retrieval_context.answer_mode,
+                selection_context=retrieval_context.knowledge_base_selection,
+            )
+            append_run_event(db, run.id, AgentEventType.GRAPH_INVOKED, graph_payload)
+            yield sse_event(
+                AgentEventType.GRAPH_INVOKED.value,
+                graph_payload,
+            )
+        if not streamed_base_reply_parts:
+            for delta in fallback_answer_deltas(base_reply):
+                if is_run_cancelling(db, run.id):
+                    yield cancelled_sse_event(db, run.id)
+                    return
+                delta_sequence += 1
+                yield sse_event("answer_delta", {"delta": delta, "sequence": delta_sequence})
+        if is_run_cancelling(db, run.id):
+            yield cancelled_sse_event(db, run.id)
+            return
+        response = persist_completed_run(
+            db=db,
+            run_id=run.id,
+            conversation_id=conversation_id,
+            retrieved_chunks=used_chunks,
+            route=route,
             reply=reply,
             retrieval_decision=retrieval_context.decision,
             answer_mode=retrieval_context.answer_mode,
             selection_context=retrieval_context.knowledge_base_selection,
-        ),
-    )
-    yield sse_event("run_completed", response.model_dump(mode="json"))
+        )
+        yield sse_event(
+            AgentEventType.ANSWER_COMPOSED.value,
+            answer_composed_payload(
+                citation_count=len(response.citations),
+                reply=reply,
+                retrieval_decision=retrieval_context.decision,
+                answer_mode=retrieval_context.answer_mode,
+                selection_context=retrieval_context.knowledge_base_selection,
+            ),
+        )
+        yield sse_event("run_completed", response.model_dump(mode="json"))
+    except GeneratorExit:
+        if is_run_active(db, run.id):
+            cancelled_sse_event(db, run.id)
+        raise
+    except ResponseProviderConfigurationError as exc:
+        run_id = fail_active_run(
+            db=db,
+            run_id=run.id,
+            conversation_id=conversation_id,
+            error_type=type(exc).__name__,
+        )
+        if run_id is not None:
+            yield sse_event(
+                AgentEventType.RUN_FAILED.value,
+                {"run_id": run_id, "safe_error_type": type(exc).__name__},
+            )
+            yield sse_event("run_error", {"run_id": run_id, "status_code": 503})
+        return
+    except Exception as exc:
+        run_id = fail_active_run(
+            db=db,
+            run_id=run.id,
+            conversation_id=conversation_id,
+            error_type=type(exc).__name__,
+        )
+        if run_id is not None:
+            yield sse_event(
+                AgentEventType.RUN_FAILED.value,
+                {"run_id": run_id, "safe_error_type": type(exc).__name__},
+            )
+            yield sse_event("run_error", {"run_id": run_id, "status_code": 502})
+        return

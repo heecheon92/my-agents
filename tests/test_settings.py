@@ -100,6 +100,33 @@ def test_embedding_settings_default_to_deterministic(monkeypatch: pytest.MonkeyP
     assert settings.tesseract_render_scale == 3.0
     assert settings.tesseract_timeout_seconds == 15
     assert settings.tesseract_max_pages == 3
+    assert settings.document_metadata_enrichment_mode == "auto"
+    assert settings.document_metadata_model is None
+    assert settings.document_metadata_max_input_chars == 24000
+
+
+def test_document_metadata_openai_mode_requires_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
+    monkeypatch.setenv("MY_AGENTS_DOCUMENT_METADATA_ENRICHMENT_MODE", "openai")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("MY_AGENTS_OPENAI_API_KEY", raising=False)
+
+    with pytest.raises(ValidationError, match="DOCUMENT_METADATA_ENRICHMENT_MODE=openai"):
+        Settings(_env_file=None)
+
+
+def test_document_metadata_settings_accept_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
+    monkeypatch.setenv("MY_AGENTS_DOCUMENT_METADATA_ENRICHMENT_MODE", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("MY_AGENTS_DOCUMENT_METADATA_MODEL", "gpt-metadata")
+    monkeypatch.setenv("MY_AGENTS_DOCUMENT_METADATA_MAX_INPUT_CHARS", "48000")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.document_metadata_enrichment_mode == "openai"
+    assert settings.document_metadata_model == "gpt-metadata"
+    assert settings.document_metadata_max_input_chars == 48000
 
 
 def test_openai_embedding_mode_requires_api_key(monkeypatch: pytest.MonkeyPatch) -> None:

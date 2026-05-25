@@ -204,6 +204,13 @@ MY_AGENTS_CROSS_ENCODER_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2
 MY_AGENTS_CROSS_ENCODER_BATCH_SIZE=16
 # MY_AGENTS_CROSS_ENCODER_DEVICE=mps
 
+# 문서 metadata enrichment는 검색 친화적인 title/description/summary/keyword profile을
+# ingestion 중 생성하고 별도 vector retrieval lane으로 embedding합니다. auto는 response mode가 openai이고
+# API key가 있으면 OpenAI를, 아니면 test/demo용 deterministic metadata를 사용합니다.
+MY_AGENTS_DOCUMENT_METADATA_ENRICHMENT_MODE=auto
+# MY_AGENTS_DOCUMENT_METADATA_MODEL=
+MY_AGENTS_DOCUMENT_METADATA_MAX_INPUT_CHARS=24000
+
 # 민감한 로컬 디버그 전용: ContextForge 역할 handoff와 LLM에 전달되는 검색 context를 Rich print로 출력합니다.
 MY_AGENTS_DEBUG_KNOWLEDGE_CONTEXT_LOGGING=false
 ```
@@ -672,15 +679,14 @@ Markdown/plain text는 UTF-8 텍스트로 decoding하며 구조적 Markdown pars
 (`source_filename`, content type, byte size, SHA-256, page count, parser name)는 document에
 저장되고, ingestion chunk에는 `source_page`가 기록되어 이후 citation provenance에 사용할 수
 있습니다. conversation citation 응답은 이미 가능한 경우 `source_page`와 `source_filename`을
-함께 반환합니다. ingestion은 paragraph/sentence 기반 chunk, entity mention, JSON-backed embedding을 생성합니다.
+함께 반환합니다. ingestion은 paragraph/sentence 기반 chunk, entity mention, endpoint/config/command/error/table용 structured knowledge entity, 검색 친화적인 generated document metadata profile(`title`, `description`, `summary`, keywords/topics/entities), chunk 및 metadata profile용 JSON-backed embedding을 생성합니다.
 기존 동기 ingestion endpoint는 호환성을 유지하고, async ingestion endpoint는 in-process background thread에서 fresh DB session으로 실행됩니다. `ExtractionRunResponse`는 `status`(`pending|running|completed|failed`), `stage`, `progress_percent`, count, safe `error`, `started_at`, `completed_at`을 반환합니다. 이 V1 async path는 외부 queue/Redis/Celery 없는 local/demo 계약이며 process restart durability는 보장하지 않습니다.
 Postgres에서 Alembic migration을 적용하면 chunk에 pgvector `embedding_vector`도 저장되어,
 retrieval이 권한 필터가 적용된 SQL vector search를 먼저 수행하고 JSON cosine ranking으로 fallback할 수 있습니다.
 기본값은 offline test용 32차원 deterministic lexical-hash vector이며,
 `MY_AGENTS_EMBEDDING_MODE=openai`일 때는 `langchain-openai`/OpenAI embedding
 (`text-embedding-3-small` 등)을 사용합니다. Docling dependency는 OCR 기능을 포함하지만 현재 upload contract는 request-time local extraction만 사용하므로 scanned/encrypted/image-only PDF,
-복잡한 multi-column/layout 복원의 품질 보장, DOCX, HTML, CSV/JSON structural parsing은 아직 지원하지 않으며, OpenAI extraction 호출,
-ANN/vector index tuning은 아직 수행하지 않습니다. Cross-encoder reranking은 `MY_AGENTS_RERANKER_MODE=cross_encoder`로 켜는 optional second-stage seam으로 제공되며, 기본 offline/test 경로는 deterministic reranker입니다.
+복잡한 multi-column/layout 복원의 품질 보장, DOCX, HTML, CSV/JSON structural parsing과 ANN/vector index tuning은 아직 수행하지 않습니다. 검색 친화적 document metadata enrichment는 `MY_AGENTS_DOCUMENT_METADATA_ENRICHMENT_MODE=auto|deterministic|openai`로 제어하며, `auto`는 response mode가 openai이고 API key가 있으면 OpenAI를 사용하며, 아니면 deterministic offline metadata로 fallback합니다. Cross-encoder reranking은 `MY_AGENTS_RERANKER_MODE=cross_encoder`로 켜는 optional second-stage seam으로 제공되며, 기본 offline/test 경로는 deterministic reranker입니다.
 
 
 ### Permission-aware RAG 및 citation 기반 응답
@@ -694,10 +700,11 @@ ANN/vector index tuning은 아직 수행하지 않습니다. Cross-encoder reran
 4. `no_retrieval`은 candidate retrieval을 건너뛰고 `answer_mode=general_knowledge`로 답합니다.
 5. `retrieval_required`/`retrieval_optional`만 후보를 수집하며, low-level `RetrievalService`는 여전히 현재 사용자에게 읽기 권한이 있는 document chunk만 먼저 선택합니다.
 6. Candidate Scouts는 사용자가 `NCT06159946_Prot_000`처럼 파일명/제목으로 문서를 부르는 경우를 위해 승인된 document `title`/`source_filename` metadata도 검색합니다. 파일명 자체가 본문에 없어도 matching document의 chunk를 후보로 올립니다.
-7. Candidate Scouts는 endpoint/config/command/error/table 질문을 위해 pgvector/JSON vector search, lexical scoring, entity expansion, structured entity retrieval을 결합합니다.
-8. ContextForge는 후보를 fusion하고 기본 deterministic rerank 또는 optional cross-encoder rerank 후 명시적 budget 안에서 high-recall context를 packing하며, intent, reranker, candidate count, injected count, rejected count, structured entity type, latency 같은 redacted evidence를 이벤트로 남깁니다. `MY_AGENTS_DEBUG_KNOWLEDGE_CONTEXT_LOGGING=true`인 로컬 디버그 세션에서는 각 역할 handoff와 assistant graph로 전달되는 context payload도 Rich print로 볼 수 있습니다.
-9. optional 검색 결과가 관련 있으면 `answer_mode=mixed`, required 검색 결과가 관련 있으면 `answer_mode=document_grounded`가 됩니다. 관련 context가 없으면 일반 지식 답변으로 남고 citation을 만들지 않습니다.
-10. 권한이 확인된 compact context payload만 `general_assistant` graph/provider prompt에 전달하고, 응답 payload에는 `retrieval_route`, `answer_mode`, `document_scope`, `citations`를 함께 반환합니다.
+7. Candidate Scouts는 generated document metadata profile도 별도 vector lane으로 검색합니다. 이 profile은 retrieval term, alias, abbreviation, multilingual hint, domain vocabulary에 맞춰 생성됩니다. metadata profile이 match해도 ContextForge는 원문 source chunk를 주입하므로 citation은 계속 원문 document에 grounded됩니다.
+8. Candidate Scouts는 endpoint/config/command/error/table 질문을 위해 pgvector/JSON vector search, lexical scoring, entity expansion, structured entity retrieval을 결합합니다.
+9. ContextForge는 후보를 fusion하고 기본 deterministic rerank 또는 optional cross-encoder rerank 후 명시적 budget 안에서 high-recall context를 packing하며, intent, reranker, candidate count, injected count, rejected count, structured entity type, latency 같은 redacted evidence를 이벤트로 남깁니다. `MY_AGENTS_DEBUG_KNOWLEDGE_CONTEXT_LOGGING=true`인 로컬 디버그 세션에서는 각 역할 handoff와 assistant graph로 전달되는 context payload도 Rich print로 볼 수 있습니다.
+10. optional 검색 결과가 관련 있으면 `answer_mode=mixed`, required 검색 결과가 관련 있으면 `answer_mode=document_grounded`가 됩니다. 관련 context가 없으면 일반 지식 답변으로 남고 citation을 만들지 않습니다.
+11. 권한이 확인된 compact context payload만 `general_assistant` graph/provider prompt에 전달하고, 응답 payload에는 `retrieval_route`, `answer_mode`, `document_scope`, `citations`를 함께 반환합니다.
 
 예시 응답 일부:
 

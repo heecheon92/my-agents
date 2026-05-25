@@ -52,6 +52,13 @@ metadata match still promotes chunks from that document as `document_metadata` c
 This path only considers documents that already passed the existing KB/source authorization
 boundary.
 
+Ingestion also creates a generated document metadata profile with a search-oriented title,
+description, summary, keywords, topics, entities, and a profile embedding. Candidate Scouts
+search those profiles as `document_metadata_profile` candidates. The profile text is optimized
+for vector searchability: likely user terms, aliases, abbreviations, multilingual hints, and
+domain vocabulary. When a profile matches, ContextForge still injects original document chunks
+so the final answer and citations remain grounded in source text rather than generated metadata.
+
 ## Structured retrieval
 
 ContextForge can route enumeration-style questions such as “list API endpoints” to structured entities extracted during ingestion. The first structured entity types are:

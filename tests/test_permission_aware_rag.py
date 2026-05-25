@@ -12,7 +12,12 @@ import my_agents.knowledge.extraction as extraction_module
 import my_agents.knowledge.retrieval as retrieval_module
 from my_agents.api import create_app
 from my_agents.api.assistant import get_graph_runner
-from my_agents.knowledge.models import DocumentChunkModel
+from my_agents.knowledge.metadata_enrichment import (
+    DocumentMetadataProfile,
+    GeneratedDocumentMetadata,
+    build_vector_search_text,
+)
+from my_agents.knowledge.models import DocumentChunkModel, DocumentMetadataProfileModel
 from my_agents.knowledge.retrieval import RetrievalService, _postgres_vector_authorized_statement
 from my_agents.persistence.database import get_database_session
 from my_agents.schemas import RouteDecision
@@ -52,6 +57,58 @@ class SemanticFakeEmbeddingProvider:
         if any(term in normalized for term in ("pastry", "baking", "bread")):
             return [0.0, 1.0]
         return [0.5, 0.5]
+
+
+class MetadataFocusedEmbeddingProvider(SemanticFakeEmbeddingProvider):
+    provider = "metadata-focused-fake"
+    model = "metadata-focused-fake-v1"
+
+    def _vector(self, text: str) -> list[float]:
+        normalized = text.casefold()
+        if any(term in normalized for term in ("oncology", "cancer", "tumor")):
+            return [1.0, 0.0]
+        if any(term in normalized for term in ("visit schedule", "dosing table")):
+            return [0.0, 1.0]
+        return [0.0, 1.0]
+
+
+class StaticMetadataGenerator:
+    name = "openai-test-double"
+    model = "metadata-test-model"
+
+    def generate(self, document):  # noqa: ANN001
+        metadata = GeneratedDocumentMetadata(
+            title="Oncology clinical trial protocol",
+            description=(
+                "Vector search metadata for oncology, cancer therapy, tumor response, "
+                "trial eligibility, dosing, adverse events, and protocol lookup."
+            ),
+            summary=(
+                "Search-oriented profile: oncology clinical trial protocol covering cancer "
+                "treatment eligibility, treatment schedule, safety monitoring, and outcomes."
+            ),
+            keywords=[
+                "oncology",
+                "cancer therapy",
+                "tumor response",
+                "clinical trial protocol",
+                "eligibility criteria",
+            ],
+            topics=["oncology trial", "protocol retrieval"],
+            entities=["NCT06159946_Prot_000"],
+            language="en",
+            confidence="high",
+        )
+        return DocumentMetadataProfile(
+            metadata=metadata,
+            search_text=build_vector_search_text(
+                metadata,
+                source_filename=document.source_filename,
+                explicit_title=document.title,
+            ),
+            generator=self.name,
+            model=self.model,
+        )
 
 
 def _client(monkeypatch, graph: RagSpyGraph | None = None) -> TestClient:  # noqa: ANN001
@@ -453,6 +510,78 @@ def test_selected_kb_vector_retrieval_respects_scope(monkeypatch) -> None:  # no
     assert {context["source"] for context in graph.calls[-1]["retrieved_context"]} == {
         "semantic_vector"
     }
+
+
+def test_generated_metadata_profile_retrieves_when_body_lacks_search_terms(
+    monkeypatch,
+) -> None:  # noqa: ANN001
+    fake_embeddings = MetadataFocusedEmbeddingProvider()
+    monkeypatch.setattr(extraction_module, "get_embedding_provider", lambda: fake_embeddings)
+    monkeypatch.setattr(retrieval_module, "get_embedding_provider", lambda: fake_embeddings)
+    monkeypatch.setattr(
+        extraction_module,
+        "build_document_metadata_generator",
+        lambda _settings: StaticMetadataGenerator(),
+    )
+    graph = RagSpyGraph()
+    client = _client(monkeypatch, graph)
+    user_id = _signup_login(client, "metadata-profile-owner@example.com")
+    kb_id = _create_personal_knowledge_base(client, "Metadata Profile KB")
+    document = _create_document(
+        client,
+        json={
+            "title": "Protocol Schedule Notes",
+            "content": "Visit schedule and dosing table are stored here without disease terms.",
+            "knowledge_base_id": kb_id,
+        },
+    )
+    assert document.status_code == 201
+    document_id = document.json()["id"]
+    assert client.post(f"/documents/{document_id}/ingest").status_code == 200
+
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        profile = db.scalar(
+            select(DocumentMetadataProfileModel).where(
+                DocumentMetadataProfileModel.document_id == document_id
+            )
+        )
+        assert profile is not None
+        assert profile.generator == "openai-test-double"
+        assert "oncology" in profile.search_text
+        results = RetrievalService(db).retrieve_scoped(
+            user_id=user_id,
+            query="Find my oncology cancer protocol",
+            limit=5,
+            knowledge_base_ids=[kb_id],
+        )
+    finally:
+        session_generator.close()
+
+    assert results
+    assert results[0].document.id == document_id
+    assert results[0].source == "document_metadata_profile"
+
+    conversation_id = _create_conversation(client, "Metadata profile retrieval")
+    response = client.post(
+        f"/conversations/{conversation_id}/runs",
+        json={
+            "message": "What does my uploaded oncology protocol say?",
+            "knowledge_base_selection": {"mode": "selected", "knowledge_base_ids": [kb_id]},
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["citations"][0]["document_id"] == document_id
+    assert graph.calls[-1]["retrieved_context"][0]["source"] == "document_metadata_profile"
+
+    events = client.get(f"/conversations/{conversation_id}/runs/{payload['run_id']}/events")
+    retrieval_event = next(
+        event for event in events.json() if event["event_type"] == "retrieval_completed"
+    )
+    assert retrieval_event["payload"]["document_metadata_profile_count"] >= 1
 
 
 def test_postgres_vector_statement_filters_permissions_before_vector_ordering() -> None:

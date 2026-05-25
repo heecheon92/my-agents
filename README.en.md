@@ -204,6 +204,13 @@ MY_AGENTS_CROSS_ENCODER_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2
 MY_AGENTS_CROSS_ENCODER_BATCH_SIZE=16
 # MY_AGENTS_CROSS_ENCODER_DEVICE=mps
 
+# Document metadata enrichment creates search-oriented metadata profiles and
+# embeds them as a separate retrieval lane. auto uses OpenAI when response mode is openai and
+# an API key is configured, otherwise deterministic offline metadata for tests/demos.
+MY_AGENTS_DOCUMENT_METADATA_ENRICHMENT_MODE=auto
+# MY_AGENTS_DOCUMENT_METADATA_MODEL=
+MY_AGENTS_DOCUMENT_METADATA_MAX_INPUT_CHARS=24000
+
 # Sensitive local debugging only: Rich-print ContextForge role handoffs and
 # the retrieval context sent into the LLM prompt.
 MY_AGENTS_DEBUG_KNOWLEDGE_CONTEXT_LOGGING=false
@@ -679,13 +686,17 @@ metadata (`source_filename`, content type, byte size, SHA-256, page count, parse
 is persisted on the document, and ingestion chunks record `source_page` for later citation
 provenance. Conversation citation responses now include `source_page` and `source_filename`
 when known. Ingestion creates paragraph/sentence-aware chunks, entity mentions, structured
-knowledge entities for endpoint/config/command/error/table enumeration, and JSON-backed
-embeddings. The existing sync ingestion endpoint remains compatible, while the async ingestion endpoint runs in an in-process background thread with a fresh DB session. `ExtractionRunResponse` returns `status` (`pending|running|completed|failed`), `stage`, `progress_percent`, counts, a safe `error`, `started_at`, and `completed_at`. This V1 async path is a local/demo contract without an external queue/Redis/Celery and is not durable across process restarts. On Postgres after Alembic migrations, chunks also persist a pgvector
+knowledge entities for endpoint/config/command/error/table enumeration, generated document
+metadata profiles (`title`, `description`, `summary`, keywords/topics/entities), and JSON-backed
+embeddings for both chunks and metadata profiles. The existing sync ingestion endpoint remains compatible, while the async ingestion endpoint runs in an in-process background thread with a fresh DB session. `ExtractionRunResponse` returns `status` (`pending|running|completed|failed`), `stage`, `progress_percent`, counts, a safe `error`, `started_at`, and `completed_at`. This V1 async path is a local/demo contract without an external queue/Redis/Celery and is not durable across process restarts. On Postgres after Alembic migrations, chunks also persist a pgvector
 `embedding_vector` column so retrieval can run permission-filtered SQL vector search before
 falling back to JSON cosine ranking. By default embeddings are 32-dimensional deterministic
 lexical-hash vectors for offline tests; when `MY_AGENTS_EMBEDDING_MODE=openai`, ingestion uses
 `langchain-openai`/OpenAI embeddings such as `text-embedding-3-small`. Although the Docling dependency includes OCR capabilities, the current upload contract still uses request-time local extraction only; scanned/encrypted/image-only PDFs, guaranteed complex multi-column/layout reconstruction, DOCX, HTML, or CSV/JSON structural
-parsing; OpenAI extraction calls and ANN/vector indexes are still future work.
+parsing and ANN/vector index tuning are still future work. Search-oriented document metadata
+enrichment is available through `MY_AGENTS_DOCUMENT_METADATA_ENRICHMENT_MODE=auto|deterministic|openai`;
+`auto` uses OpenAI when response mode is openai and an API key is configured; otherwise it falls back to deterministic offline
+metadata.
 Cross-encoder reranking is available as an optional second-stage seam behind
 `MY_AGENTS_RERANKER_MODE=cross_encoder`; the default offline/test path remains the deterministic
 reranker.
@@ -703,10 +714,11 @@ the dedicated retrieval-agent service boundary under `my_agents/agents/context_f
 4. `no_retrieval` skips candidate retrieval and answers with `answer_mode=general_knowledge`.
 5. Only `retrieval_required` and `retrieval_optional` gather candidates; low-level `RetrievalService` still first selects only document chunks the current user can read.
 6. Candidate Scouts also search authorized document `title`/`source_filename` metadata, so a prompt naming a file such as `NCT06159946_Prot_000` can retrieve that document even when the filename is not present in the extracted body text.
-7. Candidate Scouts combine pgvector/JSON vector search, lexical scoring, entity expansion, and structured entity retrieval for endpoint/config/command/error/table questions.
-8. ContextForge fuses candidates, applies the default deterministic reranker or optional cross-encoder reranker, packs high-recall context under explicit budgets, then emits redacted evidence such as intent, reranker, candidate count, injected count, rejected count, structured entity types, and latency. In local debug sessions with `MY_AGENTS_DEBUG_KNOWLEDGE_CONTEXT_LOGGING=true`, each role handoff and the context payload sent into the assistant graph are also printed with Rich.
-9. Optional retrieval with relevant context uses `answer_mode=mixed`; required retrieval with relevant context uses `answer_mode=document_grounded`. If no relevant context is found, the response stays general and creates no citations.
-10. It passes only compact authorized context into the `general_assistant` graph/provider prompt and returns `retrieval_route`, `answer_mode`, `document_scope`, and `citations` in the response payload.
+7. Candidate Scouts search generated document metadata profiles as a separate vector lane. Those profiles are intentionally optimized for retrieval terms, aliases, abbreviations, multilingual hints, and domain vocabulary; if a metadata profile matches, ContextForge still injects original source chunks so citations remain grounded in the document.
+8. Candidate Scouts combine pgvector/JSON vector search, lexical scoring, entity expansion, and structured entity retrieval for endpoint/config/command/error/table questions.
+9. ContextForge fuses candidates, applies the default deterministic reranker or optional cross-encoder reranker, packs high-recall context under explicit budgets, then emits redacted evidence such as intent, reranker, candidate count, injected count, rejected count, structured entity types, and latency. In local debug sessions with `MY_AGENTS_DEBUG_KNOWLEDGE_CONTEXT_LOGGING=true`, each role handoff and the context payload sent into the assistant graph are also printed with Rich.
+10. Optional retrieval with relevant context uses `answer_mode=mixed`; required retrieval with relevant context uses `answer_mode=document_grounded`. If no relevant context is found, the response stays general and creates no citations.
+11. It passes only compact authorized context into the `general_assistant` graph/provider prompt and returns `retrieval_route`, `answer_mode`, `document_scope`, and `citations` in the response payload.
 
 Example response excerpt:
 
