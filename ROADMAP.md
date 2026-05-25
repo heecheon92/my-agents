@@ -130,7 +130,7 @@ Current honest status:
 - [x] Text-based upload API: `POST /documents/upload`.
 - [x] Deterministic text-based PDF parser with metadata persistence and chunk page provenance.
 - [x] UTF-8 Markdown and plain-text upload parser with metadata persistence.
-- [ ] Production parsers for scanned/encrypted/compressed PDF, DOCX, web pages, CSV/JSON structure, etc.
+- [ ] Production parsers for scanned/encrypted/compressed PDF, DOCX, web pages, CSV/JSON structure, etc. See [`docs/idea/layout-aware-ingestion-rag-agent.md`](./docs/idea/layout-aware-ingestion-rag-agent.md) for the layout-aware parser artifact plan that feeds the future RAG agent graph.
 - [ ] Object storage for uploaded source files.
 - [ ] Reingestion/versioning policy.
 - [~] Ingestion failure recovery stores failed run status and safe error; partial artifact cleanup remains minimal.
@@ -150,7 +150,7 @@ Current honest status:
 - [x] JSON-backed semantic cosine ranking over authorized chunks as the first real-embedding slice.
 - [x] pgvector schema columns and extension usage.
 - [x] Permission-filtered SQL vector search before ranking enters app memory on Postgres, with JSON/SQLite fallback.
-- [~] **ContextForge dedicated RAG agent milestone**: first-class document-grounded retrieval/service boundary exists under `my_agents/agents/context_forge/`. It owns deterministic query planning, source-boundary handoff, candidate fusion, deterministic or optional cross-encoder reranking, context packing, and redacted retrieval evidence before the general assistant composes an answer. OpenAI planning and full hybrid production tuning remain follow-up work.
+- [~] **ContextForge dedicated RAG agent milestone**: first-class document-grounded retrieval/service boundary exists under `my_agents/agents/context_forge/`. It owns deterministic query planning, source-boundary handoff, candidate fusion, deterministic or optional cross-encoder reranking, context packing, and redacted retrieval evidence before the general assistant composes an answer. OpenAI planning, graph/tool orchestration, layout-aware parser artifacts, and full hybrid production tuning remain follow-up work. See [`docs/idea/dedicated-rag-agent.md`](./docs/idea/dedicated-rag-agent.md) and [`docs/idea/layout-aware-ingestion-rag-agent.md`](./docs/idea/layout-aware-ingestion-rag-agent.md).
 - [x] Treat structured document questions as a production-level RAG requirement, not a demo nicety. Motivating case: a user uploads a PDF API reference and asks “list the API endpoints,” but generic vector/keyword retrieval misses chunks because the document lists `GET /...`, `POST /...`, etc. without saying “these are available endpoints.”
 - [x] Ingestion-time structured/entity extraction for domain-shaped artifacts, starting with API docs: detect HTTP method/path patterns, OpenAPI-like tables, request/response sections, config keys, commands, error codes, database tables, and other enumerable entities with source page/chunk provenance.
 - [x] Query-time intent routing for enumeration/structured extraction questions such as “list endpoints,” “show env vars,” “what commands are documented,” or “list error codes,” so the RAG agent can retrieve by extracted entity type rather than relying only on semantic similarity to the user wording.
@@ -312,11 +312,11 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
    - Keep the embedding provider boundary and JSON-backed semantic ranking as the deterministic fallback.
    - Treat pgvector as the first-stage candidate retrieval accelerator on Postgres, not the final relevance judge.
    - Keep permission filtering before every retrieval/reranking step.
-   - Promote retrieval into a dedicated retrieval-agent/service boundary once hybrid search needs more than a thin service call: vector + keyword/full-text + graph expansion, top-k candidate fusion, cross-encoder reranking, query expansion, HyDE, context packing, and retrieval eval reporting.
+   - Promote retrieval into a dedicated retrieval-agent/service boundary once hybrid search needs more than a thin service call: vector + keyword/full-text + graph expansion, top-k candidate fusion, cross-encoder reranking, query expansion, HyDE, context packing, layout-aware section/table tools, and retrieval eval reporting.
    - Add ANN/vector indexes only after the fixed production embedding dimensionality and backfill policy are settled.
 
 7. **Production ingestion upgrade**
-   - Add file upload and parser pipeline.
+   - Add file upload and parser pipeline, then evolve it toward the layout-aware artifact plan in [`docs/idea/layout-aware-ingestion-rag-agent.md`](./docs/idea/layout-aware-ingestion-rag-agent.md).
    - [done for local/demo] Move ingestion start to an additive in-process async runner with polling.
    - [future] Replace in-process jobs with a durable queue for production workers.
    - Store source provenance and parser errors safely.
