@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import logging
 from datetime import timedelta
 from typing import Annotated
 
@@ -44,6 +46,8 @@ from my_agents.auth.service import (
 from my_agents.persistence.database import get_database_session
 from my_agents.settings import Settings, get_settings
 
+logger = logging.getLogger(__name__)
+
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
 
 
@@ -56,13 +60,26 @@ def signup(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> SignupResponse:
     """Create a user and send a local/dev email verification token."""
+    email_context = _email_log_context(str(request.email))
+    client_identifier = _request_client_identifier(http_request)
+    logger.info(
+        "auth.signup.received email_hash=%s email_domain=%s client=%s",
+        email_context["email_hash"],
+        email_context["email_domain"],
+        client_identifier,
+    )
     if not settings.auth_signup_enabled:
+        logger.info(
+            "auth.signup.rejected reason=signup_disabled email_hash=%s email_domain=%s client=%s",
+            email_context["email_hash"],
+            email_context["email_domain"],
+            client_identifier,
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="signup disabled",
         )
     email_identifier = _email_identifier(str(request.email))
-    client_identifier = _request_client_identifier(http_request)
     _assert_auth_allowed(abuse_guard, action="signup_email", identifier=email_identifier)
     _assert_auth_allowed(abuse_guard, action="signup_client", identifier=client_identifier)
     abuse_guard.record_attempt(action="signup_email", identifier=email_identifier)
@@ -70,10 +87,32 @@ def signup(
     try:
         result = auth_service.signup(email=str(request.email), password=request.password)
     except DuplicateEmailError as exc:
+        logger.info(
+            "auth.signup.rejected reason=email_unavailable email_hash=%s email_domain=%s client=%s",
+            email_context["email_hash"],
+            email_context["email_domain"],
+            client_identifier,
+        )
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="email unavailable",
         ) from exc
+    except Exception as exc:
+        logger.error(
+            "auth.signup.failed email_hash=%s email_domain=%s client=%s error_class=%s",
+            email_context["email_hash"],
+            email_context["email_domain"],
+            client_identifier,
+            exc.__class__.__name__,
+        )
+        raise
+    logger.info(
+        "auth.signup.completed user_id=%s email_hash=%s email_domain=%s verification_email_sent=%s",
+        result.user.id,
+        email_context["email_hash"],
+        email_context["email_domain"],
+        result.verification_email_sent,
+    )
     return SignupResponse(
         user=_user_response(result.user),
         verification_email_sent=result.verification_email_sent,
@@ -341,6 +380,13 @@ def _assert_auth_allowed(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="too many auth attempts",
         ) from exc
+
+
+def _email_log_context(email: str) -> dict[str, str]:
+    normalized = _email_identifier(email)
+    _, _, domain = normalized.partition("@")
+    digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:12]
+    return {"email_hash": digest, "email_domain": domain or "unknown"}
 
 
 def _request_client_identifier(request: Request) -> str:

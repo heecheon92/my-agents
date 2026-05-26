@@ -19,6 +19,7 @@ from my_agents.settings import Settings, get_settings
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     settings = get_settings()
+    configure_operational_logging()
     configure_debug_logging(settings)
     app = FastAPI(title="my-agents", version="0.1.0")
     cors_allowed_origins = settings.cors_allowed_origin_list()
@@ -38,6 +39,12 @@ def create_app() -> FastAPI:
     app.include_router(documents_router)
     app.include_router(assistant_router)
     return app
+
+
+def configure_operational_logging() -> None:
+    """Enable non-sensitive service lifecycle logs in hosted runtimes."""
+    logging.getLogger("my_agents.api.auth").setLevel(logging.INFO)
+    logging.getLogger("my_agents.auth.email").setLevel(logging.INFO)
 
 
 def configure_debug_logging(settings: Settings) -> None:

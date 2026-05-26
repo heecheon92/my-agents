@@ -8,6 +8,8 @@ without making unit tests depend on network access.
 
 from __future__ import annotations
 
+import hashlib
+import logging
 import smtplib
 from dataclasses import dataclass
 from email.message import EmailMessage
@@ -16,6 +18,8 @@ from urllib.parse import quote
 
 if TYPE_CHECKING:
     from my_agents.settings import Settings
+
+logger = logging.getLogger(__name__)
 
 AuthEmailPurpose = Literal["email_verification", "password_reset"]
 
@@ -138,20 +142,64 @@ class SmtpAuthEmailSender:
         )
 
     def _send(self, *, recipient_email: str, subject: str, body: str) -> None:
+        context = _email_log_context(recipient_email)
+        logger.info(
+            "auth_email.smtp.send.start host=%s port=%s from_domain=%s recipient_hash=%s "
+            "recipient_domain=%s starttls=%s",
+            self._host,
+            self._port,
+            _email_domain(self._from_email),
+            context["email_hash"],
+            context["email_domain"],
+            self._use_starttls,
+        )
         message = EmailMessage()
         message["From"] = self._from_email
         message["To"] = recipient_email
         message["Subject"] = subject
         message.set_content(body)
-        with smtplib.SMTP(self._host, self._port, timeout=self._timeout_seconds) as smtp:
-            if self._use_starttls:
-                smtp.starttls()
-            if self._username is not None and self._password is not None:
-                smtp.login(self._username, self._password)
-            smtp.send_message(message)
+        try:
+            with smtplib.SMTP(self._host, self._port, timeout=self._timeout_seconds) as smtp:
+                if self._use_starttls:
+                    smtp.starttls()
+                if self._username is not None and self._password is not None:
+                    smtp.login(self._username, self._password)
+                smtp.send_message(message)
+        except Exception as exc:
+            logger.error(
+                "auth_email.smtp.send.failed host=%s port=%s from_domain=%s recipient_hash=%s "
+                "recipient_domain=%s error_class=%s",
+                self._host,
+                self._port,
+                _email_domain(self._from_email),
+                context["email_hash"],
+                context["email_domain"],
+                exc.__class__.__name__,
+            )
+            raise
+        logger.info(
+            "auth_email.smtp.send.completed host=%s port=%s from_domain=%s recipient_hash=%s "
+            "recipient_domain=%s",
+            self._host,
+            self._port,
+            _email_domain(self._from_email),
+            context["email_hash"],
+            context["email_domain"],
+        )
 
     def _action_link(self, path: str, token: str) -> str:
         return f"{self._public_app_base_url}{path}?token={quote(token, safe='')}"
+
+
+def _email_log_context(email: str) -> dict[str, str]:
+    normalized = email.strip().casefold()
+    digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:12]
+    return {"email_hash": digest, "email_domain": _email_domain(normalized)}
+
+
+def _email_domain(email: str) -> str:
+    _, _, domain = email.strip().casefold().partition("@")
+    return domain or "unknown"
 
 
 _LOCAL_AUTH_EMAIL_SENDER = InMemoryAuthEmailSender()
