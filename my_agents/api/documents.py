@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from threading import Thread
 from typing import Annotated
 
@@ -49,6 +50,7 @@ from my_agents.persistence.database import _sessionmaker_for_url, get_database_s
 from my_agents.settings import Settings, get_settings
 
 documents_router = APIRouter(prefix="/documents", tags=["documents"])
+logger = logging.getLogger(__name__)
 
 
 @documents_router.post("", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
@@ -159,6 +161,16 @@ async def upload_document_in_knowledge_base(
         db, knowledge_base_id=knowledge_base_id, user_id=principal.user_id
     )
     content = await file.read()
+    logger.info(
+        "document_upload.received user_id=%s knowledge_base_id=%s title=%s filename=%s "
+        "content_type=%s bytes=%d",
+        principal.user_id,
+        knowledge_base.id,
+        title.strip(),
+        file.filename,
+        file.content_type,
+        len(content),
+    )
     try:
         parsed = parse_uploaded_document(
             filename=file.filename,
@@ -180,6 +192,17 @@ async def upload_document_in_knowledge_base(
             ),
         )
     except DocumentUploadError as exc:
+        logger.warning(
+            "document_upload.rejected user_id=%s knowledge_base_id=%s title=%s filename=%s "
+            "content_type=%s bytes=%d error=%s",
+            principal.user_id,
+            knowledge_base.id,
+            title.strip(),
+            file.filename,
+            file.content_type,
+            len(content),
+            exc,
+        )
         status_code = (
             status.HTTP_415_UNSUPPORTED_MEDIA_TYPE
             if isinstance(exc, UnsupportedDocumentUploadError)
@@ -203,6 +226,18 @@ async def upload_document_in_knowledge_base(
     db.add(document)
     db.commit()
     db.refresh(document)
+    logger.info(
+        "document_upload.persisted document_id=%s user_id=%s knowledge_base_id=%s "
+        "source_type=%s parser=%s bytes=%s pages=%s chars=%d",
+        document.id,
+        principal.user_id,
+        knowledge_base.id,
+        document.source_type,
+        document.parser_name,
+        document.source_byte_size,
+        document.source_page_count,
+        len(document.content),
+    )
     return _document_response(document)
 
 

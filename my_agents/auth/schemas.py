@@ -116,13 +116,12 @@ class DevAuthEmailMessageResponse(BaseModel):
     token: str
 
 
-class GuestAccessCodeResponse(BaseModel):
-    """Provider-free guest access code returned only when guest access is enabled."""
+class GuestAccessRequest(BaseModel):
+    """Request manual guest access code delivery by email."""
 
     model_config = ConfigDict(extra="forbid")
 
-    code: str = Field(min_length=1)
-    expires_at: datetime
+    email: EmailStr
 
 
 class GuestLoginRequest(BaseModel):

@@ -81,6 +81,22 @@ class AuthTokenModel(Base):
     user: Mapped[UserModel] = relationship(back_populates="auth_tokens")
 
 
+class GuestAccessRequestModel(Base):
+    """Operator-reviewed guest access request from a public email address."""
+
+    __tablename__ = "guest_access_requests"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    email: Mapped[str] = mapped_column(String(320), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    rejected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class GuestAccessCodeModel(Base):
     """One-time provider-free guest access code stored by digest only."""
 
@@ -88,6 +104,9 @@ class GuestAccessCodeModel(Base):
     __table_args__ = (UniqueConstraint("code_hash", name="uq_guest_access_codes_code_hash"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    request_id: Mapped[str | None] = mapped_column(
+        ForeignKey("guest_access_requests.id"), nullable=True, index=True
+    )
     code_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

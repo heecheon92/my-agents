@@ -40,6 +40,7 @@ EXPECTED_SERVICE_TABLES = {
     "users",
     "sessions",
     "auth_tokens",
+    "guest_access_requests",
     "guest_access_codes",
     "groups",
     "memberships",
@@ -149,6 +150,8 @@ def test_alembic_offline_sql_generation_covers_initial_schema(monkeypatch) -> No
     assert "20260524_0013" in sql
     assert "20260524_0014" in sql
     assert "20260525_0015" in sql
+    assert "20260526_0016" in sql
+    assert "CREATE TABLE guest_access_requests" in sql
     assert "CREATE TABLE knowledge_publish_requests" in sql
     assert "CREATE TABLE knowledge_base_publications" in sql
     assert "CREATE TABLE structured_knowledge_entities" in sql

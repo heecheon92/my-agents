@@ -3,18 +3,18 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import re
 import shutil
 import subprocess
 import tempfile
 import zlib
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from io import BytesIO
 from pathlib import Path
 from typing import Any
 
-import pdfplumber
 import pymupdf
 from pypdf import PdfReader
 from pypdf.errors import PdfReadError
@@ -25,7 +25,6 @@ PYMUPDF_PARSER_NAME = "pymupdf_text_v1"
 DOCLING_PARSER_NAME = "docling_markdown_v1"
 TESSERACT_PARSER_NAME = "tesseract_ocr_v1"
 PDF_PARSER_NAME = "pypdf_text_v2"
-PDFPLUMBER_PARSER_NAME = "pdfplumber_text_tables_v1"
 LEGACY_STREAM_PARSER_NAME = "deterministic_stream_fallback_v1"
 PDF_PAGE_SEPARATOR = "\n\n\f\n\n"
 _SAFE_PUNCTUATION = set(".,;:!?@#%&/\\-_'\"+()[]{}<>|•·$€£₩")
@@ -37,6 +36,14 @@ _MAX_PRIVATE_USE_RATIO = 0.01
 _MAX_WHITESPACE_RATIO = 0.65
 _REPEATED_LOCALE_MIN_COUNT = 8
 _REPEATED_LOCALE_MAX_TOKEN_RATIO = 0.25
+_DEBUG_FULL_TEXT_PARSERS = frozenset(
+    {
+        PYMUPDF_PARSER_NAME,
+        PDF_PARSER_NAME,
+        DOCLING_PARSER_NAME,
+    }
+)
+logger = logging.getLogger(__name__)
 
 
 class PdfUploadError(ValueError):
@@ -128,8 +135,27 @@ def parse_uploaded_pdf(
     if not content.startswith(b"%PDF-"):
         raise PdfUploadError("uploaded file is not a PDF")
 
+    sha256 = hashlib.sha256(content).hexdigest()
+    logger.info(
+        "pdf_upload.parse.start filename=%s content_type=%s bytes=%d sha256=%s",
+        safe_filename,
+        content_type,
+        len(content),
+        sha256,
+    )
     classification = _classify_pdf(content)
+    logger.info(
+        "pdf_upload.classified filename=%s doc_type=%s page_count=%d native_pages=%s "
+        "empty_pages=%s warnings=%s",
+        safe_filename,
+        classification.doc_type,
+        classification.page_count,
+        classification.native_pages,
+        classification.empty_pages,
+        classification.warnings,
+    )
     if classification.doc_type == "encrypted":
+        logger.warning("pdf_upload.rejected filename=%s reason=encrypted", safe_filename)
         raise PdfUploadError("encrypted PDFs are not supported")
     best_validation = PdfValidation(is_valid=False, warnings=["extraction was not attempted"])
     effective_docling_config = docling_config or DoclingExtractionConfig()
@@ -142,16 +168,39 @@ def parse_uploaded_pdf(
         effective_tesseract_config,
     ):
         validation = _validate_extracted_pages(attempt.pages)
+        char_count = sum(len(page) for page in attempt.pages)
+        log_context = {
+            "filename": safe_filename,
+            "parser": attempt.parser_name,
+            "page_count": len(attempt.pages),
+            "char_count": char_count,
+            "warnings": validation.warnings,
+        }
         if validation.is_valid:
+            logger.info(
+                "pdf_upload.parser.accepted filename=%(filename)s parser=%(parser)s "
+                "pages=%(page_count)d chars=%(char_count)d",
+                log_context,
+            )
             return ParsedPdf(
                 content=PDF_PAGE_SEPARATOR.join(attempt.pages),
                 page_count=max(classification.page_count, len(attempt.pages)),
-                sha256=hashlib.sha256(content).hexdigest(),
+                sha256=sha256,
                 byte_size=len(content),
                 parser_name=attempt.parser_name,
             )
+        logger.warning(
+            "pdf_upload.parser.rejected filename=%(filename)s parser=%(parser)s "
+            "pages=%(page_count)d chars=%(char_count)d warnings=%(warnings)s",
+            log_context,
+        )
         best_validation = validation
 
+    logger.warning(
+        "pdf_upload.parse.failed filename=%s final_warnings=%s",
+        safe_filename,
+        best_validation.warnings,
+    )
     raise PdfUploadError(_unsupported_text_message(safe_filename, best_validation))
 
 
@@ -218,35 +267,89 @@ def _extraction_attempts(
     tesseract_config: TesseractOcrConfig,
 ) -> Iterator[_ExtractionAttempt]:
     # PyMuPDF is the fast primary local extractor. It is tried before the older
-    # pypdf/pdfplumber compatibility layer so normal text PDFs do not pay Docling's
-    # heavier model startup cost.
-    yield _ExtractionAttempt(PYMUPDF_PARSER_NAME, _extract_page_texts_with_pymupdf(content))
+    # pypdf compatibility layer so normal text PDFs do not pay Docling's heavier
+    # model startup cost.
+    yield _logged_extraction_attempt(
+        filename,
+        PYMUPDF_PARSER_NAME,
+        lambda: _extract_page_texts_with_pymupdf(content),
+    )
 
     # Keep the lightweight extractors before heavier model/OCR fallback so malformed or
     # image-heavy PDFs do not pay Docling/Tesseract costs when simple text extraction works.
     if classification.doc_type in {"native_text", "mixed_or_low_text"}:
-        yield _ExtractionAttempt(PDF_PARSER_NAME, _extract_page_texts_with_pypdf(content))
-    yield _ExtractionAttempt(PDFPLUMBER_PARSER_NAME, _extract_page_texts_with_pdfplumber(content))
-
+        yield _logged_extraction_attempt(
+            filename,
+            PDF_PARSER_NAME,
+            lambda: _extract_page_texts_with_pypdf(content),
+        )
     # Docling is the structured fallback for PDFs where fast text extraction
     # is empty or fails the quality gate. It can produce RAG-friendly Markdown and
     # table structure while still staying local, but model startup is intentionally
     # later in the chain.
-    yield _ExtractionAttempt(
+    yield _logged_extraction_attempt(
+        filename,
         DOCLING_PARSER_NAME,
-        _extract_page_texts_with_docling(filename, content, docling_config),
+        lambda: _extract_page_texts_with_docling(filename, content, docling_config),
     )
 
     # Tesseract is the OCR fallback for image-heavy PDFs where text extractors only
     # return image placeholders or bullet artifacts.
-    yield _ExtractionAttempt(
+    yield _logged_extraction_attempt(
+        filename,
         TESSERACT_PARSER_NAME,
-        _extract_page_texts_with_tesseract(content, tesseract_config),
+        lambda: _extract_page_texts_with_tesseract(content, tesseract_config),
     )
 
     # Keep the deterministic legacy fallback so tiny fixture PDFs and simple literal streams
     # remain supported without pretending it is a robust production extractor.
-    yield _ExtractionAttempt(LEGACY_STREAM_PARSER_NAME, _legacy_extract_page_texts(content))
+    yield _logged_extraction_attempt(
+        filename,
+        LEGACY_STREAM_PARSER_NAME,
+        lambda: _legacy_extract_page_texts(content),
+    )
+
+
+def _logged_extraction_attempt(
+    filename: str,
+    parser_name: str,
+    extractor: Callable[[], list[str]],
+) -> _ExtractionAttempt:
+    logger.info("pdf_upload.parser.start filename=%s parser=%s", filename, parser_name)
+    try:
+        pages = extractor()
+    except Exception:
+        logger.exception("pdf_upload.parser.error filename=%s parser=%s", filename, parser_name)
+        raise
+    logger.info(
+        "pdf_upload.parser.output filename=%s parser=%s pages=%d chars=%d",
+        filename,
+        parser_name,
+        len(pages),
+        sum(len(page) for page in pages),
+    )
+    _log_full_parser_text_for_debug(filename=filename, parser_name=parser_name, pages=pages)
+    return _ExtractionAttempt(parser_name, pages)
+
+
+def _log_full_parser_text_for_debug(
+    *,
+    filename: str,
+    parser_name: str,
+    pages: list[str],
+) -> None:
+    """Dump full extracted text for selected parsers during explicit debug sessions."""
+    if parser_name not in _DEBUG_FULL_TEXT_PARSERS or not logger.isEnabledFor(logging.DEBUG):
+        return
+    page_blocks = [f"--- page {index} ---\n{page}" for index, page in enumerate(pages, start=1)]
+    logger.debug(
+        "pdf_upload.parser.full_text filename=%s parser=%s pages=%d chars=%d\n%s",
+        filename,
+        parser_name,
+        len(pages),
+        sum(len(page) for page in pages),
+        "\n".join(page_blocks),
+    )
 
 
 def _extract_page_texts_with_pymupdf(content: bytes) -> list[str]:
@@ -414,69 +517,6 @@ def _extract_page_texts_with_pypdf(content: bytes) -> list[str]:
         if normalized:
             pages.append(normalized)
     return pages
-
-
-def _extract_page_texts_with_pdfplumber(content: bytes) -> list[str]:
-    pages: list[str] = []
-    try:
-        with pdfplumber.open(BytesIO(content)) as pdf:
-            for page in pdf.pages:
-                parts: list[str] = []
-                text = _normalize_page_text(page.extract_text() or "")
-                if text:
-                    parts.append(text)
-                parts.extend(_markdown_tables_from_pdfplumber_page(page))
-                page_text = _normalize_page_text("\n\n".join(parts))
-                if page_text:
-                    pages.append(page_text)
-    except Exception:  # noqa: BLE001 - PDFs can fail inside pdfminer/pdfplumber in many ways.
-        return []
-    return pages
-
-
-def _markdown_tables_from_pdfplumber_page(page: Any) -> list[str]:
-    tables: list[str] = []
-    try:
-        raw_tables = page.extract_tables(
-            {
-                "vertical_strategy": "lines",
-                "horizontal_strategy": "lines",
-                "snap_tolerance": 3,
-                "join_tolerance": 3,
-                "edge_min_length": 3,
-                "min_words_vertical": 3,
-                "min_words_horizontal": 1,
-            }
-        )
-    except Exception:  # noqa: BLE001 - table detection should not fail the text path.
-        return tables
-
-    for table in raw_tables:
-        markdown = _table_to_markdown(table)
-        if markdown:
-            tables.append(markdown)
-    return tables
-
-
-def _table_to_markdown(table: list[list[str | None]]) -> str:
-    rows = [[_normalize_table_cell(cell) for cell in row] for row in table if row]
-    rows = [row for row in rows if any(cell for cell in row)]
-    if not rows or not rows[0]:
-        return ""
-
-    width = max(len(row) for row in rows)
-    padded_rows = [row + [""] * (width - len(row)) for row in rows]
-    header, *body = padded_rows
-    lines = [
-        "| " + " | ".join(header) + " |",
-        "| " + " | ".join("---" for _ in range(width)) + " |",
-    ]
-    lines.extend("| " + " | ".join(row) + " |" for row in body)
-    return "\n".join(lines)
-
-
-def _normalize_table_cell(value: str | None) -> str:
-    return _normalize_text(value or "").replace("|", "\\|")
 
 
 def _legacy_extract_page_texts(content: bytes) -> list[str]:
@@ -671,9 +711,24 @@ def _validate_extracted_pages(pages: list[str]) -> PdfValidation:
             warnings.append("extraction output contains excessive whitespace")
     if _has_repeated_locale_artifact(text):
         warnings.append("extraction output is dominated by repeated locale metadata")
-    if re.search(r"(.)\1{40,}", text):
+    if _has_repeated_non_punctuation_artifact(text):
         warnings.append("extraction output contains repeated character artifacts")
     return PdfValidation(is_valid=not warnings, warnings=warnings)
+
+
+def _has_repeated_non_punctuation_artifact(value: str) -> bool:
+    """Return whether text has long repeated non-punctuation runs.
+
+    TOCs and government reports often contain dot leaders such as
+    `Vision........................................3`. Those are noisy but valid
+    extractable text, so punctuation-only runs should not reject the whole PDF.
+    """
+    for match in re.finditer(r"(.)\1{40,}", value):
+        repeated = match.group(1)
+        if repeated.isspace() or repeated in _SAFE_PUNCTUATION:
+            continue
+        return True
+    return False
 
 
 def _has_repeated_locale_artifact(value: str) -> bool:

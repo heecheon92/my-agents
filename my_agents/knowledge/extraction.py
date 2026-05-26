@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import uuid
 from collections.abc import Iterable
@@ -54,6 +55,7 @@ _DATABASE_TABLE_PATTERN = re.compile(
 )
 _CHUNK_TARGET_CHARS = 900
 _CHUNK_OVERLAP_CHARS = 120
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -113,16 +115,43 @@ class KnowledgeExtractionService:
             self._db.add(run)
             self._db.flush()
         run_id = run.id
+        logger.info(
+            "knowledge_ingestion.start run_id=%s document_id=%s knowledge_base_id=%s "
+            "source_type=%s parser=%s chars=%d",
+            run_id,
+            document.id,
+            document.knowledge_base_id,
+            document.source_type,
+            document.parser_name,
+            len(document.content),
+        )
         try:
             self._mark_progress(run, status=ExtractionStatus.RUNNING, stage="chunking", percent=15)
             self._clear_prior_extraction_artifacts(document.id)
             chunks = list(_chunk_document_text(document))
+            logger.info(
+                "knowledge_ingestion.chunked run_id=%s document_id=%s chunk_count=%d",
+                run_id,
+                document.id,
+                len(chunks),
+            )
             run.chunk_count = len(chunks)
             self._db.commit()
 
             self._mark_progress(run, status=ExtractionStatus.RUNNING, stage="embedding", percent=45)
             embeddings = self._embedding_provider.embed_documents(
                 [content for content, *_ in chunks]
+            )
+            logger.info(
+                "knowledge_ingestion.embedded run_id=%s document_id=%s embedding_count=%d "
+                "provider=%s model=%s",
+                run_id,
+                document.id,
+                len(embeddings),
+                getattr(
+                    self._embedding_provider, "provider", type(self._embedding_provider).__name__
+                ),
+                getattr(self._embedding_provider, "model", None),
             )
             entity_ids: set[str] = set()
             relationship_count = 0
@@ -228,6 +257,15 @@ class KnowledgeExtractionService:
             run.completed_at = datetime.now(UTC)
             self._db.commit()
             self._db.refresh(run)
+            logger.info(
+                "knowledge_ingestion.completed run_id=%s document_id=%s chunks=%d entities=%d "
+                "relationships=%d",
+                run.id,
+                document.id,
+                len(chunks),
+                len(entity_ids),
+                relationship_count,
+            )
             return ExtractionSummary(
                 run=run,
                 chunk_count=len(chunks),
@@ -243,6 +281,12 @@ class KnowledgeExtractionService:
                 run.error = _safe_error_message(exc)
                 run.completed_at = datetime.now(UTC)
                 self._db.commit()
+            logger.exception(
+                "knowledge_ingestion.failed run_id=%s document_id=%s error=%s",
+                run_id,
+                document.id,
+                _safe_error_message(exc),
+            )
             raise
 
     def _clear_prior_extraction_artifacts(self, document_id: str) -> None:

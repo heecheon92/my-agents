@@ -16,7 +16,13 @@ from sqlalchemy.orm import Session
 
 from my_agents.auth.contracts import Principal
 from my_agents.auth.email import AuthEmailSender, get_auth_email_sender
-from my_agents.auth.models import AuthTokenModel, GuestAccessCodeModel, SessionModel, UserModel
+from my_agents.auth.models import (
+    AuthTokenModel,
+    GuestAccessCodeModel,
+    GuestAccessRequestModel,
+    SessionModel,
+    UserModel,
+)
 
 AuthTokenPurpose = Literal["email_verification", "password_reset"]
 EMAIL_VERIFICATION_TOKEN_TTL = timedelta(hours=24)
@@ -75,6 +81,8 @@ class GuestAccessCodeResult:
 
     code: str
     expires_at: datetime
+    request_id: str | None = None
+    email: str | None = None
 
 
 class AuthService:
@@ -203,19 +211,99 @@ class AuthService:
         self._db.add(session)
         self._db.commit()
 
+    def request_guest_access(self, *, email: str) -> GuestAccessRequestModel:
+        """Record a manually reviewed guest access request without returning a code."""
+        normalized_email = _normalize_email(email)
+        if not normalized_email:
+            raise ValueError("email must not be blank")
+        request = GuestAccessRequestModel(
+            id=str(uuid.uuid4()),
+            email=normalized_email,
+            status="pending",
+        )
+        self._db.add(request)
+        self._db.commit()
+        self._db.refresh(request)
+        return request
+
     def create_guest_access_code(self, *, ttl: timedelta) -> GuestAccessCodeResult:
-        """Create a short-lived one-time guest access code without any provider dependency."""
+        """Create a short-lived one-time guest access code without an email request."""
+        return self.issue_guest_access_code(email=None, ttl=ttl)
+
+    def issue_guest_access_code(
+        self,
+        *,
+        email: str | None,
+        ttl: timedelta,
+        request_id: str | None = None,
+    ) -> GuestAccessCodeResult:
+        """Issue a one-time guest code for manual delivery to a requested email."""
+        request: GuestAccessRequestModel | None = None
+        if email is not None:
+            normalized_email = _normalize_email(email)
+            if not normalized_email:
+                raise ValueError("email must not be blank")
+            if request_id is not None:
+                request = self._db.get(GuestAccessRequestModel, request_id)
+                if request is None or request.email != normalized_email:
+                    raise InvalidAuthTokenError("guest access request not found")
+            else:
+                request = self._db.scalar(
+                    select(GuestAccessRequestModel)
+                    .where(
+                        GuestAccessRequestModel.email == normalized_email,
+                        GuestAccessRequestModel.status.in_(["pending", "issued"]),
+                        GuestAccessRequestModel.rejected_at.is_(None),
+                    )
+                    .order_by(
+                        GuestAccessRequestModel.created_at.desc(),
+                        GuestAccessRequestModel.id.desc(),
+                    )
+                )
+            if request is None:
+                request = GuestAccessRequestModel(
+                    id=str(uuid.uuid4()),
+                    email=normalized_email,
+                    status="pending",
+                )
+                self._db.add(request)
+                self._db.flush()
+
         code = secrets.token_urlsafe(18)
         expires_at = datetime.now(UTC) + ttl
-        self._db.add(
-            GuestAccessCodeModel(
+        guest_code = None
+        if request is not None:
+            guest_code = self._db.scalar(
+                select(GuestAccessCodeModel)
+                .where(
+                    GuestAccessCodeModel.request_id == request.id,
+                    GuestAccessCodeModel.consumed_at.is_(None),
+                )
+                .order_by(GuestAccessCodeModel.created_at.desc(), GuestAccessCodeModel.id.desc())
+            )
+        if guest_code is None:
+            guest_code = GuestAccessCodeModel(
                 id=str(uuid.uuid4()),
+                request_id=request.id if request is not None else None,
                 code_hash=_digest(code),
                 expires_at=expires_at,
             )
-        )
+        else:
+            guest_code.code_hash = _digest(code)
+            guest_code.expires_at = expires_at
+        self._db.add(guest_code)
+        if request is not None:
+            request.status = "issued"
+            request.approved_at = request.approved_at or datetime.now(UTC)
+            request.sent_at = datetime.now(UTC)
+            self._db.add(request)
         self._db.commit()
-        return GuestAccessCodeResult(code=code, expires_at=expires_at)
+        return GuestAccessCodeResult(
+            code=code,
+            expires_at=expires_at,
+            request_id=request.id if request is not None else None,
+            email=normalized_email if email is not None else None,
+        )
 
     def redeem_guest_access_code(
         self,
@@ -245,6 +333,8 @@ class AuthService:
             account_type="guest",
             guest_expires_at=access_expires_at,
         )
+        self._db.add(user)
+        self._db.flush()
         session_token = secrets.token_urlsafe(32)
         csrf_token = secrets.token_urlsafe(32)
         session = SessionModel(
@@ -256,7 +346,12 @@ class AuthService:
         )
         guest_code.consumed_at = datetime.now(UTC)
         guest_code.guest_user_id = user.id
-        self._db.add_all([user, session, guest_code])
+        self._db.add_all([session, guest_code])
+        if guest_code.request_id is not None:
+            request = self._db.get(GuestAccessRequestModel, guest_code.request_id)
+            if request is not None:
+                request.status = "consumed"
+                self._db.add(request)
         self._db.commit()
         self._db.refresh(user)
         self._db.refresh(session)

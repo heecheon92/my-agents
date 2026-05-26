@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import zlib
 from pathlib import Path
 from time import monotonic, sleep
@@ -656,7 +657,6 @@ def test_pdf_parser_removes_postgres_unsafe_nul_bytes() -> None:
 def test_pdf_parser_uses_docling_after_pymupdf_quality_failure(monkeypatch) -> None:  # noqa: ANN001
     monkeypatch.setattr(pdf_uploads_module, "_extract_page_texts_with_pymupdf", lambda _: [])
     monkeypatch.setattr(pdf_uploads_module, "_extract_page_texts_with_pypdf", lambda _: [])
-    monkeypatch.setattr(pdf_uploads_module, "_extract_page_texts_with_pdfplumber", lambda _: [])
     monkeypatch.setattr(
         pdf_uploads_module,
         "_extract_page_texts_with_docling",
@@ -701,7 +701,6 @@ def test_docling_extractor_forces_cpu_accelerator(monkeypatch) -> None:  # noqa:
         lambda _: [],
     )
     monkeypatch.setattr(pdf_uploads_module, "_extract_page_texts_with_pypdf", lambda _: [])
-    monkeypatch.setattr(pdf_uploads_module, "_extract_page_texts_with_pdfplumber", lambda _: [])
     monkeypatch.setattr(
         "docling.document_converter.DocumentConverter",
         FakeConverter,
@@ -723,7 +722,6 @@ def test_docling_extractor_forces_cpu_accelerator(monkeypatch) -> None:  # noqa:
 def test_pdf_parser_uses_tesseract_after_docling_quality_failure(monkeypatch) -> None:  # noqa: ANN001
     monkeypatch.setattr(pdf_uploads_module, "_extract_page_texts_with_pymupdf", lambda _: [])
     monkeypatch.setattr(pdf_uploads_module, "_extract_page_texts_with_pypdf", lambda _: [])
-    monkeypatch.setattr(pdf_uploads_module, "_extract_page_texts_with_pdfplumber", lambda _: [])
     monkeypatch.setattr(
         pdf_uploads_module,
         "_extract_page_texts_with_docling",
@@ -782,7 +780,6 @@ def test_pdf_parser_rejects_docling_image_placeholders_without_chunks(monkeypatc
         ],
     )
     monkeypatch.setattr(pdf_uploads_module, "_extract_page_texts_with_pypdf", lambda _: [])
-    monkeypatch.setattr(pdf_uploads_module, "_extract_page_texts_with_pdfplumber", lambda _: [])
     monkeypatch.setattr(pdf_uploads_module, "_extract_page_texts_with_tesseract", lambda *_: [])
     monkeypatch.setattr(pdf_uploads_module, "_legacy_extract_page_texts", lambda _: [])
 
@@ -794,6 +791,60 @@ def test_pdf_parser_rejects_docling_image_placeholders_without_chunks(monkeypatc
         )
 
 
+def test_pdf_parser_allows_table_of_contents_dot_leaders() -> None:
+    repeated_dots = "Vision" + "." * 80 + "3\nMission" + "." * 80 + "4"
+
+    parsed = parse_uploaded_pdf(
+        filename="toc-dot-leaders.pdf",
+        content_type="application/pdf",
+        content=_text_pdf(repeated_dots),
+    )
+
+    assert parsed.parser_name == "pymupdf_text_v1"
+    assert "Vision" in parsed.content
+    assert "Mission" in parsed.content
+
+
+def test_pdf_parser_rejects_repeated_non_punctuation_artifacts(monkeypatch) -> None:  # noqa: ANN001
+    artifact = "A" * 80
+    monkeypatch.setattr(
+        pdf_uploads_module, "_extract_page_texts_with_pymupdf", lambda _: [artifact]
+    )
+    monkeypatch.setattr(pdf_uploads_module, "_extract_page_texts_with_pypdf", lambda _: [artifact])
+    monkeypatch.setattr(
+        pdf_uploads_module,
+        "_extract_page_texts_with_docling",
+        lambda filename, content, config: [artifact],  # noqa: ARG005
+    )
+    monkeypatch.setattr(pdf_uploads_module, "_extract_page_texts_with_tesseract", lambda *_: [])
+    monkeypatch.setattr(pdf_uploads_module, "_legacy_extract_page_texts", lambda _: [artifact])
+
+    with pytest.raises(PdfUploadError, match="repeated character artifacts"):
+        parse_uploaded_pdf(
+            filename="repeat-artifact.pdf",
+            content_type="application/pdf",
+            content=_text_pdf("source fixture text"),
+        )
+
+
+def test_nara_2022_pdf_regression_accepts_native_text_when_available() -> None:
+    sample = Path(
+        "/Users/heecheonpark/Downloads/KG-RAG-datasets-main/us-fed-agency-reports/data/v1/docs/NARA2022.pdf"
+    )
+    if not sample.exists():
+        pytest.skip("local NARA2022 sample PDF is not available")
+
+    parsed = parse_uploaded_pdf(
+        filename=sample.name,
+        content_type="application/pdf",
+        content=sample.read_bytes(),
+    )
+
+    assert parsed.parser_name == "pymupdf_text_v1"
+    assert "NARA 2022" in parsed.content
+    assert "Strategic Plan" in parsed.content
+
+
 def test_pdf_parser_rejects_binary_literal_noise() -> None:
     with pytest.raises(PdfUploadError, match="does not contain extractable text"):
         parse_uploaded_pdf(
@@ -803,7 +854,11 @@ def test_pdf_parser_rejects_binary_literal_noise() -> None:
         )
 
 
-def test_nested_pdf_upload_rejects_garbled_locale_artifact_without_500(monkeypatch) -> None:  # noqa: ANN001
+def test_nested_pdf_upload_rejects_garbled_locale_artifact_without_500(
+    monkeypatch,  # noqa: ANN001
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.INFO)
     client = _client(monkeypatch)
     _signup_login(client, "pdf-garble@example.com")
     kb_id = _create_personal_knowledge_base(client, "PDF Garble KB")
@@ -820,6 +875,18 @@ def test_nested_pdf_upload_rejects_garbled_locale_artifact_without_500(monkeypat
 
     assert response.status_code == 400
     assert "does not contain extractable text" in response.json()["detail"]
+    assert any(
+        "document_upload.received" in record.message and "garbled.pdf" in record.message
+        for record in caplog.records
+    )
+    assert any(
+        "pdf_upload.parser.rejected" in record.message and "garbled.pdf" in record.message
+        for record in caplog.records
+    )
+    assert any(
+        "document_upload.rejected" in record.message and "garbled.pdf" in record.message
+        for record in caplog.records
+    )
 
 
 def test_pdf_upload_persists_metadata_and_ingests_page_provenance(monkeypatch) -> None:  # noqa: ANN001

@@ -64,7 +64,8 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 - Local in-process auth abuse protection covers repeated signup, bad login, reset request, and invalid lifecycle-token attempts.
 - `MY_AGENTS_AUTH_SIGNUP_ENABLED=false` blocks new public-demo signups without changing existing login/session behavior.
 - Provider-free guest access is env-gated by `MY_AGENTS_GUEST_ACCESS_ENABLED=false`
-  by default. When enabled, one-time guest codes create explicit ephemeral guest
+  by default. When enabled, public requests record an email without returning a
+  code; operators issue one-time codes manually for explicit ephemeral guest
   identities with normal app session cookies, 24-hour expiry, one conversation,
   five prompts, and three document creates/uploads.
 
@@ -238,6 +239,7 @@ limits.
 
 | Date | Milestone | Evidence |
 | --- | --- | --- |
+| 2026-05-26 | Email-gated guest requests added so the browser receives only an acknowledgement while operators issue one-time codes manually. | `my_agents/auth/service.py`; `my_agents/api/auth.py`; `my_agents/auth/models.py`; `alembic/versions/20260526_0016_guest_access_requests.py`; `scripts/issue_guest_access_code.py`; `tests/test_guest_access_api.py`; `docs/product-chat-service/en/02-first-party-auth-sessions.md`. |
 | 2026-05-24 | Added ContextForge as the dedicated RAG retrieval-agent service boundary with structured entity extraction and endpoint enumeration retrieval. | `my_agents/agents/context_forge/`; `my_agents/knowledge/models.py`; `my_agents/knowledge/extraction.py`; `my_agents/knowledge/retrieval.py`; `my_agents/api/conversations/retrieval_context.py`; `my_agents/api/conversations/run_events.py`; `alembic/versions/20260524_0014_structured_knowledge_entities.py`; `tests/test_context_forge_contracts.py`; `tests/test_context_forge_structured_retrieval.py`; README pair; ContextForge README pair; `ROADMAP.md`. |
 | 2026-05-24 | Added an OCR page cap for the Tesseract PDF fallback and moved lightweight text extractors before heavyweight Docling/OCR fallback, preventing image-heavy PDFs from monopolizing synchronous upload requests. | `my_agents/knowledge/pdf_uploads.py`; `my_agents/api/documents.py`; `my_agents/settings.py`; `.env.example`; `tests/test_knowledge_ingestion.py`; `tests/test_settings.py`; README pair. |
 | 2026-05-24 | Added optional ContextForge cross-encoder reranking and Rich role-handoff debug traces behind env settings while preserving deterministic offline defaults. | `my_agents/agents/context_forge/reranking.py`; `my_agents/agents/context_forge/debug.py`; `my_agents/agents/context_forge/service.py`; `my_agents/settings.py`; `.env.example`; `tests/test_context_forge_reranking.py`; README pair; ContextForge README pair; `ROADMAP.md`. |

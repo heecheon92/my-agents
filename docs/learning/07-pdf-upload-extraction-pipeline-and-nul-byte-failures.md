@@ -37,34 +37,32 @@ flowchart LR
     Validate --> Classify[Classify PDF text availability]
     Classify --> MuPDF[PyMuPDF fast page text]
     MuPDF --> Gate{Clean output passes?}
-    Gate -- no --> Docling[Docling Markdown/table fallback]
-    Docling --> Gate2{Clean output passes?}
-    Gate2 -- no --> PyPDF[pypdf compatibility fallback]
-    PyPDF --> Gate3{Clean output passes?}
-    Gate3 -- no --> Plumber[pdfplumber compatibility fallback]
-    Plumber --> Gate4{Clean output passes?}
-    Gate4 -- no --> Legacy[deterministic stream fallback]
+    Gate -- no --> PyPDF[pypdf compatibility fallback]
+    PyPDF --> Gate2{Clean output passes?}
+    Gate2 -- no --> Docling[Docling Markdown/table fallback]
+    Docling --> Gate3{Clean output passes?}
+    Gate3 -- no --> Legacy[deterministic stream fallback]
     Legacy --> Gate5{Clean output passes?}
     Gate -- yes --> Persist[Persist document]
     Gate2 -- yes --> Persist
     Gate3 -- yes --> Persist
-    Gate4 -- yes --> Persist
     Gate5 -- yes --> Persist
     Gate5 -- no --> Reject[400 upload error]
 ```
 
 ## Fix / mitigation
 
-- Added `pdfplumber` as the first approved PDF-specific dependency for this milestone.
+- Removed the pdfplumber fallback after NARA2022 showed it joins words and degrades native text extraction quality.
 - Added user-approved PyMuPDF as the fast primary text extractor.
 - Added user-approved Docling as the structured primary fallback for Markdown/table extraction.
 - Made Docling accelerator, OCR, timeout, and thread count configurable through `MY_AGENTS_DOCLING_*` settings, with safe local defaults of CPU, OCR off, 30 seconds, and 4 threads after Apple MPS crashed on Torch float64 positional embeddings.
-- Kept `pypdf`, `pdfplumber`, and deterministic literal/FlateDecode fallback as compatibility layers for tiny tests and simple fixture PDFs.
+- Kept `pypdf` and deterministic literal/FlateDecode fallback as compatibility layers for tiny tests and simple fixture PDFs.
 - Added a shared cleanup and validation gate before persistence:
   - replace NUL bytes before DB insertion;
   - remove unsafe control characters;
   - remove repeated locale metadata such as `ko-KR` when it dominates output;
-  - reject likely encoding garbage, excessive whitespace, repeated character artifacts, and empty output.
+  - reject likely encoding garbage, excessive whitespace, repeated non-punctuation character artifacts, and empty output.
+  - allow repeated punctuation such as table-of-contents dot leaders so valid agency reports are not rejected.
 - Unsupported/garbled PDFs now fail as controlled `400` upload errors instead of DB `500`s.
 - Docling image placeholders such as `<!-- image -->` and bullet-only lines are stripped before validation so image-heavy PDFs cannot create low-signal chunks that make the assistant answer from hallucinated general knowledge.
 - Added a Tesseract OCR fallback after Docling for image-heavy PDFs; the Elice PDF produced about 3.3k OCR characters and 35 chunks with `kor+eng --psm 6` in the local experiment.

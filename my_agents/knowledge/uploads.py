@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import unicodedata
 from dataclasses import dataclass
 
@@ -23,6 +24,7 @@ _GENERIC_UPLOAD_CONTENT_TYPES = frozenset({"", "application/octet-stream"})
 _MARKDOWN_CONTENT_TYPES = frozenset({"text/markdown", "text/x-markdown", "text/plain"})
 _PLAIN_TEXT_CONTENT_TYPES = frozenset({"text/plain"})
 _SAFE_CONTROL_CHARACTERS = frozenset({"\t", "\n", "\r", "\f"})
+logger = logging.getLogger(__name__)
 
 
 class DocumentUploadError(ValueError):
@@ -57,6 +59,14 @@ def parse_uploaded_document(
     """Parse a supported upload into normalized text and source metadata."""
     safe_filename = _validate_upload_filename(filename)
     suffix = _filename_suffix(safe_filename)
+    logger.info(
+        "document_upload.dispatch filename=%s suffix=%s content_type=%s bytes=%d sha256=%s",
+        safe_filename,
+        suffix,
+        content_type,
+        len(content),
+        hashlib.sha256(content).hexdigest(),
+    )
     if suffix == ".pdf":
         return _parse_pdf(
             filename=safe_filename,
@@ -92,10 +102,17 @@ def _parse_pdf(
             tesseract_config=tesseract_config,
         )
     except PdfUploadError as exc:
+        logger.warning(
+            "document_upload.pdf.failed filename=%s content_type=%s bytes=%d error=%s",
+            filename,
+            content_type,
+            len(content),
+            exc,
+        )
         if _is_pdf_unsupported_media_error(str(exc)):
             raise UnsupportedDocumentUploadError(str(exc)) from exc
         raise DocumentUploadError(str(exc)) from exc
-    return ParsedDocumentUpload(
+    upload = ParsedDocumentUpload(
         content=parsed.content,
         source_type="pdf",
         source_content_type="application/pdf",
@@ -104,6 +121,14 @@ def _parse_pdf(
         page_count=parsed.page_count,
         parser_name=parsed.parser_name,
     )
+    logger.info(
+        "document_upload.pdf.parsed filename=%s parser=%s pages=%s chars=%d",
+        filename,
+        upload.parser_name,
+        upload.page_count,
+        len(upload.content),
+    )
+    return upload
 
 
 def _parse_text_file(

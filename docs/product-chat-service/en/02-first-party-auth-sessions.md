@@ -40,8 +40,8 @@ The backend owns a first-party auth/session path:
 9. `GET /auth/me` resolves the current `Principal` from the session cookie.
 10. `POST /auth/password-reset/request` sends a reset token without revealing whether the account exists.
 11. `POST /auth/password-reset/confirm` consumes the reset token, changes the password, and revokes existing sessions.
-12. `POST /auth/guest/request` creates a short-lived one-time provider-free guest code when guest access is enabled.
-13. `POST /auth/guest/login` redeems that code once and issues the normal app session cookie plus CSRF token for an explicit guest identity.
+12. `POST /auth/guest/request` records a requester email when guest access is enabled and never returns a guest code to the browser.
+13. The operator can issue a short-lived one-time code with `scripts/issue_guest_access_code.py`, then `POST /auth/guest/login` redeems that code once and issues the normal app session cookie plus CSRF token for an explicit guest identity.
 
 The default email sender is intentionally local/offline. It records verification and
 reset emails in process memory for tests and local development. Preview/public demos
@@ -106,8 +106,8 @@ The Phase 1 public-demo boundary is intentionally explicit:
 - `MY_AGENTS_CORS_ALLOWED_ORIGINS` must list exact frontend origins for credentialed browser requests; wildcard origins are rejected.
 - `MY_AGENTS_AUTH_SIGNUP_ENABLED=false` blocks new backend signups as a public-demo
   kill switch while preserving existing verified-user login/session behavior.
-- `MY_AGENTS_GUEST_ACCESS_ENABLED=true` opens provider-free guest access for the
-  public demo. Guest codes are one-time, guest sessions expire after
+- `MY_AGENTS_GUEST_ACCESS_ENABLED=true` opens email-gated guest requests for the
+  public demo. Guest codes are manually issued for requester emails, one-time, guest sessions expire after
   `MY_AGENTS_GUEST_ACCESS_TTL_SECONDS` (default 24 hours), and guest responses use
   `email: null`, `is_guest: true`, and `guest_expires_at` instead of presenting a
   fake visitor email as a real account.
@@ -147,6 +147,7 @@ Those are later milestones or explicit non-goals for v0.
 - disabled signup fails safely without creating users, tokens, emails, or sessions;
 - disabling signup does not block existing verified-user login;
 - guest access is disabled by default;
+- public guest requests record email but do not expose a code in the API response;
 - guest codes redeem once, create a guest session, and make `/auth/me` return an
   explicit guest shape;
 - expired guest codes/sessions are rejected;
@@ -168,6 +169,7 @@ Explain this in an interview:
 
 ## Revision history
 
+- 2026-05-26: Changed public guest access to email-gated requests plus manual operator code issue.
 - 2026-05-21: Added provider-free public-demo guest access contract and limits.
 - 2026-05-21: Documented the backend-owned signup disable switch for public-demo rollback.
 - 2026-05-20: Documented Phase 1 public-demo auth/session boundary, CSRF/CORS/cookie tests, and single-process rate-limit limitation.

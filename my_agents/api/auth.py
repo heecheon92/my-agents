@@ -21,7 +21,7 @@ from my_agents.auth.models import UserModel
 from my_agents.auth.schemas import (
     AcceptedResponse,
     DevAuthEmailMessageResponse,
-    GuestAccessCodeResponse,
+    GuestAccessRequest,
     GuestLoginRequest,
     LoginRequest,
     LoginResponse,
@@ -80,18 +80,17 @@ def signup(
     )
 
 
-@auth_router.post("/guest/request", response_model=GuestAccessCodeResponse)
+@auth_router.post("/guest/request", response_model=AcceptedResponse)
 def request_guest_access_code(
+    request: GuestAccessRequest,
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
     settings: Annotated[Settings, Depends(get_settings)],
-) -> GuestAccessCodeResponse:
-    """Create a short-lived one-time guest code when public-demo guest access is enabled."""
+) -> AcceptedResponse:
+    """Record an email-gated guest access request without exposing a code publicly."""
     if not settings.guest_access_enabled:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="guest access disabled")
-    result = auth_service.create_guest_access_code(
-        ttl=timedelta(seconds=settings.guest_code_ttl_seconds)
-    )
-    return GuestAccessCodeResponse(code=result.code, expires_at=result.expires_at)
+    auth_service.request_guest_access(email=str(request.email))
+    return AcceptedResponse()
 
 
 @auth_router.post("/guest/login", response_model=LoginResponse)

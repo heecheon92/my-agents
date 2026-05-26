@@ -100,6 +100,16 @@ MY_AGENTS_RESPONSE_MODE=deterministic
 
 See [`.env.example`](./.env.example) for the full list of settings. See the [frontend demo runbook](./docs/product-chat-service/en/10-frontend-demo-runbook.md) for CORS, cookie, CSRF, dev outbox, seeded local data, and SSE/run-detail expectations.
 
+Guest access is email-gated when enabled: public clients call `POST /auth/guest/request`
+with an email and receive only `status=accepted`; the code is
+stored as a hash and is never returned by the public API. Until email delivery is added,
+operators can print a one-time code for a pending request with:
+
+```bash
+MY_AGENTS_GUEST_ACCESS_ENABLED=true uv run python -m scripts.issue_guest_access_code \
+  --email guest@example.com
+```
+
 ## Run locally
 
 Start the API:

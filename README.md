@@ -100,6 +100,16 @@ MY_AGENTS_RESPONSE_MODE=deterministic
 
 전체 설정 목록은 [`.env.example`](./.env.example)을 확인하세요. CORS, cookie, CSRF, dev outbox, seeded local data, SSE/run-detail expectation은 [frontend demo runbook](./docs/product-chat-service/ko/10-frontend-demo-runbook.md)에 정리되어 있습니다.
 
+Guest access를 켜면 public client는 `POST /auth/guest/request`에 email을 보내고
+`status=accepted`만 받습니다. 코드는 public API가 반환하지
+않고 DB에는 hash만 저장합니다. Email delivery가 붙기 전까지 operator는 pending
+request에 대해 다음 local script로 one-time code를 출력할 수 있습니다.
+
+```bash
+MY_AGENTS_GUEST_ACCESS_ENABLED=true uv run python -m scripts.issue_guest_access_code \
+  --email guest@example.com
+```
+
 ## 로컬 실행
 
 API 시작:

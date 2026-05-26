@@ -10,12 +10,21 @@ from sqlalchemy import select
 
 from my_agents.api import create_app
 from my_agents.api.assistant import get_graph_runner
-from my_agents.auth.models import AuthTokenModel, GuestAccessCodeModel, SessionModel, UserModel
+from my_agents.auth.models import (
+    AuthTokenModel,
+    GuestAccessCodeModel,
+    GuestAccessRequestModel,
+    SessionModel,
+    UserModel,
+)
+from my_agents.auth.service import AuthService
 from my_agents.conversations.models import AgentRunModel, RunStatus
 from my_agents.persistence.database import get_database_session
 from my_agents.schemas import RouteDecision
 
 from .conftest import verify_latest_auth_email
+
+GUEST_REQUEST_EMAIL = "guest-requester@example.com"
 
 
 class _TextChunk:
@@ -59,12 +68,27 @@ def _client(
 
 
 def _guest_login(client: TestClient) -> dict[str, Any]:
-    code_response = client.post("/auth/guest/request")
-    assert code_response.status_code == 200
-    code = code_response.json()["code"]
+    code = _request_guest_code(client, email=GUEST_REQUEST_EMAIL)
     login = client.post("/auth/guest/login", json={"code": code})
     assert login.status_code == 200
     return login.json()
+
+
+def _request_guest_code(client: TestClient, *, email: str) -> str:
+    request_response = client.post("/auth/guest/request", json={"email": email})
+    assert request_response.status_code == 200
+    assert request_response.json() == {"status": "accepted"}
+    return _issue_guest_code(email=email)
+
+
+def _issue_guest_code(*, email: str) -> str:
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        result = AuthService(db).issue_guest_access_code(email=email, ttl=timedelta(minutes=15))
+        return result.code
+    finally:
+        session_generator.close()
 
 
 def _signup_login(client: TestClient, email: str) -> None:
@@ -107,7 +131,7 @@ def _mark_latest_running_run_cancelling(conversation_id: str) -> None:
 def test_guest_access_is_disabled_by_default(monkeypatch) -> None:  # noqa: ANN001
     client = _client(monkeypatch, guest_enabled=False)
 
-    code_response = client.post("/auth/guest/request")
+    code_response = client.post("/auth/guest/request", json={"email": GUEST_REQUEST_EMAIL})
     login_response = client.post("/auth/guest/login", json={"code": "not-a-code"})
 
     assert code_response.status_code == 403
@@ -116,9 +140,25 @@ def test_guest_access_is_disabled_by_default(monkeypatch) -> None:  # noqa: ANN0
     assert login_response.json()["detail"] == "guest access disabled"
 
 
+def test_guest_request_records_email_without_returning_code(monkeypatch) -> None:  # noqa: ANN001
+    client = _client(monkeypatch)
+
+    response = client.post("/auth/guest/request", json={"email": "Demo.User@Example.COM"})
+    request_row = _first_row(GuestAccessRequestModel)
+    code_row = _first_row(GuestAccessCodeModel)
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "accepted"}
+    assert "code" not in response.json()
+    assert request_row is not None
+    assert request_row.email == "demo.user@example.com"
+    assert request_row.status == "pending"
+    assert code_row is None
+
+
 def test_guest_code_redeems_once_and_me_uses_guest_session(monkeypatch) -> None:  # noqa: ANN001
     client = _client(monkeypatch)
-    code = client.post("/auth/guest/request").json()["code"]
+    code = _request_guest_code(client, email=GUEST_REQUEST_EMAIL)
 
     first_login = client.post("/auth/guest/login", json={"code": code})
     reused_login = client.post("/auth/guest/login", json={"code": code})
@@ -135,11 +175,13 @@ def test_guest_code_redeems_once_and_me_uses_guest_session(monkeypatch) -> None:
     assert me.status_code == 200
     assert me.json()["is_guest"] is True
     assert me.json()["email"] is None
+    request = _first_row(GuestAccessRequestModel)
+    assert request.status == "consumed"
 
 
 def test_expired_guest_code_and_session_are_rejected(monkeypatch) -> None:  # noqa: ANN001
     client = _client(monkeypatch)
-    code = client.post("/auth/guest/request").json()["code"]
+    code = _request_guest_code(client, email=GUEST_REQUEST_EMAIL)
 
     session_generator = get_database_session()
     db = next(session_generator)
