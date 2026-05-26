@@ -43,6 +43,7 @@ from my_agents.auth.service import (
     InvalidSessionError,
     UnverifiedEmailError,
 )
+from my_agents.diagnostics import deploy_log, safe_email_context
 from my_agents.persistence.database import get_database_session
 from my_agents.settings import Settings, get_settings
 
@@ -62,6 +63,7 @@ def signup(
     """Create a user and send a local/dev email verification token."""
     email_context = _email_log_context(str(request.email))
     client_identifier = _request_client_identifier(http_request)
+    deploy_log("auth.api.signup.received", client=client_identifier, **email_context)
     logger.info(
         "auth.signup.received email_hash=%s email_domain=%s client=%s",
         email_context["email_hash"],
@@ -69,6 +71,12 @@ def signup(
         client_identifier,
     )
     if not settings.auth_signup_enabled:
+        deploy_log(
+            "auth.api.signup.rejected",
+            reason="signup_disabled",
+            client=client_identifier,
+            **email_context,
+        )
         logger.info(
             "auth.signup.rejected reason=signup_disabled email_hash=%s email_domain=%s client=%s",
             email_context["email_hash"],
@@ -82,11 +90,19 @@ def signup(
     email_identifier = _email_identifier(str(request.email))
     _assert_auth_allowed(abuse_guard, action="signup_email", identifier=email_identifier)
     _assert_auth_allowed(abuse_guard, action="signup_client", identifier=client_identifier)
+    deploy_log("auth.api.signup.abuse_allowed", client=client_identifier, **email_context)
     abuse_guard.record_attempt(action="signup_email", identifier=email_identifier)
     abuse_guard.record_attempt(action="signup_client", identifier=client_identifier)
+    deploy_log("auth.api.signup.abuse_recorded", client=client_identifier, **email_context)
     try:
         result = auth_service.signup(email=str(request.email), password=request.password)
     except DuplicateEmailError as exc:
+        deploy_log(
+            "auth.api.signup.rejected",
+            reason="email_unavailable",
+            client=client_identifier,
+            **email_context,
+        )
         logger.info(
             "auth.signup.rejected reason=email_unavailable email_hash=%s email_domain=%s client=%s",
             email_context["email_hash"],
@@ -98,6 +114,12 @@ def signup(
             detail="email unavailable",
         ) from exc
     except Exception as exc:
+        deploy_log(
+            "auth.api.signup.failed",
+            client=client_identifier,
+            error_class=exc.__class__.__name__,
+            **email_context,
+        )
         logger.error(
             "auth.signup.failed email_hash=%s email_domain=%s client=%s error_class=%s",
             email_context["email_hash"],
@@ -106,6 +128,12 @@ def signup(
             exc.__class__.__name__,
         )
         raise
+    deploy_log(
+        "auth.api.signup.completed",
+        user_id=result.user.id,
+        verification_email_sent=result.verification_email_sent,
+        **email_context,
+    )
     logger.info(
         "auth.signup.completed user_id=%s email_hash=%s email_domain=%s verification_email_sent=%s",
         result.user.id,
@@ -126,9 +154,25 @@ def request_guest_access_code(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> AcceptedResponse:
     """Record an email-gated guest access request without exposing a code publicly."""
+    email_context = safe_email_context(str(request.email))
+    deploy_log("auth.api.guest_request.received", **email_context)
     if not settings.guest_access_enabled:
+        deploy_log(
+            "auth.api.guest_request.rejected",
+            reason="guest_access_disabled",
+            **email_context,
+        )
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="guest access disabled")
-    auth_service.request_guest_access(email=str(request.email))
+    try:
+        auth_service.request_guest_access(email=str(request.email))
+    except Exception as exc:
+        deploy_log(
+            "auth.api.guest_request.failed",
+            error_class=exc.__class__.__name__,
+            **email_context,
+        )
+        raise
+    deploy_log("auth.api.guest_request.completed", **email_context)
     return AcceptedResponse()
 
 

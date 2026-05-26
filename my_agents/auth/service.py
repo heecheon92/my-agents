@@ -23,6 +23,7 @@ from my_agents.auth.models import (
     SessionModel,
     UserModel,
 )
+from my_agents.diagnostics import deploy_log, safe_email_context
 
 AuthTokenPurpose = Literal["email_verification", "password_reset"]
 EMAIL_VERIFICATION_TOKEN_TTL = timedelta(hours=24)
@@ -100,9 +101,13 @@ class AuthService:
 
     def signup(self, *, email: str, password: str) -> SignupResult:
         normalized_email = _normalize_email(email)
+        email_context = safe_email_context(normalized_email)
+        deploy_log("auth.service.signup.start", **email_context)
         existing = self._db.scalar(select(UserModel).where(UserModel.email == normalized_email))
         if existing is not None:
+            deploy_log("auth.service.signup.duplicate_email", **email_context)
             raise DuplicateEmailError("email is already registered")
+        deploy_log("auth.service.signup.email_available", **email_context)
         user = UserModel(
             id=str(uuid.uuid4()),
             email=normalized_email,
@@ -111,14 +116,19 @@ class AuthService:
         )
         self._db.add(user)
         self._db.flush()
+        deploy_log("auth.service.signup.user_flushed", user_id=user.id, **email_context)
         token = self._create_token(
             user_id=user.id,
             purpose="email_verification",
             ttl=EMAIL_VERIFICATION_TOKEN_TTL,
         )
+        deploy_log("auth.service.signup.token_created", user_id=user.id, **email_context)
         self._db.commit()
+        deploy_log("auth.service.signup.db_committed", user_id=user.id, **email_context)
         self._db.refresh(user)
+        deploy_log("auth.service.signup.email_send.start", user_id=user.id, **email_context)
         self._email_sender.send_email_verification(recipient_email=user.email, token=token)
+        deploy_log("auth.service.signup.email_send.completed", user_id=user.id, **email_context)
         return SignupResult(user=user, verification_email_sent=True)
 
     def login(self, *, email: str, password: str) -> AuthenticatedSession:

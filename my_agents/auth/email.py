@@ -16,6 +16,8 @@ from email.message import EmailMessage
 from typing import TYPE_CHECKING, Literal, Protocol
 from urllib.parse import quote
 
+from my_agents.diagnostics import deploy_log
+
 if TYPE_CHECKING:
     from my_agents.settings import Settings
 
@@ -143,6 +145,14 @@ class SmtpAuthEmailSender:
 
     def _send(self, *, recipient_email: str, subject: str, body: str) -> None:
         context = _email_log_context(recipient_email)
+        deploy_log(
+            "auth.email.smtp.start",
+            host=self._host,
+            port=self._port,
+            from_domain=_email_domain(self._from_email),
+            starttls=self._use_starttls,
+            **context,
+        )
         logger.info(
             "auth_email.smtp.send.start host=%s port=%s from_domain=%s recipient_hash=%s "
             "recipient_domain=%s starttls=%s",
@@ -166,6 +176,14 @@ class SmtpAuthEmailSender:
                     smtp.login(self._username, self._password)
                 smtp.send_message(message)
         except Exception as exc:
+            deploy_log(
+                "auth.email.smtp.failed",
+                host=self._host,
+                port=self._port,
+                from_domain=_email_domain(self._from_email),
+                error_class=exc.__class__.__name__,
+                **context,
+            )
             logger.error(
                 "auth_email.smtp.send.failed host=%s port=%s from_domain=%s recipient_hash=%s "
                 "recipient_domain=%s error_class=%s",
@@ -177,6 +195,13 @@ class SmtpAuthEmailSender:
                 exc.__class__.__name__,
             )
             raise
+        deploy_log(
+            "auth.email.smtp.completed",
+            host=self._host,
+            port=self._port,
+            from_domain=_email_domain(self._from_email),
+            **context,
+        )
         logger.info(
             "auth_email.smtp.send.completed host=%s port=%s from_domain=%s recipient_hash=%s "
             "recipient_domain=%s",
