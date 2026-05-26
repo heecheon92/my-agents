@@ -3,9 +3,10 @@
 ARG PYTHON_IMAGE=python:3.14-slim
 ARG UV_IMAGE=ghcr.io/astral-sh/uv:latest
 
+FROM ${UV_IMAGE} AS uv
 FROM ${PYTHON_IMAGE} AS runtime
 
-COPY --from=${UV_IMAGE} /uv /uvx /usr/local/bin/
+COPY --from=uv /uv /uvx /usr/local/bin/
 
 ENV PATH="/app/.venv/bin:${PATH}" \
     PORT=8000 \
