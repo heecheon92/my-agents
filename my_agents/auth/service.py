@@ -7,6 +7,7 @@ import secrets
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from time import perf_counter
 from typing import Literal
 
 from argon2 import PasswordHasher
@@ -108,15 +109,31 @@ class AuthService:
             deploy_log("auth.service.signup.duplicate_email", **email_context)
             raise DuplicateEmailError("email is already registered")
         deploy_log("auth.service.signup.email_available", **email_context)
+        deploy_log("auth.service.signup.password_hash.start", **email_context)
+        hash_started_at = perf_counter()
+        password_hash = self._password_hasher.hash(password)
+        deploy_log(
+            "auth.service.signup.password_hash.completed",
+            elapsed_ms=round((perf_counter() - hash_started_at) * 1000, 2),
+            **email_context,
+        )
         user = UserModel(
             id=str(uuid.uuid4()),
             email=normalized_email,
-            password_hash=self._password_hasher.hash(password),
+            password_hash=password_hash,
             account_type="registered",
         )
         self._db.add(user)
+        deploy_log("auth.service.signup.user_add.completed", user_id=user.id, **email_context)
+        deploy_log("auth.service.signup.user_flush.start", user_id=user.id, **email_context)
+        flush_started_at = perf_counter()
         self._db.flush()
-        deploy_log("auth.service.signup.user_flushed", user_id=user.id, **email_context)
+        deploy_log(
+            "auth.service.signup.user_flushed",
+            user_id=user.id,
+            elapsed_ms=round((perf_counter() - flush_started_at) * 1000, 2),
+            **email_context,
+        )
         token = self._create_token(
             user_id=user.id,
             purpose="email_verification",
