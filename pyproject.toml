@@ -19,6 +19,7 @@ dependencies = [
     "pymupdf>=1.27.2.3",
     "pypdf>=6.11.0",
     "rich>=15.0.0",
+    "sentence-transformers>=5.5.1",
     "sqlalchemy>=2.0.49",
 ]
 
