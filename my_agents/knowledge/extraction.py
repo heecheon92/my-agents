@@ -53,8 +53,8 @@ _DATABASE_TABLE_PATTERN = re.compile(
     r"\b(?:table|from|join|into|update)\s+[`\"]?(?P<table>[A-Za-z][A-Za-z0-9_]{2,})[`\"]?",
     flags=re.IGNORECASE,
 )
-_CHUNK_TARGET_CHARS = 900
-_CHUNK_OVERLAP_CHARS = 120
+_CHUNK_TARGET_CHARS = 1500
+_CHUNK_OVERLAP_CHARS = 200
 logger = logging.getLogger(__name__)
 
 

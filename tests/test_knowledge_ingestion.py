@@ -15,6 +15,7 @@ import my_agents.knowledge.extraction as extraction_module
 import my_agents.knowledge.pdf_uploads as pdf_uploads_module
 from my_agents.knowledge.extraction import (
     _chunk_pdf_text,
+    _chunk_text,
     _deterministic_embedding,
     _extract_entity_names,
 )
@@ -262,6 +263,15 @@ def test_personal_knowledge_base_document_ingestion_creates_extraction_artifacts
         select(DocumentChunkModel).where(DocumentChunkModel.document_id == document.json()["id"])
     )
     assert {chunk.source_page for chunk in chunks} == {None}
+
+
+def test_long_text_chunking_uses_document_sized_target_and_overlap() -> None:
+    text = "A" * 1800
+
+    chunks = _chunk_text(text)
+
+    assert [(start, end) for _, start, end in chunks] == [(0, 1500), (1300, 1800)]
+    assert [len(content) for content, *_ in chunks] == [1500, 500]
 
 
 def test_reingesting_document_replaces_chunks_without_duplicate_ordinals(

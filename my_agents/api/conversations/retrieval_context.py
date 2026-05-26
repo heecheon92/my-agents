@@ -22,6 +22,8 @@ from my_agents.knowledge.routing import (
 
 logger = logging.getLogger(__name__)
 
+_RETRIEVED_CONTEXT_SNIPPET_CHARS = 1200
+
 
 @dataclass(frozen=True)
 class ConversationRetrievalContext:
@@ -105,7 +107,7 @@ def retrieved_context_for_graph(retrieved_chunks: list[RetrievedChunk]) -> list[
             "document_id": item.document.id,
             "chunk_id": item.chunk.id,
             "title": item.document.title,
-            "snippet": item.chunk.content[:800],
+            "snippet": item.chunk.content[:_RETRIEVED_CONTEXT_SNIPPET_CHARS],
             "source_page": item.chunk.source_page,
             "source_filename": item.document.source_filename,
             "source": item.source,
