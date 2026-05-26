@@ -145,7 +145,7 @@ Agent-level README convention:
 - Agent README files should explain the agent purpose, file responsibilities, graph/tool flow, current behavior, planned extension seams, and relevant tests.
 - Update the agent README pair whenever that agent's behavior, graph shape, tool policy, state contract, or extension guidance changes.
 
-Learning documentation that supports the owner's learning path lives under `docs/learning/`. Keep the root numbered sequence for personal learning logs, and use subfolders such as `docs/learning/agent-lab/` for focused learning tracks that came from conversations. Agent-generated project architecture docs that are not primarily learning logs should live outside `docs/learning/` (for the portfolio chat service, use `docs/portfolio-chat-service/`).
+Learning documentation that supports the owner's learning path lives under `docs/learning/`. Keep the root numbered sequence for personal learning logs, and use subfolders such as `docs/learning/agent-lab/` for focused learning tracks that came from conversations. Agent-generated project architecture docs that are not primarily learning logs should live outside `docs/learning/` (for the product chat service, use `docs/product-chat-service/en/`).
 
 Simulated-agent idea references live under `docs/learning/agent-lab/simulated-agent-candidate-materials/`. Use that catalog as optional inspiration when suggesting or bootstrapping learning-only simulated agents, especially when the user asks for practice ideas. It is not mandatory or exclusive; agents may propose other ideas when they better fit the user's current goal.
 
@@ -175,7 +175,7 @@ Mermaid diagram guidance for Markdown work:
 When behavior changes, update:
 
 - `README.md` and `README.en.md` for user-facing setup and examples.
-- `docs/learning/` when the content supports the owner's learning path; use `docs/learning/agent-lab/` for generated agent-lab learning notes and `docs/portfolio-chat-service/` for service architecture docs.
+- `docs/learning/` when the content supports the owner's learning path; use `docs/learning/agent-lab/` for generated agent-lab learning notes and `docs/product-chat-service/en/` for service architecture docs.
 - `.env.example` for safe env knobs.
 - tests for the behavior contract.
 - this `AGENTS.md` if project constraints or architecture conventions change.

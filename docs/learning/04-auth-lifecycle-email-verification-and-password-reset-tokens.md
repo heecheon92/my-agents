@@ -83,7 +83,7 @@ flowchart LR
 
 The current guard is intentionally in-process and replaceable:
 
-- it is good enough for offline tests and single-process portfolio demos;
+- it is good enough for offline tests and single-process public demos;
 - it stores digested bucket keys instead of raw emails;
 - it protects token guessing by counting invalid verification/reset-token attempts by client;
 - it should move to Redis, a gateway, or another shared store before a real multi-worker public deployment.

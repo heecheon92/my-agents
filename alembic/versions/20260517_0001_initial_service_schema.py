@@ -1,4 +1,4 @@
-"""Create initial portfolio chat service schema."""
+"""Create initial product chat service schema."""
 
 from __future__ import annotations
 

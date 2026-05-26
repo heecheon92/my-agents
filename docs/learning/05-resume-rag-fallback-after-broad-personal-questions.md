@@ -14,7 +14,7 @@ related_code:
 
 # Resume RAG fallback after broad personal questions
 
-A real portfolio-demo failure exposed a gap in the retrieval pipeline: after uploading a resume, asking a broad question like “tell me about me” did not retrieve the resume because the query did not share enough exact terms with the document chunks.
+A real public-demo failure exposed a gap in the retrieval pipeline: after uploading a resume, asking a broad question like “tell me about me” did not retrieve the resume because the query did not share enough exact terms with the document chunks.
 
 ## Symptom
 
@@ -48,7 +48,7 @@ The server still derives the user identity from the authenticated principal; the
 
 - Trust a client-sent `user_id`: unsafe because a malicious client could request another user's identity.
 - Return all documents for every failed query: too noisy and increases accidental context exposure inside the authorized account.
-- Add a vector database immediately: useful later, but too much dependency and deployment surface for this V1 portfolio fix.
+- Add a vector database immediately: useful later, but too much dependency and deployment surface for this V1 product fix.
 
 ## Follow-up risks
 

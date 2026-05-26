@@ -1,4 +1,4 @@
-# Portfolio chat service project docs
+# Product chat service project docs
 
 These docs describe the generated v1-draft backend architecture and implementation slices.
 They live outside `docs/learning/` because `docs/learning/` is reserved for the owner's personal learning logs.

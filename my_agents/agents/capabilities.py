@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from my_agents.schemas import RouteLabel
 
 CapabilityMode = Literal["real_world", "simulation"]
-CapabilityMaturity = Literal["toy", "prototype", "portfolio", "production_candidate"]
+CapabilityMaturity = Literal["toy", "prototype", "product", "production_candidate"]
 
 
 class AgentCapability(BaseModel):

@@ -67,7 +67,7 @@ class AgentCapability(BaseModel):
     tools: list[str]
     data_sources: list[str]
     side_effects: list[str]
-    maturity: Literal["toy", "prototype", "portfolio", "production_candidate"]
+    maturity: Literal["toy", "prototype", "product", "production_candidate"]
 ```
 
 Minimum fields for the next milestone:
@@ -149,7 +149,7 @@ capability mode    = whether the backing implementation is real-world or simulat
 maturity           = how reliable/product-ready it is
 ```
 
-This lets the project support both portfolio/product capabilities and learning-oriented agent architecture experiments without confusing users or future maintainers.
+This lets the project support both product capabilities and learning-oriented agent architecture experiments without confusing users or future maintainers.
 
 ## Revision history
 

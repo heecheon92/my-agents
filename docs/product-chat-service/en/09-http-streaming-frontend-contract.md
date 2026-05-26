@@ -16,7 +16,7 @@ related_code:
 
 # HTTP streaming and frontend contract
 
-This note documents the backend-only streaming contract for the portfolio chat service.
+This note documents the backend-only streaming contract for the product chat service.
 The frontend still belongs in a separate repository; this backend exposes the API shape a
 frontend can consume.
 

@@ -77,7 +77,7 @@ flowchart LR
     Graph --> Provider["response provider with answer_mode"]
 ```
 
-이 분리는 포트폴리오에서 중요합니다. LangGraph는 AI 응답 흐름을 보여주고, RetrievalService/API 레이어는 실제 제품에 필요한 auth/permission/provenance 경계를 보여줍니다. Ingestion(upload/parse/chunk/embed)은 retrieval routing과 분리된 별도 pipeline입니다.
+이 분리는 제품 설명에서 중요합니다. LangGraph는 AI 응답 흐름을 보여주고, RetrievalService/API 레이어는 실제 제품에 필요한 auth/permission/provenance 경계를 보여줍니다. Ingestion(upload/parse/chunk/embed)은 retrieval routing과 분리된 별도 pipeline입니다.
 
 향후 retrieval이 query rewrite, metadata planning, hybrid/vector search, reranking, context compression처럼 다단계 workflow가 되면 별도 `RetrievalGraph`를 추가할 수 있습니다. 다만 그 경우에도 hard authorization filter는 graph prompt가 아니라 `RetrievalService` 안에 남겨야 합니다.
 

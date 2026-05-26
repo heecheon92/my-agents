@@ -112,13 +112,13 @@ embeddings through `langchain-openai` when `MY_AGENTS_EMBEDDING_MODE=openai`. SQ
 offline tests keep JSON embeddings only; Postgres stores the same vectors in a pgvector
 column after Alembic migrations so retrieval can use SQL vector search.
 
-This is a scaffold for portfolio-visible architecture, not a claim of production extraction quality.
+This is a scaffold for review-visible architecture, not a claim of production extraction quality.
 
 ## Parallel ingestion concurrency lesson
 
 During multi-file UX testing against Postgres, a user uploaded and ingested three files concurrently and hit `psycopg.errors.DeadlockDetected`. The failure came from extraction, not retrieval: parallel runs extracted overlapping entity names and the older select-then-insert helper raced on the unique `entities.name` constraint.
 
-The ingestion service now pre-collects entity names for a run, inserts them in a stable sorted order, and uses dialect-aware conflict-safe inserts (`ON CONFLICT DO NOTHING` for Postgres/SQLite) before creating mentions and relationships. This preserves the frontend's parallel upload/ingestion goal while avoiding shared canonical-entity lock cycles. Regression coverage lives in `tests/test_knowledge_ingestion.py::test_parallel_async_ingest_shared_entities_complete`. A learner-focused incident note is in [`docs/learning/06-parallel-ingestion-postgres-deadlock.md`](../learning/06-parallel-ingestion-postgres-deadlock.md).
+The ingestion service now pre-collects entity names for a run, inserts them in a stable sorted order, and uses dialect-aware conflict-safe inserts (`ON CONFLICT DO NOTHING` for Postgres/SQLite) before creating mentions and relationships. This preserves the frontend's parallel upload/ingestion goal while avoiding shared canonical-entity lock cycles. Regression coverage lives in `tests/test_knowledge_ingestion.py::test_parallel_async_ingest_shared_entities_complete`. A learner-focused incident note is in [`docs/learning/06-parallel-ingestion-postgres-deadlock.md`](../../learning/06-parallel-ingestion-postgres-deadlock.md).
 
 ## Current limitations
 

@@ -83,7 +83,7 @@ def draft_writer(state: EditorInChiefReviewState) -> dict[str, str | int]:
         [
             SystemMessage(
                 content=(
-                    "You are a simulated draft writer. Write concise portfolio copy. "
+                    "You are a simulated draft writer. Write concise product copy. "
                     "If reviewer feedback is present, revise the previous draft. "
                     "Do not claim that anything was actually published."
                 )

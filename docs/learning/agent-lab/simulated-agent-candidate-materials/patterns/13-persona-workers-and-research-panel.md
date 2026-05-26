@@ -63,7 +63,7 @@ Create 2-3 analyst personas, optionally approve them, run fake interviews, and s
 
 Why it is useful: it combines persona generation, fan-out, and synthesis.
 
-#### Portfolio Project Review Board
+#### Product Project Review Board
 
 Product, backend, and risk reviewers evaluate one project idea, then a moderator creates next steps.
 

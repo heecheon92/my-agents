@@ -48,7 +48,7 @@ def test_smtp_sender_builds_visitor_account_links(monkeypatch) -> None:  # noqa:
         _env_file=None,
         MY_AGENTS_RESPONSE_MODE="deterministic",
         MY_AGENTS_AUTH_EMAIL_MODE="smtp",
-        MY_AGENTS_AUTH_PUBLIC_APP_BASE_URL="https://portfolio.example.com",
+        MY_AGENTS_AUTH_PUBLIC_APP_BASE_URL="https://demo.example.com",
         MY_AGENTS_AUTH_SMTP_HOST="smtp.example.com",
         MY_AGENTS_AUTH_SMTP_PORT="2525",
         MY_AGENTS_AUTH_SMTP_USERNAME="smtp-user",
@@ -67,12 +67,10 @@ def test_smtp_sender_builds_visitor_account_links(monkeypatch) -> None:  # noqa:
     reset = FakeSmtp.sent_messages[1]
     assert verification["From"] == "noreply@example.com"
     assert verification["To"] == "visitor@example.com"
-    assert "https://portfolio.example.com/verify-email?token=verify%20token" in (
+    assert "https://demo.example.com/verify-email?token=verify%20token" in (
         verification.get_content()
     )
-    assert "https://portfolio.example.com/password-reset?token=reset%20token" in (
-        reset.get_content()
-    )
+    assert "https://demo.example.com/password-reset?token=reset%20token" in (reset.get_content())
 
 
 def test_signup_uses_configured_smtp_sender_without_local_outbox(monkeypatch) -> None:  # noqa: ANN001
@@ -81,7 +79,7 @@ def test_signup_uses_configured_smtp_sender_without_local_outbox(monkeypatch) ->
     FakeSmtp.starttls_calls = 0
     monkeypatch.setattr(auth_email.smtplib, "SMTP", FakeSmtp)
     monkeypatch.setenv("MY_AGENTS_AUTH_EMAIL_MODE", "smtp")
-    monkeypatch.setenv("MY_AGENTS_AUTH_PUBLIC_APP_BASE_URL", "https://portfolio.example.com")
+    monkeypatch.setenv("MY_AGENTS_AUTH_PUBLIC_APP_BASE_URL", "https://demo.example.com")
     monkeypatch.setenv("MY_AGENTS_AUTH_SMTP_HOST", "smtp.example.com")
     monkeypatch.setenv("MY_AGENTS_AUTH_SMTP_USERNAME", "smtp-user")
     monkeypatch.setenv("MY_AGENTS_AUTH_SMTP_PASSWORD", "smtp-password")

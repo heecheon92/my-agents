@@ -8,14 +8,14 @@ topics:
   - lightsail
   - github-actions
   - docker
-  - portfolio
+  - product
 related_code:
   - pyproject.toml
   - main.py
   - my_agents/api.py
 ---
 
-# Durable plan: portfolio deployment pipeline
+# Durable plan: public demo deployment pipeline
 
 ## Decision
 
@@ -37,19 +37,19 @@ GitHub repository
 
 ## Why this path
 
-This project is currently a backend-only FastAPI + LangGraph assistant foundation. It needs a portfolio-grade deployment that is real enough to show engineering judgment, but not so complex that deployment work overwhelms the learning roadmap.
+This project is currently a backend-only FastAPI + LangGraph assistant foundation. It needs a review-ready deployment that is real enough to show engineering judgment, but not so complex that deployment work overwhelms the learning roadmap.
 
 Lightsail + Docker Compose is the right first deployment target because it is:
 
 - simple enough to operate alone;
 - product-shaped enough to demonstrate Docker, Linux, env vars, HTTPS, health checks, and CI/CD;
 - cheaper and more predictable than prematurely assembling several AWS services;
-- easier to explain in a portfolio than a hidden platform deployment;
+- easier to explain in a product than a hidden platform deployment;
 - migratable later to ECS/Fargate when the app has users, auth, data, and usage pressure.
 
 ## AWS Free Tier posture
 
-AWS Free Tier is acceptable for a low-traffic portfolio demo, but it should not be treated as the product architecture.
+AWS Free Tier is acceptable for a low-traffic public demo, but it should not be treated as the product architecture.
 
 The project should assume:
 
@@ -58,7 +58,7 @@ The project should assume:
 - public OpenAI-backed endpoints can create real cost;
 - predictable low monthly cost is better than a fragile “must be free” design.
 
-## Portfolio deployment scope
+## Public demo deployment scope
 
 The first deployed version should expose only safe surfaces:
 
@@ -79,7 +79,7 @@ Owner/admin
   -> protected OpenAI-backed chat
 ```
 
-## Phase 1: portfolio demo
+## Phase 1: public demo
 
 Implement deployment with:
 
@@ -128,7 +128,7 @@ GitHub Actions
   -> CloudWatch
 ```
 
-This phase is intentionally deferred. Starting here would be overengineering for the current learning and portfolio stage.
+This phase is intentionally deferred. Starting here would be overengineering for the current learning and demo stage.
 
 ## Avoid for now
 
@@ -154,7 +154,7 @@ Stay on Lightsail + Docker Compose until at least one of these becomes true:
 
 | Stage | Deployment choice | Reason |
 | --- | --- | --- |
-| Now / portfolio | Lightsail + Docker Compose + GitHub Actions | Low complexity, real deployment skills, predictable cost |
+| Now / product | Lightsail + Docker Compose + GitHub Actions | Low complexity, real deployment skills, predictable cost |
 | Early private use | Same, plus auth/rate limits/logging | Still simple, safer OpenAI exposure |
 | Product stage | ECS/Fargate, ALB, RDS, Secrets Manager, CloudWatch | Better isolation, scale, operations |
 
@@ -167,4 +167,4 @@ Stay on Lightsail + Docker Compose until at least one of these becomes true:
 
 ## Revision history
 
-- 2026-05-15: Created learning log for `Durable plan: portfolio deployment pipeline`.
+- 2026-05-15: Created learning log for `Durable plan: public demo deployment pipeline`.

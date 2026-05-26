@@ -1,1 +1,1 @@
-"""users service boundary for the portfolio chat service roadmap."""
+"""users service boundary for the product chat service roadmap."""

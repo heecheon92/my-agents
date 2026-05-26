@@ -1,1 +1,1 @@
-"""permissions service boundary for the portfolio chat service roadmap."""
+"""permissions service boundary for the product chat service roadmap."""

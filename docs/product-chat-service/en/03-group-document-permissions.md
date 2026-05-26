@@ -18,7 +18,7 @@ related_code:
 
 # Groups and document permissions
 
-This note explains the first authorization slice for the portfolio chat service.
+This note explains the first authorization slice for the product chat service.
 
 ## What is implemented now
 

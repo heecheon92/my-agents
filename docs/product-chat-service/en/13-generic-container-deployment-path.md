@@ -20,7 +20,7 @@ related_code:
 
 # Generic container deployment path
 
-This is the provider-neutral backend path for a public portfolio demo. It defines
+This is the provider-neutral backend path for a public demo. It defines
 how to build and run the FastAPI service in a container without choosing a host,
 activating providers, entering secrets, running live deployments, or spending
 money. Use it together with the [public demo deployment readiness runbook](./12-public-demo-deployment-readiness.md).

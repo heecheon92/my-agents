@@ -31,7 +31,7 @@ User
 
 ## 에이전트 목표
 
-사용자가 “포트폴리오는 Codex가 만들었고 나는 리뷰는 가능하지만 처음부터 구현하라면 실패할 것 같다” 같은 gap을 말하면, Implementation Gap Interviewer는 가장 위험한 구현 evidence 부족 지점을 찾고 작은 solo exercise로 연결해야 합니다.
+사용자가 “제품 데모는 Codex가 만들었고 나는 리뷰는 가능하지만 처음부터 구현하라면 실패할 것 같다” 같은 gap을 말하면, Implementation Gap Interviewer는 가장 위험한 구현 evidence 부족 지점을 찾고 작은 solo exercise로 연결해야 합니다.
 
 예시 입력:
 

@@ -19,7 +19,7 @@ related_code:
 
 # Permission-aware RAG and citation-backed answers
 
-This note explains the first thin RAG slice for the portfolio chat service.
+This note explains the first thin RAG slice for the product chat service.
 
 ## What is implemented now
 
@@ -103,7 +103,7 @@ an entity with an authorized chunk.
 - Streaming exists, but frontend display of retrieval route/answer mode still belongs to the separate frontend repository.
 - The legacy `/assistant/chat` endpoint still exists for smoke checks and does not own product KB access.
 
-These constraints are acceptable for this portfolio stage because they make the security
+These constraints are acceptable for this demo stage because they make the security
 boundary testable before adding more impressive retrieval infrastructure.
 
 ## Future RetrievalGraph milestone

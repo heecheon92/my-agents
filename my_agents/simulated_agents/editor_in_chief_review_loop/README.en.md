@@ -33,7 +33,7 @@ When the user enters a writing request, Editor In Chief Review Loop should creat
 Example input:
 
 ```text
-Write a short paragraph introducing my portfolio backend project.
+Write a short paragraph introducing my AI backend project.
 ```
 
 ## Required behavior

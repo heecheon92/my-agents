@@ -128,7 +128,7 @@ def test_openai_provider_includes_authorized_document_context_in_prompt() -> Non
         retrieved_context=[
             {
                 "title": "Resume 2026",
-                "snippet": "Heecheon Park builds FastAPI LangGraph portfolio systems.",
+                "snippet": "Heecheon Park builds FastAPI LangGraph product systems.",
                 "source_page": 1,
                 "source_filename": "resume.pdf",
             }
@@ -138,7 +138,7 @@ def test_openai_provider_includes_authorized_document_context_in_prompt() -> Non
     final_prompt = str(chat_model.calls[0][-1].content)
     assert "Authorized document context" in final_prompt
     assert "Resume 2026" in final_prompt
-    assert "Heecheon Park builds FastAPI LangGraph portfolio systems" in final_prompt
+    assert "Heecheon Park builds FastAPI LangGraph product systems" in final_prompt
     assert "instead of saying you cannot access uploaded documents" in final_prompt
 
 

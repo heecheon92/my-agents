@@ -648,7 +648,7 @@ _PERSONAL_DOCUMENT_FALLBACK_HINTS = (
     "uploaded file",
     "resume",
     "cv",
-    "portfolio",
+    "product",
     "나에 대해",
     "내 이력서",
     "이력서",

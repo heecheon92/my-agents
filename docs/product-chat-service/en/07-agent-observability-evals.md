@@ -17,7 +17,7 @@ related_code:
 
 # Agent observability events and eval fixtures
 
-This note explains how the portfolio chat service shows agent activity without exposing
+This note explains how the product chat service shows agent activity without exposing
 hidden chain-of-thought or private document text.
 
 ## What is implemented now
@@ -70,7 +70,7 @@ what happened; citations explain which authorized knowledge supported the answer
 - `evaluate_event_redaction` checks forbidden terms are absent from event payloads;
 - `evaluate_event_latency_budget` checks emitted latency metrics fit a fixture budget.
 
-These helpers are not a complete LLM evaluation platform. Their role is to make portfolio
+These helpers are not a complete LLM evaluation platform. Their role is to make product
 claims testable: grounding, permission safety, redaction, and basic performance awareness.
 
 ## Testing evidence

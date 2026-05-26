@@ -590,7 +590,7 @@ def test_parallel_async_ingest_shared_entities_complete(monkeypatch, tmp_path) -
         [
             "Shared Alpha uses FastAPI. LangGraph helps Shared Alpha.",
             "FastAPI helps Shared Alpha. Shared Alpha studies LangGraph.",
-            "LangGraph and FastAPI support Shared Alpha in portfolio demos.",
+            "LangGraph and FastAPI support Shared Alpha in public demos.",
         ],
         start=1,
     ):
@@ -829,10 +829,10 @@ def test_pdf_upload_persists_metadata_and_ingests_page_provenance(monkeypatch) -
 
     document = _upload_document(
         client,
-        data={"title": "Portfolio PDF", "knowledge_base_id": kb_id},
+        data={"title": "Demo PDF", "knowledge_base_id": kb_id},
         files={
             "file": (
-                "portfolio.pdf",
+                "demo.pdf",
                 _text_pdf(
                     "OpenAI Agents page one mentions LangGraph.",
                     "Heecheon Park page two cites FastAPI.",
@@ -844,9 +844,9 @@ def test_pdf_upload_persists_metadata_and_ingests_page_provenance(monkeypatch) -
 
     assert document.status_code == 201
     payload = document.json()
-    assert payload["title"] == "Portfolio PDF"
+    assert payload["title"] == "Demo PDF"
     assert payload["source_type"] == "pdf"
-    assert payload["source_filename"] == "portfolio.pdf"
+    assert payload["source_filename"] == "demo.pdf"
     assert payload["source_content_type"] == "application/pdf"
     assert payload["source_byte_size"] > 0
     assert len(payload["source_sha256"]) == 64
@@ -875,8 +875,8 @@ def test_pdf_upload_persists_metadata_and_ingests_page_provenance(monkeypatch) -
 @pytest.mark.parametrize(
     ("filename", "content_type", "source_type", "source_content_type", "parser_name"),
     [
-        ("portfolio-notes.md", "text/markdown", "markdown", "text/markdown", "utf8_markdown_v1"),
-        ("portfolio-notes.txt", "text/plain", "text", "text/plain", "utf8_text_v1"),
+        ("demo-notes.md", "text/markdown", "markdown", "text/markdown", "utf8_markdown_v1"),
+        ("demo-notes.txt", "text/plain", "text", "text/plain", "utf8_text_v1"),
     ],
 )
 def test_text_upload_persists_metadata_and_ingests_for_retrieval(
@@ -898,7 +898,7 @@ def test_text_upload_persists_metadata_and_ingests_for_retrieval(
         files={
             "file": (
                 filename,
-                f"# Portfolio notes\r\n\r\n{phrase} with FastAPI citations.\n".encode(),
+                f"# Product notes\r\n\r\n{phrase} with FastAPI citations.\n".encode(),
                 content_type,
             )
         },
@@ -967,7 +967,7 @@ def test_pdf_upload_ingest_and_conversation_retrieval_pipeline(monkeypatch) -> N
     _signup_login(client, "pdf-rag-owner@example.com")
     kb_id = _create_personal_knowledge_base(client, "PDF RAG KB")
 
-    resume_phrase = "Heecheon Park builds FastAPI and LangGraph portfolio systems"
+    resume_phrase = "Heecheon Park builds FastAPI and LangGraph product systems"
     document = _upload_document(
         client,
         data={"title": "Resume PDF", "knowledge_base_id": kb_id},

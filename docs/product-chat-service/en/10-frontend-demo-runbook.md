@@ -24,11 +24,11 @@ related_code:
 # Frontend demo and local runbook
 
 This note is the backend-owned contract for connecting a separate frontend to the
-portfolio chat-service API. The frontend remains outside this repository.
+product chat-service API. The frontend remains outside this repository.
 
 ## Local backend configuration
 
-Use deterministic mode when the goal is a credential-free portfolio demo or frontend
+Use deterministic mode when the goal is a credential-free public demo or frontend
 integration smoke test.
 
 ```bash
@@ -74,8 +74,8 @@ Seeded login:
 Seeded content:
 
 - knowledge base: `V1 Demo Knowledge Base`
-- document: `V1 Portfolio Chat Service Demo`
-- sample prompt: `How does the portfolio chat service stream answers and persist app state?`
+- document: `V1 Product Chat Service Demo`
+- sample prompt: `How does the product chat service stream answers and persist app state?`
 
 The helper is idempotent for the seeded extraction run. It verifies the demo user and
 resets that local user's password to the demo password. If you need a fresh SQLite file,
@@ -162,7 +162,7 @@ Important auth details:
 
 ## Product conversation demo flow
 
-The portfolio frontend should use product endpoints, not the legacy `/assistant/chat` endpoint.
+The product frontend should use product endpoints, not the legacy `/assistant/chat` endpoint.
 
 ```mermaid
 flowchart TD
@@ -194,7 +194,7 @@ Do not enable that endpoint outside local deterministic demo runs.
 Suggested deterministic demo document:
 
 ```text
-The portfolio chat service uses LangGraph for assistant routing, FastAPI for the
+The product chat service uses LangGraph for assistant routing, FastAPI for the
 backend API, SQLite or Postgres for app-owned state, and Server-Sent Events for
 incremental answer streaming.
 ```
@@ -202,7 +202,7 @@ incremental answer streaming.
 Suggested prompt after ingest:
 
 ```text
-How does the portfolio chat service stream answers and persist app state?
+How does the product chat service stream answers and persist app state?
 ```
 
 ## SSE stream contract
@@ -342,7 +342,7 @@ Production activation confirmation required: yes.
   records, or confidential documents.
 - Account deletion/export is not implemented yet; operator cleanup is the current
   rollback/removal path for demo data.
-- The text/PDF parser is portfolio-demo quality. Scanned, encrypted, image-only,
+- The text/PDF parser is public-demo quality. Scanned, encrypted, image-only,
   scanned, encrypted, unsupported encoded, very large, or malformed PDFs may fail instead of storing corrupted text.
 - Keep OpenAI model, timeout, and max-output settings conservative; record host/provider
   budget controls before public traffic.

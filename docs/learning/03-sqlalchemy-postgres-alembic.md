@@ -82,4 +82,4 @@ Answer these before an interview:
 
 ## Revision history
 
-- 2026-05-17: Created after adding Alembic/Postgres readiness for the portfolio chat service.
+- 2026-05-17: Created after adding Alembic/Postgres readiness for the product chat service.

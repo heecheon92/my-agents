@@ -242,14 +242,14 @@ def test_service_foundation_settings_accept_overrides(
         "MY_AGENTS_TEST_DATABASE_URL",
         "postgresql+psycopg://app:pw@db/test_app",
     )
-    monkeypatch.setenv("MY_AGENTS_SESSION_COOKIE_NAME", "portfolio_session")
+    monkeypatch.setenv("MY_AGENTS_SESSION_COOKIE_NAME", "demo_session")
     monkeypatch.setenv("MY_AGENTS_SESSION_COOKIE_SECURE", "false")
     monkeypatch.setenv("MY_AGENTS_SESSION_COOKIE_SAMESITE", "strict")
-    monkeypatch.setenv("MY_AGENTS_CSRF_HEADER_NAME", "X-Portfolio-CSRF")
+    monkeypatch.setenv("MY_AGENTS_CSRF_HEADER_NAME", "X-Demo-CSRF")
     monkeypatch.setenv("MY_AGENTS_DEPLOYMENT_ENVIRONMENT", "preview")
     monkeypatch.setenv("MY_AGENTS_AUTH_EMAIL_MODE", "smtp")
     monkeypatch.setenv("MY_AGENTS_AUTH_SIGNUP_ENABLED", "false")
-    monkeypatch.setenv("MY_AGENTS_AUTH_PUBLIC_APP_BASE_URL", "https://portfolio.example.com/")
+    monkeypatch.setenv("MY_AGENTS_AUTH_PUBLIC_APP_BASE_URL", "https://demo.example.com/")
     monkeypatch.setenv("MY_AGENTS_AUTH_SMTP_HOST", "smtp.example.com")
     monkeypatch.setenv("MY_AGENTS_AUTH_SMTP_PORT", "2525")
     monkeypatch.setenv("MY_AGENTS_AUTH_SMTP_USERNAME", "smtp-user")
@@ -273,14 +273,14 @@ def test_service_foundation_settings_accept_overrides(
     assert settings.test_database_url == "postgresql+psycopg://app:pw@db/test_app"
     assert settings.auto_create_tables is None
     assert settings.should_auto_create_tables() is False
-    assert settings.session_cookie_name == "portfolio_session"
+    assert settings.session_cookie_name == "demo_session"
     assert settings.session_cookie_secure is False
     assert settings.session_cookie_samesite == "strict"
-    assert settings.csrf_header_name == "X-Portfolio-CSRF"
+    assert settings.csrf_header_name == "X-Demo-CSRF"
     assert settings.deployment_environment == "preview"
     assert settings.auth_email_mode == "smtp"
     assert settings.auth_signup_enabled is False
-    assert settings.auth_public_app_base_url == "https://portfolio.example.com"
+    assert settings.auth_public_app_base_url == "https://demo.example.com"
     assert settings.auth_smtp_host == "smtp.example.com"
     assert settings.auth_smtp_port == 2525
     assert settings.auth_smtp_username == "smtp-user"
@@ -330,14 +330,14 @@ def test_cors_allowed_origins_parse_csv_and_strip_trailing_slashes(
     monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
     monkeypatch.setenv(
         "MY_AGENTS_CORS_ALLOWED_ORIGINS",
-        "http://localhost:3000/, https://portfolio.example.com",
+        "http://localhost:3000/, https://demo.example.com",
     )
 
     settings = Settings(_env_file=None)
 
     assert settings.cors_allowed_origin_list() == (
         "http://localhost:3000",
-        "https://portfolio.example.com",
+        "https://demo.example.com",
     )
 
 
@@ -389,7 +389,7 @@ def test_public_app_base_url_must_be_http_url(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
-    monkeypatch.setenv("MY_AGENTS_AUTH_PUBLIC_APP_BASE_URL", "portfolio.example.com")
+    monkeypatch.setenv("MY_AGENTS_AUTH_PUBLIC_APP_BASE_URL", "demo.example.com")
 
     with pytest.raises(ValidationError, match="AUTH_PUBLIC_APP_BASE_URL"):
         Settings(_env_file=None)

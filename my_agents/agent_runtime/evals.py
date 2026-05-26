@@ -9,7 +9,7 @@ from typing import Any
 
 @dataclass(frozen=True)
 class EvalCheck:
-    """One deterministic eval result for portfolio-safe regression tests."""
+    """One deterministic eval result for demo-safe regression tests."""
 
     name: str
     passed: bool

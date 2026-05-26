@@ -39,8 +39,8 @@ from my_agents.settings import Settings
 DEMO_EMAIL = "test@test.com"
 DEMO_PASSWORD = "correct horse battery staple"
 DEMO_KNOWLEDGE_BASE_NAME = "V1 Demo Knowledge Base"
-DEMO_DOCUMENT_TITLE = "V1 Portfolio Chat Service Demo"
-DEMO_DOCUMENT_CONTENT = """The portfolio chat service uses FastAPI for the backend API.
+DEMO_DOCUMENT_TITLE = "V1 Product Chat Service Demo"
+DEMO_DOCUMENT_CONTENT = """The product chat service uses FastAPI for the backend API.
 
 LangGraph routes assistant messages and Server-Sent Events stream answer_delta chunks.
 
@@ -286,7 +286,7 @@ def main() -> int:
     print(f"created_knowledge_base={result.created_knowledge_base}")
     print(f"created_document={result.created_document}")
     print(f"created_extraction_run={result.created_extraction_run}")
-    print("sample_prompt=How does the portfolio chat service stream answers and persist app state?")
+    print("sample_prompt=How does the product chat service stream answers and persist app state?")
     return 0
 
 

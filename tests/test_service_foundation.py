@@ -1,4 +1,4 @@
-"""Service-foundation scaffold tests for the portfolio chat roadmap."""
+"""Service-foundation scaffold tests for the product chat roadmap."""
 
 from __future__ import annotations
 

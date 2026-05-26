@@ -21,7 +21,7 @@ Markdown is a good canonical text surface for chunking, but it should not be the
 
 ## Why this matters
 
-The current backend already has a dedicated RAG service boundary through `ContextForge`, but the ingestion path is still mostly text-centric. That is enough for a portfolio V1 slice, but production RAG quality depends on preserving document structure before retrieval starts.
+The current backend already has a dedicated RAG service boundary through `ContextForge`, but the ingestion path is still mostly text-centric. That is enough for a product V1 slice, but production RAG quality depends on preserving document structure before retrieval starts.
 
 Layout parsing helps when documents contain:
 

@@ -19,7 +19,7 @@ from urllib.request import HTTPCookieProcessor, Request, build_opener
 from scripts.local_demo_seed import DEMO_DOCUMENT_TITLE, DEMO_EMAIL, DEMO_PASSWORD
 
 DEFAULT_BASE_URL = "http://localhost:8000"
-DEFAULT_PROMPT = "How does the portfolio chat service stream answers and persist app state?"
+DEFAULT_PROMPT = "How does the product chat service stream answers and persist app state?"
 JsonObject = dict[str, Any]
 
 

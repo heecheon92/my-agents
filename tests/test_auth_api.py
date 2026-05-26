@@ -204,7 +204,7 @@ def test_disabled_signup_does_not_block_existing_login(monkeypatch) -> None:  # 
 
 
 def test_logout_honors_configured_csrf_header(monkeypatch) -> None:  # noqa: ANN001
-    monkeypatch.setenv("MY_AGENTS_CSRF_HEADER_NAME", "X-Portfolio-CSRF")
+    monkeypatch.setenv("MY_AGENTS_CSRF_HEADER_NAME", "X-Demo-CSRF")
     client = _client(monkeypatch)
     client.post(
         "/auth/signup",
@@ -223,7 +223,7 @@ def test_logout_honors_configured_csrf_header(monkeypatch) -> None:  # noqa: ANN
     assert client.get("/auth/me").status_code == 200
     configured_header_logout = client.post(
         "/auth/logout",
-        headers={"X-Portfolio-CSRF": csrf_token},
+        headers={"X-Demo-CSRF": csrf_token},
     )
     assert configured_header_logout.status_code == 204
     assert client.get("/auth/me").status_code == 401

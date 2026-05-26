@@ -76,7 +76,7 @@ flowchart LR
     Graph --> Provider["response provider with answer_mode"]
 ```
 
-This separation matters for the portfolio: LangGraph demonstrates AI reply flow, while the RetrievalService/API layer demonstrates production boundaries such as auth, permissions, and provenance. Ingestion (upload/parse/chunk/embed) remains a separate pipeline from retrieval routing.
+This separation matters for the product: LangGraph demonstrates AI reply flow, while the RetrievalService/API layer demonstrates production boundaries such as auth, permissions, and provenance. Ingestion (upload/parse/chunk/embed) remains a separate pipeline from retrieval routing.
 
 A future `RetrievalGraph` can be added when retrieval becomes a multi-step workflow such as query rewrite, metadata planning, hybrid/vector search, reranking, or context compression. Even then, the hard authorization filter should remain inside `RetrievalService`, not in graph prompts.
 

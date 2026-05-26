@@ -31,7 +31,7 @@ This is intentionally similar to `missing_info_interviewer`: the graph must not 
 
 ## Agent goal
 
-When the user describes a gap like “Codex built the portfolio, I can review it, but I cannot recreate it from scratch,” Implementation Gap Interviewer should identify the highest-risk missing implementation evidence and guide the learner toward a small solo exercise.
+When the user describes a gap like “Codex built the product, I can review it, but I cannot recreate it from scratch,” Implementation Gap Interviewer should identify the highest-risk missing implementation evidence and guide the learner toward a small solo exercise.
 
 Example input:
 

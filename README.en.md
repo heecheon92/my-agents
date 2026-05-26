@@ -2,177 +2,89 @@
 
 English | [한국어](./README.md)
 
-Backend-only FastAPI + LangGraph assistant/router foundation for learning and career support.
+`my-agents` is a backend-only FastAPI + LangGraph service for building a practical AI chat product surface. It keeps the frontend separate and focuses on API contracts, auth/session behavior, document knowledge workflows, conversation runs, retrieval, citations, and agent activity events.
 
-## Purpose and v0 scope
+For current project status, start with [`docs/implementation-tracking.md`](./docs/implementation-tracking.md). For the detailed backlog, use [`ROADMAP.md`](./ROADMAP.md).
 
-`my-agents` v0 is an OpenAI-backed portfolio AI chat-service backend. It demonstrates:
+## What is implemented
 
-- a FastAPI API surface for health, auth, groups, documents, knowledge bases, and conversation runs;
-- a real LangGraph `StateGraph` with explicit state, nodes, `START`, `END`, and conditional routing;
-- deterministic classification into future assistant route labels;
-- first-party sessions, group/document permissions, and server-owned conversation history;
-- text-document ingestion, permission-aware retrieval, citations, and redacted agent events;
-- typed request/response contracts and automated test targets.
+The current backend is a thin but working product slice:
 
-v0 is intentionally a thin end-to-end slice. It is a backend-only learning/portfolio artifact; the frontend belongs in a separate repository.
+- FastAPI app with health, auth, groups, documents, knowledge bases, conversations, runs, streaming, and event routes.
+- LangGraph general assistant path with deterministic route classification and OpenAI-backed response generation by default.
+- Deterministic offline/test mode for credential-free tests and smoke checks.
+- First-party email/password auth, app-owned sessions, CSRF-aware logout, dev outbox, guest access, and signup disable switch.
+- Group, document, knowledge-base, and permission foundations.
+- KB-scoped document upload/creation, ingestion, extraction-run progress, chunks, entities, metadata profiles, embeddings, and pgvector-ready retrieval.
+- ContextForge retrieval service for permission-aware RAG, structured entity retrieval, reranking seams, packed context, citations, and redacted retrieval evidence.
+- Server-owned conversations, run history, SSE assistant text streaming, run replay/cancel paths, persisted citations, and frontend-safe activity events.
 
-## Portable implementation tracking
+More detail lives in the docs instead of this README:
 
-Use [`docs/implementation-tracking.md`](./docs/implementation-tracking.md) as the repo-tracked source of truth for current completion, completed milestones, next workflow priorities, and cross-machine agent handoff. Use [`ROADMAP.md`](./ROADMAP.md) as the companion detailed v1 backlog/checklist. Local `.omx/` state is useful runtime context, but it is not shared across machines.
+| Area | Detailed docs |
+| --- | --- |
+| Service/API split | [`docs/product-chat-service/en/01-service-foundation-scaffold.md`](./docs/product-chat-service/en/01-service-foundation-scaffold.md) |
+| Auth and sessions | [`docs/product-chat-service/en/02-first-party-auth-sessions.md`](./docs/product-chat-service/en/02-first-party-auth-sessions.md) |
+| Groups and permissions | [`docs/product-chat-service/en/03-group-document-permissions.md`](./docs/product-chat-service/en/03-group-document-permissions.md) |
+| Conversations and runs | [`docs/product-chat-service/en/04-server-owned-conversations.md`](./docs/product-chat-service/en/04-server-owned-conversations.md) |
+| Knowledge ingestion | [`docs/product-chat-service/en/05-knowledge-ingestion-extraction.md`](./docs/product-chat-service/en/05-knowledge-ingestion-extraction.md) |
+| RAG and citations | [`docs/product-chat-service/en/06-permission-aware-rag.md`](./docs/product-chat-service/en/06-permission-aware-rag.md) |
+| Observability/evals | [`docs/product-chat-service/en/07-agent-observability-evals.md`](./docs/product-chat-service/en/07-agent-observability-evals.md) |
+| Postgres/Alembic/pgvector | [`docs/product-chat-service/en/08-postgres-alembic-neon.md`](./docs/product-chat-service/en/08-postgres-alembic-neon.md) |
+| Streaming frontend contract | [`docs/product-chat-service/en/09-http-streaming-frontend-contract.md`](./docs/product-chat-service/en/09-http-streaming-frontend-contract.md) |
+| Local frontend demo runbook | [`docs/product-chat-service/en/10-frontend-demo-runbook.md`](./docs/product-chat-service/en/10-frontend-demo-runbook.md) |
+| V1 contract evidence map | [`docs/product-chat-service/en/11-v1-phase-0-contract-freeze-evidence-map.md`](./docs/product-chat-service/en/11-v1-phase-0-contract-freeze-evidence-map.md) |
+| KB-first OpenAPI handoff | [`docs/product-chat-service/en/12-knowledge-base-path-openapi-handoff.md`](./docs/product-chat-service/en/12-knowledge-base-path-openapi-handoff.md) |
+| Public demo readiness | [`docs/product-chat-service/en/12-public-demo-deployment-readiness.md`](./docs/product-chat-service/en/12-public-demo-deployment-readiness.md) |
+| Hybrid retrieval reference | [`docs/product-chat-service/en/12-retrieval-agent-hybrid-reference.md`](./docs/product-chat-service/en/12-retrieval-agent-hybrid-reference.md) |
+| Container deployment path | [`docs/product-chat-service/en/13-generic-container-deployment-path.md`](./docs/product-chat-service/en/13-generic-container-deployment-path.md) |
+| Layout-aware RAG idea | [`docs/idea/layout-aware-ingestion-rag-agent.md`](./docs/idea/layout-aware-ingestion-rag-agent.md) |
 
-## Explicit v0 disclosure
+## Boundaries
 
-v0 uses OpenAI-backed reply generation by default. Chat replies require `OPENAI_API_KEY`. Deterministic mode remains available for tests and offline checks with `MY_AGENTS_RESPONSE_MODE=deterministic`.
+- This repository is backend-only. Frontend work belongs in a separate repository such as `~/Git/my-agents-frontend`.
+- OpenAI is the planned LLM provider for production-surface behavior. Tests must stay offline by default.
+- Route labels describe deterministic classification and capability metadata. They do not mean separate specialized agents are running yet.
+- Learning-only graph experiments live under [`my_agents/simulated_agents/`](./my_agents/simulated_agents/) and are not production API/CLI surfaces.
+- Do not commit real secrets. Local `.env` files are ignored; `.env.example` is safe placeholder documentation.
 
-Classification remains deterministic; only the final reply text is generated by the selected OpenAI GPT model. Switch to deterministic mode when you need credential-free execution. Route labels and capability metadata describe current behavior honestly; they are not proof that separate specialized agents executed. Current product RAG, permission, and event features are service-layer behavior around the LangGraph run. Learning-only simulations live under `my_agents/simulated_agents/` and are not imported into production API/CLI surfaces.
-
-## No frontend
-
-This repository has no frontend UI. The v0 interface is the FastAPI backend API plus local command-line test and run workflows. A frontend is expected to live in a separate repository such as `~/Git/Portfolio/my-agents-frontend`.
-
-## Architecture overview
-
-```mermaid
-flowchart TD
-    Client["HTTP client"]
-    CLI["Terminal CLI"]
-    API["FastAPI app"]
-    Graph["General assistant graph"]
-    Classifier["classify_request"]
-    Capability["capability registry"]
-    Router{"route label"}
-    General["respond_general"]
-    Learning["respond_learning"]
-    Research["respond_research"]
-    Project["respond_project"]
-    Career["respond_career"]
-    Provider{"response provider"}
-    OpenAI["ChatOpenAI default"]
-    Deterministic["deterministic offline/test"]
-    Response["typed response"]
-
-    Client --> API
-    API --> Graph
-    CLI --> Graph
-    Graph --> Classifier
-    Classifier --> Capability
-    Classifier --> Router
-    Router --> General
-    Router --> Learning
-    Router --> Research
-    Router --> Project
-    Router --> Career
-    General --> Provider
-    Learning --> Provider
-    Research --> Provider
-    Project --> Provider
-    Career --> Provider
-    Provider --> OpenAI
-    Provider --> Deterministic
-    OpenAI --> Response
-    Deterministic --> Response
-```
-
-The current graph lives under `my_agents/agents/general_assistant/` and has one assistant/router flow. Classification is deterministic. Response nodes compose route-specific replies through a provider interface: `langchain-openai` `ChatOpenAI` by default, or deterministic templates for offline/test mode. The route-specific response nodes are not separate agents. Production-surface agent code lives under `my_agents/agents/`; learning-only simulations live separately under `my_agents/simulated_agents/`.
-
-
-## Product service surface
+## Architecture at a glance
 
 ```mermaid
 flowchart TD
-    Frontend["Separate frontend"] --> Auth["/auth session"]
-    Frontend --> Groups["/groups memberships"]
-    Frontend --> Docs["/documents + permissions"]
-    Frontend --> KB["/knowledge-bases + ingest"]
-    Frontend --> Runs["/conversations/{id}/runs or /runs/stream"]
-    Runs --> History["server-owned messages"]
-    Runs --> Retrieval["permission-aware retrieval"]
-    Retrieval --> GraphExpand["entity mention expansion"]
-    Runs --> Assistant["general assistant LangGraph"]
-    Runs --> Citations["citations"]
-    Runs --> Events["redacted agent events"]
+    Frontend["Separate frontend or API client"] --> API["FastAPI app"]
+    API --> Auth["Auth/session/CSRF"]
+    API --> KB["Knowledge bases + documents"]
+    API --> Runs["Conversation runs / SSE"]
+    KB --> Ingest["Ingestion + chunks + entities + embeddings"]
+    Runs --> ContextForge["ContextForge permission-aware retrieval"]
+    ContextForge --> Graph["General assistant LangGraph"]
+    Graph --> Provider["OpenAI or deterministic provider"]
+    Runs --> Events["Citations + redacted events"]
     Auth --> DB[("SQLAlchemy DB")]
-    Groups --> DB
-    Docs --> DB
     KB --> DB
-    History --> DB
-    Citations --> DB
+    Ingest --> DB
+    Runs --> DB
     Events --> DB
 ```
 
-The core design choice is not “an AI graph only backend.” Auth, permissions, conversation state, and knowledge lifecycle are owned by the service layer, while LangGraph is invoked inside that product boundary for reply generation. This separates the frontend-visible service surface from future expansion points for more complex agent orchestration.
-
-## Graph flow
-
-1. The API receives a chat request with a non-blank `message` and optional `history`.
-2. FastAPI/Pydantic validates the request before graph execution.
-3. The API converts the public `message`/`history` JSON into LangChain messages, and LangGraph state stores `messages`, route decision, reply, and graph metadata.
-4. `classify_request` applies deterministic rules and returns a route label plus explanation.
-5. The graph attaches `AgentCapability` metadata for the selected route.
-6. Conditional graph edges select one response-composition node for the route label.
-7. The selected response provider composes the reply with capability guidance.
-8. The graph returns a typed response with `reply`, `route.label`, `route.explanation`, and `handled_by`.
-
-`handled_by` identifies the single graph path (`personal_assistant_graph`). It does not identify a specialized agent.
-
-## Agent implementation pattern
-
-Add each production-surface agent as its own folder under `my_agents/agents/<agent_name>/`. Add learning-only architecture experiments under `my_agents/simulated_agents/<agent_name>/`. The current production example is [`my_agents/agents/general_assistant/`](./my_agents/agents/general_assistant/README.en.md).
-
-The recommended responsibility split is:
-
-```mermaid
-flowchart TD
-    API["API or CLI"] --> Graph["graph.py"]
-    Graph --> Classifier["classifier.py"]
-    Graph --> Responder["responders.py"]
-    Responder --> Provider{"response provider"}
-    Provider --> HostedTools["OpenAI hosted tools"]
-    Provider --> CustomTools["custom tools.py"]
-
-    Graph -. "workflow, state, routing" .-> GraphNote["flow control"]
-    Responder -. "prompt, model call, tool binding" .-> ResponderNote["model behavior"]
-    CustomTools -. "local Python tool implementation" .-> ToolNote["tool implementation"]
-```
-
-Principles:
-
-- `graph.py` owns workflow, state, and node routing.
-- `classifier.py` maps user input to route labels.
-- `my_agents/agents/` is reserved for production-surface capabilities.
-- `my_agents/simulated_agents/` is reserved for learning/test architecture experiments.
-- `responders.py` owns prompt construction, `ChatOpenAI` calls, and LLM tool binding.
-- OpenAI hosted tools such as `web_search` and `file_search` should first be attached at the provider boundary in `responders.py` with route-specific policy.
-- Custom Python tools should live in a separate `tools.py`, then be bound from `responders.py` only for routes that need them.
-- Promote a tool workflow into LangGraph nodes only when it needs multi-step state transitions, retries, interrupts, or separate verification.
-- Each agent folder should include both Korean `README.md` and English `README.en.md`.
-
-## Route labels
-
-| Route label | v0 meaning | Example request wording |
-| --- | --- | --- |
-| `general_assistant` | General assistant request classification. | “Hello, what can you do?” |
-| `learning_coach` | Study planning and skill-development classification. | “Help me study LangGraph step by step.” |
-| `research_helper` | Source-finding or research-planning classification. | “Find sources about FastAPI testing.” |
-| `project_planner` | Project planning, milestones, and implementation sequencing classification. | “Plan my next backend milestone.” |
-| `career_helper` | Resume, recruiter-facing wording, and career-material classification. | “Improve my resume bullet.” |
+The service layer owns auth, permissions, source policy, persistence, retrieval boundaries, citations, and events. LangGraph is invoked inside that boundary to compose assistant replies.
 
 ## Setup
 
-Install dependencies with uv:
+Install dependencies:
 
 ```bash
 uv sync
 ```
 
-Create local environment settings for the default OpenAI-backed reply mode:
+Create local settings:
 
 ```bash
 cp .env.example .env
 ```
 
-Default `.env.example` settings use OpenAI-backed replies. Before running chat, uncomment the `OPENAI_API_KEY` line and replace the example key with your real key:
+Default local chat uses OpenAI-backed replies. Set a real key before using OpenAI mode:
 
 ```bash
 MY_AGENTS_RESPONSE_MODE=openai
@@ -180,134 +92,50 @@ OPENAI_API_KEY=sk-your-project-key
 MY_AGENTS_OPENAI_MODEL=gpt-5.5
 ```
 
-Optional tuning knobs:
+For credential-free tests and local smoke checks:
 
 ```bash
-MY_AGENTS_OPENAI_MAX_OUTPUT_TOKENS=1200
-MY_AGENTS_OPENAI_TIMEOUT_SECONDS=30
-# GPT-5-series tuning, optional:
-# MY_AGENTS_OPENAI_REASONING_EFFORT=low
-# MY_AGENTS_OPENAI_VERBOSITY=low
-
-# Document embeddings default to deterministic/offline.
-# Set MY_AGENTS_EMBEDDING_MODE=openai only when provider-backed JSON embeddings are desired.
-MY_AGENTS_EMBEDDING_MODE=deterministic
-MY_AGENTS_OPENAI_EMBEDDING_MODEL=text-embedding-3-small
-# MY_AGENTS_OPENAI_EMBEDDING_DIMENSIONS=
-MY_AGENTS_EMBEDDING_BATCH_SIZE=32
-MY_AGENTS_OPENAI_EMBEDDING_TIMEOUT_SECONDS=30
-
-# ContextForge reranking defaults to deterministic/offline.
-# Switch to cross_encoder only in runtimes with sentence-transformers installed.
-MY_AGENTS_RERANKER_MODE=deterministic
-MY_AGENTS_CROSS_ENCODER_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2
-MY_AGENTS_CROSS_ENCODER_BATCH_SIZE=16
-# MY_AGENTS_CROSS_ENCODER_DEVICE=mps
-
-# Document metadata enrichment creates search-oriented metadata profiles and
-# embeds them as a separate retrieval lane. auto uses OpenAI when response mode is openai and
-# an API key is configured, otherwise deterministic offline metadata for tests/demos.
-MY_AGENTS_DOCUMENT_METADATA_ENRICHMENT_MODE=auto
-# MY_AGENTS_DOCUMENT_METADATA_MODEL=
-MY_AGENTS_DOCUMENT_METADATA_MAX_INPUT_CHARS=24000
-
-# Sensitive local debugging only: Rich-print ContextForge role handoffs and
-# the retrieval context sent into the LLM prompt.
-MY_AGENTS_DEBUG_KNOWLEDGE_CONTEXT_LOGGING=false
-```
-
-Service-foundation knobs are present for the portfolio chat-service roadmap. SQLite is
-the local default; these settings define the persistence and first-party session boundary:
-
-```bash
-MY_AGENTS_DATABASE_URL=sqlite+pysqlite:///:memory:
-# Blank means runtime auto-create is allowed only for in-memory SQLite.
-# Postgres/Neon should use Alembic migrations.
-# MY_AGENTS_AUTO_CREATE_TABLES=
-# MY_AGENTS_TEST_DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/my_agents_test
-MY_AGENTS_SESSION_COOKIE_NAME=my_agents_session
-MY_AGENTS_SESSION_COOKIE_SECURE=true
-MY_AGENTS_SESSION_COOKIE_SAMESITE=lax
-MY_AGENTS_CSRF_HEADER_NAME=X-CSRF-Token
-# Disabled by default; enable only for local deterministic frontend demos.
-MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=false
-# Backend-owned public-demo signup kill switch. Existing login/session behavior remains.
-MY_AGENTS_AUTH_SIGNUP_ENABLED=true
-# Provider-free guest access is disabled by default and capped when enabled.
-MY_AGENTS_GUEST_ACCESS_ENABLED=false
-MY_AGENTS_GUEST_CODE_TTL_SECONDS=900
-MY_AGENTS_GUEST_ACCESS_TTL_SECONDS=86400
-MY_AGENTS_GUEST_MAX_CONVERSATIONS=1
-MY_AGENTS_GUEST_MAX_PROMPTS=5
-MY_AGENTS_GUEST_MAX_DOCUMENT_UPLOADS=3
-MY_AGENTS_DEPLOYMENT_ENVIRONMENT=local
-MY_AGENTS_AUTH_EMAIL_MODE=smtp
-MY_AGENTS_AUTH_PUBLIC_APP_BASE_URL=http://localhost:3000
-MY_AGENTS_AUTH_SMTP_HOST=smtp.resend.com
-MY_AGENTS_AUTH_SMTP_PORT=587
-MY_AGENTS_AUTH_SMTP_USERNAME=resend
-MY_AGENTS_AUTH_SMTP_PASSWORD=REPLACE_WITH_RESEND_API_KEY
-MY_AGENTS_AUTH_SMTP_FROM_EMAIL=REPLACE_WITH_VERIFIED_RESEND_FROM_EMAIL
-MY_AGENTS_AUTH_SMTP_USE_STARTTLS=true
-MY_AGENTS_AUTH_SMTP_TIMEOUT_SECONDS=10
-# Comma-separated explicit frontend origins for credentialed browser requests.
-# MY_AGENTS_CORS_ALLOWED_ORIGINS=http://localhost:3000
-MY_AGENTS_AUTH_ABUSE_PROTECTION_ENABLED=true
-MY_AGENTS_AUTH_ABUSE_MAX_ATTEMPTS=20
-MY_AGENTS_AUTH_ABUSE_WINDOW_SECONDS=900
-```
-
-`.env` and `.env.*` are ignored by git. `.env.example` is safe to commit because it contains no real secrets.
-
-For a separate browser frontend, set `MY_AGENTS_CORS_ALLOWED_ORIGINS` to the exact
-frontend origin and use `credentials: "include"` in frontend requests. Wildcard CORS
-origins are rejected because this backend uses app-owned browser cookies. See the
-[frontend demo runbook](./docs/portfolio-chat-service/10-frontend-demo-runbook.md) for
-the local SQLite demo command, dev auth outbox, cookie/CSRF expectations, and SSE/run
-detail contract. For strict V1 closure work, start from the
-[V1 contract freeze and evidence map](./docs/portfolio-chat-service/11-v1-phase-0-contract-freeze-evidence-map.md).
-For local direct-browser CORS, keep hostnames consistent: pair `localhost:3000` with
-`localhost:8000`, or `127.0.0.1:3000` with `127.0.0.1:8000`.
-If a cross-site deployed frontend requires `MY_AGENTS_SESSION_COOKIE_SAMESITE=none`,
-keep `MY_AGENTS_SESSION_COOKIE_SECURE=true`; the settings layer rejects `SameSite=None`
-with insecure cookies.
-
-### Postgres/Neon and Alembic migrations
-
-The local test default is a fast, credential-free in-memory SQLite database. For service demos or deployment-like runs, use Postgres/Neon and let Alembic migrations create the schema instead of SQLAlchemy `create_all`.
-
-```mermaid
-flowchart LR
-    Models["SQLAlchemy models"] --> Alembic["Alembic migration files"]
-    Alembic --> Postgres[("Postgres / Neon schema")]
-    Tests["Offline tests"] --> SQLite[("SQLite in-memory auto-create")]
-```
-
-When using Neon, keep your real connection string only in local environment variables. Use a URL shape that includes `sslmode=require`, and never commit or paste the real URL into docs.
-
-```bash
-MY_AGENTS_DATABASE_URL=postgresql+psycopg://user:password@host/dbname?sslmode=require
 MY_AGENTS_RESPONSE_MODE=deterministic
-uv run alembic upgrade head
 ```
 
-Run the Postgres/Neon migration smoke only when you have a dedicated test database.
-When the value is unset, the external database test is skipped automatically.
+See [`.env.example`](./.env.example) for the full list of settings. See the [frontend demo runbook](./docs/product-chat-service/en/10-frontend-demo-runbook.md) for CORS, cookie, CSRF, dev outbox, seeded local data, and SSE/run-detail expectations.
+
+## Run locally
+
+Start the API:
 
 ```bash
-MY_AGENTS_TEST_DATABASE_URL=postgresql+psycopg://user:password@host/test_db?sslmode=require \
-uv run pytest tests/test_migrations.py -q
+uv run fastapi dev main.py
 ```
 
-You do not need to run Neon's sample `playing_with_neon` table query for this app. This project's tables are created by Alembic migrations.
+Fallback:
 
-For local pgvector testing without Neon, use the Docker helper. It pulls the DockerHub
-`pgvector/pgvector:pg17` image by default, starts Postgres on `127.0.0.1:5433`, writes an
-ignored `.env.pgvector.local`, and can run migrations against it. The generated local env
-file forces `MY_AGENTS_AUTH_EMAIL_MODE=local` and `MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=true`
-so signup verification uses the dev outbox instead of SMTP/Resend.
-VS Code also includes a `FastAPI: uvicorn main:app (local pgvector)` launch configuration
-that runs the same helper as a pre-launch task before starting the backend.
+```bash
+uv run uvicorn main:app --reload
+```
+
+OpenAPI is available from the running server at:
+
+```text
+http://127.0.0.1:8000/openapi.json
+```
+
+Run the CLI chat loop without starting FastAPI:
+
+```bash
+uv run python -m my_agents.cli
+```
+
+## Common checks
+
+```bash
+uv run pytest -q
+uv run ruff check . --no-cache
+uv run ruff format --check .
+git diff --check
+```
+
+Optional Postgres/pgvector local helper:
 
 ```bash
 uv run python -m scripts.dev_pgvector up --migrate
@@ -315,479 +143,17 @@ set -a; source .env.pgvector.local; set +a
 MY_AGENTS_RESPONSE_MODE=deterministic uv run uvicorn main:app --host 127.0.0.1 --port 8000
 ```
 
-After switching to this local Postgres, re-ingest documents so `embedding_vector` is
-populated. You can verify the migrated pgvector schema with:
+Detailed database guidance: [`docs/product-chat-service/en/08-postgres-alembic-neon.md`](./docs/product-chat-service/en/08-postgres-alembic-neon.md).
 
-```bash
-uv run python -m scripts.dev_pgvector test
-```
+## Quick API smoke
 
-In short:
-
-- **SQLAlchemy** is the Python ORM/database access layer for table and relationship code.
-- **Postgres/Neon** is the database that stores real service data. Neon is managed Postgres.
-- **Alembic** is the migration ledger that connects SQLAlchemy model changes to real database schema changes.
-
-### Generic container deployment path
-
-The repository includes a provider-neutral `Dockerfile` and `.dockerignore` for a
-hosted public portfolio demo. This does not choose a host, configure secrets, run
-hosted migrations, or activate paid providers by itself.
-
-Local container build and run:
-
-```bash
-docker build -t my-agents-backend .
-docker run --rm --env-file .env -p 8000:8000 my-agents-backend
-```
-
-The container starts FastAPI with:
-
-```bash
-uv run --no-sync uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}
-```
-
-Before a reviewer-facing preview/public demo, follow the
-[generic container deployment path](./docs/portfolio-chat-service/13-generic-container-deployment-path.md)
-and the
-[public demo deployment readiness runbook](./docs/portfolio-chat-service/12-public-demo-deployment-readiness.md).
-They cover env var names, Alembic migration command, `/health` and `/openapi.json`
-smoke checks, preview-vs-production guardrails, rollback/disable paths, and the
-owner-gated boundaries for secrets, provider activation, hosted database
-migrations, public URLs, and spend.
-
-## Run checks
-
-Run the automated test suite:
-
-```bash
-uv run pytest
-```
-
-Run Ruff checks:
-
-```bash
-uv run ruff check .
-```
-
-
-## Personal learning logs
-
-Learning material that supports your learning path lives in [`docs/learning/`](./docs/learning/README.md). The root numbered notes remain your personal log sequence; focused tracks such as [`docs/learning/agent-lab/`](./docs/learning/agent-lab/README.md) can live in subfolders. Project architecture docs that are not primarily learning logs live separately, for example [`docs/portfolio-chat-service/`](./docs/portfolio-chat-service/README.md).
-
-When you explicitly want to save a personal learning note, use:
-
-```bash
-uv run python scripts/learning_log.py \
-  --title "Python syntax catch-up: *, Iterable, and **" \
-  --body-file /tmp/learning-note.md \
-  --topic python \
-  --related-code my_agents/agents/general_assistant/responders.py
-```
-
-## Run the API locally
-
-Start the FastAPI development server:
-
-```bash
-uv run fastapi dev main.py
-```
-
-Fallback if the FastAPI CLI is unavailable or changes behavior:
-
-```bash
-uv run uvicorn main:app --reload
-```
-
-By default, the local API is available at `http://127.0.0.1:8000`.
-
-## Chat from the terminal
-
-Run the general assistant graph directly without starting the FastAPI server:
-
-```bash
-uv run python -m my_agents.cli
-```
-
-Then type messages interactively:
-
-```text
-You: Help me study LangGraph
-Assistant: Classified as route label `learning_coach`...
-You: /exit
-Goodbye.
-```
-
-In OpenAI mode, terminal chat uses LangGraph streaming so tokens appear as they are generated. Deterministic mode uses the same streaming path and prints the final graph update. History is kept only for the current process; it does not persist memory.
-
-## API examples
-
-The example responses below use deterministic mode so docs and tests stay stable. In the default OpenAI mode, the `reply` wording can vary by model response.
-
-### `GET /health`
-
-Request:
+Health:
 
 ```bash
 curl http://127.0.0.1:8000/health
 ```
 
-Example response:
-
-```json
-{
-  "status": "ok",
-  "service": "my-agents",
-  "version": "0.1.0"
-}
-```
-
-### First-party auth foundation
-
-The backend now includes a first-party auth/session and account-lifecycle foundation for
-the portfolio chat-service roadmap. The current scope is email/password signup, local/dev
-email verification, verified-email login, app-owned opaque sessions, CSRF proof for logout,
-`/auth/me`, password reset request/confirm endpoints, and a local in-process
-attempt limiter for signup, login, verification-token, and password-reset abuse.
-
-This does **not** yet mean the production-grade RAG service is complete.
-However, the thin end-to-end path now covers auth, groups/document permissions,
-server-owned conversations, text KB ingestion, permission-aware retrieval,
-JSON-backed semantic embedding ranking, citation-backed answer composition, structured
-agent activity events, pgvector-backed Postgres vector search with JSON/SQLite fallback,
-and an SSE conversation-run stream. Production parsers, ANN/vector index tuning, and
-retrieval-quality evals remain later milestones. Cross-encoder reranking is available as an
-optional ContextForge mode, while the default remains the offline deterministic reranker.
-
-Implemented auth endpoints:
-
-- `POST /auth/signup`
-- `POST /auth/verify-email`
-- `POST /auth/login`
-- `POST /auth/logout`
-- `GET /auth/me`
-- `POST /auth/password-reset/request`
-- `POST /auth/password-reset/confirm`
-- `POST /auth/guest/request`
-- `POST /auth/guest/login`
-- `GET /auth/dev/outbox` only when `MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=true`
-
-Signup returns safe user data plus `verification_email_sent`. By default, auth email uses
-an offline local boundary for tests/development, so no paid email provider is required for
-local v0 work. For preview or public visitor accounts, set `MY_AGENTS_AUTH_EMAIL_MODE=smtp`
-with `MY_AGENTS_AUTH_PUBLIC_APP_BASE_URL` and SMTP provider settings; this generic SMTP
-boundary avoids a provider-specific SDK while allowing real verification/reset emails.
-`MY_AGENTS_DEPLOYMENT_ENVIRONMENT=production` refuses the local email mode and refuses
-`MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=true`. Login requires `email_verified_at` to be set.
-Password reset requests return the same accepted response whether or not the email exists,
-so the API does not enumerate accounts.
-Set `MY_AGENTS_AUTH_SIGNUP_ENABLED=false` to disable new public signup from the backend
-without changing existing verified-user login/session behavior.
-
-Provider-free public-demo guest access is available only when
-`MY_AGENTS_GUEST_ACCESS_ENABLED=true`. `POST /auth/guest/request` returns a short-lived
-one-time code directly in JSON, and `POST /auth/guest/login` redeems it once for the
-normal app session cookie plus `csrf_token`. Guest users are explicit ephemeral
-identities: auth responses return `email: null`, `is_guest: true`, and
-`guest_expires_at`. Server-side guest limits default to 24-hour access, one
-conversation, five prompts, and three document creates/uploads. Limit failures return
-safe `403` or `429` JSON details.
-
-For deterministic local frontend demos, `MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=true` exposes
-the in-memory auth email outbox at `/auth/dev/outbox` so the UI can read verification and
-reset tokens. Keep it disabled outside local demos.
-
-For local V1 demos, seed a verified demo user plus one text document and extraction run:
-
-```bash
-MY_AGENTS_RESPONSE_MODE=deterministic \
-MY_AGENTS_DATABASE_URL=sqlite+pysqlite:///./local-demo.db \
-MY_AGENTS_AUTO_CREATE_TABLES=true \
-uv run python -m scripts.local_demo_seed
-```
-
-Seeded credentials are `test@test.com` / `correct horse battery staple`. The helper
-refuses in-memory and non-SQLite database URLs, and `--reset-database` should be used only
-when the dev server is stopped.
-
-After the backend is running, verify the V1 API path without the frontend:
-
-```bash
-uv run python -m scripts.local_demo_smoke --base-url http://localhost:8000
-```
-
-The smoke uses public API calls only and covers health, seeded login, text document
-ingestion, SSE chat, persisted citations, and redacted run events. It creates an additional
-local extraction run each time because it verifies the bodyless ingest endpoint.
-
-Auth abuse protection is intentionally local and replaceable in v0: bucket keys are
-digested, limits are controlled by `MY_AGENTS_AUTH_ABUSE_*`, and tests exercise the
-offline behavior. This is a single-process public-demo boundary, not multi-worker
-production protection. A future public deployment can move the same boundary to Redis or
-a gateway/shared store before enabling multi-worker or distributed rate limiting.
-
-When a separate frontend is running in the browser, configure exact CORS origins with
-`MY_AGENTS_CORS_ALLOWED_ORIGINS`. Login sets an `HttpOnly` session cookie, so frontend
-requests should use credentialed fetch calls; logout must include the configured CSRF
-header value from the login response. `POST /auth/logout` is the current
-cookie-authenticated CSRF-required mutation.
-
-Example signup request:
-
-```bash
-curl -X POST http://127.0.0.1:8000/auth/signup \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"demo@example.com","password":"correct horse battery staple"}'
-```
-
-`/auth/login` returns safe user data plus a `csrf_token` and sets the configured
-session cookie after the email is verified. Passwords, password hashes, and raw auth-token
-hashes are never returned by the API.
-
-### Groups and document permissions foundation
-
-The backend also includes the first authorization slice:
-
-- `POST /groups`, `GET /groups`, `GET /groups/{group_id}`
-- `POST /groups/{group_id}/members`
-- `PATCH /groups/{group_id}/members/{user_id}`
-- `POST /documents`, `GET /documents`, `GET /documents/{document_id}`
-- `PATCH /documents/{document_id}/permissions`
-
-Current permissions are intentionally small but test-backed: personal owners can manage
-their documents, group owners/admins can manage group access, group viewers can read but
-not write, and non-members receive a safe denial for group documents.
-
-### Server-owned conversations
-
-Product chat is moving from client-supplied `history` toward server-owned conversation
-runs. The current conversation surface includes:
-
-- `POST /conversations`
-- `GET /conversations`
-- `GET /conversations/{conversation_id}`
-- `DELETE /conversations/{conversation_id}`
-- `POST /conversations/{conversation_id}/messages`
-- `GET /conversations/{conversation_id}/messages`
-- `POST /conversations/{conversation_id}/messages/{message_id}/replay`
-- `POST /conversations/{conversation_id}/runs`
-- `POST /conversations/{conversation_id}/runs/stream`
-- `GET /conversations/{conversation_id}/runs`
-
-`/conversations/{conversation_id}/runs` persists the user message and invokes the
-current LangGraph assistant with server-owned conversation history plus
-principal/conversation context. A deterministic retrieval-routing policy first chooses
-`no_retrieval`, `retrieval_required`, `retrieval_optional`, or `clarification_required`.
-Only when retrieval is needed does `RetrievalService` search authorized document chunks
-and expand related authorized chunks through entity mentions. Responses persist and return
-`answer_mode` (`general_knowledge`, `document_grounded`, or `mixed`) plus citations when
-authorized context is actually used. `clarification_required` does not generate static
-English assistant prose; it returns `reply: ""` plus a structured `clarification` object
-(`message_key`, `reason_code`, and `input_slot`). The client/human-in-the-loop layer
-localizes that state for the user's language and the user supplies the document/file
-reference in a later turn. The older `/assistant/chat` endpoint remains as a
-legacy/dev smoke surface and should not become the product chat surface for personal/group
-KB access.
-
-`/conversations/{conversation_id}/runs/stream` exposes the same product run as
-`text/event-stream` Server-Sent Events. It first emits `run_started` with the server
-`run_id`, then redacted progress events (`user_message_stored`, `retrieval_completed`,
-`graph_invoked`, `answer_composed`), incremental assistant text as `answer_delta` events,
-and a final `run_completed` event with the same response shape as `/runs`. If graph
-execution fails after the stream starts, the backend persists a failed run and emits
-`run_failed` plus `run_error` without leaking raw prompts or provider exception text.
-For `clarification_required`, the stream completes with `answer_composed` and
-`run_completed` carrying the same `clarification` object, without `graph_invoked` or
-`answer_delta`.
-Frontend clients can read the stored transcript through
-`GET /conversations/{conversation_id}/messages` after the same conversation access check,
-and can inspect completed/failed/cancelled run history through
-`GET /conversations/{conversation_id}/runs`.
-
-`DELETE /conversations/{conversation_id}` is owner-only and returns `204` after deleting
-the conversation, transcript messages, runs, redacted run events, and run citations. Missing
-or foreign conversations return `404` without leaking transcript content. Deletion during an
-active/cancelling run returns `409` with `detail: "conversation run already active"` so clients
-should cancel or wait for the run before deleting the chat.
-
-`POST /conversations/{conversation_id}/messages/{message_id}/replay` regenerates an existing
-assistant message inside the linear transcript. The body may be omitted or `{}`. When the
-original assistant message has an associated run, the backend preserves that run's
-`knowledge_base_selection`; the optional request `knowledge_base_selection` is only a fallback
-for legacy/orphan assistant messages without an original run, and the normal run default
-`mode: "all"` is used when neither exists. V1 replay does not create branches. It deletes the
-target assistant message plus later messages/runs/events/citations, then creates a fresh run
-from the preceding user turn as the prompt with earlier messages as history. The response shape
-is the same `ConversationRunResponse` returned by `/runs`. Missing/foreign conversations return
-`404` with `detail: "conversation not found"`; missing/foreign messages return `404` with
-`detail: "message not found"`; replaying a user message returns `409` with
-`detail: "message is not an assistant message"`; replay during an active run returns `409` with
-`detail: "conversation run already active"`.
-
-For explicit send-immediately steering, call
-`POST /conversations/{conversation_id}/runs/{run_id}/cancel` using the `run_id` from
-`run_started`, wait for `run_cancelled` or stream close, then submit the new message. The
-backend rejects parallel active runs in one conversation with `409` and
-`detail: "conversation run already active"`. Cancelled runs do not persist partial
-assistant text or citations; the interrupted user prompt still counts toward guest prompt
-limits.
-
-### Knowledge-base ingestion foundation
-
-Knowledge bases are now the product-facing document library abstraction: create a KB, add
-files/documents to that KB, ingest them, then choose which KBs the assistant may search. The
-KB-nested API is the canonical path for user-facing clients:
-
-- `POST /knowledge-bases` — personal KB creation, or owner/admin-only creation of additional group KBs
-- `GET /knowledge-bases`
-- `GET /knowledge-bases/{knowledge_base_id}`
-- `GET /knowledge-bases/{knowledge_base_id}/documents`
-- `POST /knowledge-bases/{knowledge_base_id}/documents` — JSON text-document creation in one personal KB
-- `POST /knowledge-bases/{knowledge_base_id}/documents/upload` — multipart PDF/Markdown/plain-text upload into one personal KB
-- `POST /knowledge-bases/{knowledge_base_id}/documents/{document_id}/ingest` — bodyless synchronous ingestion inside that KB
-- `POST /knowledge-bases/{knowledge_base_id}/documents/{document_id}/ingest/async` — starts async ingestion and returns a `202 Accepted` queued extraction run
-- `GET /knowledge-bases/{knowledge_base_id}/documents/{document_id}/extraction-runs`
-- `GET /knowledge-bases/{knowledge_base_id}/documents/{document_id}/extraction-runs/{run_id}` — single-run progress polling path
-
-Legacy `/documents` and `/documents/upload` write paths remain as standalone/developer
-compatibility surfaces, but now require an authorized `knowledge_base_id` and reject missing
-KBs with `422`. Nonexistent or unauthorized KBs are concealed with `404`; nested document
-operations against the wrong KB also return `404`.
-
-Each newly created group also creates one default group-scoped KB. Group owners/admins may
-create additional group KBs, but direct document create/upload paths intentionally reject
-group KB targets. Group knowledge has an explicit publish-review workflow for two personal
-source shapes: a member may request publication of an entire Personal KB by sending
-`source_knowledge_base_id`, or request a one-document copy by sending personal
-`source_document_id` plus a group-scoped `target_knowledge_base_id`. `GET
-/groups/{group_id}/publish-requests` shows owner/admins all requests and non-manager members
-only their own. `POST /groups/{group_id}/publish-requests/{request_id}/approve` and `/reject`
-are owner/admin-only. Pending and rejected requests are metadata-only and have no retrieval
-effect. Approval of a Personal KB binds that KB as a mandatory group source for group chat
-retrieval; approval of a document creates and ingests a separate group-owned document copy under
-the target Group KB. Direct writes into someone else's approved Personal KB remain rejected.
-
-Conversation runs accept `knowledge_base_selection`: `mode: "all"` searches every authorized
-KB, while `mode: "selected"` searches only the provided KB IDs as a hard retrieval boundary.
-Selected mode with no IDs is `422`; all mode with IDs is `422`; unauthorized/nonexistent
-selected KB IDs return `404`. Responses, run detail, run history, and stream events expose
-`knowledge_base_selection` plus `resolved_knowledge_base_count`.
-Retrieval results dedupe duplicate chunk ordinals/content within the same document, so stale
-duplicates from historical re-ingestion do not waste top-k citation slots. Assistant replies no
-longer prepend hard-truncated document context; grounding is exposed through `citations` and the
-retrieved context passed to the graph.
-
-The upload path accepts `.pdf`, `.md`,
-`.markdown`, and `.txt` files up to 5 MiB. PDFs now run through a classify → route → extract → clean → validate flow.
-For `application/pdf`, the parser first extracts fast page text with PyMuPDF (`pymupdf`). If PyMuPDF output is empty or fails quality checks, it tries lightweight `pypdf` and MIT-licensed `pdfplumber` fallbacks before starting heavier Docling (`docling`) Markdown/table extraction. The final OCR fallback renders page images with PyMuPDF and runs a command like `tesseract -l kor+eng --psm 6` for image-heavy PDFs. If OCR also fails, the pipeline keeps the simple literal/FlateDecode deterministic stream fallback for compatibility. Before any PDF text is persisted into PostgreSQL `text`, the pipeline rejects or removes NUL/control bytes, repeated locale metadata, known font boilerplate, and likely encoding garbage.
-PDFs that fail the quality gate, or image-heavy PDFs where Docling returns only `<!-- image -->` placeholders/bullet-only structure, return a safe `400` upload error instead of a DB insert 500 or empty chunks. Docling defaults to the CPU accelerator, OCR off, and a 30-second document timeout to avoid Apple MPS float64 crashes. Tune it with `MY_AGENTS_DOCLING_ACCELERATOR` (`cpu|cuda|auto|mps|xpu`), `MY_AGENTS_DOCLING_OCR_ENABLED`, `MY_AGENTS_DOCLING_TIMEOUT_SECONDS`, and `MY_AGENTS_DOCLING_THREADS`. For GPU Docker production, use `MY_AGENTS_DOCLING_ACCELERATOR=cuda` only with a CUDA-compatible image/runtime. Tune Tesseract with `MY_AGENTS_TESSERACT_ENABLED`, `MY_AGENTS_TESSERACT_LANGUAGES`, `MY_AGENTS_TESSERACT_PSM`, `MY_AGENTS_TESSERACT_RENDER_SCALE`, `MY_AGENTS_TESSERACT_TIMEOUT_SECONDS`, and `MY_AGENTS_TESSERACT_MAX_PAGES`. The default OCR cap is 3 pages so large image-heavy PDFs such as clinical protocols cannot monopolize the synchronous upload request; they fall through to other extractors or return a safe `400`. Docker images need system packages such as `tesseract-ocr`, `tesseract-ocr-kor`, and `tesseract-ocr-eng`. PyMuPDF requires AGPL/commercial license review and is intentionally included here for the PDF extraction milestone. Markdown/plain text is decoded as UTF-8 text; structural
-Markdown parsing is not implemented yet. Upload
-metadata (`source_filename`, content type, byte size, SHA-256, page count, parser name)
-is persisted on the document, and ingestion chunks record `source_page` for later citation
-provenance. Conversation citation responses now include `source_page` and `source_filename`
-when known. Ingestion creates paragraph/sentence-aware chunks, entity mentions, structured
-knowledge entities for endpoint/config/command/error/table enumeration, generated document
-metadata profiles (`title`, `description`, `summary`, keywords/topics/entities), and JSON-backed
-embeddings for both chunks and metadata profiles. The existing sync ingestion endpoint remains compatible, while the async ingestion endpoint runs in an in-process background thread with a fresh DB session. `ExtractionRunResponse` returns `status` (`pending|running|completed|failed`), `stage`, `progress_percent`, counts, a safe `error`, `started_at`, and `completed_at`. This V1 async path is a local/demo contract without an external queue/Redis/Celery and is not durable across process restarts. On Postgres after Alembic migrations, chunks also persist a pgvector
-`embedding_vector` column so retrieval can run permission-filtered SQL vector search before
-falling back to JSON cosine ranking. By default embeddings are 32-dimensional deterministic
-lexical-hash vectors for offline tests; when `MY_AGENTS_EMBEDDING_MODE=openai`, ingestion uses
-`langchain-openai`/OpenAI embeddings such as `text-embedding-3-small`. Although the Docling dependency includes OCR capabilities, the current upload contract still uses request-time local extraction only; scanned/encrypted/image-only PDFs, guaranteed complex multi-column/layout reconstruction, DOCX, HTML, or CSV/JSON structural
-parsing and ANN/vector index tuning are still future work. Search-oriented document metadata
-enrichment is available through `MY_AGENTS_DOCUMENT_METADATA_ENRICHMENT_MODE=auto|deterministic|openai`;
-`auto` uses OpenAI when response mode is openai and an API key is configured; otherwise it falls back to deterministic offline
-metadata.
-Cross-encoder reranking is available as an optional second-stage seam behind
-`MY_AGENTS_RERANKER_MODE=cross_encoder`; the default offline/test path remains the deterministic
-reranker.
-
-
-### Permission-aware RAG and citation-backed answers
-
-The product conversation run includes a permission-aware RAG slice through **ContextForge**,
-the dedicated retrieval-agent service boundary under `my_agents/agents/context_forge/`.
-
-1. `my_agents/knowledge/routing.py` classifies each prompt as `no_retrieval`,
-   `retrieval_required`, `retrieval_optional`, or `clarification_required`.
-2. ContextForge's Query Cartographer upgrades structured enumeration prompts such as “list API endpoints in this document” into an intent-aware retrieval plan.
-3. `clarification_required` returns a structured `clarification` payload instead of static English prose and stops before graph/provider invocation.
-4. `no_retrieval` skips candidate retrieval and answers with `answer_mode=general_knowledge`.
-5. Only `retrieval_required` and `retrieval_optional` gather candidates; low-level `RetrievalService` still first selects only document chunks the current user can read.
-6. Candidate Scouts also search authorized document `title`/`source_filename` metadata, so a prompt naming a file such as `NCT06159946_Prot_000` can retrieve that document even when the filename is not present in the extracted body text.
-7. Candidate Scouts search generated document metadata profiles as a separate vector lane. Those profiles are intentionally optimized for retrieval terms, aliases, abbreviations, multilingual hints, and domain vocabulary; if a metadata profile matches, ContextForge still injects original source chunks so citations remain grounded in the document.
-8. Candidate Scouts combine pgvector/JSON vector search, lexical scoring, entity expansion, and structured entity retrieval for endpoint/config/command/error/table questions.
-9. ContextForge fuses candidates, applies the default deterministic reranker or optional cross-encoder reranker, packs high-recall context under explicit budgets, then emits redacted evidence such as intent, reranker, candidate count, injected count, rejected count, structured entity types, and latency. In local debug sessions with `MY_AGENTS_DEBUG_KNOWLEDGE_CONTEXT_LOGGING=true`, each role handoff and the context payload sent into the assistant graph are also printed with Rich.
-10. Optional retrieval with relevant context uses `answer_mode=mixed`; required retrieval with relevant context uses `answer_mode=document_grounded`. If no relevant context is found, the response stays general and creates no citations.
-11. It passes only compact authorized context into the `general_assistant` graph/provider prompt and returns `retrieval_route`, `answer_mode`, `document_scope`, and `citations` in the response payload.
-
-Example response excerpt:
-
-```json
-{
-  "run_id": "...",
-  "reply": "Based on authorized knowledge context:\n- Private RAG Plan: ...",
-  "handled_by": "personal_assistant_graph",
-  "retrieval_route": "retrieval_required",
-  "answer_mode": "document_grounded",
-  "document_scope": "unknown",
-  "citations": [
-    {
-      "id": "...",
-      "document_id": "...",
-      "chunk_id": "...",
-      "snippet": "Phoenix Retrieval Kernel uses LangGraph..."
-    }
-  ]
-}
-```
-
-The key security boundary is that permission filtering happens before retrieval context is
-ranked, expanded, composed, cited, or passed to the graph. An outsider asking the same
-question receives no private chunks, citations, or reply context.
-
-
-### Agent activity events and deterministic eval fixtures
-
-Conversation runs now persist structured activity events that a UI can display without
-exposing hidden chain-of-thought.
-
-- `GET /conversations/{conversation_id}/runs/{run_id}/events`
-- `GET /conversations/{conversation_id}/runs/{run_id}`
-
-The current events show run start, user-message storage, permission-aware retrieval
-completion, graph invocation, and answer composition in order. The streaming endpoint
-emits the same high-level event vocabulary during the request plus `answer_delta` chunks
-for incremental assistant text. If graph execution fails, the service stores a failed run
-plus a `run_failed` event with only a safe error type. If the frontend explicitly cancels
-a streaming run, the service stores `run_cancel_requested`/`run_cancelled` events and does
-not persist partial assistant text. Payloads avoid raw messages,
-document content, and secret tokens; they contain redacted metadata such as counts, route
-labels, and latency.
-
-Completed run detail is refresh-safe: `GET /conversations/{id}/runs/{run_id}` returns the
-persisted reply, route, and citations for completed runs. Failed and cancelled runs return
-a conflict because they do not have a completed reply/citation payload.
-
-`my_agents/agent_runtime/evals.py` also provides deterministic eval helpers for
-grounding/citations, permission leakage, event redaction, and latency budgets. These are
-not a production evaluation system yet; they are test fixtures that make the portfolio's
-safety boundaries explainable.
-
-
-### Portfolio demo flow
-
-For a portfolio demo, prefer the product conversation-run surface over the legacy `/assistant/chat` smoke endpoint.
-
-1. Seed a local verified demo account with `uv run python -m scripts.local_demo_seed`, or create a session with `/auth/signup`, `/auth/dev/outbox` in local demos, `/auth/verify-email`, and `/auth/login`.
-2. Create a group with `/groups` and optionally add a member.
-3. Create a personal or group document with `/documents`, then grant explicit permissions with `/documents/{id}/permissions` when needed.
-4. Run `/documents/{id}/ingest` to create chunks, entities, and relationships.
-5. Create a thread with `/conversations`, then ask through `/conversations/{id}/runs`.
-6. Show persisted `citations` from `/conversations/{id}/runs/{run_id}` together with `/conversations/{id}/runs/{run_id}/events` to explain grounding and agent activity.
-
-### `POST /assistant/chat`
-
-Request:
+Legacy/dev assistant smoke endpoint:
 
 ```bash
 curl -X POST http://127.0.0.1:8000/assistant/chat \
@@ -795,102 +161,23 @@ curl -X POST http://127.0.0.1:8000/assistant/chat \
   -d '{"message":"Help me study LangGraph routing","history":[]}'
 ```
 
-Example response:
-
-```json
-{
-  "reply": "Classified as route label `learning_coach`. Capability mode `simulation`; `simulated_learning_coach` is a toy learning/test capability, not a real-world integration. A useful learning path is to define the concept, build a tiny example, then test it. This backend is running in deterministic response mode.",
-  "route": {
-    "label": "learning_coach",
-    "explanation": "This request is about study planning, practice, or skill development."
-  },
-  "handled_by": "personal_assistant_graph"
-}
-```
-
-The request is classified as route label `learning_coach`. The label is metadata only; no separate learning capability runs in v0.
-
-Another request:
+Product clients should prefer the conversation-run endpoints over `/assistant/chat`. For the full local product flow, use:
 
 ```bash
-curl -X POST http://127.0.0.1:8000/assistant/chat \
-  -H 'Content-Type: application/json' \
-  -d '{"message":"Plan my next backend milestone","history":[]}'
+uv run python -m scripts.local_demo_seed
+uv run python -m scripts.local_demo_smoke --base-url http://127.0.0.1:8000
 ```
 
-Example response:
+Details: [`docs/product-chat-service/en/10-frontend-demo-runbook.md`](./docs/product-chat-service/en/10-frontend-demo-runbook.md).
 
-```json
-{
-  "reply": "Classified as route label `project_planner`. Capability mode `simulation`; `simulated_project_planner` is a toy learning/test capability, not a real-world integration. A useful planning pass is to name the goal, split the next milestone, and define verification evidence. This backend is running in deterministic response mode.",
-  "route": {
-    "label": "project_planner",
-    "explanation": "This request is about planning project work, milestones, scope, or next steps."
-  },
-  "handled_by": "personal_assistant_graph"
-}
-```
+## Documentation map
 
-The request is classified as route label `project_planner`. The label is metadata only; no separate planning capability runs in v0.
+- Product docs: [`docs/product-chat-service/en/README.md`](./docs/product-chat-service/en/README.md)
+- Ideas: [`docs/idea/`](./docs/idea/)
+- Learning notes: [`docs/learning/README.md`](./docs/learning/README.md)
+- General assistant implementation: [`my_agents/agents/general_assistant/README.en.md`](./my_agents/agents/general_assistant/README.en.md)
+- ContextForge retrieval boundary: [`my_agents/agents/context_forge/README.en.md`](./my_agents/agents/context_forge/README.en.md)
 
-## Request shape
+## Future direction
 
-```json
-{
-  "message": "Help me plan my LangGraph study project",
-  "history": []
-}
-```
-
-Fields:
-
-- `message`: required non-blank string.
-- `history`: optional array; defaults to `[]` when omitted.
-- `history[].role`: `user` or `assistant`.
-- `history[].content`: non-blank string.
-
-Blank messages should return a validation/client error before graph execution.
-
-## Response shape
-
-```json
-{
-  "reply": "...",
-  "route": {
-    "label": "learning_coach",
-    "explanation": "This request is about study planning and skill development."
-  },
-  "handled_by": "personal_assistant_graph"
-}
-```
-
-Fields:
-
-- `reply`: response text composed by the selected response provider.
-- `route.label`: one of the supported route labels.
-- `route.explanation`: deterministic explanation for the classification.
-- `handled_by`: graph metadata for the single assistant graph path.
-
-## OpenAI GPT variant configuration
-
-OpenAI mode uses LangChain's dedicated `langchain-openai` integration package with `ChatOpenAI`. The model is selected through `MY_AGENTS_OPENAI_MODEL`, so you can try GPT variants without changing code:
-
-```bash
-MY_AGENTS_RESPONSE_MODE=openai
-OPENAI_API_KEY=sk-your-project-key
-MY_AGENTS_OPENAI_MODEL=gpt-5.5
-```
-
-The current default model slug is `gpt-5.5`. If you choose another GPT variant, the value is passed directly to `ChatOpenAI`.
-
-## Future expansion path
-
-Future versions can extend this foundation by adding:
-
-- persistent OpenAI conversation state via `previous_response_id` or replayed response items;
-- persistent conversation threads or checkpointers;
-- human-in-the-loop interrupts;
-- real specialized assistant capabilities behind the existing route-label taxonomy;
-- a frontend in a separate scope or repository if needed.
-
-Until specialized capabilities are explicitly implemented, v0 route labels remain deterministic classifications only.
+Near-term work is tracked in [`docs/implementation-tracking.md`](./docs/implementation-tracking.md) and [`ROADMAP.md`](./ROADMAP.md). Important future tracks include production parser providers, layout-aware ingestion artifacts, a graph/tool-based RAG agent, richer retrieval evals, stronger deployment hardening, and scoped instruction profiles.

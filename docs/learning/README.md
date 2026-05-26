@@ -14,7 +14,7 @@ Start here:
 8. [PDF Upload Extraction Pipeline and NUL Byte Failures](./07-pdf-upload-extraction-pipeline-and-nul-byte-failures.md)
 9. [Structured retrieval gap: API docs without endpoint-list wording](./08-structured-retrieval-api-docs.md)
 
-This directory is the owner's learning path archive. The root numbered notes are personal learning logs. Focused learning tracks can live in subfolders, such as [`agent-lab/`](./agent-lab/). Project architecture docs that are not primarily learning logs live outside this directory, for example [`docs/portfolio-chat-service/`](../portfolio-chat-service/).
+This directory is the owner's learning path archive. The root numbered notes are personal learning logs. Focused learning tracks can live in subfolders, such as [`agent-lab/`](./agent-lab/). Project architecture docs that are not primarily learning logs live outside this directory, for example [`docs/product-chat-service/en/`](../product-chat-service/).
 
 ## Learning-doc workflow
 

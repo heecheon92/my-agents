@@ -241,7 +241,7 @@ def test_broad_resume_question_uses_recent_authorized_document(monkeypatch) -> N
     _signup_login(outsider, "resume-outsider@example.com")
     kb_id = _create_personal_knowledge_base(owner, "Resume KB")
 
-    resume_phrase = "Heecheon Park builds FastAPI LangGraph portfolio systems"
+    resume_phrase = "Heecheon Park builds FastAPI LangGraph product systems"
     document = _create_document(
         owner,
         json={

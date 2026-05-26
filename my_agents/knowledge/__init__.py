@@ -1,1 +1,1 @@
-"""knowledge service boundary for the portfolio chat service roadmap."""
+"""knowledge service boundary for the product chat service roadmap."""

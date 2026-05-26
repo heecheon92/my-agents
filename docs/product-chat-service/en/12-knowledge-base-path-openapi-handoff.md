@@ -3,7 +3,7 @@
 This is the backend-to-frontend handoff for the KB-first document and chat-source path.
 The filtered OpenAPI artifact is:
 
-- `docs/portfolio-chat-service/12-knowledge-base-path-openapi-handoff.json`
+- `docs/product-chat-service/en/12-knowledge-base-path-openapi-handoff.json`
 
 ## Product contract
 

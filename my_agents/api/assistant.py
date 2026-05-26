@@ -40,7 +40,7 @@ def chat(
 ) -> ChatResponse:
     """Run a validated chat request through the legacy personal assistant graph.
 
-    This endpoint remains the v0 deterministic/OpenAI smoke surface. The portfolio
+    This endpoint remains the v0 deterministic/OpenAI smoke surface. The product
     service plan treats it as a legacy/dev route once authenticated conversation-run
     endpoints exist, so it must not become a permission bypass for future KB access.
     """

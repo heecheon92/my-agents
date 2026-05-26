@@ -34,7 +34,7 @@ def test_cors_preflight_allows_configured_frontend_origin(monkeypatch) -> None: 
 
 def test_cors_preflight_rejects_unlisted_frontend_origin(monkeypatch) -> None:  # noqa: ANN001
     monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
-    monkeypatch.setenv("MY_AGENTS_CORS_ALLOWED_ORIGINS", "https://portfolio.example.com")
+    monkeypatch.setenv("MY_AGENTS_CORS_ALLOWED_ORIGINS", "https://demo.example.com")
     client = TestClient(create_app())
 
     response = client.options(

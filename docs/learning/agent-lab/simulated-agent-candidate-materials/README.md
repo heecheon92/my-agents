@@ -67,7 +67,7 @@ For each proposed simulated agent, include:
 | 10 | [Fixed parallelization](./patterns/10-fixed-parallelization.md) | Intermediate | Evidence Collector, Multi-Lens Code Reviewer |
 | 11 | [Dynamic map-reduce with `Send`](./patterns/11-dynamic-map-reduce-with-send.md) | Intermediate | Study Plan Map-Reduce, Bug Hypothesis Tournament |
 | 12 | [Subgraphs and bridge nodes](./patterns/12-subgraphs-and-bridge-nodes.md) | Intermediate/Advanced | Department Workflow Simulator, Delivery Bridge Demo |
-| 13 | [Persona workers and research panel](./patterns/13-persona-workers-and-research-panel.md) | Advanced | Mini Research Panel, Portfolio Project Review Board |
+| 13 | [Persona workers and research panel](./patterns/13-persona-workers-and-research-panel.md) | Advanced | Mini Research Panel, Product Project Review Board |
 | 14 | [Long-term memory and profile updates](./patterns/14-long-term-memory-and-profile-updates.md) | Advanced | Learning Preference Memory Agent, Memory Diff Inspector |
 | 15 | [Runtime and double-texting policy](./patterns/15-runtime-and-double-texting-policy.md) | Advanced | Run Policy Simulator, Assistant Config Lab |
 

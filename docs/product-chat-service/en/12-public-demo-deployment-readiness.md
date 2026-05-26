@@ -21,7 +21,7 @@ related_code:
 
 # Public demo deployment readiness runbook
 
-This runbook is the backend-owned checklist for moving the portfolio chat service
+This runbook is the backend-owned checklist for moving the product chat service
 from local seeded proof to hosted preview proof and, only after explicit user
 confirmation, public production smoke. It does not activate providers, spend
 money, reveal secrets, or run a live deployment by itself.
@@ -79,7 +79,7 @@ Minimum acceptance for an approved record:
 - Tests stay offline by default; provider calls are mocked or isolated from unit
   tests.
 - Secrets are documented by name only and never committed.
-- Cost and rollback are explicit enough for a portfolio demo operator to stop the
+- Cost and rollback are explicit enough for a public demo operator to stop the
   public surface safely.
 
 ## Deployment topology checklist
@@ -163,7 +163,7 @@ make network calls or require real credentials.
 
 Public visitor copy and the runbook must state:
 
-- The app is a portfolio demo, not a private document vault.
+- The app is a public demo, not a private document vault.
 - Visitors must not upload secrets, credentials, medical/legal/financial records,
   confidential work documents, or sensitive personal documents.
 - Emails, uploaded documents, conversations, citations, and events may be retained

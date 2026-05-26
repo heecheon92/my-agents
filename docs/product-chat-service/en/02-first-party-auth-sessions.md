@@ -23,7 +23,7 @@ related_code:
 
 # First-party auth and owned sessions
 
-This note explains the first auth/account-lifecycle milestone for the portfolio chat service.
+This note explains the first auth/account-lifecycle milestone for the product chat service.
 
 ## What is implemented now
 

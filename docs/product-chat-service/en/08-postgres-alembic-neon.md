@@ -4,7 +4,7 @@ This milestone turns the v1 service schema into a migration-managed database con
 
 ## Why this matters
 
-The service now has durable backend concepts: first-party users, server sessions, groups, memberships, document permissions, conversations, knowledge bases, extraction runs, chunks, entity mentions, citations, and agent events. A portfolio-grade service should not rely on production-time `create_all` for that schema.
+The service now has durable backend concepts: first-party users, server sessions, groups, memberships, document permissions, conversations, knowledge bases, extraction runs, chunks, entity mentions, citations, and agent events. A review-ready service should not rely on production-time `create_all` for that schema.
 
 ```mermaid
 flowchart TD
@@ -69,7 +69,7 @@ A local Postgres/pgvector multi-file smoke uncovered a `DeadlockDetected` incide
 
 The current ingestion path keeps multi-file concurrency enabled by creating entity names in a deterministic sorted order and using dialect-aware conflict-safe inserts (`ON CONFLICT DO NOTHING`) before mentions/relationships are written. If future extraction adds more shared canonical tables, preserve the same rule: stable lock order plus conflict-safe writes.
 
-Regression: `tests/test_knowledge_ingestion.py::test_parallel_async_ingest_shared_entities_complete`. Learning note: [`docs/learning/06-parallel-ingestion-postgres-deadlock.md`](../learning/06-parallel-ingestion-postgres-deadlock.md).
+Regression: `tests/test_knowledge_ingestion.py::test_parallel_async_ingest_shared_entities_complete`. Learning note: [`docs/learning/06-parallel-ingestion-postgres-deadlock.md`](../../learning/06-parallel-ingestion-postgres-deadlock.md).
 
 ## Verification
 

@@ -19,7 +19,7 @@ related_code:
 
 # Service foundation scaffold
 
-This note explains the first scaffold step from a small assistant-router backend toward a portfolio-grade AI service backend.
+This note explains the first scaffold step from a small assistant-router backend toward a review-ready AI service backend.
 
 ## Why this scaffold exists
 
@@ -84,7 +84,7 @@ The settings now define the active local persistence/session boundary:
 - no production pgvector ranking yet;
 - no frontend in this repository.
 
-Those are future portfolio expansion points, not claims of current behavior.
+Those are future product expansion points, not claims of current behavior.
 
 ## Small exercise
 
