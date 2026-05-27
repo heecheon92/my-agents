@@ -244,6 +244,12 @@ class Settings(BaseSettings):
             "MY_AGENTS_GUEST_MAX_DOCUMENTS",
         ),
     )
+    active_run_stale_after_seconds: int = Field(
+        default=120,
+        ge=1,
+        le=86400,
+        validation_alias=AliasChoices("MY_AGENTS_ACTIVE_RUN_STALE_AFTER_SECONDS"),
+    )
     deployment_environment: DeploymentEnvironment = Field(
         default="local",
         validation_alias=AliasChoices("MY_AGENTS_DEPLOYMENT_ENVIRONMENT"),

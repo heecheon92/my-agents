@@ -37,6 +37,7 @@ MY_AGENTS_DATABASE_URL=sqlite+pysqlite:///./local-demo.db \
 MY_AGENTS_AUTO_CREATE_TABLES=true \
 MY_AGENTS_SESSION_COOKIE_SECURE=false \
 MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=true \
+MY_AGENTS_ACTIVE_RUN_STALE_AFTER_SECONDS=120 \
 MY_AGENTS_CORS_ALLOWED_ORIGINS=http://localhost:3000 \
 uv run uvicorn main:app --host 127.0.0.1 --port 8000
 ```
@@ -47,6 +48,7 @@ Notes:
 - `MY_AGENTS_AUTO_CREATE_TABLES=true` is acceptable for a disposable local SQLite demo; use Alembic migrations for Postgres/Neon. If a reused local SQLite DB was first created by `create_all`, schema changes can require stamping the existing local schema at its current revision before running the next migration. For example, after adding retrieval-route run metadata to an existing pre-migration `local-demo.db`, run `uv run alembic stamp 20260521_0005` once, then `uv run alembic upgrade head`. Do this only for local SQLite demo files, not hosted databases.
 - `MY_AGENTS_SESSION_COOKIE_SECURE=false` is for local HTTP only. Keep secure cookies enabled behind HTTPS.
 - `MY_AGENTS_AUTH_DEV_OUTBOX_ENABLED=true` exposes local verification/reset tokens through `/auth/dev/outbox` for deterministic demos only.
+- `MY_AGENTS_ACTIVE_RUN_STALE_AFTER_SECONDS=120` keeps interrupted active conversation runs from leaving the frontend in a long-lived composing state after a backend restart.
 - `MY_AGENTS_CORS_ALLOWED_ORIGINS` must list explicit origins because browser-cookie requests use credentials.
 - FastAPI exposes the current OpenAPI contract at `http://127.0.0.1:8000/openapi.json`.
 - If the frontend origin is `http://localhost:3000`, set the frontend API base URL to

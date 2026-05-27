@@ -1204,7 +1204,51 @@ def test_active_run_rejects_parallel_conversation_run(monkeypatch) -> None:  # n
     assert graph.calls == []
 
 
+def test_active_run_stale_threshold_is_configurable(monkeypatch) -> None:  # noqa: ANN001
+    monkeypatch.setenv("MY_AGENTS_ACTIVE_RUN_STALE_AFTER_SECONDS", "5")
+    graph = SpyGraph()
+    client = _client(monkeypatch, graph)
+    user_id = _signup_login(client, "stale-run-threshold@example.com")
+    recent_conversation_id = client.post(
+        "/conversations", json={"title": "Recent active threshold"}
+    ).json()["id"]
+    recent_run_id = _create_running_run(
+        conversation_id=recent_conversation_id,
+        user_id=user_id,
+        created_at=datetime.now(UTC) - timedelta(seconds=4),
+    )
+
+    blocked_response = client.post(
+        f"/conversations/{recent_conversation_id}/runs", json={"message": "Too soon"}
+    )
+
+    assert blocked_response.status_code == 409
+    runs_before_cutoff = client.get(f"/conversations/{recent_conversation_id}/runs").json()
+    assert runs_before_cutoff[0]["run_id"] == recent_run_id
+    assert runs_before_cutoff[0]["status"] == "running"
+
+    stale_conversation_id = client.post(
+        "/conversations", json={"title": "Stale active threshold"}
+    ).json()["id"]
+    stale_run_id = _create_running_run(
+        conversation_id=stale_conversation_id,
+        user_id=user_id,
+        created_at=datetime.now(UTC) - timedelta(seconds=6),
+    )
+
+    recovered_response = client.post(
+        f"/conversations/{stale_conversation_id}/runs", json={"message": "After stale"}
+    )
+
+    assert recovered_response.status_code == 200
+    runs = client.get(f"/conversations/{stale_conversation_id}/runs").json()
+    runs_by_id = {run["run_id"]: run for run in runs}
+    assert runs_by_id[stale_run_id]["status"] == "failed"
+    assert runs_by_id[recovered_response.json()["run_id"]]["status"] == "completed"
+
+
 def test_stale_active_run_is_terminalized_before_new_run(monkeypatch) -> None:  # noqa: ANN001
+    monkeypatch.setenv("MY_AGENTS_ACTIVE_RUN_STALE_AFTER_SECONDS", "120")
     graph = SpyGraph()
     client = _client(monkeypatch, graph)
     user_id = _signup_login(client, "stale-run@example.com")
@@ -1231,6 +1275,7 @@ def test_stale_active_run_is_terminalized_before_new_run(monkeypatch) -> None:  
     assert stale_events.json()[-1]["event_type"] == "run_failed"
     assert stale_events.json()[-1]["payload"] == {
         "safe_error_type": "StaleActiveRun",
+        "safe_reason": "active run exceeded stale timeout",
         "stale_active_run_cleanup": True,
     }
 
@@ -1263,6 +1308,40 @@ def test_list_runs_terminalizes_stale_active_run(monkeypatch) -> None:  # noqa: 
     assert stale_events.json()[-1]["event_type"] == "run_failed"
     assert stale_events.json()[-1]["payload"] == {
         "safe_error_type": "StaleActiveRun",
+        "safe_reason": "active run exceeded stale timeout",
+        "stale_active_run_cleanup": True,
+    }
+
+
+def test_list_runs_terminalizes_stale_cancelling_run(monkeypatch) -> None:  # noqa: ANN001
+    client = _client(monkeypatch, SpyGraph())
+    user_id = _signup_login(client, "stale-cancelling-run-list@example.com")
+    conversation_id = client.post(
+        "/conversations", json={"title": "Stale cancelling run list"}
+    ).json()["id"]
+    stale_run_id = _create_running_run(
+        conversation_id=conversation_id,
+        user_id=user_id,
+        status=RunStatus.CANCELLING.value,
+        created_at=datetime.now(UTC) - timedelta(minutes=30),
+    )
+
+    runs = client.get(f"/conversations/{conversation_id}/runs")
+
+    assert runs.status_code == 200
+    payload = runs.json()
+    assert len(payload) == 1
+    assert payload[0]["run_id"] == stale_run_id
+    assert payload[0]["status"] == "cancelled"
+
+    stale_events = client.get(f"/conversations/{conversation_id}/runs/{stale_run_id}/events")
+    assert stale_events.status_code == 200
+    assert stale_events.json()[-1]["event_type"] == "run_cancelled"
+    assert stale_events.json()[-1]["payload"] == {
+        "run_id": stale_run_id,
+        "conversation_id": conversation_id,
+        "status": "cancelled",
+        "partial_reply_persisted": False,
         "stale_active_run_cleanup": True,
     }
 
@@ -1398,7 +1477,7 @@ def test_streaming_cancelled_run_does_not_persist_partial_assistant(monkeypatch)
 
 
 def test_legacy_assistant_chat_remains_dev_surface_without_product_run_fields(monkeypatch) -> None:  # noqa: ANN001
-    client = _client(monkeypatch)
+    client = _client(monkeypatch, SpyGraph())
 
     response = client.post("/assistant/chat", json={"message": "Hello", "history": []})
 
@@ -1413,6 +1492,7 @@ def _create_running_run(
     *,
     conversation_id: str,
     user_id: str,
+    status: str = RunStatus.RUNNING.value,
     created_at: datetime | None = None,
 ) -> str:
     session_generator = get_database_session()
@@ -1421,7 +1501,7 @@ def _create_running_run(
         run = AgentRunModel(
             conversation_id=conversation_id,
             user_id=user_id,
-            status=RunStatus.RUNNING.value,
+            status=status,
         )
         if created_at is not None:
             run.created_at = created_at

@@ -51,9 +51,9 @@ from my_agents.knowledge.models import CitationModel
 from my_agents.knowledge.retrieval import RetrievedChunk
 from my_agents.knowledge.routing import AnswerMode, RetrievalRoutingDecision
 from my_agents.schemas import RouteDecision
+from my_agents.settings import get_settings
 
 ACTIVE_RUN_STATUSES = (RunStatus.RUNNING.value, RunStatus.CANCELLING.value)
-ACTIVE_RUN_STALE_AFTER = timedelta(minutes=15)
 
 
 def complete_sync_conversation_run(
@@ -385,7 +385,7 @@ def assert_no_active_run(db: Session, conversation_id: str) -> None:
 
 
 def cleanup_stale_active_runs(db: Session, conversation_id: str) -> None:
-    cutoff = datetime.now(UTC) - ACTIVE_RUN_STALE_AFTER
+    cutoff = datetime.now(UTC) - timedelta(seconds=get_settings().active_run_stale_after_seconds)
     stale_runs = db.scalars(
         select(AgentRunModel).where(
             AgentRunModel.conversation_id == conversation_id,
@@ -417,6 +417,7 @@ def cleanup_stale_active_runs(db: Session, conversation_id: str) -> None:
             AgentEventType.RUN_FAILED,
             {
                 "safe_error_type": "StaleActiveRun",
+                "safe_reason": "active run exceeded stale timeout",
                 "stale_active_run_cleanup": True,
             },
             commit=False,

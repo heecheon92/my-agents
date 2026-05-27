@@ -106,6 +106,7 @@ def test_embedding_settings_default_to_deterministic(monkeypatch: pytest.MonkeyP
     assert settings.ingestion_execution_mode == "in_process_thread"
     assert settings.ingestion_worker_poll_interval_seconds == 2.0
     assert settings.ingestion_worker_batch_size == 1
+    assert settings.active_run_stale_after_seconds == 120
 
 
 def test_ingestion_worker_settings_accept_external_worker_mode(
@@ -115,12 +116,14 @@ def test_ingestion_worker_settings_accept_external_worker_mode(
     monkeypatch.setenv("MY_AGENTS_INGESTION_EXECUTION_MODE", "external_worker")
     monkeypatch.setenv("MY_AGENTS_INGESTION_WORKER_POLL_INTERVAL_SECONDS", "0.5")
     monkeypatch.setenv("MY_AGENTS_INGESTION_WORKER_BATCH_SIZE", "3")
+    monkeypatch.setenv("MY_AGENTS_ACTIVE_RUN_STALE_AFTER_SECONDS", "45")
 
     settings = Settings(_env_file=None)
 
     assert settings.ingestion_execution_mode == "external_worker"
     assert settings.ingestion_worker_poll_interval_seconds == 0.5
     assert settings.ingestion_worker_batch_size == 3
+    assert settings.active_run_stale_after_seconds == 45
 
 
 def test_document_metadata_openai_mode_requires_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -254,6 +257,7 @@ def test_service_foundation_settings_have_safe_defaults(
     assert settings.guest_max_conversations == 1
     assert settings.guest_max_prompts == 5
     assert settings.guest_max_document_uploads == 3
+    assert settings.active_run_stale_after_seconds == 120
 
 
 def test_service_foundation_settings_accept_overrides(
@@ -332,6 +336,17 @@ def test_service_foundation_settings_accept_overrides(
     assert settings.guest_max_conversations == 1
     assert settings.guest_max_prompts == 5
     assert settings.guest_max_document_uploads == 3
+
+
+def test_active_run_stale_threshold_accepts_env_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
+    monkeypatch.setenv("MY_AGENTS_ACTIVE_RUN_STALE_AFTER_SECONDS", "5")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.active_run_stale_after_seconds == 5
 
 
 def test_samesite_none_requires_secure_cookie(

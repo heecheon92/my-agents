@@ -99,6 +99,7 @@ MY_AGENTS_RESPONSE_MODE=deterministic
 ```
 
 전체 설정 목록은 [`.env.example`](./.env.example)을 확인하세요. CORS, cookie, CSRF, dev outbox, seeded local data, SSE/run-detail expectation은 [frontend demo runbook](./docs/product-chat-service/ko/10-frontend-demo-runbook.md)에 정리되어 있습니다.
+중단된 대화 실행이 frontend에 계속 “작성 중”으로 남지 않도록 `MY_AGENTS_ACTIVE_RUN_STALE_AFTER_SECONDS` 기본값은 120초이며, hosted demo에서는 이 값을 짧게 유지하세요.
 
 Guest access를 켜면 public client는 `POST /auth/guest/request`에 email을 보내고
 `status=accepted`만 받습니다. 코드는 public API가 반환하지
@@ -142,6 +143,10 @@ Hosted/demo 배포에서는 async document ingestion을 web process 밖에서 �
 MY_AGENTS_INGESTION_EXECUTION_MODE=external_worker uv run uvicorn main:app --host 0.0.0.0 --port 8000
 uv run python -m my_agents.ingestion_worker
 ```
+
+Backend restart 등으로 남은 active conversation run은 polling 또는 다음 prompt 전 cleanup에서 실패/취소
+상태로 정리됩니다. Hosted/demo UX에서는 기본 120초를 사용하며 필요하면
+`MY_AGENTS_ACTIVE_RUN_STALE_AFTER_SECONDS`로 조정하세요.
 
 ## 주요 검사
 
