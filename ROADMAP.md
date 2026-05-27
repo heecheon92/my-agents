@@ -36,7 +36,7 @@ flowchart LR
 
 Current honest status:
 
-> The project is a strong **v1-draft backend foundation** with a basic hosted demo path now proven: auth, permissions, server-owned conversations, text/PDF/Markdown ingestion, permission-aware retrieval, citations, events, migrations, pgvector-backed Postgres retrieval with JSON fallback, SSE assistant streaming, Render backend deployment, Vercel frontend CI/CD, Neon Postgres, and Resend HTTP email verification through `my-agents.dev` exist as a thin end-to-end slice. It is not yet a production-ready v1 because broad production ingestion performance, retrieval-quality evals/reranking, durable background queues, stronger deployment-grade auth hardening, temporary diagnostic cleanup, and operations remain.
+> The project is a strong **v1-draft backend foundation** with a basic hosted demo path now proven: auth, permissions, server-owned conversations, text/PDF/Markdown ingestion, permission-aware retrieval, citations, events, migrations, pgvector-backed Postgres retrieval with JSON fallback, SSE assistant streaming, Render backend deployment, Vercel frontend CI/CD, Neon Postgres, and Resend HTTP email verification through `my-agents.dev` exist as a thin end-to-end slice. It is not yet a production-ready v1 because broad production ingestion performance, retrieval-quality evals/reranking, durable background queues, stronger deployment-grade auth hardening, deploy diagnostic tuning, and operations remain.
 
 ## 1. Backend foundation
 
@@ -236,8 +236,8 @@ This is the product-facing equivalent of repo-local `AGENTS.md`: durable Markdow
 - [x] Tests for event ordering and redaction behavior.
 - [x] Tests keep OpenAI calls offline/mocked by default.
 - [~] Evals are deterministic fixtures, not a production evaluation platform.
-- [~] Structured application logging policy; temporary deployment diagnostics exist and should be removed after hosted smoke stabilizes.
-- [~] Request IDs / correlation IDs exist in temporary deployment diagnostics but need a durable production logging policy.
+- [~] Structured application logging policy; permanent redacted deployment diagnostics exist and should be tuned into the broader logging policy.
+- [~] Request IDs / correlation IDs exist in deployment diagnostics but need a durable production logging policy.
 - [ ] Metrics for latency, token usage, retrieval counts, failure rates.
 - [ ] OpenTelemetry or equivalent tracing.
 - [ ] Cost monitoring and quotas for OpenAI-backed paths.
@@ -287,7 +287,7 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
 1. **Hosted demo cleanup and smoke verification**
    - Promote frontend `develop` to `main` when auth landing route fixes need Vercel production deployment.
    - Run hosted smoke: signup -> email verification -> login -> create/upload small document -> ingest -> chat with citation.
-   - Remove temporary `TEMP_DEPLOY_DIAG` logs after smoke is stable.
+   - Keep permanent redacted `DEPLOY_DIAG` logs available for hosted smoke/debug; tune noisy call sites only if needed.
    - Record smoke evidence and remaining risks in `docs/product-chat-service/en/15-deployment-troubleshooting-log.md` if anything new is found.
 
 2. **Hosted ingestion performance pass**

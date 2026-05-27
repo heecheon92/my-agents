@@ -26,7 +26,7 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 
 | Scope | Status | Completion estimate | Notes |
 | --- | --- | ---: | --- |
-| Demo-quality backend v0 | Hosted demo baseline proven | 95-97% | Thin end-to-end backend slice exists and now has a basic hosted path: Render backend, Vercel frontend CI/CD, Neon Postgres, Resend HTTP email from verified `my-agents.dev`, hosted signup/email verification, external-worker ingestion mode, and deployment troubleshooting docs. Remaining demo risk is mostly worker deployment wiring, ingestion smoke evidence, and temporary diagnostic cleanup. |
+| Demo-quality backend v0 | Hosted demo baseline proven | 95-97% | Thin end-to-end backend slice exists and now has a basic hosted path: Render backend, Vercel frontend CI/CD, Neon Postgres, Resend HTTP email from verified `my-agents.dev`, hosted signup/email verification, external-worker ingestion mode, and deployment troubleshooting docs. Remaining demo risk is mostly worker deployment wiring, ingestion smoke evidence, and deploy diagnostic/log-volume tuning. |
 | Production SaaS readiness | Early but hosted | 57-62% | Account lifecycle works in hosted demo mode with provider email, and ingestion can now run outside the web process, but production readiness still needs shared rate limits, durable queue/stale-run recovery, ingestion performance hardening, automated smoke/migration gates, observability cleanup, and production security review. |
 | Full AI agents product vision | Early/mid | 25-35% | Current production graph is one assistant/router path; richer agent/tool workflows are future milestones. |
 | Learning/practice simulated agents | Active learning lab | Ongoing | `my_agents/simulated_agents/` is meaningful practice code, intentionally separate from production API/CLI surfaces. |
@@ -186,7 +186,7 @@ The test harness sets `MY_AGENTS_ENV_FILE=` so a developer's local `.env` file c
 - Basic hosted deployment and CI/CD are configured: Render deploys the backend from Git, Vercel deploys the frontend production branch, Neon provides hosted Postgres, and Resend HTTP sends auth lifecycle email from `my-agents.dev`.
 - Hosted signup -> email send -> frontend verification route has been proven after adding frontend `/verify-email` and `/password-reset` landing pages.
 - Ingestion now has a web/worker split option: the web process can queue extraction runs only, while a separate ingestion worker claims and processes queued runs.
-- Temporary `TEMP_DEPLOY_DIAG` logs remain and should be removed after a few more hosted smoke checks.
+- Permanent redacted `DEPLOY_DIAG` logs are available for hosted smoke checks and deployment debugging.
 - Hosted preview/public DB migration execution is manually managed; the readiness runbook records the migration evidence requirement and production remains user-gated.
 - No observability backend/export yet.
 - Frontend integration lives in the separate frontend repository by design.
@@ -203,14 +203,14 @@ Suggested order:
 1. Promote the frontend verification-route fix to the Vercel production branch when ready.
 2. Run hosted smoke: signup -> email verification -> login -> small document upload/ingest -> chat with citation.
 3. Record any new issue in `docs/product-chat-service/en/15-deployment-troubleshooting-log.md`.
-4. Remove temporary `TEMP_DEPLOY_DIAG` logs after hosted signup/login/chat smoke remains stable.
+4. Keep redacted `DEPLOY_DIAG` logs available; tune only noisy call sites after hosted signup/login/chat smoke remains stable.
 5. Deploy the ingestion worker path for hosted demo: set `MY_AGENTS_INGESTION_EXECUTION_MODE=external_worker` on the web service and run `uv run python -m my_agents.ingestion_worker` as a separate worker process.
 6. Treat Render free-tier PDF ingestion slowness as a known resource limitation; prefer small Markdown/plain-text/native-text PDFs for demo until the worker path has smoke evidence or the host is larger.
 
 Stop condition:
 
 - Hosted smoke passes through auth, email verification, login, one document path, and one cited chat answer.
-- Temporary diagnostics are removed or explicitly kept with a short removal date.
+- Deployment diagnostics remain redacted and intentionally available for hosted debugging.
 - Backend remains green on pytest, Ruff check, Ruff format check, and diff check.
 
 ### Follow-up milestone: strict KB-first frontend gate

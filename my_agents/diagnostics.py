@@ -1,9 +1,9 @@
-"""Temporary deployment diagnostics.
+"""Safe deployment diagnostics for hosted debug and smoke verification.
 
-TEMP_DEPLOY_DIAG logs are intentionally unconditional and warning-level so hosted
-runtime logs show enough request/DB/auth/email breadcrumbs while deployment is being
-stabilized. Remove this module and its call sites once Render/Vercel/Neon wiring is
-proven.
+DEPLOY_DIAG logs are intentionally redacted and warning-level so hosted runtime
+logs show request/DB/auth/email breadcrumbs without exposing secrets. They are a
+permanent operational debug surface; reduce call-site coverage only if log volume
+becomes noisy for a specific deployment.
 """
 
 from __future__ import annotations
@@ -12,13 +12,13 @@ import hashlib
 import logging
 from urllib.parse import urlsplit
 
-logger = logging.getLogger("my_agents.temp_deploy_diag")
+logger = logging.getLogger("my_agents.deploy_diag")
 
 
 def deploy_log(event: str, **fields: object) -> None:
     """Emit one safe deployment diagnostic line without secrets."""
     field_text = " ".join(f"{key}={_safe_value(value)}" for key, value in fields.items())
-    logger.warning("TEMP_DEPLOY_DIAG %s%s", event, f" {field_text}" if field_text else "")
+    logger.warning("DEPLOY_DIAG %s%s", event, f" {field_text}" if field_text else "")
 
 
 def safe_email_context(email: str) -> dict[str, str]:

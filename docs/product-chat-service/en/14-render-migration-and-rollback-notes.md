@@ -4,7 +4,7 @@
 
 This document preserves the deployment decisions made while stabilizing the backend on
 Render. The goal is to keep the codebase portable: moving away from Render should mostly
-mean changing environment variables and removing temporary diagnostics, not rewriting auth,
+mean changing environment variables and tuning deploy diagnostics, not rewriting auth,
 email, or database logic.
 
 ## Current Render-specific findings
@@ -83,22 +83,22 @@ MY_AGENTS_AUTH_SMTP_USE_STARTTLS=true
 For Resend specifically, the SMTP password and HTTP API key can be the same `re_...` secret,
 but keep the environment variable names transport-specific.
 
-## Temporary diagnostics to remove after hosted signup is stable
+## Deployment diagnostics to review after hosted signup is stable
 
-The following were added to debug deployment behavior and should not become permanent product
-surface area:
+The following are redacted deployment-debug surfaces. They are intentionally permanent
+operational diagnostics, but should remain non-secret and low-noise:
 
 - `my_agents/diagnostics.py`
-- `TEMP_DEPLOY_DIAG` request middleware logs
+- `DEPLOY_DIAG` request middleware logs
 - signup step-by-step diagnostic logs
 - password hash timing logs
 - database session lifecycle diagnostic logs
-- SMTP/Resend temporary deploy diagnostics beyond normal operational logs
+- SMTP/Resend deploy diagnostics beyond normal operational logs
 
-Recommended cleanup approach:
+Recommended review approach:
 
 1. Confirm hosted signup completes and verification email is delivered.
-2. Create one cleanup commit that removes only the temporary diagnostics.
+2. Keep `DEPLOY_DIAG` redacted; tune only specific noisy call sites if needed.
 3. Keep the portable Argon2 settings and the `resend_http` sender.
 4. Run auth email/settings/auth API tests before pushing.
 
@@ -139,8 +139,8 @@ When moving to Hostinger, Fly.io, Railway, ECS, a VPS, or another host:
    - Keep the web process responsible for upload/status/chat only; parsing, embeddings, metadata, and indexing belong in the worker.
 
 8. **Diagnostics cleanup**
-   - Remove temporary diagnostics before treating the deployment as stable.
-   - Keep only normal operational logs that do not expose secrets or raw emails.
+   - Keep deploy diagnostics redacted before treating the deployment as stable.
+   - Keep operational logs and deploy diagnostics free of secrets and raw emails.
 
 ## Rollback recipes
 

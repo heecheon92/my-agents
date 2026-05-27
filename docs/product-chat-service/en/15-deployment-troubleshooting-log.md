@@ -83,7 +83,7 @@ Insufficient backend diagnostics for hosted request, database, auth, and email s
 
 **Resolution**
 
-Added temporary `TEMP_DEPLOY_DIAG` logs for:
+Added permanent redacted `DEPLOY_DIAG` logs for:
 
 - safe runtime config summary
 - request start/end/failure
@@ -94,8 +94,8 @@ Added temporary `TEMP_DEPLOY_DIAG` logs for:
 
 **Follow-up**
 
-These logs are intentionally temporary. Remove them after public-demo signup and email
-verification are stable.
+These logs are now a permanent deployment-debug feature. Keep them redacted; reduce
+coverage only if a specific host needs less log volume.
 
 See also:
 
@@ -303,11 +303,11 @@ returns an extraction run, and polling reads extraction-run status. Deployment n
 service plus one worker process when using `external_worker`.
 
 
-## Cleanup checklist after stable demo
+## Operational diagnostics checklist after stable demo
 
 Once hosted signup, email verification, login, guest access, and a basic chat run are stable:
 
-1. Remove temporary `TEMP_DEPLOY_DIAG` diagnostics.
+1. Keep redacted `DEPLOY_DIAG` diagnostics available for hosted debug and smoke verification.
 2. Keep Argon2 config and Resend HTTP sender.
 3. Update older docs that still describe SMTP as the only hosted email path.
 4. Run targeted auth/settings/email tests.

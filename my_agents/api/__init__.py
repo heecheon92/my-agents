@@ -47,7 +47,7 @@ def create_app() -> FastAPI:
 
 
 def _install_deployment_request_logging(app: FastAPI) -> None:
-    """Install temporary request-level diagnostics for hosted deployment debugging."""
+    """Install request-level diagnostics for hosted deployment debugging."""
 
     @app.middleware("http")
     async def deployment_request_logger(request: Request, call_next):  # noqa: ANN001
