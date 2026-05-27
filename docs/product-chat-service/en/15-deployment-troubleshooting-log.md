@@ -266,6 +266,43 @@ If Render free memory/startup becomes unstable, use:
 MY_AGENTS_RERANKER_MODE=deterministic
 ```
 
+### 9. Markdown upload succeeded but async ingestion made the web service unresponsive
+
+**Symptom**
+
+Hosted Markdown upload returned `201 Created`, and the `documents` row existed in Neon.
+Starting async ingest returned `202 Accepted`, but later extraction-run polling and unrelated
+requests such as `/auth/me` stopped completing promptly.
+
+**Root cause**
+
+The upload path was fine. The issue was architectural: async ingestion still ran inside the
+same web process using an in-process Python thread. Chunking, embeddings, entity extraction,
+metadata generation, pgvector writes, and final status updates could compete with normal web
+requests on small hosted runtimes.
+
+**Fix**
+
+Add an external-worker execution mode:
+
+```env
+MY_AGENTS_INGESTION_EXECUTION_MODE=external_worker
+```
+
+In this mode, `POST /ingest/async` only creates a queued extraction run. A separate worker
+process claims queued runs and executes ingestion:
+
+```bash
+uv run python -m my_agents.ingestion_worker
+```
+
+**Migration note**
+
+The API contract remains the same for the frontend: upload returns a document, async ingest
+returns an extraction run, and polling reads extraction-run status. Deployment now needs one web
+service plus one worker process when using `external_worker`.
+
+
 ## Cleanup checklist after stable demo
 
 Once hosted signup, email verification, login, guest access, and a basic chat run are stable:

@@ -136,6 +136,13 @@ FastAPI 서버 없이 CLI chat loop 실행:
 uv run python -m my_agents.cli
 ```
 
+Hosted/demo 배포에서는 async document ingestion을 web process 밖에서 실행하세요.
+
+```bash
+MY_AGENTS_INGESTION_EXECUTION_MODE=external_worker uv run uvicorn main:app --host 0.0.0.0 --port 8000
+uv run python -m my_agents.ingestion_worker
+```
+
 ## 주요 검사
 
 ```bash

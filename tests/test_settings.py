@@ -103,6 +103,24 @@ def test_embedding_settings_default_to_deterministic(monkeypatch: pytest.MonkeyP
     assert settings.document_metadata_enrichment_mode == "auto"
     assert settings.document_metadata_model is None
     assert settings.document_metadata_max_input_chars == 24000
+    assert settings.ingestion_execution_mode == "in_process_thread"
+    assert settings.ingestion_worker_poll_interval_seconds == 2.0
+    assert settings.ingestion_worker_batch_size == 1
+
+
+def test_ingestion_worker_settings_accept_external_worker_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
+    monkeypatch.setenv("MY_AGENTS_INGESTION_EXECUTION_MODE", "external_worker")
+    monkeypatch.setenv("MY_AGENTS_INGESTION_WORKER_POLL_INTERVAL_SECONDS", "0.5")
+    monkeypatch.setenv("MY_AGENTS_INGESTION_WORKER_BATCH_SIZE", "3")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.ingestion_execution_mode == "external_worker"
+    assert settings.ingestion_worker_poll_interval_seconds == 0.5
+    assert settings.ingestion_worker_batch_size == 3
 
 
 def test_document_metadata_openai_mode_requires_api_key(monkeypatch: pytest.MonkeyPatch) -> None:

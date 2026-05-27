@@ -19,6 +19,7 @@ from my_agents.knowledge.extraction import (
     _deterministic_embedding,
     _extract_entity_names,
 )
+from my_agents.knowledge.ingestion_worker import process_pending_extraction_runs_once
 from my_agents.knowledge.models import (
     CitationModel,
     DocumentChunkModel,
@@ -509,6 +510,47 @@ def test_async_ingest_returns_queued_run_and_polling_completes(monkeypatch) -> N
     runs = client.get(f"/documents/{document_id}/extraction-runs")
     assert runs.status_code == 200
     assert runs.json()[0]["id"] == queued_payload["id"]
+
+
+def test_async_ingest_can_be_processed_by_external_worker(monkeypatch) -> None:  # noqa: ANN001
+    monkeypatch.setenv("MY_AGENTS_INGESTION_EXECUTION_MODE", "external_worker")
+    client = _client(monkeypatch)
+    _signup_login(client, "external-worker-owner@example.com")
+    kb_id = _create_personal_knowledge_base(client, "External Worker KB")
+
+    document = _create_document(
+        client,
+        json={
+            "title": "Worker Notes",
+            "content": "External worker ingestion mentions LangGraph and FastAPI.",
+            "knowledge_base_id": kb_id,
+        },
+    )
+    assert document.status_code == 201
+    document_id = document.json()["id"]
+
+    queued = client.post(f"/documents/{document_id}/ingest/async")
+
+    assert queued.status_code == 202
+    queued_payload = queued.json()
+    assert queued_payload["status"] == "pending"
+    assert queued_payload["stage"] == "queued"
+    before_worker = client.get(f"/documents/{document_id}/extraction-runs/{queued_payload['id']}")
+    assert before_worker.status_code == 200
+    assert before_worker.json()["status"] == "pending"
+
+    results = process_pending_extraction_runs_once(
+        database_url="sqlite+pysqlite:///:memory:",
+        max_runs=1,
+    )
+
+    assert len(results) == 1
+    assert results[0].run_id == queued_payload["id"]
+    assert results[0].status == "completed"
+    completed = client.get(f"/documents/{document_id}/extraction-runs/{queued_payload['id']}")
+    assert completed.status_code == 200
+    assert completed.json()["status"] == "completed"
+    assert completed.json()["chunk_count"] >= 1
 
 
 def test_async_ingest_persists_failed_status_with_safe_error(monkeypatch) -> None:  # noqa: ANN001

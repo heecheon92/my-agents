@@ -19,6 +19,7 @@ from my_agents.knowledge.auth import (
     require_personal_knowledge_base_for_document_write,
 )
 from my_agents.knowledge.extraction import KnowledgeExtractionService
+from my_agents.knowledge.ingestion_worker import execute_claimed_extraction_run
 from my_agents.knowledge.models import (
     CitationModel,
     DocumentChunkModel,
@@ -46,7 +47,7 @@ from my_agents.knowledge.uploads import (
 )
 from my_agents.permissions.contracts import DocumentOperation
 from my_agents.permissions.service import AuthorizationService
-from my_agents.persistence.database import _sessionmaker_for_url, get_database_session
+from my_agents.persistence.database import get_database_session
 from my_agents.settings import Settings, get_settings
 
 documents_router = APIRouter(prefix="/documents", tags=["documents"])
@@ -439,12 +440,7 @@ def ingest_document_async(
 
     run = KnowledgeExtractionService(db).create_extraction_run(document_id=document.id)
     response = _extraction_run_response(db, run)
-    Thread(
-        target=_execute_ingestion_run_in_background,
-        args=(settings.database_url, run.id),
-        daemon=True,
-        name=f"document-ingest-{run.id}",
-    ).start()
+    _dispatch_extraction_run(settings=settings, run_id=run.id)
     return response
 
 
@@ -473,12 +469,7 @@ def ingest_document_async_in_knowledge_base(
 
     run = KnowledgeExtractionService(db).create_extraction_run(document_id=document.id)
     response = _extraction_run_response(db, run)
-    Thread(
-        target=_execute_ingestion_run_in_background,
-        args=(settings.database_url, run.id),
-        daemon=True,
-        name=f"document-ingest-{run.id}",
-    ).start()
+    _dispatch_extraction_run(settings=settings, run_id=run.id)
     return response
 
 
@@ -583,25 +574,26 @@ def list_extraction_runs_in_knowledge_base(
     return [_extraction_run_response(db, run) for run in runs]
 
 
+def _dispatch_extraction_run(*, settings: Settings, run_id: str) -> None:
+    """Dispatch a queued extraction run according to the configured execution mode."""
+    if settings.ingestion_execution_mode == "external_worker":
+        logger.info(
+            "document_ingestion.queued_for_external_worker run_id=%s execution_mode=%s",
+            run_id,
+            settings.ingestion_execution_mode,
+        )
+        return
+    Thread(
+        target=_execute_ingestion_run_in_background,
+        args=(settings.database_url, run_id),
+        daemon=True,
+        name=f"document-ingest-{run_id}",
+    ).start()
+
+
 def _execute_ingestion_run_in_background(database_url: str, run_id: str) -> None:
     """Execute a queued run with a fresh session instead of the request session."""
-    session_factory = _sessionmaker_for_url(database_url)
-    with session_factory() as db:
-        run = db.get(ExtractionRunModel, run_id)
-        if run is None:
-            return
-        document = db.get(DocumentModel, run.document_id)
-        if document is None:
-            run.status = ExtractionStatus.FAILED.value
-            run.stage = "failed"
-            run.error = "DocumentNotFound: document not found"
-            db.commit()
-            return
-        try:
-            KnowledgeExtractionService(db).ingest_document(document, run=run)
-        except Exception:
-            # KnowledgeExtractionService persists a bounded failed status before re-raising.
-            return
+    execute_claimed_extraction_run(database_url=database_url, run_id=run_id)
 
 
 def _get_document_or_404(db: Session, document_id: str) -> DocumentModel:

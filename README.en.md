@@ -136,6 +136,13 @@ Run the CLI chat loop without starting FastAPI:
 uv run python -m my_agents.cli
 ```
 
+For hosted/demo deployments, keep async document ingestion out of the web process:
+
+```bash
+MY_AGENTS_INGESTION_EXECUTION_MODE=external_worker uv run uvicorn main:app --host 0.0.0.0 --port 8000
+uv run python -m my_agents.ingestion_worker
+```
+
 ## Common checks
 
 ```bash

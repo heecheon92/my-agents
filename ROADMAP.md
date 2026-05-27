@@ -132,7 +132,7 @@ Current honest status:
 - [x] Deterministic text-based PDF parser with metadata persistence and chunk page provenance.
 - [x] UTF-8 Markdown and plain-text upload parser with metadata persistence.
 - [ ] Production parsers for scanned/encrypted/compressed PDF, DOCX, web pages, CSV/JSON structure, etc. See [`docs/idea/layout-aware-ingestion-rag-agent.md`](./docs/idea/layout-aware-ingestion-rag-agent.md) for the layout-aware parser artifact plan that feeds the future RAG agent graph.
-- [~] Hosted PDF ingestion works for supported text-based files but is slow on Render free-tier CPU/RAM; production-quality ingestion needs async worker isolation, parser policy tuning, and larger runtime resources.
+- [~] Hosted PDF/Markdown ingestion works for supported text-based files and now has an external-worker execution mode; production-quality ingestion still needs deployment wiring, stale-run recovery, parser policy tuning, and larger/runtime-isolated resources.
 - [ ] Object storage for uploaded source files.
 - [ ] Reingestion/versioning policy.
 - [~] Ingestion failure recovery stores failed run status and safe error; partial artifact cleanup remains minimal.
@@ -198,7 +198,7 @@ This is the product-facing equivalent of repo-local `AGENTS.md`: durable Markdow
 - [x] HTTP progress and assistant-text streaming response for frontend chat.
 - [x] SSE transport endpoint: `POST /conversations/{id}/runs/stream`.
 - [x] `answer_delta` SSE events for incremental assistant text.
-- [~] In-process async ingestion runner for local/demo multi-file UX; durable external queue remains future work.
+- [~] Async ingestion runner supports local in-process threads and hosted external-worker mode; durable queue/backend-worker supervision and stale-run recovery remain future work.
 - [ ] Run cancellation.
 - [ ] Run retry.
 - [ ] Rich failed-run detail table/model.
@@ -278,7 +278,7 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
 - [~] Optional Postgres/Neon test is skipped unless `MY_AGENTS_TEST_DATABASE_URL` is set.
 - [x] Dedicated streaming endpoint tests.
 - [x] Upload/parser tests for supported PDF, Markdown, and plain-text ingestion.
-- [x] Async ingestion progress/polling tests for the in-process runner.
+- [x] Async ingestion progress/polling tests for both the local in-process runner and external-worker claim/process path.
 - [ ] Load/performance smoke tests for larger fixture data.
 - [ ] Security regression tests for rate limits, CSRF coverage, and auth hardening.
 
@@ -291,9 +291,10 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
    - Record smoke evidence and remaining risks in `docs/product-chat-service/en/15-deployment-troubleshooting-log.md` if anything new is found.
 
 2. **Hosted ingestion performance pass**
-   - Treat Render free-tier PDF ingestion slowness as a resource/pipeline limitation, not a parser correctness bug.
+   - Treat Render free-tier PDF/Markdown ingestion slowness as a resource/process-isolation limitation, not a parser correctness bug.
    - Prefer small Markdown/plain-text/native-text PDFs for public demo.
-   - Add async/background worker isolation and parser policy controls before trying large PDFs in production.
+   - Deploy `MY_AGENTS_INGESTION_EXECUTION_MODE=external_worker` with a separate `python -m my_agents.knowledge.ingestion_worker` process before trying large files in production.
+   - Add stale-run recovery, worker health checks, and parser policy controls before treating ingestion as production-grade.
    - Consider disabling `MY_AGENTS_RERANKER_MODE=cross_encoder` on tiny hosts if memory pressure affects ingestion or startup.
 
 3. **Deployment hardening**
@@ -321,7 +322,8 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
 7. **Production ingestion upgrade**
    - Add file upload and parser pipeline, then evolve it toward the layout-aware artifact plan in [`docs/idea/layout-aware-ingestion-rag-agent.md`](./docs/idea/layout-aware-ingestion-rag-agent.md).
    - [done for local/demo] Move ingestion start to an additive in-process async runner with polling.
-   - [future] Replace in-process jobs with a durable queue for production workers.
+   - [done for hosted baseline] Add an external-worker execution mode that keeps ingestion work out of the web request process.
+   - [future] Replace DB polling with a durable queue and add stale-run recovery for production workers.
    - Store source provenance and parser errors safely.
 
 ## 14. Strict v1 phase gates

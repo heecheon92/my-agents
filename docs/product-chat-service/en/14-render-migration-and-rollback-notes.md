@@ -133,7 +133,12 @@ When moving to Hostinger, Fly.io, Railway, ECS, a VPS, or another host:
    - `MY_AGENTS_RERANKER_MODE=cross_encoder` loads ML dependencies and can be memory-heavy.
    - On small hosts, switch to `MY_AGENTS_RERANKER_MODE=deterministic` if startup or memory is unstable.
 
-7. **Diagnostics cleanup**
+7. **Document ingestion**
+   - Hosted demos should set `MY_AGENTS_INGESTION_EXECUTION_MODE=external_worker`.
+   - Run a separate worker process with `uv run python -m my_agents.ingestion_worker`.
+   - Keep the web process responsible for upload/status/chat only; parsing, embeddings, metadata, and indexing belong in the worker.
+
+8. **Diagnostics cleanup**
    - Remove temporary diagnostics before treating the deployment as stable.
    - Keep only normal operational logs that do not expose secrets or raw emails.
 
@@ -173,6 +178,20 @@ Rollback to deterministic reranking:
 
 ```env
 MY_AGENTS_RERANKER_MODE=deterministic
+```
+
+### Document ingestion makes the web service unresponsive
+
+Move ingestion out of the web process:
+
+```env
+MY_AGENTS_INGESTION_EXECUTION_MODE=external_worker
+```
+
+Run the worker as a separate service/process using the same image and environment:
+
+```bash
+uv run python -m my_agents.ingestion_worker
 ```
 
 ### Suspected wrong database

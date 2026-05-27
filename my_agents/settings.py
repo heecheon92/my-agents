@@ -19,6 +19,7 @@ EmbeddingMode = Literal["deterministic", "openai"]
 DoclingAccelerator = Literal["auto", "cpu", "cuda", "mps", "xpu"]
 RerankerMode = Literal["deterministic", "cross_encoder"]
 DocumentMetadataEnrichmentMode = Literal["auto", "deterministic", "openai"]
+IngestionExecutionMode = Literal["in_process_thread", "external_worker"]
 
 
 class Settings(BaseSettings):
@@ -351,6 +352,22 @@ class Settings(BaseSettings):
         le=120000,
         validation_alias=AliasChoices("MY_AGENTS_DOCUMENT_METADATA_MAX_INPUT_CHARS"),
     )
+    ingestion_execution_mode: IngestionExecutionMode = Field(
+        default="in_process_thread",
+        validation_alias=AliasChoices("MY_AGENTS_INGESTION_EXECUTION_MODE"),
+    )
+    ingestion_worker_poll_interval_seconds: float = Field(
+        default=2.0,
+        gt=0,
+        le=60,
+        validation_alias=AliasChoices("MY_AGENTS_INGESTION_WORKER_POLL_INTERVAL_SECONDS"),
+    )
+    ingestion_worker_batch_size: int = Field(
+        default=1,
+        ge=1,
+        le=20,
+        validation_alias=AliasChoices("MY_AGENTS_INGESTION_WORKER_BATCH_SIZE"),
+    )
     debug_knowledge_context_logging: bool = Field(
         default=False,
         validation_alias=AliasChoices("MY_AGENTS_DEBUG_KNOWLEDGE_CONTEXT_LOGGING"),
@@ -516,7 +533,7 @@ class Settings(BaseSettings):
                 env_name
                 for env_name, value in (
                     ("MY_AGENTS_AUTH_SMTP_HOST", self.auth_smtp_host),
-                    ("MY_AGENTS_AUTH_FROM_EMAIL", self.auth_smtp_from_email),
+                    ("MY_AGENTS_AUTH_SMTP_FROM_EMAIL", self.auth_smtp_from_email),
                     ("MY_AGENTS_AUTH_PUBLIC_APP_BASE_URL", self.auth_public_app_base_url),
                 )
                 if value is None

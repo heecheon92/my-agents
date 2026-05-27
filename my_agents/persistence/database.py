@@ -68,7 +68,10 @@ def initialize_database(settings: Settings) -> None:
     import_all_models()
 
     if settings.should_auto_create_tables():
-        deploy_log("database.initialize.create_all.start", **safe_database_url_summary(database_url))
+        deploy_log(
+            "database.initialize.create_all.start",
+            **safe_database_url_summary(database_url),
+        )
         Base.metadata.create_all(_engine_for_url(database_url))
         deploy_log(
             "database.initialize.create_all.completed",
