@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from my_agents.auth.abuse import AuthAbuseConfig, AuthAbuseProtector, get_auth_abuse_protector
 from my_agents.auth.contracts import Principal
 from my_agents.auth.email import AuthEmailSender, build_auth_email_sender
-from my_agents.auth.service import AuthService, InvalidSessionError
+from my_agents.auth.service import AuthService, InvalidSessionError, build_password_hasher
 from my_agents.persistence.database import get_database_session
 from my_agents.settings import Settings, get_settings
 
@@ -38,9 +38,18 @@ def get_configured_auth_email_sender(
 def get_auth_service(
     db: Annotated[Session, Depends(get_database_session)],
     email_sender: Annotated[AuthEmailSender, Depends(get_configured_auth_email_sender)],
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> AuthService:
     """Return an auth service bound to the request database session."""
-    return AuthService(db, email_sender=email_sender)
+    return AuthService(
+        db,
+        email_sender=email_sender,
+        password_hasher=build_password_hasher(
+            time_cost=settings.auth_password_hash_time_cost,
+            memory_cost=settings.auth_password_hash_memory_cost_kib,
+            parallelism=settings.auth_password_hash_parallelism,
+        ),
+    )
 
 
 def get_current_principal(

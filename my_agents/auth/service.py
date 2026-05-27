@@ -29,6 +29,27 @@ from my_agents.diagnostics import deploy_log, safe_email_context
 AuthTokenPurpose = Literal["email_verification", "password_reset"]
 EMAIL_VERIFICATION_TOKEN_TTL = timedelta(hours=24)
 PASSWORD_RESET_TOKEN_TTL = timedelta(hours=1)
+DEFAULT_AUTH_PASSWORD_HASH_TIME_COST = 2
+DEFAULT_AUTH_PASSWORD_HASH_MEMORY_COST_KIB = 19_456
+DEFAULT_AUTH_PASSWORD_HASH_PARALLELISM = 1
+
+
+def build_password_hasher(
+    *,
+    time_cost: int = DEFAULT_AUTH_PASSWORD_HASH_TIME_COST,
+    memory_cost: int = DEFAULT_AUTH_PASSWORD_HASH_MEMORY_COST_KIB,
+    parallelism: int = DEFAULT_AUTH_PASSWORD_HASH_PARALLELISM,
+) -> PasswordHasher:
+    """Build a deployable Argon2id password hasher.
+
+    The defaults intentionally follow a lower-memory profile than argon2-cffi's
+    generic defaults so signup can run predictably on small demo containers.
+    """
+    return PasswordHasher(
+        time_cost=time_cost,
+        memory_cost=memory_cost,
+        parallelism=parallelism,
+    )
 
 
 class AuthError(RuntimeError):
@@ -97,7 +118,7 @@ class AuthService:
         email_sender: AuthEmailSender | None = None,
     ) -> None:
         self._db = db
-        self._password_hasher = password_hasher or PasswordHasher()
+        self._password_hasher = password_hasher or build_password_hasher()
         self._email_sender = email_sender or get_auth_email_sender()
 
     def signup(self, *, email: str, password: str) -> SignupResult:

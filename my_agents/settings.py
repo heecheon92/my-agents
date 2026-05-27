@@ -307,6 +307,24 @@ class Settings(BaseSettings):
         le=86400,
         validation_alias=AliasChoices("MY_AGENTS_AUTH_ABUSE_WINDOW_SECONDS"),
     )
+    auth_password_hash_time_cost: int = Field(
+        default=2,
+        ge=1,
+        le=10,
+        validation_alias=AliasChoices("MY_AGENTS_AUTH_PASSWORD_HASH_TIME_COST"),
+    )
+    auth_password_hash_memory_cost_kib: int = Field(
+        default=19_456,
+        ge=8_192,
+        le=1_048_576,
+        validation_alias=AliasChoices("MY_AGENTS_AUTH_PASSWORD_HASH_MEMORY_COST_KIB"),
+    )
+    auth_password_hash_parallelism: int = Field(
+        default=1,
+        ge=1,
+        le=8,
+        validation_alias=AliasChoices("MY_AGENTS_AUTH_PASSWORD_HASH_PARALLELISM"),
+    )
     document_metadata_enrichment_mode: DocumentMetadataEnrichmentMode = Field(
         default="auto",
         validation_alias=AliasChoices("MY_AGENTS_DOCUMENT_METADATA_ENRICHMENT_MODE"),
