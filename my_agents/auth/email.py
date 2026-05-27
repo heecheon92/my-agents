@@ -16,6 +16,8 @@ from email.message import EmailMessage
 from typing import TYPE_CHECKING, Literal, Protocol
 from urllib.parse import quote
 
+import httpx
+
 from my_agents.diagnostics import deploy_log
 
 if TYPE_CHECKING:
@@ -216,6 +218,116 @@ class SmtpAuthEmailSender:
         return f"{self._public_app_base_url}{path}?token={quote(token, safe='')}"
 
 
+class ResendHttpAuthEmailSender:
+    """Resend HTTP API auth email sender for hosts that block SMTP ports.
+
+    This provider uses HTTPS/443 instead of SMTP/587, which keeps public-demo email
+    delivery independent from host-level SMTP egress policies while preserving the same
+    `AuthEmailSender` boundary as local and generic SMTP modes.
+    """
+
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        from_email: str,
+        public_app_base_url: str,
+        api_url: str = "https://api.resend.com/emails",
+        timeout_seconds: float = 10.0,
+    ) -> None:
+        self._api_key = api_key
+        self._from_email = from_email
+        self._public_app_base_url = public_app_base_url.rstrip("/")
+        self._api_url = api_url.rstrip("/")
+        self._timeout_seconds = timeout_seconds
+
+    def send_email_verification(self, *, recipient_email: str, token: str) -> None:
+        link = self._action_link("/verify-email", token)
+        self._send(
+            recipient_email=recipient_email,
+            subject="Verify your my-agents email",
+            body=(
+                "Verify your my-agents account by opening this link:\n\n"
+                f"{link}\n\n"
+                "If you did not create this account, you can ignore this email."
+            ),
+        )
+
+    def send_password_reset(self, *, recipient_email: str, token: str) -> None:
+        link = self._action_link("/password-reset", token)
+        self._send(
+            recipient_email=recipient_email,
+            subject="Reset your my-agents password",
+            body=(
+                "Reset your my-agents password by opening this link:\n\n"
+                f"{link}\n\n"
+                "If you did not request a reset, you can ignore this email."
+            ),
+        )
+
+    def _send(self, *, recipient_email: str, subject: str, body: str) -> None:
+        context = _email_log_context(recipient_email)
+        deploy_log(
+            "auth.email.resend_http.start",
+            from_domain=_email_domain(self._from_email),
+            **context,
+        )
+        logger.info(
+            "auth_email.resend_http.send.start from_domain=%s recipient_hash=%s "
+            "recipient_domain=%s",
+            _email_domain(self._from_email),
+            context["email_hash"],
+            context["email_domain"],
+        )
+        try:
+            with httpx.Client(timeout=self._timeout_seconds) as client:
+                response = client.post(
+                    self._api_url,
+                    headers={
+                        "Authorization": f"Bearer {self._api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "from": self._from_email,
+                        "to": [recipient_email],
+                        "subject": subject,
+                        "text": body,
+                    },
+                )
+                response.raise_for_status()
+        except Exception as exc:
+            deploy_log(
+                "auth.email.resend_http.failed",
+                from_domain=_email_domain(self._from_email),
+                error_class=exc.__class__.__name__,
+                **context,
+            )
+            logger.error(
+                "auth_email.resend_http.send.failed from_domain=%s recipient_hash=%s "
+                "recipient_domain=%s error_class=%s",
+                _email_domain(self._from_email),
+                context["email_hash"],
+                context["email_domain"],
+                exc.__class__.__name__,
+            )
+            raise
+        deploy_log(
+            "auth.email.resend_http.completed",
+            from_domain=_email_domain(self._from_email),
+            **context,
+        )
+        logger.info(
+            "auth_email.resend_http.send.completed from_domain=%s recipient_hash=%s "
+            "recipient_domain=%s",
+            _email_domain(self._from_email),
+            context["email_hash"],
+            context["email_domain"],
+        )
+
+    def _action_link(self, path: str, token: str) -> str:
+        return f"{self._public_app_base_url}{path}?token={quote(token, safe='')}"
+
+
 def _email_log_context(email: str) -> dict[str, str]:
     normalized = email.strip().casefold()
     digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:12]
@@ -241,6 +353,15 @@ def get_auth_email_sender() -> AuthEmailSender:
 
 def build_auth_email_sender(settings: Settings) -> AuthEmailSender:
     """Build the auth email sender for the active runtime settings."""
+    if settings.auth_email_mode == "resend_http":
+        api_key = settings.resend_api_key.get_secret_value() if settings.resend_api_key else ""
+        return ResendHttpAuthEmailSender(
+            api_key=api_key,
+            from_email=settings.auth_smtp_from_email or "",
+            public_app_base_url=settings.auth_public_app_base_url or "",
+            api_url=settings.resend_api_url,
+            timeout_seconds=settings.auth_smtp_timeout_seconds,
+        )
     if settings.auth_email_mode == "smtp":
         password = (
             settings.auth_smtp_password.get_secret_value()

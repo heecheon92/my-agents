@@ -14,7 +14,7 @@ ReasoningEffort = Literal["low", "medium", "high", "xhigh"]
 TextVerbosity = Literal["low", "medium", "high"]
 SameSitePolicy = Literal["lax", "strict", "none"]
 DeploymentEnvironment = Literal["local", "preview", "production"]
-AuthEmailMode = Literal["local", "smtp"]
+AuthEmailMode = Literal["local", "smtp", "resend_http"]
 EmbeddingMode = Literal["deterministic", "openai"]
 DoclingAccelerator = Literal["auto", "cpu", "cuda", "mps", "xpu"]
 RerankerMode = Literal["deterministic", "cross_encoder"]
@@ -275,7 +275,19 @@ class Settings(BaseSettings):
     )
     auth_smtp_from_email: str | None = Field(
         default=None,
-        validation_alias=AliasChoices("MY_AGENTS_AUTH_SMTP_FROM_EMAIL"),
+        validation_alias=AliasChoices(
+            "MY_AGENTS_AUTH_FROM_EMAIL",
+            "MY_AGENTS_AUTH_SMTP_FROM_EMAIL",
+        ),
+    )
+    resend_api_key: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("RESEND_API_KEY", "MY_AGENTS_RESEND_API_KEY"),
+    )
+    resend_api_url: str = Field(
+        default="https://api.resend.com/emails",
+        min_length=1,
+        validation_alias=AliasChoices("MY_AGENTS_RESEND_API_URL"),
     )
     auth_smtp_use_starttls: bool = Field(
         default=True,
@@ -417,6 +429,7 @@ class Settings(BaseSettings):
         "auth_smtp_username",
         "auth_smtp_password",
         "auth_smtp_from_email",
+        "resend_api_key",
         "cross_encoder_device",
         "document_metadata_model",
         mode="before",
@@ -433,6 +446,7 @@ class Settings(BaseSettings):
         "auth_smtp_host",
         "auth_smtp_username",
         "auth_smtp_from_email",
+        "resend_api_url",
     )
     @classmethod
     def optional_service_string_is_stripped(cls, value: str | None) -> str | None:
@@ -502,13 +516,27 @@ class Settings(BaseSettings):
                 env_name
                 for env_name, value in (
                     ("MY_AGENTS_AUTH_SMTP_HOST", self.auth_smtp_host),
-                    ("MY_AGENTS_AUTH_SMTP_FROM_EMAIL", self.auth_smtp_from_email),
+                    ("MY_AGENTS_AUTH_FROM_EMAIL", self.auth_smtp_from_email),
                     ("MY_AGENTS_AUTH_PUBLIC_APP_BASE_URL", self.auth_public_app_base_url),
                 )
                 if value is None
             ]
             if missing:
                 raise ValueError("MY_AGENTS_AUTH_EMAIL_MODE=smtp requires " + ", ".join(missing))
+        if self.auth_email_mode == "resend_http":
+            missing = [
+                env_name
+                for env_name, value in (
+                    ("RESEND_API_KEY", self.resend_api_key),
+                    ("MY_AGENTS_AUTH_FROM_EMAIL", self.auth_smtp_from_email),
+                    ("MY_AGENTS_AUTH_PUBLIC_APP_BASE_URL", self.auth_public_app_base_url),
+                )
+                if value is None
+            ]
+            if missing:
+                raise ValueError(
+                    "MY_AGENTS_AUTH_EMAIL_MODE=resend_http requires " + ", ".join(missing)
+                )
         return self
 
     def openai_api_key_value(self) -> str | None:

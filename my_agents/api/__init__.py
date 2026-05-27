@@ -102,7 +102,7 @@ def _log_runtime_configuration(settings: Settings) -> None:
         auto_create_tables=settings.should_auto_create_tables(),
         cors_origins=",".join(settings.cors_allowed_origin_list()) or "none",
         smtp_host=settings.auth_smtp_host or "none",
-        smtp_from_domain=safe_email_domain(settings.auth_smtp_from_email or ""),
+        auth_from_domain=safe_email_domain(settings.auth_smtp_from_email or ""),
         **db_summary,
     )
 

@@ -1253,6 +1253,7 @@ dependencies = [
     { name = "docling" },
     { name = "email-validator" },
     { name = "fastapi", extra = ["standard"] },
+    { name = "httpx" },
     { name = "langchain-openai" },
     { name = "langgraph" },
     { name = "langgraph-swarm" },
@@ -1268,7 +1269,6 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "httpx" },
     { name = "pytest" },
     { name = "ruff" },
 ]
@@ -1280,6 +1280,7 @@ requires-dist = [
     { name = "docling", specifier = ">=2.95.0" },
     { name = "email-validator", specifier = ">=2.3.0" },
     { name = "fastapi", extras = ["standard"] },
+    { name = "httpx", specifier = ">=0.28.1" },
     { name = "langchain-openai", specifier = ">=1.2.1" },
     { name = "langgraph" },
     { name = "langgraph-swarm", specifier = ">=0.1.0" },
@@ -1295,7 +1296,6 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "httpx" },
     { name = "pytest" },
     { name = "ruff" },
 ]

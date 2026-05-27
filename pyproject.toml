@@ -10,6 +10,7 @@ dependencies = [
     "docling>=2.95.0",
     "email-validator>=2.3.0",
     "fastapi[standard]",
+    "httpx>=0.28.1",
     "langchain-openai>=1.2.1",
     "langgraph",
     "langgraph-swarm>=0.1.0",
@@ -25,7 +26,6 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "httpx",
     "pytest",
     "ruff",
 ]

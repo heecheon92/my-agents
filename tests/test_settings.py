@@ -222,6 +222,8 @@ def test_service_foundation_settings_have_safe_defaults(
     assert settings.auth_public_app_base_url is None
     assert settings.auth_smtp_host is None
     assert settings.auth_smtp_from_email is None
+    assert settings.resend_api_key is None
+    assert settings.resend_api_url == "https://api.resend.com/emails"
     assert settings.auth_abuse_protection_enabled is True
     assert settings.auth_abuse_max_attempts == 20
     assert settings.auth_abuse_window_seconds == 900
@@ -257,7 +259,9 @@ def test_service_foundation_settings_accept_overrides(
     monkeypatch.setenv("MY_AGENTS_AUTH_SMTP_PORT", "2525")
     monkeypatch.setenv("MY_AGENTS_AUTH_SMTP_USERNAME", "smtp-user")
     monkeypatch.setenv("MY_AGENTS_AUTH_SMTP_PASSWORD", "smtp-password")
-    monkeypatch.setenv("MY_AGENTS_AUTH_SMTP_FROM_EMAIL", "noreply@example.com")
+    monkeypatch.setenv("MY_AGENTS_AUTH_FROM_EMAIL", "noreply@example.com")
+    monkeypatch.setenv("MY_AGENTS_RESEND_API_KEY", "resend-api-key")
+    monkeypatch.setenv("MY_AGENTS_RESEND_API_URL", "https://api.resend.test/emails/")
     monkeypatch.setenv("MY_AGENTS_AUTH_SMTP_USE_STARTTLS", "false")
     monkeypatch.setenv("MY_AGENTS_AUTH_SMTP_TIMEOUT_SECONDS", "5")
     monkeypatch.setenv("MY_AGENTS_AUTH_ABUSE_PROTECTION_ENABLED", "false")
@@ -293,6 +297,9 @@ def test_service_foundation_settings_accept_overrides(
     assert settings.auth_smtp_password is not None
     assert settings.auth_smtp_password.get_secret_value() == "smtp-password"
     assert settings.auth_smtp_from_email == "noreply@example.com"
+    assert settings.resend_api_key is not None
+    assert settings.resend_api_key.get_secret_value() == "resend-api-key"
+    assert settings.resend_api_url == "https://api.resend.test/emails"
     assert settings.auth_smtp_use_starttls is False
     assert settings.auth_smtp_timeout_seconds == 5
     assert settings.auth_abuse_protection_enabled is False
@@ -443,3 +450,15 @@ def test_debug_knowledge_context_logging_env_flag(monkeypatch: pytest.MonkeyPatc
     settings = Settings(_env_file=None)
 
     assert settings.debug_knowledge_context_logging is True
+
+
+def test_resend_http_email_mode_requires_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
+    monkeypatch.setenv("MY_AGENTS_AUTH_EMAIL_MODE", "resend_http")
+    monkeypatch.setenv("MY_AGENTS_AUTH_PUBLIC_APP_BASE_URL", "https://demo.example.com")
+    monkeypatch.setenv("MY_AGENTS_AUTH_FROM_EMAIL", "noreply@example.com")
+    monkeypatch.delenv("RESEND_API_KEY", raising=False)
+    monkeypatch.delenv("MY_AGENTS_RESEND_API_KEY", raising=False)
+
+    with pytest.raises(ValidationError, match="RESEND_API_KEY"):
+        Settings(_env_file=None)
