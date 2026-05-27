@@ -1,6 +1,6 @@
 # Implementation tracking
 
-Last updated: 2026-05-21
+Last updated: 2026-05-27
 Status owner: repo-tracked source of truth for cross-machine agent handoff
 
 This file exists because `.omx/` is local runtime state and is not shared across machines. When working with an agent on any machine, start here before re-discovering project status from the codebase.
@@ -26,8 +26,8 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 
 | Scope | Status | Completion estimate | Notes |
 | --- | --- | ---: | --- |
-| Demo-quality backend v0 | In progress, strong foundation | 90-93% | Thin end-to-end backend slice exists; auth lifecycle includes Phase 1 single-process public-demo hardening, conversation runs stream over SSE, completed run detail is refresh-safe, local V1 demos have seed/smoke helpers plus frontend credentialed CORS/demo runbook, and strict V1 contract/evidence mapping is explicit. |
-| Production SaaS readiness | Early | 49-54% | Account lifecycle improved and generic SMTP email delivery is code-ready; still needs provider secret setup, hosted deployment verification, production ingestion, and ops work. |
+| Demo-quality backend v0 | Hosted demo baseline proven | 94-96% | Thin end-to-end backend slice exists and now has a basic hosted path: Render backend, Vercel frontend CI/CD, Neon Postgres, Resend HTTP email from verified `my-agents.dev`, hosted signup/email verification, and deployment troubleshooting docs. Remaining demo risk is mostly PDF ingestion speed on small hosted resources and temporary diagnostic cleanup. |
+| Production SaaS readiness | Early but hosted | 55-60% | Account lifecycle works in hosted demo mode with provider email, but production readiness still needs shared rate limits, durable queues/workers, ingestion performance hardening, automated smoke/migration gates, observability cleanup, and production security review. |
 | Full AI agents product vision | Early/mid | 25-35% | Current production graph is one assistant/router path; richer agent/tool workflows are future milestones. |
 | Learning/practice simulated agents | Active learning lab | Ongoing | `my_agents/simulated_agents/` is meaningful practice code, intentionally separate from production API/CLI surfaces. |
 
@@ -54,6 +54,7 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 
 - Email/password signup.
 - Local/offline auth email sender boundary for verification and reset messages.
+- Hosted Resend HTTP auth email delivery through verified `my-agents.dev`, with SMTP still available for hosts that allow it.
 - Email verification token creation and `POST /auth/verify-email`.
 - Verified-email login with app-owned opaque session cookie.
 - CSRF token support for logout.
@@ -90,7 +91,7 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 
 - Knowledge-base create/list.
 - Text document ingestion remains compatible.
-- Text-based upload path for PDF, Markdown, and plain text with safe metadata persistence; PDFs keep page provenance and FlateDecode text-stream fallback support.
+- Text-based upload path for PDF, Markdown, and plain text with safe metadata persistence; PDFs keep page provenance and FlateDecode text-stream fallback support. Hosted Render free-tier PDF ingestion is known to be slow for heavier PDFs.
 - Deterministic chunks, provider-backed JSON embeddings (deterministic by default, OpenAI opt-in), entity mentions, and co-occurrence relationships.
 - ContextForge now owns the conversation-run retrieval orchestration boundary through `my_agents/agents/context_forge/`, with deterministic query planning, source-boundary handoff, candidate fusion, deterministic default or optional cross-encoder reranking, high-recall context packing, redacted retrieval evidence, and opt-in Rich debug traces for role handoff messages.
 - Retrieval candidate gathering includes authorized document title/source-filename metadata matching, so filename-only user references can find the matching uploaded document even when the filename is absent from chunk content.
@@ -107,6 +108,7 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 - Alembic migrations cover the initial service schema, auth lifecycle, run detail refresh fields, PDF upload provenance fields, guest access state, retrieval-routing run metadata, pgvector chunk embeddings, async extraction-run progress fields, and structured knowledge entities.
 - SQLite in-memory auto-create supports offline tests.
 - Postgres/Neon readiness is documented, with external DB tests skipped unless configured.
+- Hosted Render deployment uses Neon/Postgres and was verified through redacted runtime diagnostics.
 
 ### Documentation and learning support
 
@@ -181,33 +183,41 @@ The test harness sets `MY_AGENTS_ENV_FILE=` so a developer's local `.env` file c
 
 ### Deployment/ops
 
-- No deployment pipeline yet.
-- Hosted preview/public DB migration execution is not proven yet; the readiness runbook records the migration evidence requirement and production remains user-gated.
+- Basic hosted deployment and CI/CD are configured: Render deploys the backend from Git, Vercel deploys the frontend production branch, Neon provides hosted Postgres, and Resend HTTP sends auth lifecycle email from `my-agents.dev`.
+- Hosted signup -> email send -> frontend verification route has been proven after adding frontend `/verify-email` and `/password-reset` landing pages.
+- Temporary `TEMP_DEPLOY_DIAG` logs remain and should be removed after a few more hosted smoke checks.
+- Hosted preview/public DB migration execution is manually managed; the readiness runbook records the migration evidence requirement and production remains user-gated.
 - No observability backend/export yet.
-- No frontend integration in this repository by design.
+- Frontend integration lives in the separate frontend repository by design.
 
 ## Recommended next workflow
 
-### Next milestone: strict KB-first frontend gate
+### Next milestone: hosted demo cleanup and smoke verification
 
-Backend knowledge-base path work is now KB-first. The immediate cross-repo gate is for the
-separate frontend to replace direct document upload/ingest UX with: create/select KB → upload or
-create document inside that KB → ingest inside that KB → choose KB sources for chat. The handoff
-artifact is `docs/product-chat-service/en/12-knowledge-base-path-openapi-handoff.md`, with a filtered
-OpenAPI contract JSON at `docs/product-chat-service/en/12-knowledge-base-path-openapi-handoff.json`.
+The basic hosted path is now real enough to stabilize rather than keep adding features.
+Render, Vercel, Neon, Resend HTTP, and `my-agents.dev` are wired for the public demo baseline.
 
 Suggested order:
 
-1. Frontend consumes KB-nested document routes from backend OpenAPI: `GET/POST /knowledge-bases/{id}/documents`, `POST /knowledge-bases/{id}/documents/upload`, nested sync/async ingest, and nested extraction-run reads.
-2. Frontend treats legacy `/documents` and `/documents/upload` writes as developer/compatibility paths only; they require `knowledge_base_id` and are not the user-facing primary path.
-3. Frontend adds chat source selection using `knowledge_base_selection`: explicit All KBs or selected KB IDs; selected IDs are a hard retrieval boundary.
-4. Backend starts any later citation/event polish only after frontend reports exact contract gaps against the KB-first OpenAPI handoff.
+1. Promote the frontend verification-route fix to the Vercel production branch when ready.
+2. Run hosted smoke: signup -> email verification -> login -> small document upload/ingest -> chat with citation.
+3. Record any new issue in `docs/product-chat-service/en/15-deployment-troubleshooting-log.md`.
+4. Remove temporary `TEMP_DEPLOY_DIAG` logs after hosted signup/login/chat smoke remains stable.
+5. Treat Render free-tier PDF ingestion slowness as a known resource limitation; prefer small Markdown/plain-text/native-text PDFs for demo until ingestion moves to a worker or larger host.
 
 Stop condition:
 
-- Frontend KB-first upload/ingest/chat-source gate passes or reports exact backend contract gaps.
+- Hosted smoke passes through auth, email verification, login, one document path, and one cited chat answer.
+- Temporary diagnostics are removed or explicitly kept with a short removal date.
 - Backend remains green on pytest, Ruff check, Ruff format check, and diff check.
-- Frontend does not invent alternate document upload or KB selection contracts.
+
+### Follow-up milestone: strict KB-first frontend gate
+
+Backend knowledge-base path work is KB-first. The cross-repo gate remains for the separate
+frontend to keep create/select KB → upload/create document inside that KB → ingest inside that KB
+→ choose KB sources for chat as the primary UX. The handoff artifact is
+`docs/product-chat-service/en/12-knowledge-base-path-openapi-handoff.md`, with a filtered OpenAPI
+contract JSON at `docs/product-chat-service/en/12-knowledge-base-path-openapi-handoff.json`.
 
 ### Alternative next milestone: production RAG realism
 
@@ -239,6 +249,7 @@ limits.
 
 | Date | Milestone | Evidence |
 | --- | --- | --- |
+| 2026-05-27 | Basic hosted deployment and CI/CD baseline proven with Render backend, Vercel frontend, Neon Postgres, Resend HTTP email, verified `my-agents.dev`, and frontend auth email landing routes. | Backend commits `7a3b864`, `a6975cc`, `e455774`, `4f0b0b0`; frontend commit `7ade1aa`; `docs/product-chat-service/en/14-render-migration-and-rollback-notes.md`; `docs/product-chat-service/en/15-deployment-troubleshooting-log.md`; hosted logs showing `POST /auth/signup 201 Created` and `auth.email.resend_http.completed`. |
 | 2026-05-26 | Email-gated guest requests added so the browser receives only an acknowledgement while operators issue one-time codes manually. | `my_agents/auth/service.py`; `my_agents/api/auth.py`; `my_agents/auth/models.py`; `alembic/versions/20260526_0016_guest_access_requests.py`; `scripts/issue_guest_access_code.py`; `tests/test_guest_access_api.py`; `docs/product-chat-service/en/02-first-party-auth-sessions.md`. |
 | 2026-05-24 | Added ContextForge as the dedicated RAG retrieval-agent service boundary with structured entity extraction and endpoint enumeration retrieval. | `my_agents/agents/context_forge/`; `my_agents/knowledge/models.py`; `my_agents/knowledge/extraction.py`; `my_agents/knowledge/retrieval.py`; `my_agents/api/conversations/retrieval_context.py`; `my_agents/api/conversations/run_events.py`; `alembic/versions/20260524_0014_structured_knowledge_entities.py`; `tests/test_context_forge_contracts.py`; `tests/test_context_forge_structured_retrieval.py`; README pair; ContextForge README pair; `ROADMAP.md`. |
 | 2026-05-24 | Added an OCR page cap for the Tesseract PDF fallback and moved lightweight text extractors before heavyweight Docling/OCR fallback, preventing image-heavy PDFs from monopolizing synchronous upload requests. | `my_agents/knowledge/pdf_uploads.py`; `my_agents/api/documents.py`; `my_agents/settings.py`; `.env.example`; `tests/test_knowledge_ingestion.py`; `tests/test_settings.py`; README pair. |

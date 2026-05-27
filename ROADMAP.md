@@ -19,7 +19,7 @@ flowchart LR
     V05 --> V07["v0.7 service foundation"]
     V07 --> V1["v1 product chat service"]
     V1 --> V11["v1.1 production-like DB/deploy path"]
-    V11 --> V12["v1.2 ECS-lite public demo deployment"]
+    V11 --> V12["v1.2 hosted public demo deployment"]
     V1 --> R1["dedicated RAG agent track"]
     R1 --> R1A["query planning + source policy"]
     R1A --> R1B["hybrid retrieval + reranking"]
@@ -30,13 +30,13 @@ flowchart LR
     V07 --> V07Done["Mostly done"]
     V1 --> V1Wip["In progress"]
     V11 --> V11Wip["Partially done"]
-    V12 --> V12Todo["Planned"]
+    V12 --> V12Wip["Partially done"]
     R1 --> R1Todo["Planned"]
 ```
 
 Current honest status:
 
-> The project is a strong **v1-draft backend foundation**: auth, permissions, server-owned conversations, text/PDF/Markdown ingestion, permission-aware retrieval, citations, events, migrations, pgvector-backed Postgres retrieval with JSON fallback, and SSE assistant streaming exist as a thin end-to-end slice. It is not yet a production-ready v1 because broad production ingestion, retrieval-quality evals/reranking, durable background queues, stronger deployment-grade auth hardening, and operations remain.
+> The project is a strong **v1-draft backend foundation** with a basic hosted demo path now proven: auth, permissions, server-owned conversations, text/PDF/Markdown ingestion, permission-aware retrieval, citations, events, migrations, pgvector-backed Postgres retrieval with JSON fallback, SSE assistant streaming, Render backend deployment, Vercel frontend CI/CD, Neon Postgres, and Resend HTTP email verification through `my-agents.dev` exist as a thin end-to-end slice. It is not yet a production-ready v1 because broad production ingestion performance, retrieval-quality evals/reranking, durable background queues, stronger deployment-grade auth hardening, temporary diagnostic cleanup, and operations remain.
 
 ## 1. Backend foundation
 
@@ -76,7 +76,7 @@ Current honest status:
 - [x] Login with app-owned opaque session cookie: `POST /auth/login`.
 - [x] Logout with CSRF proof: `POST /auth/logout`.
 - [x] Current user endpoint: `GET /auth/me`.
-- [x] Argon2 password hashing.
+- [x] Argon2 password hashing with runtime-tunable cost for constrained hosts.
 - [x] Server-side session table with hashed session tokens.
 - [x] `Principal` contract for protected routes.
 - [x] FastAPI auth dependencies.
@@ -85,6 +85,7 @@ Current honest status:
 - [x] Passwords and password hashes are not returned by API responses.
 - [~] CSRF is currently used for logout; broader mutating endpoint CSRF policy should be revisited before public browser deployment.
 - [x] Email verification flow: `POST /auth/verify-email`.
+- [x] Hosted Resend HTTP email delivery through verified `my-agents.dev` sender, with SMTP still available as an alternate transport.
 - [x] Password reset request/confirm flow with session revocation.
 - [x] Local in-process abuse protection for signup, login, lifecycle-token guessing, and password reset attempts.
 - [ ] Account deletion/export flow.
@@ -131,6 +132,7 @@ Current honest status:
 - [x] Deterministic text-based PDF parser with metadata persistence and chunk page provenance.
 - [x] UTF-8 Markdown and plain-text upload parser with metadata persistence.
 - [ ] Production parsers for scanned/encrypted/compressed PDF, DOCX, web pages, CSV/JSON structure, etc. See [`docs/idea/layout-aware-ingestion-rag-agent.md`](./docs/idea/layout-aware-ingestion-rag-agent.md) for the layout-aware parser artifact plan that feeds the future RAG agent graph.
+- [~] Hosted PDF ingestion works for supported text-based files but is slow on Render free-tier CPU/RAM; production-quality ingestion needs async worker isolation, parser policy tuning, and larger runtime resources.
 - [ ] Object storage for uploaded source files.
 - [ ] Reingestion/versioning policy.
 - [~] Ingestion failure recovery stores failed run status and safe error; partial artifact cleanup remains minimal.
@@ -157,7 +159,7 @@ Current honest status:
 - [ ] Structured retrieval/answer contracts for extracted entities, e.g. endpoint tables with method, path, summary, source document/page, confidence, and missing/ambiguous-source notes.
 - [ ] RAG source policy for personal KBs, mandatory group KBs, approved published KBs, and optional personal attachments in group chat; preserve current privacy rules, mandatory group retrieval, no transcript/source leakage, and no ghost knowledge from deleted documents.
 - [~] Hybrid retrieval strategy: vector + keyword/full-text + graph/entity/structured expansion with deterministic fusion is started; tunable weights and production full-text indexes remain guided by [`docs/product-chat-service/en/12-retrieval-agent-hybrid-reference.md`](./docs/product-chat-service/en/12-retrieval-agent-hybrid-reference.md).
-- [~] Cross-encoder reranker stage over top-k authorized candidates after vector/full-text retrieval; the interface and `MY_AGENTS_RERANKER_MODE=cross_encoder` path exist, while production model packaging/latency evals remain follow-up work. Local tests stay offline through the deterministic default and fake-model unit coverage.
+- [~] Cross-encoder reranker stage over top-k authorized candidates after vector/full-text retrieval; the interface and `MY_AGENTS_RERANKER_MODE=cross_encoder` path exist, while production model packaging/latency evals remain follow-up work. Local tests stay offline through the deterministic default and fake-model unit coverage. On small hosted runtimes, switch to deterministic mode if memory/startup latency becomes unstable.
 - [ ] Query expansion stage for synonyms/related concepts while preserving original user intent.
 - [ ] HyDE-style hypothetical-document retrieval path for broad conceptual questions when normal hybrid search under-recovers.
 - [ ] Retrieval-quality eval set with precision/recall-style fixtures, expected source/chunk fixtures, and before/after comparison for hybrid, reranked, and HyDE paths.
@@ -215,11 +217,11 @@ This is the product-facing equivalent of repo-local `AGENTS.md`: durable Markdow
 - [x] Initial migration covering current service schema.
 - [x] Postgres/Neon setup docs without secrets.
 - [x] Optional external DB smoke test gated by `MY_AGENTS_TEST_DATABASE_URL`.
-- [~] Postgres/Neon path is documented and migration-ready, but not continuously exercised unless a test DB is configured.
-- [ ] Production deployment runbook.
-- [ ] ECS-lite public demo deployment path: FastAPI Docker image, ECR image publishing, ECS Fargate task/service, health check, and documented rollback to a previous image tag.
-- [ ] Deployment environment strategy for AWS SSM Parameter Store or Secrets Manager without committing secrets.
-- [ ] CI/CD image promotion gate: lint/test, build Docker image, push to ECR, update ECS service, then smoke `GET /health`.
+- [x] Postgres/Neon path is deployed for the hosted demo and verified through redacted runtime diagnostics.
+- [x] Basic production deployment runbook/docs exist, including Render migration and troubleshooting notes.
+- [x] Basic hosted public demo deployment path: Render backend Docker deployment, Vercel frontend production branch deployment, Neon Postgres, Resend HTTP email, health/startup smoke, and documented rollback/migration notes.
+- [~] Deployment environment strategy uses platform env vars today; a dedicated secret manager remains future work.
+- [~] Basic CI/CD exists through Render/Vercel Git integration; stronger gates for migrations, tests, smoke checks, image promotion, and rollback automation remain future work.
 - [ ] Backup/restore plan.
 - [ ] Data retention and deletion policy.
 - [x] Seed/demo data command for local SQLite V1 demos.
@@ -234,8 +236,8 @@ This is the product-facing equivalent of repo-local `AGENTS.md`: durable Markdow
 - [x] Tests for event ordering and redaction behavior.
 - [x] Tests keep OpenAI calls offline/mocked by default.
 - [~] Evals are deterministic fixtures, not a production evaluation platform.
-- [ ] Structured application logging policy.
-- [ ] Request IDs / correlation IDs.
+- [~] Structured application logging policy; temporary deployment diagnostics exist and should be removed after hosted smoke stabilizes.
+- [~] Request IDs / correlation IDs exist in temporary deployment diagnostics but need a durable production logging policy.
 - [ ] Metrics for latency, token usage, retrieval counts, failure rates.
 - [ ] OpenTelemetry or equivalent tracing.
 - [ ] Cost monitoring and quotas for OpenAI-backed paths.
@@ -259,6 +261,7 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
 - [x] Add refresh-safe completed run detail for persisted citations/reply.
 - [x] Add streaming contract for chat UX.
 - [ ] Add OpenAPI/client generation workflow if useful.
+- [x] Hosted frontend/backend auth verification path works after adding `/verify-email` and `/password-reset` frontend landing pages.
 
 ## 12. Testing and quality gates
 
@@ -281,22 +284,22 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
 
 ## 13. Near-term recommended sequence
 
-1. **Seeded frontend integration verification**
-   - Confirm frontend uses product endpoints, not legacy `/assistant/chat`.
-   - Verify seeded login, bodyless ingest, SSE, run-detail citations, and event trail against the separate frontend.
-   - Keep signup/dev-outbox available for local account lifecycle smoke tests.
+1. **Hosted demo cleanup and smoke verification**
+   - Promote frontend `develop` to `main` when auth landing route fixes need Vercel production deployment.
+   - Run hosted smoke: signup -> email verification -> login -> create/upload small document -> ingest -> chat with citation.
+   - Remove temporary `TEMP_DEPLOY_DIAG` logs after smoke is stable.
+   - Record smoke evidence and remaining risks in `docs/product-chat-service/en/15-deployment-troubleshooting-log.md` if anything new is found.
 
-2. **Local debug/deploy ergonomics**
-   - Use the local SQLite seed helper for stable public demo data.
-   - Write a deployment runbook: migrate DB, start app, smoke auth/conversation run.
+2. **Hosted ingestion performance pass**
+   - Treat Render free-tier PDF ingestion slowness as a resource/pipeline limitation, not a parser correctness bug.
+   - Prefer small Markdown/plain-text/native-text PDFs for public demo.
+   - Add async/background worker isolation and parser policy controls before trying large PDFs in production.
+   - Consider disabling `MY_AGENTS_RERANKER_MODE=cross_encoder` on tiny hosts if memory pressure affects ingestion or startup.
 
-3. **ECS-lite public demo deployment pipeline**
-   - Containerize the backend as a small FastAPI image suitable for ECS Fargate.
-   - Publish immutable image tags to ECR from GitHub Actions after lint/test/build gates pass.
-   - Run one backend ECS service/task behind a health-checked endpoint; keep the frontend deployed separately on Vercel/Netlify.
-   - Store runtime configuration in SSM Parameter Store or Secrets Manager; keep `.env.example` as documentation only.
-   - Document migration execution, smoke checks, and rollback by redeploying a previous image tag.
-   - Keep Terraform/CDK optional until infrastructure-as-code itself becomes a product goal.
+3. **Deployment hardening**
+   - Keep Render/Vercel/Neon/Resend as the current basic CI/CD demo path.
+   - Add automated smoke checks, migration run evidence, rollback steps, and secret rotation notes before calling it production.
+   - Keep AWS/ECS-lite as an optional future migration path, not the immediate next requirement.
 
 4. **Production-ish auth hardening**
    - Promote local auth abuse protection to a shared limiter when deployment topology requires it.
@@ -329,11 +332,12 @@ Phase 0 contract/evidence mapping is tracked in [`docs/product-chat-service/en/1
 
 The backend can be called v1 when all of the following are true:
 
-- [ ] A separate frontend can complete signup/login and product conversation flows without using legacy `/assistant/chat`.
+- [x] A separate frontend can complete hosted signup/email-verification/login against the backend without using legacy `/assistant/chat`; full hosted product conversation smoke should still be recorded after each deployment.
 - [ ] Product chat supports streaming or an intentional polling UX with run status.
 - [ ] Fresh Postgres/Neon database setup is migration-driven and documented end to end.
-- [ ] Backend has a documented ECS-lite deployment path with Docker image build, ECR publish, ECS Fargate service update, health smoke, env/secret handling, migration step, and rollback note.
-- [ ] Auth/session behavior is safe enough for a public demo, including rate limiting and clear cookie/CSRF handling.
+- [x] Backend has a documented basic hosted deployment path with Render Docker deploy, Vercel frontend CI/CD, Neon, Resend HTTP email, health smoke, env handling, and rollback/migration notes.
+- [ ] ECS-lite or other production-grade deployment automation remains optional future hardening.
+- [~] Auth/session behavior is safe enough for a narrow public demo: hosted signup/email verification/login works with local in-process abuse limits; shared rate limiting and deeper review remain.
 - [ ] Permission-aware retrieval uses a real retrieval path, not only deterministic fixtures.
 - [ ] Retrieval has a dedicated agent/service boundary with hybrid candidate generation, optional cross-encoder reranking, query expansion/HyDE seams, and retrieval-quality eval evidence.
 - [ ] Scoped instruction profiles exist for users and groups/workspaces, with group-over-personal precedence and safe propagation into assistant/retrieval-agent runs.
