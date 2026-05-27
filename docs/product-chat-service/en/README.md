@@ -18,3 +18,4 @@ They live outside `docs/learning/` because `docs/learning/` is reserved for the 
 11. [V1 contract freeze and evidence map](./11-v1-phase-0-contract-freeze-evidence-map.md)
 12. [Public demo deployment readiness runbook](./12-public-demo-deployment-readiness.md)
 13. [Generic container deployment path](./13-generic-container-deployment-path.md)
+14. [Render migration and rollback notes](./14-render-migration-and-rollback-notes.md)

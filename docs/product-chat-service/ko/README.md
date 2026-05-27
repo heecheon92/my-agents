@@ -15,3 +15,7 @@
 ## 관련 위치
 
 - 영어 원문: [product-chat-service/README.md](../en/README.md)
+
+## 배포 / 마이그레이션 참고
+
+- Render 관련 의사결정과 다른 호스팅으로 이동할 때의 rollback 절차는 영어 원문 문서 [Render migration and rollback notes](../en/14-render-migration-and-rollback-notes.md)를 기준으로 유지합니다.
