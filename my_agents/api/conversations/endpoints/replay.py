@@ -58,9 +58,10 @@ def replay_assistant_message(
 ) -> ConversationRunResponse:
     """Regenerate an existing assistant message from the transcript prefix before it.
 
-    V1 keeps the transcript linear: the target assistant message and all later
-    messages, runs, events, and citations in the conversation are pruned before a
-    fresh run is created from the preceding user turn and earlier history.
+    V1 keeps the transcript linear after success: the target assistant message
+    and all later messages, runs, events, and citations are pruned only after the
+    fresh run completes. This keeps the old assistant answer visible if replay is
+    interrupted by a backend restart or provider failure.
     """
     assert_guest_can_send_prompt(db, principal, settings)
     conversation = get_authorized_conversation(db, conversation_id, principal.user_id)
@@ -111,13 +112,6 @@ def replay_assistant_message(
         requested_selection=requested_selection,
         optional_personal_knowledge_base_ids=optional_personal_knowledge_base_ids,
     )
-    prune_conversation_from_message(
-        db,
-        conversation_id=conversation_id,
-        target_message=target_message,
-        removed_messages=persisted_messages[target_index:],
-        original_run=original_run,
-    )
     run = start_run(
         db=db,
         conversation_id=conversation_id,
@@ -127,7 +121,7 @@ def replay_assistant_message(
         selection_context=selection_context,
     )
     messages = base_messages_from_persisted(prefix_messages)
-    return complete_sync_conversation_run(
+    response = complete_sync_conversation_run(
         db=db,
         conversation_id=conversation_id,
         user_id=principal.user_id,
@@ -138,6 +132,15 @@ def replay_assistant_message(
         graph_runner=graph_runner,
         warnings=replay_warnings,
     )
+    prune_conversation_from_message(
+        db,
+        conversation_id=conversation_id,
+        target_message=target_message,
+        removed_messages=persisted_messages[target_index:],
+        original_run=original_run,
+        preserved_run_ids={run.id},
+    )
+    return response
 
 
 def source_warnings_for_replay(

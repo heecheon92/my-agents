@@ -693,6 +693,42 @@ def test_assistant_message_replay_prunes_later_transcript_and_regenerates(monkey
     assert _row_count(CitationModel) == 0
 
 
+def test_assistant_message_replay_failure_preserves_existing_transcript(monkeypatch) -> None:  # noqa: ANN001
+    client = _client(monkeypatch, SpyGraph())
+    _signup_login(client, "replay-failure-preserve@example.com")
+    conversation_id = client.post("/conversations", json={"title": "Replay failure"}).json()["id"]
+    first = client.post(f"/conversations/{conversation_id}/runs", json={"message": "First"})
+    second = client.post(f"/conversations/{conversation_id}/runs", json={"message": "Second"})
+    first_assistant_id = _assistant_message_id(first.json()["run_id"])
+
+    client.app.dependency_overrides[get_graph_runner] = lambda: FailingGraph()
+
+    response = client.post(f"/conversations/{conversation_id}/messages/{first_assistant_id}/replay")
+
+    assert response.status_code == 502
+    assert response.json() == {"detail": "conversation run failed"}
+    transcript = client.get(f"/conversations/{conversation_id}/messages")
+    assert [(message["role"], message["content"]) for message in transcript.json()] == [
+        ("user", "First"),
+        ("assistant", "saw 1 messages"),
+        ("user", "Second"),
+        ("assistant", "saw 3 messages"),
+    ]
+    runs = client.get(f"/conversations/{conversation_id}/runs").json()
+    assert {run["run_id"] for run in runs}.issuperset(
+        {first.json()["run_id"], second.json()["run_id"]}
+    )
+    assert runs[0]["status"] == "failed"
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        failed_run = db.get(AgentRunModel, runs[0]["run_id"])
+        assert failed_run is not None
+        assert failed_run.assistant_message_id is None
+    finally:
+        session_generator.close()
+
+
 def test_assistant_message_replay_warns_when_original_sources_are_deleted(monkeypatch) -> None:  # noqa: ANN001
     graph = SpyGraph()
     client = _client(monkeypatch, graph)

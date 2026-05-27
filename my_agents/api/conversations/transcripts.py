@@ -65,6 +65,7 @@ def prune_conversation_from_message(
     target_message: MessageModel,
     removed_messages: list[MessageModel],
     original_run: AgentRunModel | None,
+    preserved_run_ids: set[str] | None = None,
 ) -> None:
     removed_message_ids = [message.id for message in removed_messages]
     run_ids_to_prune = set(
@@ -92,6 +93,8 @@ def prune_conversation_from_message(
         ).all()
         run_ids_to_prune.update(later_run_ids)
 
+    if preserved_run_ids:
+        run_ids_to_prune.difference_update(preserved_run_ids)
     if run_ids_to_prune:
         db.execute(delete(CitationModel).where(CitationModel.run_id.in_(run_ids_to_prune)))
         db.execute(delete(AgentEventModel).where(AgentEventModel.run_id.in_(run_ids_to_prune)))
