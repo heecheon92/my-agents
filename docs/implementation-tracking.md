@@ -1,6 +1,6 @@
 # Implementation tracking
 
-Last updated: 2026-05-27
+Last updated: 2026-05-30
 Status owner: repo-tracked source of truth for cross-machine agent handoff
 
 This file exists because `.omx/` is local runtime state and is not shared across machines. When working with an agent on any machine, start here before re-discovering project status from the codebase.
@@ -121,20 +121,36 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 
 ## Latest verification evidence
 
-Last full local verification run: 2026-05-21
+Last full local verification run: 2026-05-30
 
 ```text
 uv run pytest -q
-156 passed, 1 skipped in 6.54s
+278 passed, 2 skipped, 7 warnings in 31.53s
 
 uv run ruff check . --no-cache
 All checks passed!
 
 uv run ruff format --check .
-113 files already formatted
+173 files already formatted
 
 git diff --check
 passed
+```
+
+Additional docs/status-review checks on 2026-05-30:
+
+```text
+MY_AGENTS_ENV_FILE= MY_AGENTS_RESPONSE_MODE=deterministic uv run python - <<'PY'
+from fastapi.testclient import TestClient
+from my_agents.api import create_app
+client = TestClient(create_app())
+print(client.get("/health").status_code)
+print(client.post("/assistant/chat", json={"message":"Plan my next backend milestone","history":[]}).status_code)
+PY
+# health 200; assistant chat 200
+
+git grep -n -I -E 'sk-[A-Za-z0-9_-]{20,}|postgres(ql)?://[^[:space:]]+:[^[:space:]@]+@|RESEND_API_KEY=.*re_|OPENAI_API_KEY=sk-|BEGIN (RSA|OPENSSH|PRIVATE) KEY' -- . ':!uv.lock'
+# only safe placeholder examples in tracked docs/env examples
 ```
 
 The test harness sets `MY_AGENTS_ENV_FILE=` so a developer's local `.env` file cannot leak file-backed SQLite, cookie, or provider settings into offline verification.
@@ -143,7 +159,7 @@ The test harness sets `MY_AGENTS_ENV_FILE=` so a developer's local `.env` file c
 
 ### Product/account lifecycle
 
-- Generic SMTP auth email delivery is implemented for preview/public visitor verification and reset, but no live provider secrets or hosted smoke have been configured yet.
+- Hosted auth email delivery is implemented through Resend HTTP from the verified `my-agents.dev` sender, with generic SMTP still available as a portable alternate transport. Provider secrets remain environment-owned and are not documented in the repo.
 - Auth abuse protection is local/in-process by explicit Phase 1 decision; it is acceptable only for single-process public demos and is not a shared Redis/gateway limiter for multi-worker public deployment.
 - No account deletion or profile management surface yet.
 - Guest mode is implemented only as an env-gated public-demo path; no durable anonymous daily quota, self-service account deletion, or profile-management surface yet.
@@ -154,7 +170,7 @@ The test harness sets `MY_AGENTS_ENV_FILE=` so a developer's local `.env` file c
 - Needs shared/distributed rate limits before multi-worker public deployment; Phase 1 documents and tests the current single-process boundary.
 - Credentialed CORS has explicit-origin configuration, but deployed frontend origins still need environment-specific verification.
 - Needs secure cookie behavior verified behind the intended deployment/proxy setup.
-- Needs live provider/host values and smoke execution; the deployment readiness runbook now defines provider records, privacy copy, rollback, and evidence bundle gates without storing secrets.
+- Hosted provider/host baseline exists for Render, Vercel, Neon, and Resend HTTP. The remaining smoke gap is the full post-deploy product path: document upload/ingest plus one cited chat answer after each deployment.
 
 ### Knowledge ingestion and retrieval
 
@@ -200,12 +216,11 @@ Render, Vercel, Neon, Resend HTTP, and `my-agents.dev` are wired for the public 
 
 Suggested order:
 
-1. Promote the frontend verification-route fix to the Vercel production branch when ready.
-2. Run hosted smoke: signup -> email verification -> login -> small document upload/ingest -> chat with citation.
+1. Run and record hosted smoke: signup -> email verification -> login -> small document upload/ingest -> chat with citation.
+2. Deploy or verify the ingestion worker path for hosted demo: set `MY_AGENTS_INGESTION_EXECUTION_MODE=external_worker` on the web service and run `uv run python -m my_agents.ingestion_worker` as a separate worker process.
 3. Record any new issue in `docs/product-chat-service/en/15-deployment-troubleshooting-log.md`.
 4. Keep redacted `DEPLOY_DIAG` logs available; tune only noisy call sites after hosted signup/login/chat smoke remains stable.
-5. Deploy the ingestion worker path for hosted demo: set `MY_AGENTS_INGESTION_EXECUTION_MODE=external_worker` on the web service and run `uv run python -m my_agents.ingestion_worker` as a separate worker process.
-6. Treat Render free-tier PDF ingestion slowness as a known resource limitation; prefer small Markdown/plain-text/native-text PDFs for demo until the worker path has smoke evidence or the host is larger.
+5. Treat Render free-tier PDF ingestion slowness as a known resource limitation; prefer small Markdown/plain-text/native-text PDFs for demo until the worker path has smoke evidence or the host is larger.
 
 Stop condition:
 

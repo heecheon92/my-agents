@@ -199,7 +199,7 @@ This is the product-facing equivalent of repo-local `AGENTS.md`: durable Markdow
 - [x] SSE transport endpoint: `POST /conversations/{id}/runs/stream`.
 - [x] `answer_delta` SSE events for incremental assistant text.
 - [~] Async ingestion runner supports local in-process threads and hosted external-worker mode; durable queue/backend-worker supervision and stale-run recovery remain future work.
-- [ ] Run cancellation.
+- [x] Cooperative run cancellation: `POST /conversations/{conversation_id}/runs/{run_id}/cancel`, cancellation events, no partial assistant persistence, and stale cancelling cleanup.
 - [ ] Run retry.
 - [ ] Rich failed-run detail table/model.
 - [x] Polling-friendly extraction-run status transitions for pending/running/completed/failed.
@@ -335,18 +335,18 @@ Phase 0 contract/evidence mapping is tracked in [`docs/product-chat-service/en/1
 The backend can be called v1 when all of the following are true:
 
 - [x] A separate frontend can complete hosted signup/email-verification/login against the backend without using legacy `/assistant/chat`; full hosted product conversation smoke should still be recorded after each deployment.
-- [ ] Product chat supports streaming or an intentional polling UX with run status.
-- [ ] Fresh Postgres/Neon database setup is migration-driven and documented end to end.
+- [x] Product chat supports SSE streaming with run status, incremental `answer_delta` events, persisted run detail, events, and cooperative cancellation.
+- [x] Fresh Postgres/Neon database setup is migration-driven and documented end to end; automated migration execution remains separate deployment hardening.
 - [x] Backend has a documented basic hosted deployment path with Render Docker deploy, Vercel frontend CI/CD, Neon, Resend HTTP email, health smoke, env handling, and rollback/migration notes.
-- [ ] ECS-lite or other production-grade deployment automation remains optional future hardening.
+- [x] ECS-lite or other production-grade deployment automation remains explicitly optional future hardening, not a v1 blocker.
 - [~] Auth/session behavior is safe enough for a narrow public demo: hosted signup/email verification/login works with local in-process abuse limits; shared rate limiting and deeper review remain.
-- [ ] Permission-aware retrieval uses a real retrieval path, not only deterministic fixtures.
-- [ ] Retrieval has a dedicated agent/service boundary with hybrid candidate generation, optional cross-encoder reranking, query expansion/HyDE seams, and retrieval-quality eval evidence.
+- [x] Permission-aware retrieval uses a real retrieval path: pgvector SQL search on Postgres, JSON/SQLite fallback, lexical/entity/metadata candidates, ContextForge fusion, and authorization-first filtering.
+- [~] Retrieval has a dedicated ContextForge service boundary with hybrid candidate generation and optional cross-encoder reranking. Query expansion, HyDE, production packaging, and retrieval-quality eval evidence remain follow-up work.
 - [ ] Scoped instruction profiles exist for users and groups/workspaces, with group-over-personal precedence and safe propagation into assistant/retrieval-agent runs.
 - [x] Document ingestion supports realistic uploaded text-based file types: PDF with page provenance, Markdown, and plain text.
-- [ ] Citations include enough provenance for users to trust the answer.
-- [ ] Agent events are useful to the UI without exposing hidden chain-of-thought or unauthorized data.
-- [ ] Tests pass offline by default.
+- [~] Citations include persisted document/chunk/snippet provenance and refresh-safe run detail; richer page/offset/source-preview/confidence metadata remains follow-up work.
+- [x] Agent events are useful to the UI without exposing hidden chain-of-thought or unauthorized data; current events are redacted and covered by event/redaction tests.
+- [x] Tests pass offline by default; latest local verification on 2026-05-30 was `278 passed, 2 skipped`.
 - [ ] Optional Postgres/Neon smoke tests pass against a dedicated test database.
-- [ ] Korean and English READMEs remain accurate.
-- [ ] No real secrets are committed or printed.
+- [x] Korean and English READMEs remain accurate for the current backend status and setup surface.
+- [x] No real secrets are committed or printed; tracked secret-like matches are safe placeholders only.

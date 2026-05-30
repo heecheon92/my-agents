@@ -1,6 +1,6 @@
 ---
 created: 2026-05-17
-updated: 2026-05-21
+updated: 2026-05-30
 status: active
 topics:
   - knowledge-base
@@ -23,7 +23,7 @@ This note explains the text-based V1 knowledge-ingestion slice.
 
 ## What is implemented now
 
-A user can create a personal or group knowledge base, attach either a JSON text document or a supported text-based file upload, and run deterministic ingestion over the stored document text. The upload path accepts text-based PDFs, Markdown files, and plain-text files. The existing bodyless synchronous `/documents/{document_id}/ingest` contract remains unchanged, and the additive `/documents/{document_id}/ingest/async` endpoint starts an in-process background run for polling-based multi-file UX.
+A user can create a personal or group knowledge base, attach either a JSON text document or a supported text-based file upload, and run deterministic ingestion over the stored document text. The upload path accepts text-based PDFs, Markdown files, and plain-text files. The existing bodyless synchronous `/documents/{document_id}/ingest` contract remains unchanged. The additive `/documents/{document_id}/ingest/async` endpoint returns a queued run for polling-based multi-file UX; local/default mode can process it in-process, while hosted demos can use `MY_AGENTS_INGESTION_EXECUTION_MODE=external_worker` and a separate `python -m my_agents.ingestion_worker` process so parser/indexing work does not starve the web service.
 
 The ingestion pass creates:
 
@@ -58,7 +58,11 @@ flowchart TD
     Content --> RunChoice{Ingestion endpoint}
     RunChoice -->|sync compatibility| Run[POST /documents/{id}/ingest]
     RunChoice -->|async queued| Async[POST /documents/{id}/ingest/async]
-    Async --> Poll[GET /documents/{id}/extraction-runs/{run_id}]
+    Async --> Mode{Execution mode}
+    Mode -->|local in_process| Background[threaded local worker]
+    Mode -->|hosted external_worker| Worker[python -m my_agents.ingestion_worker]
+    Background --> Poll[GET /documents/{id}/extraction-runs/{run_id}]
+    Worker --> Poll
     Run --> Chunks[DocumentChunk rows]
     Poll --> Chunks
     Chunks --> Page[PDF source_page when available]
@@ -74,14 +78,14 @@ flowchart TD
 
 ## Async ingestion progress contract
 
-The first async slice is additive and intentionally local/demo-shaped:
+The async slice is additive and intentionally demo-shaped, with a web/worker split available for hosted demos:
 
 - `POST /documents/{document_id}/ingest/async` requires the same ingest permission as the sync endpoint and returns `202 Accepted`;
 - response body is an `ExtractionRunResponse` with `status=pending`, `stage=queued`, and `progress_percent=0`;
-- background execution uses a fresh SQLAlchemy session and updates the same run through `running` stages (`chunking`, `embedding`, optional `indexing`, `entities`) to `completed`;
+- execution uses a fresh SQLAlchemy session and updates the same run through `running` stages (`chunking`, `embedding`, optional `indexing`, `entities`) to `completed`; local/default mode does this in-process, while `external_worker` mode leaves the run queued until `python -m my_agents.ingestion_worker` claims it;
 - `GET /documents/{document_id}/extraction-runs/{run_id}` requires document read access and returns the latest progress/counts;
 - failures persist `status=failed`, `stage=failed`, and a bounded display-safe `error`;
-- the backend still uses no Redis/Celery/external queue, so process restarts can interrupt in-flight demo jobs.
+- the backend still uses database polling rather than Redis/Celery/durable queue semantics, so production worker supervision and stale-run recovery remain follow-up work.
 
 Response shape:
 
@@ -127,8 +131,8 @@ The ingestion service now pre-collects entity names for a run, inserts them in a
 - no scanned PDF OCR, docx, HTML, or CSV/JSON structural ingestion yet;
 - no cloud object storage adapter yet;
 - OpenAI embeddings are opt-in and require `OPENAI_API_KEY`; OpenAI extraction calls are not implemented yet;
-- async ingestion uses in-process background threads for demo UX only; no durable external queue yet;
-- pgvector acceleration is exact SQL vector search over authorized candidates; ANN/vector indexes and cross-encoder reranking are future work.
+- async ingestion supports local in-process threads and hosted external-worker mode, but no durable Redis/Celery-style queue or production worker supervisor yet;
+- pgvector acceleration is exact SQL vector search over authorized candidates; ANN/vector indexes, production cross-encoder packaging, latency budgets, and retrieval-quality evals remain future work.
 
 Thin permission-aware RAG and graph expansion now live in the next learning note.
 
@@ -153,6 +157,7 @@ Thin permission-aware RAG and graph expansion now live in the next learning note
 
 ## Revision history
 
+- 2026-05-30: Updated async ingestion docs for the hosted external-worker execution mode and clarified remaining durable-queue gaps.
 - 2026-05-22: Documented and fixed the Postgres parallel-ingestion entity deadlock lesson.
 - 2026-05-22: Added additive async ingestion progress endpoints and extraction-run status fields for multi-file upload UX.
 - 2026-05-21: Extended `/documents/upload` to accept Markdown and plain-text UTF-8 files while preserving PDF parsing and provenance.

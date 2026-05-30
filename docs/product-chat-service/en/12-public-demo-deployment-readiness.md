@@ -1,6 +1,6 @@
 ---
 created: 2026-05-20
-updated: 2026-05-20
+updated: 2026-05-30
 status: active
 topics:
   - public-demo
@@ -25,6 +25,13 @@ This runbook is the backend-owned checklist for moving the product chat service
 from local seeded proof to hosted preview proof and, only after explicit user
 confirmation, public production smoke. It does not activate providers, spend
 money, reveal secrets, or run a live deployment by itself.
+
+Current hosted baseline as of 2026-05-30: Render runs the backend container,
+Vercel runs the separate frontend production branch, Neon provides Postgres, and
+Resend HTTP sends auth lifecycle email from the verified `my-agents.dev` sender.
+Hosted signup -> email send -> frontend verification has been proven; the
+remaining evidence gap is a full post-deploy product smoke with document
+upload/ingestion and one cited chat answer.
 
 ## Release gate order
 
@@ -139,13 +146,28 @@ Before preview smoke, document or implement each guardrail:
 
 ## Implemented auth email provider boundary
 
-The backend now supports a generic SMTP sender without adding a provider-specific
-dependency. Use it for preview/public visitor account verification and password reset:
+The backend has a narrow auth email sender boundary with three operational modes:
+
+- `local` for offline tests and local dev outbox flows;
+- `smtp` for hosts that allow a generic SMTP relay;
+- `resend_http` for Resend's HTTPS API on hosts that block outbound SMTP ports.
+
+The current hosted Render baseline uses Resend HTTP:
 
 ```bash
 MY_AGENTS_DEPLOYMENT_ENVIRONMENT=preview
-MY_AGENTS_AUTH_EMAIL_MODE=smtp
+MY_AGENTS_AUTH_EMAIL_MODE=resend_http
 MY_AGENTS_AUTH_PUBLIC_APP_BASE_URL=https://<frontend-preview>
+MY_AGENTS_AUTH_FROM_EMAIL=<verified-sender@my-agents.dev>
+MY_AGENTS_AUTH_FROM_NAME=my-agents
+MY_AGENTS_RESEND_API_KEY=<secret-manager-value>
+MY_AGENTS_RESEND_API_URL=https://api.resend.com/emails
+```
+
+Generic SMTP remains available as the portable alternate transport:
+
+```bash
+MY_AGENTS_AUTH_EMAIL_MODE=smtp
 MY_AGENTS_AUTH_SMTP_HOST=<smtp-host>
 MY_AGENTS_AUTH_SMTP_PORT=587
 MY_AGENTS_AUTH_SMTP_USERNAME=<secret-name-only>
@@ -154,10 +176,7 @@ MY_AGENTS_AUTH_SMTP_FROM_EMAIL=<verified-sender>
 MY_AGENTS_AUTH_SMTP_USE_STARTTLS=true
 ```
 
-The code path is intentionally provider-neutral (`smtplib`) so the deployment
-decision can choose Resend SMTP, SES SMTP, Mailgun SMTP, or another SMTP relay
-without changing application code. Unit tests use a fake SMTP client; they do not
-make network calls or require real credentials.
+Unit tests use local/fake sender boundaries; they do not make network calls or require real credentials. Store provider secrets only in the deployment platform or secret manager, never in repo docs.
 
 ## Data and privacy boundary
 

@@ -1,6 +1,6 @@
 ---
 created: 2026-05-17
-updated: 2026-05-21
+updated: 2026-05-30
 status: active
 topics:
   - auth
@@ -43,9 +43,12 @@ The backend owns a first-party auth/session path:
 12. `POST /auth/guest/request` records a requester email when guest access is enabled and never returns a guest code to the browser.
 13. The operator can issue a short-lived one-time code with `scripts/issue_guest_access_code.py`, then `POST /auth/guest/login` redeems that code once and issues the normal app session cookie plus CSRF token for an explicit guest identity.
 
-The default email sender is intentionally local/offline. It records verification and
+The default local/test email sender is intentionally offline. It records verification and
 reset emails in process memory for tests and local development. Preview/public demos
-can switch to the generic SMTP boundary without adding a provider-specific SDK.
+can use the provider boundary through either generic SMTP or Resend HTTP. The hosted
+Render baseline uses `MY_AGENTS_AUTH_EMAIL_MODE=resend_http` because Render free
+services block common outbound SMTP ports, while the generic SMTP path remains
+available for hosts that allow it.
 
 ## Flow
 
@@ -54,14 +57,14 @@ sequenceDiagram
     participant C as Client
     participant A as Auth API
     participant S as AuthService
-    participant E as Local email sender
+    participant E as Auth email sender
     participant DB as Database
 
     C->>A: POST /auth/signup email/password
     A->>S: signup
     S->>DB: store user + password_hash
     S->>DB: store verification token_hash
-    S->>E: record verification email with raw token
+    S->>E: send or record verification email with raw token
     A-->>C: safe user + verification_email_sent
 
     C->>A: POST /auth/verify-email token
@@ -79,7 +82,7 @@ sequenceDiagram
     C->>A: POST /auth/password-reset/request email
     A->>S: request_password_reset
     S->>DB: store reset token_hash for known user
-    S->>E: record reset email with raw token
+    S->>E: send or record reset email with raw token
     A-->>C: accepted either way
 
     C->>A: POST /auth/password-reset/confirm token/new_password
@@ -93,7 +96,7 @@ sequenceDiagram
 
 Session, email-verification, and password-reset tokens are bearer credential material. If the database stored raw token values, a database leak could immediately expose active auth flows. Storing a digest lets the server compare presented tokens without keeping raw token material at rest.
 
-The local development email sender still sees the raw token because an email must contain either the token or a link containing the token. That boundary is intentionally isolated so a real provider can be added later without rewriting auth lifecycle logic.
+The email sender boundary still sees the raw token because an email must contain either the token or a link containing the token. That boundary is intentionally isolated: tests use the local sender, hosted demos can use Resend HTTP, and other hosts can use SMTP without rewriting auth lifecycle logic.
 
 ## Public-demo auth/session boundary
 
@@ -120,7 +123,7 @@ The Phase 1 public-demo boundary is intentionally explicit:
 
 ## What is intentionally not implemented yet
 
-- provider-specific email SDK integration;
+- additional provider-specific email SDK integrations beyond the existing local, SMTP, and Resend HTTP senders;
 - MFA/passkeys;
 - OAuth account linking;
 - shared/distributed auth rate limiting for multi-worker deployments;
@@ -165,10 +168,11 @@ Those are later milestones or explicit non-goals for v0.
 
 Explain this in an interview:
 
-> I used first-party email/password auth to demonstrate backend ownership, but kept provider integration intentionally narrow. The app stores Argon2 password hashes, stores only token digests, requires email verification before login, supports one-time password reset tokens, revokes sessions after password reset, and uses a local email boundary so tests stay offline. For a public demo, cookie/CSRF/CORS behavior is configured explicitly and auth abuse protection is bounded to a single-process limiter; I would add shared rate limiting, MFA/passkeys, OAuth, and a real email provider as separate hardening milestones.
+> I used first-party email/password auth to demonstrate backend ownership, but kept provider integration intentionally narrow. The app stores Argon2 password hashes, stores only token digests, requires email verification before login, supports one-time password reset tokens, revokes sessions after password reset, and keeps tests offline through a local email sender while hosted demos use Resend HTTP or SMTP behind the same boundary. For a public demo, cookie/CSRF/CORS behavior is configured explicitly and auth abuse protection is bounded to a single-process limiter; I would add shared rate limiting, MFA/passkeys, OAuth, and broader provider operations as separate hardening milestones.
 
 ## Revision history
 
+- 2026-05-30: Updated the auth email boundary docs for the hosted Resend HTTP path while keeping SMTP as an alternate transport.
 - 2026-05-26: Changed public guest access to email-gated requests plus manual operator code issue.
 - 2026-05-21: Added provider-free public-demo guest access contract and limits.
 - 2026-05-21: Documented the backend-owned signup disable switch for public-demo rollback.
