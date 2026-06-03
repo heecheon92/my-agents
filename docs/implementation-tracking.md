@@ -155,6 +155,27 @@ git grep -n -I -E 'sk-[A-Za-z0-9_-]{20,}|postgres(ql)?://[^[:space:]]+:[^[:space
 
 The test harness sets `MY_AGENTS_ENV_FILE=` so a developer's local `.env` file cannot leak file-backed SQLite, cookie, or provider settings into offline verification.
 
+Hosted smoke status on 2026-06-03:
+
+- Local backend precheck passed with a temporary SQLite database and the backend-only smoke helper:
+  `scripts.local_demo_smoke` completed health, auth/session, knowledge-base/document ingestion,
+  streamed answer deltas, citations, and events.
+- Hosted production had partial positive evidence before infra instability: signup email delivery,
+  email verification, login, session restore, knowledge-base creation, document creation, and
+  async ingestion enqueue were each observed working through the Vercel production frontend and
+  Render backend.
+- The full hosted E2E was not completed. The latest rerun reached `GET /api/my-agents/health`
+  successfully, created a disposable mailbox, then blocked at hosted signup: one request timed out,
+  retry returned Vercel/Render `502`, and a follow-up `GET /api/my-agents/health` also returned
+  `502`.
+- Current decision: do not add app-level keepalive, warmer, or periodic ping logic. Hosted-demo
+  reliability should be solved by deployment tier/configuration when the plan is upgraded, not by
+  code that exists only to wake Render or Neon.
+- Remaining hosted smoke to rerun after infra is stable: signup -> email verification -> login ->
+  `/auth/me` session restore -> create KB -> create small text/Markdown document -> async ingest
+  completion -> create conversation -> run selected-KB chat -> verify at least one persisted
+  citation -> refetch completed run -> fetch run events.
+
 ## Known gaps / not complete yet
 
 ### Product/account lifecycle
