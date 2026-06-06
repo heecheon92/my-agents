@@ -911,6 +911,50 @@ def test_failed_conversation_run_detail_returns_conflict(monkeypatch) -> None:  
     assert detail.json()["detail"] == "run is not completed"
 
 
+def test_streaming_required_retrieval_without_evidence_skips_graph_safely(monkeypatch) -> None:  # noqa: ANN001
+    graph = SpyGraph()
+    client = _client(monkeypatch, graph)
+    _signup_login(client, "stream-insufficient@example.com")
+    conversation_id = client.post("/conversations", json={"title": "Missing evidence"}).json()["id"]
+
+    with client.stream(
+        "POST",
+        f"/conversations/{conversation_id}/runs/stream",
+        json={"message": "Summarize my uploaded document"},
+    ) as response:
+        assert response.status_code == 200
+        events = _parse_sse(response.read().decode())
+
+    assert [event["event"] for event in events] == [
+        "run_started",
+        "user_message_stored",
+        "retrieval_completed",
+        "answer_composed",
+        "run_completed",
+    ]
+    retrieval_completed = events[2]["data"]
+    answer_composed = events[3]["data"]
+    completed = events[4]["data"]
+
+    assert retrieval_completed["retrieval_route"] == "retrieval_required"
+    assert retrieval_completed["retrieval_attempt_count"] == 2
+    assert retrieval_completed["retrieval_retry_count"] == 1
+    assert retrieval_completed["insufficient_evidence"] is True
+    assert answer_composed["insufficient_evidence"] is True
+    assert completed["answer_mode"] == "general_knowledge"
+    assert completed["citations"] == []
+    assert "enough relevant authorized document evidence" in completed["reply"]
+    assert graph.calls == []
+
+    persisted = client.get(f"/conversations/{conversation_id}/runs/{completed['run_id']}/events")
+    assert [event["event_type"] for event in persisted.json()] == [
+        "run_started",
+        "user_message_stored",
+        "retrieval_completed",
+        "answer_composed",
+    ]
+
+
 def test_streaming_conversation_run_emits_events_and_persists_result(monkeypatch) -> None:  # noqa: ANN001
     graph = SpyGraph()
     client = _client(monkeypatch, graph)

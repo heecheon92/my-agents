@@ -40,6 +40,8 @@ def retrieval_completed_payload(
     answer_mode: AnswerMode,
     selection_context: KnowledgeBaseSelectionContext,
     retrieval_evidence: RetrievalEvidence | None = None,
+    retrieval_attempt_count: int = 1,
+    insufficient_evidence: bool = False,
 ) -> dict:
     payload = {
         "retrieval_route": retrieval_decision.route,
@@ -55,15 +57,11 @@ def retrieval_completed_payload(
         "graph_expansion_count": count_retrieval_source(retrieved_chunks, "graph_expansion"),
         "fallback_count": count_retrieval_source(retrieved_chunks, "document_fallback"),
         "latency_ms": retrieval_latency_ms,
+        "retrieval_attempt_count": retrieval_attempt_count,
+        "retrieval_retry_count": max(retrieval_attempt_count - 1, 0),
     }
-    trace_steps = retrieval_agent_trace_steps(
-        retrieved_chunks=retrieved_chunks,
-        retrieval_decision=retrieval_decision,
-        answer_mode=answer_mode,
-        selection_context=selection_context,
-        retrieval_evidence=retrieval_evidence,
-    )
-    payload["agent_trace"] = agent_trace_payload(trace_steps)
+    if insufficient_evidence:
+        payload["insufficient_evidence"] = True
     if retrieval_evidence is not None:
         payload.update(
             {
@@ -124,6 +122,7 @@ def answer_composed_payload(
     answer_mode: AnswerMode,
     selection_context: KnowledgeBaseSelectionContext,
     clarification: ConversationClarificationRequest | None = None,
+    insufficient_evidence: bool = False,
 ) -> dict:
     payload = {
         "citation_count": citation_count,
@@ -136,17 +135,8 @@ def answer_composed_payload(
     if clarification is not None:
         payload["clarification_required"] = True
         payload["clarification"] = clarification.model_dump(mode="json")
-    payload["agent_trace"] = agent_trace_payload(
-        [
-            answer_agent_trace_step(
-                citation_count=citation_count,
-                reply=reply,
-                retrieval_decision=retrieval_decision,
-                answer_mode=answer_mode,
-                clarification_required=clarification_required,
-            )
-        ]
-    )
+    if insufficient_evidence:
+        payload["insufficient_evidence"] = True
     payload.update(knowledge_base_selection_payload(selection_context))
     return payload
 

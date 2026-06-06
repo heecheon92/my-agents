@@ -23,6 +23,11 @@ from my_agents.knowledge.routing import (
 logger = logging.getLogger(__name__)
 
 _RETRIEVED_CONTEXT_SNIPPET_CHARS = 1200
+_MAX_CONTEXTFORGE_RETRIES = 1
+_INSUFFICIENT_EVIDENCE_REPLY = (
+    "I couldn't find enough relevant authorized document evidence to answer that safely. "
+    "Please choose or upload the source document and try again."
+)
 
 
 @dataclass(frozen=True)
@@ -35,6 +40,8 @@ class ConversationRetrievalContext:
     retrieval_latency_ms: float
     knowledge_base_selection: KnowledgeBaseSelectionContext
     retrieval_evidence: RetrievalEvidence | None = None
+    retrieval_attempt_count: int = 1
+    insufficient_evidence: bool = False
 
 
 def prepare_retrieval_context(
@@ -46,7 +53,8 @@ def prepare_retrieval_context(
     messages: list[BaseMessage],
     selection_context: KnowledgeBaseSelectionContext,
 ) -> ConversationRetrievalContext:
-    result = ContextForgeService(db).retrieve(
+    service = ContextForgeService(db)
+    result = service.retrieve(
         ContextForgeRequest(
             user_id=user_id,
             conversation_id=conversation_id,
@@ -55,6 +63,23 @@ def prepare_retrieval_context(
             selection_context=selection_context,
         )
     )
+    retrieval_attempt_count = 1
+    if _needs_required_evidence_retry(result):
+        retrieval_attempt_count += 1
+        retry_result = service.retrieve(
+            ContextForgeRequest(
+                user_id=user_id,
+                conversation_id=conversation_id,
+                query=_retry_query_for_required_evidence(message, result.decision.rewritten_query),
+                messages=messages,
+                selection_context=selection_context,
+            )
+        )
+        result = retry_result
+    insufficient_evidence = _requires_document_evidence_without_context(
+        route=result.decision.route,
+        retrieved_chunks=result.retrieved_chunks,
+    )
     return ConversationRetrievalContext(
         decision=result.decision,
         answer_mode=result.answer_mode,
@@ -62,6 +87,8 @@ def prepare_retrieval_context(
         retrieval_latency_ms=result.retrieval_latency_ms,
         knowledge_base_selection=selection_context,
         retrieval_evidence=result.evidence,
+        retrieval_attempt_count=retrieval_attempt_count,
+        insufficient_evidence=insufficient_evidence,
     )
 
 
@@ -85,6 +112,11 @@ def graph_input_for_run(
     }
 
 
+def insufficient_evidence_reply() -> str:
+    """Return a safe answer when required document evidence is unavailable."""
+    return _INSUFFICIENT_EVIDENCE_REPLY
+
+
 def chunks_used_for_answer(
     retrieval_context: ConversationRetrievalContext,
 ) -> list[RetrievedChunk]:
@@ -99,6 +131,36 @@ def chunks_used_for_answer(
             score=item.score,
         )
     ]
+
+
+def _needs_required_evidence_retry(result) -> bool:  # noqa: ANN001
+    if _MAX_CONTEXTFORGE_RETRIES < 1:
+        return False
+    return _requires_document_evidence_without_context(
+        route=result.decision.route,
+        retrieved_chunks=result.retrieved_chunks,
+    )
+
+
+def _requires_document_evidence_without_context(
+    *,
+    route: str,
+    retrieved_chunks: list[RetrievedChunk],
+) -> bool:
+    if route != "retrieval_required":
+        return False
+    return not any(
+        is_relevant_retrieval_result(route=route, source=item.source, score=item.score)
+        for item in retrieved_chunks
+    )
+
+
+def _retry_query_for_required_evidence(message: str, rewritten_query: str) -> str:
+    retry_terms = "authorized document source citation evidence"
+    base_query = rewritten_query.strip() or message.strip()
+    if retry_terms in base_query.casefold():
+        return base_query
+    return f"{base_query} {retry_terms}".strip()
 
 
 def retrieved_context_for_graph(retrieved_chunks: list[RetrievedChunk]) -> list[dict[str, object]]:

@@ -171,8 +171,8 @@ def test_structured_entities_from_unauthorized_documents_are_not_used(monkeypatc
     assert payload["retrieval_route"] == "retrieval_required"
     assert payload["answer_mode"] == "general_knowledge"
     assert payload["citations"] == []
-    assert graph.calls[-1]["retrieved_context"] == []
-    assert graph.calls[-1]["retrieved_chunk_ids"] == []
+    assert "enough relevant authorized document evidence" in payload["reply"]
+    assert graph.calls == []
 
     events = outsider.get(f"/conversations/{conversation_id}/runs/{payload['run_id']}/events")
     assert events.status_code == 200
@@ -182,4 +182,16 @@ def test_structured_entities_from_unauthorized_documents_are_not_used(monkeypatc
     assert retrieval_event["payload"]["structured_entity_count"] == 0
     assert retrieval_event["payload"]["candidate_count"] == 0
     assert retrieval_event["payload"]["authorized_context_count"] == 0
+    assert retrieval_event["payload"]["retrieval_attempt_count"] == 2
+    assert retrieval_event["payload"]["retrieval_retry_count"] == 1
+    assert retrieval_event["payload"]["insufficient_evidence"] is True
     assert "secret" not in str(retrieval_event["payload"]).casefold()
+    event_types = [event["event_type"] for event in events.json()]
+    assert event_types == [
+        "run_started",
+        "user_message_stored",
+        "retrieval_completed",
+        "answer_composed",
+    ]
+    answer_event = next(event for event in events.json() if event["event_type"] == "answer_composed")
+    assert answer_event["payload"]["insufficient_evidence"] is True
