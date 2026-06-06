@@ -12,6 +12,7 @@ import hashlib
 import logging
 import smtplib
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from email.message import EmailMessage
 from typing import TYPE_CHECKING, Literal, Protocol
 from urllib.parse import quote
@@ -25,7 +26,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-AuthEmailPurpose = Literal["email_verification", "password_reset"]
+AuthEmailPurpose = Literal["email_verification", "password_reset", "guest_access_code"]
+AuthEmailLanguage = Literal["ko", "en"]
 
 
 @dataclass(frozen=True)
@@ -54,6 +56,17 @@ class AuthEmailSender(Protocol):
         """Send or record a password-reset token."""
         ...
 
+    def send_guest_access_code(
+        self,
+        *,
+        recipient_email: str,
+        code: str,
+        expires_at: datetime,
+        language: AuthEmailLanguage = "ko",
+    ) -> None:
+        """Send or record an operator-issued guest access code."""
+        ...
+
 
 class InMemoryAuthEmailSender:
     """Development/test sender that records auth emails in process memory."""
@@ -80,6 +93,24 @@ class InMemoryAuthEmailSender:
                 subject="Reset your my-agents password",
                 body=(f"Use this local development token to reset your password: {token}"),
                 token=token,
+            )
+        )
+
+    def send_guest_access_code(
+        self,
+        *,
+        recipient_email: str,
+        code: str,
+        expires_at: datetime,
+        language: AuthEmailLanguage = "ko",
+    ) -> None:
+        self._messages.append(
+            AuthEmailMessage(
+                recipient_email=recipient_email,
+                purpose="guest_access_code",
+                subject=_guest_access_code_subject(language),
+                body=_guest_access_code_body(code=code, expires_at=expires_at, language=language),
+                token=code,
             )
         )
 
@@ -143,6 +174,20 @@ class SmtpAuthEmailSender:
                 f"{link}\n\n"
                 "If you did not request a reset, you can ignore this email."
             ),
+        )
+
+    def send_guest_access_code(
+        self,
+        *,
+        recipient_email: str,
+        code: str,
+        expires_at: datetime,
+        language: AuthEmailLanguage = "ko",
+    ) -> None:
+        self._send(
+            recipient_email=recipient_email,
+            subject=_guest_access_code_subject(language),
+            body=_guest_access_code_body(code=code, expires_at=expires_at, language=language),
         )
 
     def _send(self, *, recipient_email: str, subject: str, body: str) -> None:
@@ -265,6 +310,20 @@ class ResendHttpAuthEmailSender:
             ),
         )
 
+    def send_guest_access_code(
+        self,
+        *,
+        recipient_email: str,
+        code: str,
+        expires_at: datetime,
+        language: AuthEmailLanguage = "ko",
+    ) -> None:
+        self._send(
+            recipient_email=recipient_email,
+            subject=_guest_access_code_subject(language),
+            body=_guest_access_code_body(code=code, expires_at=expires_at, language=language),
+        )
+
     def _send(self, *, recipient_email: str, subject: str, body: str) -> None:
         context = _email_log_context(recipient_email)
         deploy_log(
@@ -337,6 +396,38 @@ def _email_log_context(email: str) -> dict[str, str]:
 def _email_domain(email: str) -> str:
     _, _, domain = email.strip().casefold().partition("@")
     return domain or "unknown"
+
+
+def _guest_access_code_subject(language: AuthEmailLanguage) -> str:
+    if language == "en":
+        return "Your my-agents guest access code"
+    return "my-agents 게스트 데모 접근 코드"
+
+
+def _guest_access_code_body(*, code: str, expires_at: datetime, language: AuthEmailLanguage) -> str:
+    expires_at_utc = expires_at
+    if expires_at_utc.tzinfo is None:
+        expires_at_utc = expires_at_utc.replace(tzinfo=UTC)
+    else:
+        expires_at_utc = expires_at_utc.astimezone(UTC)
+    expires_at_text = expires_at_utc.isoformat()
+    if language == "en":
+        return (
+            "Your my-agents guest demo access code is:\n\n"
+            f"{code}\n\n"
+            f"This one-time code expires at {expires_at_text}.\n"
+            "After login, the guest session is limited to 24 hours, one conversation, "
+            "five prompts, and three document uploads.\n\n"
+            "If you did not request guest access, you can ignore this email."
+        )
+    return (
+        "my-agents 게스트 데모 접근 코드는 다음과 같습니다.\n\n"
+        f"{code}\n\n"
+        f"이 일회용 코드는 {expires_at_text}에 만료됩니다.\n"
+        "로그인 후 게스트 세션은 24시간 동안 유지되며 대화 1개, 프롬프트 5개, "
+        "문서 업로드 3개로 제한됩니다.\n\n"
+        "게스트 접근을 요청하지 않았다면 이 이메일은 무시해도 됩니다."
+    )
 
 
 _LOCAL_AUTH_EMAIL_SENDER = InMemoryAuthEmailSender()

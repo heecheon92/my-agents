@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from email.message import EmailMessage
 
 from fastapi.testclient import TestClient
@@ -187,6 +188,59 @@ def test_resend_http_sender_uses_https_api_links(monkeypatch) -> None:  # noqa: 
         ),
     }
     assert verification["timeout"] == 7
+
+
+def test_resend_http_sender_sends_guest_access_code(monkeypatch) -> None:  # noqa: ANN001
+    FakeResendHttpClient.posts.clear()
+    monkeypatch.setattr(auth_email.httpx, "Client", FakeResendHttpClient)
+    settings = Settings(
+        _env_file=None,
+        MY_AGENTS_RESPONSE_MODE="deterministic",
+        MY_AGENTS_AUTH_EMAIL_MODE="resend_http",
+        MY_AGENTS_AUTH_PUBLIC_APP_BASE_URL="https://demo.example.com",
+        MY_AGENTS_AUTH_FROM_EMAIL="noreply@example.com",
+        MY_AGENTS_RESEND_API_KEY="resend-api-key",
+        MY_AGENTS_RESEND_API_URL="https://api.resend.test/emails",
+    )
+    sender = build_auth_email_sender(settings)
+
+    sender.send_guest_access_code(
+        recipient_email="guest@example.com",
+        code="guest-code-123",
+        expires_at=datetime(2026, 6, 6, 12, 30, tzinfo=UTC),
+        language="en",
+    )
+
+    assert len(FakeResendHttpClient.posts) == 1
+    assert FakeResendHttpClient.posts[0]["json"] == {
+        "from": "noreply@example.com",
+        "to": ["guest@example.com"],
+        "subject": "Your my-agents guest access code",
+        "text": (
+            "Your my-agents guest demo access code is:\n\n"
+            "guest-code-123\n\n"
+            "This one-time code expires at 2026-06-06T12:30:00+00:00.\n"
+            "After login, the guest session is limited to 24 hours, one conversation, "
+            "five prompts, and three document uploads.\n\n"
+            "If you did not request guest access, you can ignore this email."
+        ),
+    }
+
+
+def test_guest_access_code_email_defaults_to_korean() -> None:
+    sender = auth_email.InMemoryAuthEmailSender()
+
+    sender.send_guest_access_code(
+        recipient_email="guest@example.com",
+        code="guest-code-123",
+        expires_at=datetime(2026, 6, 6, 12, 30, tzinfo=UTC),
+    )
+
+    message = sender.messages()[0]
+    assert message.subject == "my-agents 게스트 데모 접근 코드"
+    assert "my-agents 게스트 데모 접근 코드는 다음과 같습니다." in message.body
+    assert "guest-code-123" in message.body
+    assert "대화 1개, 프롬프트 5개, 문서 업로드 3개" in message.body
 
 
 def test_signup_uses_resend_http_sender_without_local_outbox(monkeypatch) -> None:  # noqa: ANN001

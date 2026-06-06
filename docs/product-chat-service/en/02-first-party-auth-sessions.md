@@ -41,7 +41,8 @@ The backend owns a first-party auth/session path:
 10. `POST /auth/password-reset/request` sends a reset token without revealing whether the account exists.
 11. `POST /auth/password-reset/confirm` consumes the reset token, changes the password, and revokes existing sessions.
 12. `POST /auth/guest/request` records a requester email when guest access is enabled and never returns a guest code to the browser.
-13. The operator can issue a short-lived one-time code with `scripts/issue_guest_access_code.py`, then `POST /auth/guest/login` redeems that code once and issues the normal app session cookie plus CSRF token for an explicit guest identity.
+13. The operator can issue a short-lived one-time code with `scripts/issue_guest_access_code.py`; the script always prints the code and can also send it with `--send-email`, using Korean copy by default or English copy with `--lang en`.
+14. `POST /auth/guest/login` redeems the code once and issues the normal app session cookie plus CSRF token for an explicit guest identity.
 
 The default local/test email sender is intentionally offline. It records verification and
 reset emails in process memory for tests and local development. Preview/public demos

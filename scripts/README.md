@@ -12,7 +12,7 @@ repository root with `uv run python -m scripts.<name>`.
 | `scripts.dev_pgvector` | Start and wire a disposable local Docker pgvector/Postgres database. | Local Postgres/pgvector development and migration smoke checks. |
 | `scripts.local_demo_seed` | Seed a file-backed SQLite demo user, knowledge base, document, and extraction run. | Prepare a local demo database before starting the backend. |
 | `scripts.local_demo_smoke` | Smoke-test a running backend over HTTP only. | Verify the local V1 API path after seeding and starting the server. |
-| `scripts.issue_guest_access_code` | Issue a one-time guest access code for manual delivery. | Operator-only public-demo guest-code handling. |
+| `scripts.issue_guest_access_code` | Issue a one-time guest access code for print-first operator delivery. | Operator-only public-demo guest-code handling. |
 | `scripts.learning_log` | Create numbered personal learning notes and update the learning index. | Add a new `docs/learning/` note without hand-numbering files. |
 
 ## How scripts are run
@@ -200,7 +200,7 @@ IDs, answer-delta count, citation count, and event count.
 
 ## `scripts.issue_guest_access_code`
 
-Issues a one-time guest access code for manual operator delivery. This is an
+Issues a one-time guest access code for print-first operator delivery. This is an
 operator script for the env-gated public-demo guest path. The public API records
 an email request but does not return a code to the browser.
 
@@ -212,6 +212,10 @@ Current behavior:
 - Requires `MY_AGENTS_GUEST_ACCESS_ENABLED=true` in the selected environment.
 - Initializes the configured database and creates a one-time guest code.
 - Prints the selected env file path and guest code to stdout.
+- Always prints the guest code, even when email delivery is enabled.
+- Can also send the code with `--send-email` through the selected env's configured auth
+  email provider.
+- Sends Korean email content by default; use `--lang en` for English email content.
 
 Commands:
 
@@ -223,6 +227,19 @@ uv run python -m scripts.issue_guest_access_code --email guest@example.com
 uv run python -m scripts.issue_guest_access_code \
   --env pgvector.production \
   --email guest@example.com
+
+# Print the code and also email it in the default Korean copy.
+uv run python -m scripts.issue_guest_access_code \
+  --env pgvector.production \
+  --email guest@example.com \
+  --send-email
+
+# Print the code and also email it in English.
+uv run python -m scripts.issue_guest_access_code \
+  --env pgvector.production \
+  --email guest@example.com \
+  --send-email \
+  --lang en
 
 # Link the code to a specific pending guest_access_requests.id.
 uv run python -m scripts.issue_guest_access_code \
@@ -243,6 +260,10 @@ uv run python -m scripts.issue_guest_access_code \
 Safety notes:
 
 - Treat the printed code as sensitive. Do not paste it into public logs or docs.
+- `--send-email` sends a real email when the selected env uses SMTP or Resend HTTP; the
+  code is still printed for operator audit/recovery.
+- If email sending fails, the script exits non-zero after printing the issued code so the
+  operator can still deliver or revoke it manually.
 - Confirm the selected env file points at the intended database before issuing a code.
 - Keep `pgvector.local` as the default for routine local testing; use production only deliberately.
 - Guest access is disabled by default unless explicitly enabled in environment.

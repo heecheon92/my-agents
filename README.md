@@ -104,12 +104,19 @@ MY_AGENTS_RESPONSE_MODE=deterministic
 
 Guest access를 켜면 public client는 `POST /auth/guest/request`에 email을 보내고
 `status=accepted`만 받습니다. 코드는 public API가 반환하지
-않고 DB에는 hash만 저장합니다. Email delivery가 붙기 전까지 operator는 pending
-request에 대해 다음 local script로 one-time code를 출력할 수 있습니다.
+않고 DB에는 hash만 저장합니다. Operator는 pending request에 대해 one-time code를
+항상 stdout으로 출력할 수 있고, `--send-email`을 붙이면 선택된 env의 auth email
+provider로도 같은 코드를 보냅니다. 이메일 언어는 기본 한국어이며 `--lang en`으로
+영어를 선택할 수 있습니다.
 
 ```bash
 MY_AGENTS_GUEST_ACCESS_ENABLED=true uv run python -m scripts.issue_guest_access_code \
   --email guest@example.com
+
+# 같은 코드를 출력하고, 추가로 기본 한국어 이메일을 전송합니다.
+MY_AGENTS_GUEST_ACCESS_ENABLED=true uv run python -m scripts.issue_guest_access_code \
+  --email guest@example.com \
+  --send-email
 ```
 
 ## 로컬 실행

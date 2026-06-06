@@ -1,8 +1,8 @@
-"""Issue a one-time guest access code for manual email delivery.
+"""Issue a one-time guest access code for operator delivery.
 
-The public API records the requester email but never returns a guest code. Until SMTP/Resend is
-wired, run this script against the same database, then manually send the printed code to the
-requester.
+The public API records the requester email but never returns a guest code. Run this script
+against the same database to print the code, and optionally add `--send-email` to deliver the
+same code through the selected environment's configured auth email provider.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from my_agents.auth.email import AuthEmailLanguage, build_auth_email_sender
 from my_agents.auth.service import AuthService
 from my_agents.persistence.database import (
     _sessionmaker_for_url,
@@ -66,7 +67,7 @@ def issue_guest_access_code(
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Issue a one-time guest access code for manual email delivery."
+        description="Issue a one-time guest access code for operator delivery."
     )
     parser.add_argument("--email", required=True, help="Requester email address.")
     parser.add_argument(
@@ -95,6 +96,17 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Explicit env file path. Overrides --env when provided.",
     )
+    parser.add_argument(
+        "--send-email",
+        action="store_true",
+        help="Also send the issued code to --email using the selected env's email provider.",
+    )
+    parser.add_argument(
+        "--lang",
+        choices=("ko", "en"),
+        default="ko",
+        help="Language for --send-email content. Defaults to ko; use en for English.",
+    )
     return parser
 
 
@@ -102,6 +114,22 @@ def resolve_env_file(*, profile: str, env_file: Path | None = None) -> Path:
     """Resolve the env file used for the guest-code issue operation."""
     selected = env_file or ENV_FILE_BY_PROFILE[profile]
     return selected.expanduser()
+
+
+def send_guest_access_code_email(
+    *,
+    settings: Settings,
+    result: GuestCodeIssueResult,
+    language: AuthEmailLanguage = "ko",
+) -> None:
+    """Send an issued guest access code through the configured auth email sender."""
+    sender = build_auth_email_sender(settings)
+    sender.send_guest_access_code(
+        recipient_email=result.email,
+        code=result.code,
+        expires_at=result.expires_at,
+        language=language,
+    )
 
 
 def main() -> int:
@@ -123,6 +151,21 @@ def main() -> int:
     print(f"request_id={result.request_id}")
     print(f"code={result.code}")
     print(f"expires_at={result.expires_at.isoformat()}")
+    email_sent = False
+    if args.send_email:
+        try:
+            send_guest_access_code_email(settings=settings, result=result, language=args.lang)
+        except Exception as exc:
+            print(f"email_sent={email_sent}")
+            print(f"email_language={args.lang}")
+            print(
+                f"error: failed to send guest access code email: {exc.__class__.__name__}",
+                file=sys.stderr,
+            )
+            return 1
+        email_sent = True
+    print(f"email_sent={email_sent}")
+    print(f"email_language={args.lang}")
     return 0
 
 

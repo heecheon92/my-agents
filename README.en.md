@@ -103,12 +103,20 @@ See [`.env.example`](./.env.example) for the full list of settings. See the [fro
 
 Guest access is email-gated when enabled: public clients call `POST /auth/guest/request`
 with an email and receive only `status=accepted`; the code is
-stored as a hash and is never returned by the public API. Until email delivery is added,
-operators can print a one-time code for a pending request with:
+stored as a hash and is never returned by the public API. Operators can always print a
+one-time code for a pending request, and can add `--send-email` to also send it through the
+configured auth email provider. Email content defaults to Korean; add `--lang en` for
+English email copy:
 
 ```bash
 MY_AGENTS_GUEST_ACCESS_ENABLED=true uv run python -m scripts.issue_guest_access_code \
   --email guest@example.com
+
+# Print the same code and additionally send English email copy.
+MY_AGENTS_GUEST_ACCESS_ENABLED=true uv run python -m scripts.issue_guest_access_code \
+  --email guest@example.com \
+  --send-email \
+  --lang en
 ```
 
 ## Run locally

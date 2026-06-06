@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy import select
@@ -14,7 +16,13 @@ from my_agents.persistence.database import (
     reset_database_caches,
 )
 from my_agents.settings import Settings
-from scripts.issue_guest_access_code import issue_guest_access_code, resolve_env_file
+from scripts.issue_guest_access_code import (
+    GuestCodeIssueResult,
+    issue_guest_access_code,
+    main,
+    resolve_env_file,
+    send_guest_access_code_email,
+)
 
 
 def _settings(monkeypatch, database_url: str) -> Settings:  # noqa: ANN001
@@ -67,3 +75,93 @@ def test_resolve_env_file_allows_explicit_override(tmp_path) -> None:
     env_file = tmp_path / "operator.env"
 
     assert resolve_env_file(profile="pgvector.local", env_file=env_file) == env_file
+
+
+def test_send_guest_access_code_email_uses_configured_sender(monkeypatch) -> None:  # noqa: ANN001
+    calls: list[dict[str, object]] = []
+
+    class GuestCodeEmailSpy:
+        def send_guest_access_code(
+            self,
+            *,
+            recipient_email: str,
+            code: str,
+            expires_at: datetime,
+            language: str = "ko",
+        ) -> None:
+            calls.append(
+                {
+                    "recipient_email": recipient_email,
+                    "code": code,
+                    "expires_at": expires_at,
+                    "language": language,
+                }
+            )
+
+    settings = Settings(_env_file=None, MY_AGENTS_RESPONSE_MODE="deterministic")
+    result = GuestCodeIssueResult(
+        email="guest@example.com",
+        request_id="guest-request-id",
+        code="guest-code-123",
+        expires_at=datetime(2026, 6, 6, 12, 30, tzinfo=UTC),
+    )
+    monkeypatch.setattr(
+        "scripts.issue_guest_access_code.build_auth_email_sender",
+        lambda active_settings: GuestCodeEmailSpy(),
+    )
+
+    send_guest_access_code_email(settings=settings, result=result, language="en")
+
+    assert calls == [
+        {
+            "recipient_email": "guest@example.com",
+            "code": "guest-code-123",
+            "expires_at": datetime(2026, 6, 6, 12, 30, tzinfo=UTC),
+            "language": "en",
+        }
+    ]
+
+
+def test_main_prints_guest_code_before_email_failure(tmp_path, monkeypatch, capsys) -> None:  # noqa: ANN001
+    env_file = tmp_path / "operator.env"
+    env_file.write_text("MY_AGENTS_RESPONSE_MODE=deterministic\n")
+    issued = GuestCodeIssueResult(
+        email="guest@example.com",
+        request_id="guest-request-id",
+        code="guest-code-123",
+        expires_at=datetime(2026, 6, 6, 12, 30, tzinfo=UTC),
+    )
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "issue_guest_access_code",
+            "--env-file",
+            str(env_file),
+            "--email",
+            "guest@example.com",
+            "--send-email",
+            "--lang",
+            "en",
+        ],
+    )
+    monkeypatch.setattr(
+        "scripts.issue_guest_access_code.issue_guest_access_code", lambda **_: issued
+    )
+
+    def fail_email_send(**_: object) -> None:
+        raise RuntimeError("email provider unavailable")
+
+    monkeypatch.setattr(
+        "scripts.issue_guest_access_code.send_guest_access_code_email", fail_email_send
+    )
+
+    exit_code = main()
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert "code=guest-code-123" in captured.out
+    assert "email_sent=False" in captured.out
+    assert "email_language=en" in captured.out
+    assert "failed to send guest access code email: RuntimeError" in captured.err
