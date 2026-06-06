@@ -204,6 +204,7 @@ Details: [`docs/product-chat-service/en/10-frontend-demo-runbook.md`](./docs/pro
 - Script commands: [`scripts/README.md`](./scripts/README.md)
 - General assistant implementation: [`my_agents/agents/general_assistant/README.en.md`](./my_agents/agents/general_assistant/README.en.md)
 - ContextForge retrieval boundary: [`my_agents/agents/context_forge/README.en.md`](./my_agents/agents/context_forge/README.en.md)
+- Agentic RAG workflow contract: [`my_agents/agents/agentic_rag/README.en.md`](./my_agents/agents/agentic_rag/README.en.md)
 
 ## Future direction
 

@@ -17,7 +17,7 @@
 - group, document, knowledge-base, permission 기반.
 - KB-scoped document upload/create, ingestion, extraction-run progress, chunk, entity, metadata profile, embedding, pgvector-ready retrieval.
 - permission-aware RAG, structured entity retrieval, reranking seam, packed context, citation, redacted retrieval evidence를 담당하는 ContextForge retrieval service.
-- server-owned conversation, run history, SSE assistant text streaming, run replay/cancel, persisted citation, frontend-safe activity event.
+- server-owned conversation, run history, SSE assistant text streaming, run replay/cancel, persisted citation, frontend-safe activity event와 compact ko/en agent trace.
 
 자세한 설명은 README 대신 docs에 둡니다.
 
@@ -208,6 +208,7 @@ uv run python -m scripts.local_demo_smoke --base-url http://127.0.0.1:8000
 - Script commands / 스크립트 명령: [`scripts/README.md`](./scripts/README.md)
 - General assistant implementation: [`my_agents/agents/general_assistant/README.md`](./my_agents/agents/general_assistant/README.md)
 - ContextForge retrieval boundary: [`my_agents/agents/context_forge/README.md`](./my_agents/agents/context_forge/README.md)
+- Agentic RAG workflow contract: [`my_agents/agents/agentic_rag/README.md`](./my_agents/agents/agentic_rag/README.md)
 
 ## 향후 방향
 
