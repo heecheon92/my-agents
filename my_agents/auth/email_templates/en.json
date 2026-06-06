@@ -1,0 +1,14 @@
+{
+  "email_verification": {
+    "subject": "Verify your my-agents email",
+    "body": "Verify your my-agents account by opening this link:\n\n{link}\n\nIf you did not create this account, you can ignore this email."
+  },
+  "password_reset": {
+    "subject": "Reset your my-agents password",
+    "body": "Reset your my-agents password by opening this link:\n\n{link}\n\nIf you did not request a reset, you can ignore this email."
+  },
+  "guest_access_code": {
+    "subject": "Your my-agents guest access code",
+    "body": "Your my-agents guest demo access code is:\n\n{code}\n\nThis one-time code expires at {expires_at}.\nAfter login, the guest session is limited to 24 hours, one conversation, five prompts, and three document uploads.\n\nIf you did not request guest access, you can ignore this email."
+  }
+}

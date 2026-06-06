@@ -83,6 +83,9 @@ class FakeSmtp:
 
 
 def test_smtp_sender_builds_visitor_account_links(monkeypatch) -> None:  # noqa: ANN001
+    FakeSmtp.sent_messages.clear()
+    FakeSmtp.login_calls.clear()
+    FakeSmtp.starttls_calls = 0
     monkeypatch.setattr(auth_email.smtplib, "SMTP", FakeSmtp)
     settings = Settings(
         _env_file=None,
@@ -107,10 +110,41 @@ def test_smtp_sender_builds_visitor_account_links(monkeypatch) -> None:  # noqa:
     reset = FakeSmtp.sent_messages[1]
     assert verification["From"] == "noreply@example.com"
     assert verification["To"] == "visitor@example.com"
+    assert verification["Subject"] == "my-agents 이메일 인증"
+    assert reset["Subject"] == "my-agents 비밀번호 재설정"
     assert "https://demo.example.com/verify-email?token=verify%20token" in (
         verification.get_content()
     )
+    assert "my-agents 계정을 인증하려면 아래 링크를 여세요:" in verification.get_content()
     assert "https://demo.example.com/password-reset?token=reset%20token" in (reset.get_content())
+    assert "my-agents 비밀번호를 재설정하려면 아래 링크를 여세요:" in reset.get_content()
+
+
+def test_smtp_sender_supports_english_email_language(monkeypatch) -> None:  # noqa: ANN001
+    FakeSmtp.sent_messages.clear()
+    FakeSmtp.login_calls.clear()
+    FakeSmtp.starttls_calls = 0
+    monkeypatch.setattr(auth_email.smtplib, "SMTP", FakeSmtp)
+    settings = Settings(
+        _env_file=None,
+        MY_AGENTS_RESPONSE_MODE="deterministic",
+        MY_AGENTS_AUTH_EMAIL_MODE="smtp",
+        MY_AGENTS_AUTH_PUBLIC_APP_BASE_URL="https://demo.example.com",
+        MY_AGENTS_AUTH_SMTP_HOST="smtp.example.com",
+        MY_AGENTS_AUTH_SMTP_FROM_EMAIL="noreply@example.com",
+    )
+    sender = build_auth_email_sender(settings)
+
+    sender.send_email_verification(
+        recipient_email="visitor@example.com",
+        token="verify token",
+        language="en",
+    )
+
+    assert len(FakeSmtp.sent_messages) == 1
+    verification = FakeSmtp.sent_messages[0]
+    assert verification["Subject"] == "Verify your my-agents email"
+    assert "Verify your my-agents account by opening this link:" in verification.get_content()
 
 
 def test_signup_uses_configured_smtp_sender_without_local_outbox(monkeypatch) -> None:  # noqa: ANN001
@@ -170,21 +204,21 @@ def test_resend_http_sender_uses_https_api_links(monkeypatch) -> None:  # noqa: 
     assert verification["json"] == {
         "from": "noreply@example.com",
         "to": ["visitor@example.com"],
-        "subject": "Verify your my-agents email",
+        "subject": "my-agents 이메일 인증",
         "text": (
-            "Verify your my-agents account by opening this link:\n\n"
+            "my-agents 계정을 인증하려면 아래 링크를 여세요:\n\n"
             "https://demo.example.com/verify-email?token=verify%20token\n\n"
-            "If you did not create this account, you can ignore this email."
+            "계정을 만들지 않았다면 이 이메일은 무시해도 됩니다."
         ),
     }
     assert reset["json"] == {
         "from": "noreply@example.com",
         "to": ["visitor@example.com"],
-        "subject": "Reset your my-agents password",
+        "subject": "my-agents 비밀번호 재설정",
         "text": (
-            "Reset your my-agents password by opening this link:\n\n"
+            "my-agents 비밀번호를 재설정하려면 아래 링크를 여세요:\n\n"
             "https://demo.example.com/password-reset?token=reset%20token\n\n"
-            "If you did not request a reset, you can ignore this email."
+            "비밀번호 재설정을 요청하지 않았다면 이 이메일은 무시해도 됩니다."
         ),
     }
     assert verification["timeout"] == 7
@@ -263,6 +297,43 @@ def test_signup_uses_resend_http_sender_without_local_outbox(monkeypatch) -> Non
     assert signup.json()["verification_email_sent"] is True
     assert len(FakeResendHttpClient.posts) == 1
     assert FakeResendHttpClient.posts[0]["json"]["to"] == ["resend-signup@example.com"]
+    assert FakeResendHttpClient.posts[0]["json"]["subject"] == "my-agents 이메일 인증"
+    assert (
+        "my-agents 계정을 인증하려면 아래 링크를 여세요:"
+        in (FakeResendHttpClient.posts[0]["json"]["text"])
+    )
     assert "/verify-email?token=" in FakeResendHttpClient.posts[0]["json"]["text"]
     assert get_local_auth_email_outbox().messages() == ()
     assert client.get("/auth/dev/outbox").status_code == 404
+
+
+def test_signup_email_language_uses_request_header(monkeypatch) -> None:  # noqa: ANN001
+    FakeResendHttpClient.posts.clear()
+    monkeypatch.setattr(auth_email.httpx, "Client", FakeResendHttpClient)
+    monkeypatch.setenv("MY_AGENTS_AUTH_EMAIL_MODE", "resend_http")
+    monkeypatch.setenv("MY_AGENTS_AUTH_PUBLIC_APP_BASE_URL", "https://demo.example.com")
+    monkeypatch.setenv("MY_AGENTS_AUTH_FROM_EMAIL", "noreply@example.com")
+    monkeypatch.setenv("MY_AGENTS_RESEND_API_KEY", "resend-api-key")
+    monkeypatch.setenv("MY_AGENTS_RESEND_API_URL", "https://api.resend.test/emails")
+    monkeypatch.setenv("MY_AGENTS_SESSION_COOKIE_SECURE", "false")
+    client = TestClient(load_app())
+
+    signup = client.post(
+        "/auth/signup",
+        headers={
+            "accept-language": "ko-KR,ko;q=0.9",
+            "x-my-agents-language": "en",
+        },
+        json={
+            "email": "resend-signup-language@example.com",
+            "password": "correct horse battery staple",
+        },
+    )
+
+    assert signup.status_code == 201
+    assert len(FakeResendHttpClient.posts) == 1
+    assert FakeResendHttpClient.posts[0]["json"]["subject"] == "Verify your my-agents email"
+    assert (
+        "Verify your my-agents account by opening this link:"
+        in (FakeResendHttpClient.posts[0]["json"]["text"])
+    )

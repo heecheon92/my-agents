@@ -9,11 +9,14 @@ without making unit tests depend on network access.
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import smtplib
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.message import EmailMessage
+from functools import lru_cache
+from importlib import resources
 from typing import TYPE_CHECKING, Literal, Protocol
 from urllib.parse import quote
 
@@ -45,14 +48,34 @@ class AuthEmailMessage:
     token: str
 
 
+@dataclass(frozen=True)
+class RenderedAuthEmail:
+    """Localized auth email content ready for delivery."""
+
+    subject: str
+    body: str
+
+
 class AuthEmailSender(Protocol):
     """Minimal email sender protocol used by auth workflows."""
 
-    def send_email_verification(self, *, recipient_email: str, token: str) -> None:
+    def send_email_verification(
+        self,
+        *,
+        recipient_email: str,
+        token: str,
+        language: AuthEmailLanguage = "ko",
+    ) -> None:
         """Send or record a signup email-verification token."""
         ...
 
-    def send_password_reset(self, *, recipient_email: str, token: str) -> None:
+    def send_password_reset(
+        self,
+        *,
+        recipient_email: str,
+        token: str,
+        language: AuthEmailLanguage = "ko",
+    ) -> None:
         """Send or record a password-reset token."""
         ...
 
@@ -74,24 +97,46 @@ class InMemoryAuthEmailSender:
     def __init__(self) -> None:
         self._messages: list[AuthEmailMessage] = []
 
-    def send_email_verification(self, *, recipient_email: str, token: str) -> None:
+    def send_email_verification(
+        self,
+        *,
+        recipient_email: str,
+        token: str,
+        language: AuthEmailLanguage = "ko",
+    ) -> None:
+        message = _auth_email_message(
+            purpose="email_verification",
+            language=language,
+            link=_action_link("/verify-email", token, base_url=""),
+        )
         self._messages.append(
             AuthEmailMessage(
                 recipient_email=recipient_email,
                 purpose="email_verification",
-                subject="Verify your my-agents email",
-                body=(f"Use this local development token to verify your email: {token}"),
+                subject=message.subject,
+                body=message.body,
                 token=token,
             )
         )
 
-    def send_password_reset(self, *, recipient_email: str, token: str) -> None:
+    def send_password_reset(
+        self,
+        *,
+        recipient_email: str,
+        token: str,
+        language: AuthEmailLanguage = "ko",
+    ) -> None:
+        message = _auth_email_message(
+            purpose="password_reset",
+            language=language,
+            link=_action_link("/password-reset", token, base_url=""),
+        )
         self._messages.append(
             AuthEmailMessage(
                 recipient_email=recipient_email,
                 purpose="password_reset",
-                subject="Reset your my-agents password",
-                body=(f"Use this local development token to reset your password: {token}"),
+                subject=message.subject,
+                body=message.body,
                 token=token,
             )
         )
@@ -104,12 +149,17 @@ class InMemoryAuthEmailSender:
         expires_at: datetime,
         language: AuthEmailLanguage = "ko",
     ) -> None:
+        message = _guest_access_code_message(
+            code=code,
+            expires_at=expires_at,
+            language=language,
+        )
         self._messages.append(
             AuthEmailMessage(
                 recipient_email=recipient_email,
                 purpose="guest_access_code",
-                subject=_guest_access_code_subject(language),
-                body=_guest_access_code_body(code=code, expires_at=expires_at, language=language),
+                subject=message.subject,
+                body=message.body,
                 token=code,
             )
         )
@@ -152,28 +202,42 @@ class SmtpAuthEmailSender:
         self._use_starttls = use_starttls
         self._timeout_seconds = timeout_seconds
 
-    def send_email_verification(self, *, recipient_email: str, token: str) -> None:
+    def send_email_verification(
+        self,
+        *,
+        recipient_email: str,
+        token: str,
+        language: AuthEmailLanguage = "ko",
+    ) -> None:
         link = self._action_link("/verify-email", token)
+        message = _auth_email_message(
+            purpose="email_verification",
+            language=language,
+            link=link,
+        )
         self._send(
             recipient_email=recipient_email,
-            subject="Verify your my-agents email",
-            body=(
-                "Verify your my-agents account by opening this link:\n\n"
-                f"{link}\n\n"
-                "If you did not create this account, you can ignore this email."
-            ),
+            subject=message.subject,
+            body=message.body,
         )
 
-    def send_password_reset(self, *, recipient_email: str, token: str) -> None:
+    def send_password_reset(
+        self,
+        *,
+        recipient_email: str,
+        token: str,
+        language: AuthEmailLanguage = "ko",
+    ) -> None:
         link = self._action_link("/password-reset", token)
+        message = _auth_email_message(
+            purpose="password_reset",
+            language=language,
+            link=link,
+        )
         self._send(
             recipient_email=recipient_email,
-            subject="Reset your my-agents password",
-            body=(
-                "Reset your my-agents password by opening this link:\n\n"
-                f"{link}\n\n"
-                "If you did not request a reset, you can ignore this email."
-            ),
+            subject=message.subject,
+            body=message.body,
         )
 
     def send_guest_access_code(
@@ -184,10 +248,15 @@ class SmtpAuthEmailSender:
         expires_at: datetime,
         language: AuthEmailLanguage = "ko",
     ) -> None:
+        message = _guest_access_code_message(
+            code=code,
+            expires_at=expires_at,
+            language=language,
+        )
         self._send(
             recipient_email=recipient_email,
-            subject=_guest_access_code_subject(language),
-            body=_guest_access_code_body(code=code, expires_at=expires_at, language=language),
+            subject=message.subject,
+            body=message.body,
         )
 
     def _send(self, *, recipient_email: str, subject: str, body: str) -> None:
@@ -286,28 +355,42 @@ class ResendHttpAuthEmailSender:
         self._api_url = api_url.rstrip("/")
         self._timeout_seconds = timeout_seconds
 
-    def send_email_verification(self, *, recipient_email: str, token: str) -> None:
+    def send_email_verification(
+        self,
+        *,
+        recipient_email: str,
+        token: str,
+        language: AuthEmailLanguage = "ko",
+    ) -> None:
         link = self._action_link("/verify-email", token)
+        message = _auth_email_message(
+            purpose="email_verification",
+            language=language,
+            link=link,
+        )
         self._send(
             recipient_email=recipient_email,
-            subject="Verify your my-agents email",
-            body=(
-                "Verify your my-agents account by opening this link:\n\n"
-                f"{link}\n\n"
-                "If you did not create this account, you can ignore this email."
-            ),
+            subject=message.subject,
+            body=message.body,
         )
 
-    def send_password_reset(self, *, recipient_email: str, token: str) -> None:
+    def send_password_reset(
+        self,
+        *,
+        recipient_email: str,
+        token: str,
+        language: AuthEmailLanguage = "ko",
+    ) -> None:
         link = self._action_link("/password-reset", token)
+        message = _auth_email_message(
+            purpose="password_reset",
+            language=language,
+            link=link,
+        )
         self._send(
             recipient_email=recipient_email,
-            subject="Reset your my-agents password",
-            body=(
-                "Reset your my-agents password by opening this link:\n\n"
-                f"{link}\n\n"
-                "If you did not request a reset, you can ignore this email."
-            ),
+            subject=message.subject,
+            body=message.body,
         )
 
     def send_guest_access_code(
@@ -318,10 +401,15 @@ class ResendHttpAuthEmailSender:
         expires_at: datetime,
         language: AuthEmailLanguage = "ko",
     ) -> None:
+        message = _guest_access_code_message(
+            code=code,
+            expires_at=expires_at,
+            language=language,
+        )
         self._send(
             recipient_email=recipient_email,
-            subject=_guest_access_code_subject(language),
-            body=_guest_access_code_body(code=code, expires_at=expires_at, language=language),
+            subject=message.subject,
+            body=message.body,
         )
 
     def _send(self, *, recipient_email: str, subject: str, body: str) -> None:
@@ -398,36 +486,47 @@ def _email_domain(email: str) -> str:
     return domain or "unknown"
 
 
-def _guest_access_code_subject(language: AuthEmailLanguage) -> str:
-    if language == "en":
-        return "Your my-agents guest access code"
-    return "my-agents 게스트 데모 접근 코드"
+def _action_link(path: str, token: str, *, base_url: str) -> str:
+    return f"{base_url.rstrip('/')}{path}?token={quote(token, safe='')}"
 
 
-def _guest_access_code_body(*, code: str, expires_at: datetime, language: AuthEmailLanguage) -> str:
+def _guest_access_code_message(
+    *, code: str, expires_at: datetime, language: AuthEmailLanguage
+) -> RenderedAuthEmail:
     expires_at_utc = expires_at
     if expires_at_utc.tzinfo is None:
         expires_at_utc = expires_at_utc.replace(tzinfo=UTC)
     else:
         expires_at_utc = expires_at_utc.astimezone(UTC)
-    expires_at_text = expires_at_utc.isoformat()
-    if language == "en":
-        return (
-            "Your my-agents guest demo access code is:\n\n"
-            f"{code}\n\n"
-            f"This one-time code expires at {expires_at_text}.\n"
-            "After login, the guest session is limited to 24 hours, one conversation, "
-            "five prompts, and three document uploads.\n\n"
-            "If you did not request guest access, you can ignore this email."
-        )
-    return (
-        "my-agents 게스트 데모 접근 코드는 다음과 같습니다.\n\n"
-        f"{code}\n\n"
-        f"이 일회용 코드는 {expires_at_text}에 만료됩니다.\n"
-        "로그인 후 게스트 세션은 24시간 동안 유지되며 대화 1개, 프롬프트 5개, "
-        "문서 업로드 3개로 제한됩니다.\n\n"
-        "게스트 접근을 요청하지 않았다면 이 이메일은 무시해도 됩니다."
+    return _auth_email_message(
+        purpose="guest_access_code",
+        language=language,
+        code=code,
+        expires_at=expires_at_utc.isoformat(),
     )
+
+
+def _auth_email_message(
+    *, purpose: AuthEmailPurpose, language: AuthEmailLanguage, **values: str
+) -> RenderedAuthEmail:
+    template = _auth_email_templates(language)[purpose]
+    return RenderedAuthEmail(
+        subject=template["subject"].format(**values),
+        body=template["body"].format(**values),
+    )
+
+
+@lru_cache(maxsize=2)
+def _auth_email_templates(language: AuthEmailLanguage) -> dict[AuthEmailPurpose, dict[str, str]]:
+    template_path = resources.files("my_agents.auth.email_templates").joinpath(f"{language}.json")
+    raw_templates = json.loads(template_path.read_text(encoding="utf-8"))
+    return {
+        purpose: {
+            "subject": str(template["subject"]),
+            "body": str(template["body"]),
+        }
+        for purpose, template in raw_templates.items()
+    }
 
 
 _LOCAL_AUTH_EMAIL_SENDER = InMemoryAuthEmailSender()

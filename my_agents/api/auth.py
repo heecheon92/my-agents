@@ -18,7 +18,7 @@ from my_agents.auth.dependencies import (
     get_auth_service,
     get_current_principal,
 )
-from my_agents.auth.email import get_local_auth_email_outbox
+from my_agents.auth.email import AuthEmailLanguage, get_local_auth_email_outbox
 from my_agents.auth.models import UserModel
 from my_agents.auth.schemas import (
     AcceptedResponse,
@@ -95,7 +95,11 @@ def signup(
     abuse_guard.record_attempt(action="signup_client", identifier=client_identifier)
     deploy_log("auth.api.signup.abuse_recorded", client=client_identifier, **email_context)
     try:
-        result = auth_service.signup(email=str(request.email), password=request.password)
+        result = auth_service.signup(
+            email=str(request.email),
+            password=request.password,
+            email_language=_auth_email_language(http_request),
+        )
     except DuplicateEmailError as exc:
         deploy_log(
             "auth.api.signup.rejected",
@@ -293,7 +297,10 @@ def request_password_reset(
     _assert_auth_allowed(abuse_guard, action="password_reset_client", identifier=client_identifier)
     abuse_guard.record_attempt(action="password_reset_email", identifier=email_identifier)
     abuse_guard.record_attempt(action="password_reset_client", identifier=client_identifier)
-    auth_service.request_password_reset(email=str(request.email))
+    auth_service.request_password_reset(
+        email=str(request.email),
+        email_language=_auth_email_language(http_request),
+    )
     return AcceptedResponse()
 
 
@@ -437,6 +444,30 @@ def _request_client_identifier(request: Request) -> str:
     if request.client is None:
         return "client:unknown"
     return f"client:{request.client.host}"
+
+
+def _auth_email_language(request: Request) -> AuthEmailLanguage:
+    explicit_locale = request.headers.get("x-my-agents-language") or request.headers.get(
+        "x-my-agents-locale"
+    )
+    explicit_language = _supported_auth_email_language(explicit_locale)
+    if explicit_language is not None:
+        return explicit_language
+    accept_language = request.headers.get("accept-language")
+    for item in (accept_language or "").split(","):
+        language = _supported_auth_email_language(item.split(";", 1)[0])
+        if language is not None:
+            return language
+    return "ko"
+
+
+def _supported_auth_email_language(value: str | None) -> AuthEmailLanguage | None:
+    language = (value or "").strip().casefold()
+    if language.startswith("ko"):
+        return "ko"
+    if language.startswith("en"):
+        return "en"
+    return None
 
 
 def _email_identifier(email: str) -> str:

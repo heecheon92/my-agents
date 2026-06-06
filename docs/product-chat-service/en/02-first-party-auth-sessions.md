@@ -51,6 +51,12 @@ Render baseline uses `MY_AGENTS_AUTH_EMAIL_MODE=resend_http` because Render free
 services block common outbound SMTP ports, while the generic SMTP path remains
 available for hosts that allow it.
 
+Auth lifecycle email content is localized per request. The API prefers
+`X-My-Agents-Language`, then `X-My-Agents-Locale`, then `Accept-Language`, and falls
+back to Korean because the frontend default locale is `ko`. Email subjects and bodies
+live in backend template resources under `my_agents/auth/email_templates/` instead of
+being embedded in the sender implementation.
+
 ## Flow
 
 ```mermaid

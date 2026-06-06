@@ -16,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from my_agents.auth.contracts import Principal
-from my_agents.auth.email import AuthEmailSender, get_auth_email_sender
+from my_agents.auth.email import AuthEmailLanguage, AuthEmailSender, get_auth_email_sender
 from my_agents.auth.models import (
     AuthTokenModel,
     GuestAccessCodeModel,
@@ -121,7 +121,13 @@ class AuthService:
         self._password_hasher = password_hasher or build_password_hasher()
         self._email_sender = email_sender or get_auth_email_sender()
 
-    def signup(self, *, email: str, password: str) -> SignupResult:
+    def signup(
+        self,
+        *,
+        email: str,
+        password: str,
+        email_language: AuthEmailLanguage = "ko",
+    ) -> SignupResult:
         normalized_email = _normalize_email(email)
         email_context = safe_email_context(normalized_email)
         deploy_log("auth.service.signup.start", **email_context)
@@ -165,7 +171,11 @@ class AuthService:
         deploy_log("auth.service.signup.db_committed", user_id=user.id, **email_context)
         self._db.refresh(user)
         deploy_log("auth.service.signup.email_send.start", user_id=user.id, **email_context)
-        self._email_sender.send_email_verification(recipient_email=user.email, token=token)
+        self._email_sender.send_email_verification(
+            recipient_email=user.email,
+            token=token,
+            language=email_language,
+        )
         deploy_log("auth.service.signup.email_send.completed", user_id=user.id, **email_context)
         return SignupResult(user=user, verification_email_sent=True)
 
@@ -215,7 +225,12 @@ class AuthService:
         self._db.refresh(user)
         return user
 
-    def request_password_reset(self, *, email: str) -> None:
+    def request_password_reset(
+        self,
+        *,
+        email: str,
+        email_language: AuthEmailLanguage = "ko",
+    ) -> None:
         """Create a reset token for known users without revealing account existence."""
         normalized_email = _normalize_email(email)
         user = self._db.scalar(select(UserModel).where(UserModel.email == normalized_email))
@@ -227,7 +242,11 @@ class AuthService:
             ttl=PASSWORD_RESET_TOKEN_TTL,
         )
         self._db.commit()
-        self._email_sender.send_password_reset(recipient_email=user.email, token=token)
+        self._email_sender.send_password_reset(
+            recipient_email=user.email,
+            token=token,
+            language=email_language,
+        )
 
     def confirm_password_reset(self, *, token: str, new_password: str) -> None:
         auth_token = self._consume_token(token=token, purpose="password_reset")

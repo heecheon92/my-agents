@@ -155,7 +155,21 @@ git grep -n -I -E 'sk-[A-Za-z0-9_-]{20,}|postgres(ql)?://[^[:space:]]+:[^[:space
 
 The test harness sets `MY_AGENTS_ENV_FILE=` so a developer's local `.env` file cannot leak file-backed SQLite, cookie, or provider settings into offline verification.
 
-Hosted smoke status on 2026-06-03:
+Hosted smoke status on 2026-06-06:
+
+- Production guest smoke passed through the Vercel production BFF and hosted backend after Render
+  and Neon were upgraded from the prior constrained tier. Evidence is recorded in
+  `docs/product-chat-service/en/16-production-smoke-evidence-2026-06-06.md`.
+- Verified health, guest request, operator-issued guest code with Resend HTTP delivery, guest login,
+  BFF session/CSRF cookie handoff, `/auth/me` guest restore, guest conversation-limit rejection,
+  personal KB creation, text-document creation, ingest, selected-KB streamed run, answer deltas,
+  one citation, persisted run detail citations, and run events.
+- The guest `/auth/me` response intentionally returns `email=null`; guest identity is explicit via
+  `is_guest=true` and `guest_expires_at`.
+- Owner manual follow-up confirmed actual Resend guest-code inbox receipt and non-guest signup ->
+  email verification -> login smoke.
+
+Earlier hosted smoke status on 2026-06-03:
 
 - Local backend precheck passed with a temporary SQLite database and the backend-only smoke helper:
   `scripts.local_demo_smoke` completed health, auth/session, knowledge-base/document ingestion,
@@ -171,10 +185,6 @@ Hosted smoke status on 2026-06-03:
 - Current decision: do not add app-level keepalive, warmer, or periodic ping logic. Hosted-demo
   reliability should be solved by deployment tier/configuration when the plan is upgraded, not by
   code that exists only to wake Render or Neon.
-- Remaining hosted smoke to rerun after infra is stable: signup -> email verification -> login ->
-  `/auth/me` session restore -> create KB -> create small text/Markdown document -> async ingest
-  completion -> create conversation -> run selected-KB chat -> verify at least one persisted
-  citation -> refetch completed run -> fetch run events.
 
 ## Known gaps / not complete yet
 
