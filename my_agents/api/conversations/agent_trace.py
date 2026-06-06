@@ -28,9 +28,10 @@ def retrieval_agent_trace_steps(
 ) -> list[AgentTraceStep]:
     """Return compact ContextForge trace steps for retrieval completion."""
     candidate_count = retrieval_evidence.candidate_count if retrieval_evidence is not None else 0
-    injected_count = (
-        retrieval_evidence.injected_count if retrieval_evidence is not None else len(retrieved_chunks)
-    )
+    if retrieval_evidence is not None:
+        injected_count = retrieval_evidence.injected_count
+    else:
+        injected_count = len(retrieved_chunks)
     rejected_count = retrieval_evidence.rejected_count if retrieval_evidence is not None else 0
     reranker = retrieval_evidence.reranker if retrieval_evidence is not None else "deterministic"
     structured_types = (
@@ -85,8 +86,8 @@ def retrieval_agent_trace_steps(
             status=retrieval_status,
             title=AgentTraceText(en="Candidate Scouts", ko="후보 검색"),
             description=AgentTraceText(
-                en=f"Found {candidate_count} redacted candidates and {len(retrieved_chunks)} context chunks.",
-                ko=f"후보 {candidate_count}개와 컨텍스트 청크 {len(retrieved_chunks)}개를 확인했습니다.",
+                en=f"Found {candidate_count} candidates; {len(retrieved_chunks)} chunks.",
+                ko=f"후보 {candidate_count}개, 청크 {len(retrieved_chunks)}개를 확인했습니다.",
             ),
             evidence={
                 "candidate_count": candidate_count,
@@ -110,8 +111,8 @@ def retrieval_agent_trace_steps(
             status=curator_status,
             title=AgentTraceText(en="Context Curator", ko="컨텍스트 선별"),
             description=AgentTraceText(
-                en=f"Injected {injected_count} chunks and rejected {rejected_count} over budget or limits.",
-                ko=f"청크 {injected_count}개를 주입하고 {rejected_count}개를 예산/한도로 제외했습니다.",
+                en=f"Injected {injected_count} chunks; rejected {rejected_count}.",
+                ko=f"청크 {injected_count}개 주입, {rejected_count}개 제외했습니다.",
             ),
             evidence={
                 "injected_count": injected_count,

@@ -14,6 +14,7 @@ from my_agents.agents.context_forge.contracts import RetrievalEvidence
 from my_agents.agents.general_assistant.classifier import classify_messages
 from my_agents.agents.general_assistant.responders import ResponseProviderConfigurationError
 from my_agents.api.assistant import GraphRunner
+from my_agents.api.conversations.agent_trace import conversation_agent_trace_steps
 from my_agents.api.conversations.retrieval_context import (
     chunks_used_for_answer,
     clarification_request,
@@ -23,7 +24,6 @@ from my_agents.api.conversations.retrieval_context import (
     log_retrieval_context_for_llm,
     prepare_retrieval_context,
 )
-from my_agents.api.conversations.agent_trace import conversation_agent_trace_steps
 from my_agents.api.conversations.run_events import (
     answer_composed_payload,
     append_run_event,
