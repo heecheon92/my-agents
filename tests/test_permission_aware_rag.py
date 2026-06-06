@@ -268,6 +268,7 @@ def test_broad_resume_question_uses_recent_authorized_document(monkeypatch) -> N
     assert graph.calls[-1]["retrieved_chunk_ids"]
     assert graph.calls[-1]["retrieved_context"][0]["title"] == "Resume 2026"
     assert resume_phrase in graph.calls[-1]["retrieved_context"][0]["snippet"]
+    graph_call_count = len(graph.calls)
 
     outsider_conversation_id = _create_conversation(outsider, "No resume leak")
     outsider_run = outsider.post(
@@ -279,8 +280,8 @@ def test_broad_resume_question_uses_recent_authorized_document(monkeypatch) -> N
     outsider_payload = outsider_run.json()
     assert outsider_payload["citations"] == []
     assert resume_phrase not in outsider_payload["reply"]
-    assert graph.calls[-1]["retrieved_chunk_ids"] == []
-    assert graph.calls[-1]["retrieved_context"] == []
+    assert "enough relevant authorized document evidence" in outsider_payload["reply"]
+    assert len(graph.calls) == graph_call_count
 
 
 def test_semantic_vector_retrieval_after_permission_filtering(monkeypatch) -> None:  # noqa: ANN001
@@ -328,6 +329,7 @@ def test_semantic_vector_retrieval_after_permission_filtering(monkeypatch) -> No
     assert "Automobile maintenance" in owner_payload["citations"][0]["snippet"]
     assert owner_payload["reply"] == "graph reply without hidden document text"
     assert graph.calls[-1]["retrieved_context"][0]["title"] == "Vehicle Notes"
+    graph_call_count = len(graph.calls)
 
     outsider_conversation_id = _create_conversation(outsider, "Semantic outsider")
     outsider_run = outsider.post(
@@ -336,8 +338,10 @@ def test_semantic_vector_retrieval_after_permission_filtering(monkeypatch) -> No
     )
 
     assert outsider_run.status_code == 200
-    assert outsider_run.json()["citations"] == []
-    assert graph.calls[-1]["retrieved_context"] == []
+    outsider_payload = outsider_run.json()
+    assert outsider_payload["citations"] == []
+    assert "enough relevant authorized document evidence" in outsider_payload["reply"]
+    assert len(graph.calls) == graph_call_count
 
 
 def test_retrieval_dedupes_historical_duplicate_chunks(monkeypatch) -> None:  # noqa: ANN001
