@@ -9,6 +9,12 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from my_agents.agents.context_forge.contracts import RetrievalEvidence
+from my_agents.api.conversations.agent_trace import (
+    agent_trace_payload,
+    answer_agent_trace_step,
+    graph_agent_trace_step,
+    retrieval_agent_trace_steps,
+)
 from my_agents.api.conversations.serializers import knowledge_base_selection_payload
 from my_agents.conversations.models import AgentEventModel, AgentEventType
 from my_agents.conversations.schemas import AgentEventResponse, ConversationClarificationRequest
@@ -50,6 +56,14 @@ def retrieval_completed_payload(
         "fallback_count": count_retrieval_source(retrieved_chunks, "document_fallback"),
         "latency_ms": retrieval_latency_ms,
     }
+    trace_steps = retrieval_agent_trace_steps(
+        retrieved_chunks=retrieved_chunks,
+        retrieval_decision=retrieval_decision,
+        answer_mode=answer_mode,
+        selection_context=selection_context,
+        retrieval_evidence=retrieval_evidence,
+    )
+    payload["agent_trace"] = agent_trace_payload(trace_steps)
     if retrieval_evidence is not None:
         payload.update(
             {
@@ -88,6 +102,16 @@ def graph_invoked_payload(
         "message_count": len(messages),
         "retrieved_chunk_count": len(retrieved_chunks),
     }
+    payload["agent_trace"] = agent_trace_payload(
+        [
+            graph_agent_trace_step(
+                route=route,
+                retrieved_chunks=retrieved_chunks,
+                retrieval_decision=retrieval_decision,
+                answer_mode=answer_mode,
+            )
+        ]
+    )
     payload.update(knowledge_base_selection_payload(selection_context))
     return payload
 
@@ -108,9 +132,21 @@ def answer_composed_payload(
         "answer_mode": answer_mode,
         "document_scope": retrieval_decision.document_scope,
     }
+    clarification_required = clarification is not None
     if clarification is not None:
         payload["clarification_required"] = True
         payload["clarification"] = clarification.model_dump(mode="json")
+    payload["agent_trace"] = agent_trace_payload(
+        [
+            answer_agent_trace_step(
+                citation_count=citation_count,
+                reply=reply,
+                retrieval_decision=retrieval_decision,
+                answer_mode=answer_mode,
+                clarification_required=clarification_required,
+            )
+        ]
+    )
     payload.update(knowledge_base_selection_payload(selection_context))
     return payload
 

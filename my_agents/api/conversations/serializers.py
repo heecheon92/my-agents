@@ -8,9 +8,19 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from my_agents.conversations.models import AgentRunModel, ConversationModel, MessageModel
+from my_agents.api.conversations.agent_trace import (
+    agent_trace_steps_from_event_payloads,
+    conversation_agent_trace_steps,
+)
+from my_agents.conversations.models import (
+    AgentEventModel,
+    AgentRunModel,
+    ConversationModel,
+    MessageModel,
+)
 from my_agents.conversations.schemas import (
     AgentRunSummaryResponse,
+    AgentTraceStep,
     ConversationClarificationRequest,
     ConversationResponse,
     ConversationRunResponse,
@@ -132,6 +142,11 @@ def run_detail_response(db: Session, run: AgentRunModel) -> ConversationRunRespo
     citations = db.scalars(
         select(CitationModel).where(CitationModel.run_id == run.id).order_by(CitationModel.id)
     ).all()
+    events = db.scalars(
+        select(AgentEventModel)
+        .where(AgentEventModel.run_id == run.id)
+        .order_by(AgentEventModel.sequence)
+    ).all()
     source_payload = knowledge_base_selection_payload(run_knowledge_base_context(run))
     source_payload["knowledge_base_selection"] = run_knowledge_base_selection(run)
     return ConversationRunResponse(
@@ -146,6 +161,9 @@ def run_detail_response(db: Session, run: AgentRunModel) -> ConversationRunRespo
         **source_payload,
         citations=[citation_response(db, citation) for citation in citations],
         clarification=_run_clarification_request(run),
+        agent_trace=agent_trace_steps_from_event_payloads(
+            json.loads(event.payload_json) for event in events
+        ),
     )
 
 
@@ -161,6 +179,7 @@ def completed_run_response(
     retrieved_chunks: list[RetrievedChunk],
     warnings: list[ConversationRunWarning] | None = None,
     clarification: ConversationClarificationRequest | None = None,
+    agent_trace: list[AgentTraceStep] | None = None,
 ) -> ConversationRunResponse:
     return ConversationRunResponse(
         run_id=run.id,
@@ -174,6 +193,18 @@ def completed_run_response(
         **knowledge_base_selection_payload(selection_context),
         warnings=warnings or [],
         clarification=clarification,
+        agent_trace=agent_trace
+        if agent_trace is not None
+        else conversation_agent_trace_steps(
+            route=route,
+            retrieved_chunks=retrieved_chunks,
+            retrieval_decision=retrieval_decision,
+            answer_mode=answer_mode,
+            selection_context=selection_context,
+            citation_count=len(citations),
+            reply=reply,
+            clarification_required=clarification is not None,
+        ),
         citations=[
             CitationResponse(
                 id=citation.id,

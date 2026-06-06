@@ -10,6 +10,7 @@ from langchain_core.messages import BaseMessage
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from my_agents.agents.context_forge.contracts import RetrievalEvidence
 from my_agents.agents.general_assistant.classifier import classify_messages
 from my_agents.agents.general_assistant.responders import ResponseProviderConfigurationError
 from my_agents.api.assistant import GraphRunner
@@ -21,6 +22,7 @@ from my_agents.api.conversations.retrieval_context import (
     log_retrieval_context_for_llm,
     prepare_retrieval_context,
 )
+from my_agents.api.conversations.agent_trace import conversation_agent_trace_steps
 from my_agents.api.conversations.run_events import (
     answer_composed_payload,
     append_run_event,
@@ -161,6 +163,7 @@ def _complete_sync_conversation_run(
             selection_context=retrieval_context.knowledge_base_selection,
             warnings=warnings,
             clarification=clarification,
+            retrieval_evidence=retrieval_context.retrieval_evidence,
         )
     graph_input = graph_input_for_run(
         messages=messages,
@@ -223,6 +226,7 @@ def _complete_sync_conversation_run(
         answer_mode=retrieval_context.answer_mode,
         selection_context=retrieval_context.knowledge_base_selection,
         warnings=warnings,
+        retrieval_evidence=retrieval_context.retrieval_evidence,
     )
 
 
@@ -239,6 +243,7 @@ def persist_completed_run(
     selection_context: KnowledgeBaseSelectionContext,
     warnings: list[ConversationRunWarning] | None = None,
     clarification: ConversationClarificationRequest | None = None,
+    retrieval_evidence: RetrievalEvidence | None = None,
 ) -> ConversationRunResponse:
     assistant_message = MessageModel(
         conversation_id=conversation_id,
@@ -298,6 +303,17 @@ def persist_completed_run(
         retrieved_chunks=retrieved_chunks,
         warnings=warnings or [],
         clarification=clarification,
+        agent_trace=conversation_agent_trace_steps(
+            route=route,
+            retrieved_chunks=retrieved_chunks,
+            retrieval_decision=retrieval_decision,
+            answer_mode=answer_mode,
+            selection_context=selection_context,
+            citation_count=len(citations),
+            reply=reply,
+            retrieval_evidence=retrieval_evidence,
+            clarification_required=clarification is not None,
+        ),
     )
 
 

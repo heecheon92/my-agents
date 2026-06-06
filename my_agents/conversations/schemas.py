@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -41,6 +41,28 @@ class MessageResponse(BaseModel):
     conversation_id: str
     role: str
     content: str
+
+
+
+
+class AgentTraceText(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    en: str
+    ko: str
+
+
+class AgentTraceStep(BaseModel):
+    """Frontend-safe localized trace step without hidden chain-of-thought."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    event_type: str
+    status: Literal["completed", "skipped", "waiting", "failed"]
+    title: AgentTraceText
+    description: AgentTraceText
+    evidence: dict[str, Any] = Field(default_factory=dict)
 
 
 class ConversationRunWarning(BaseModel):
@@ -106,6 +128,7 @@ class ConversationRunResponse(BaseModel):
     citations: list[CitationResponse] = Field(default_factory=list)
     warnings: list[ConversationRunWarning] = Field(default_factory=list)
     clarification: ConversationClarificationRequest | None = None
+    agent_trace: list[AgentTraceStep] = Field(default_factory=list)
 
 
 class ConversationRunCancelResponse(BaseModel):

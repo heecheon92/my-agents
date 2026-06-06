@@ -152,6 +152,19 @@ def test_conversation_run_uses_server_owned_history(monkeypatch) -> None:  # noq
     ]
     assert first.json()["retrieval_route"] == "no_retrieval"
     assert first.json()["answer_mode"] == "general_knowledge"
+    trace = first.json()["agent_trace"]
+    assert [step["id"] for step in trace] == [
+        "query_cartographer",
+        "source_warden",
+        "candidate_scouts",
+        "evidence_judge",
+        "context_curator",
+        "assistant_graph",
+        "answer_composer",
+    ]
+    assert trace[0]["title"] == {"en": "Query Cartographer", "ko": "질문 지도화"}
+    assert trace[2]["status"] == "skipped"
+    assert trace[-1]["evidence"]["citation_count"] == 0
 
 
 def test_general_prompt_skips_retrieval_service(monkeypatch) -> None:  # noqa: ANN001
@@ -938,6 +951,11 @@ def test_streaming_conversation_run_emits_events_and_persists_result(monkeypatch
     assert completed["handled_by"] == "personal_assistant_graph"
     assert completed["route"]["label"] == "general_assistant"
     assert graph.calls[0]["conversation_id"] == conversation_id
+    assert [step["id"] for step in completed["agent_trace"]][-2:] == [
+        "assistant_graph",
+        "answer_composer",
+    ]
+    assert completed["agent_trace"][0]["title"]["ko"] == "질문 지도화"
 
     transcript = client.get(f"/conversations/{conversation_id}/messages")
     run_events = client.get(f"/conversations/{conversation_id}/runs/{completed['run_id']}/events")
@@ -953,6 +971,14 @@ def test_streaming_conversation_run_emits_events_and_persists_result(monkeypatch
         "graph_invoked",
         "answer_composed",
     ]
+    persisted_payloads = {event["event_type"]: event["payload"] for event in run_events.json()}
+    assert persisted_payloads["retrieval_completed"]["agent_trace"][0]["id"] == (
+        "query_cartographer"
+    )
+    assert persisted_payloads["graph_invoked"]["agent_trace"][0]["title"] == {
+        "en": "Assistant Graph",
+        "ko": "어시스턴트 그래프",
+    }
 
 
 def test_streaming_ambiguous_document_scope_emits_human_clarification_state(
@@ -1003,6 +1029,8 @@ def test_streaming_ambiguous_document_scope_emits_human_clarification_state(
     )
     assert completed["reply"] == ""
     assert completed["clarification"]["input_slot"] == "document_reference"
+    assert completed["agent_trace"][-1]["id"] == "answer_composer"
+    assert completed["agent_trace"][-1]["status"] == "waiting"
 
 
 def test_streaming_selected_kb_run_uses_fallback_only_in_selected_scope(monkeypatch) -> None:  # noqa: ANN001
