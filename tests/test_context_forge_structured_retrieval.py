@@ -193,5 +193,7 @@ def test_structured_entities_from_unauthorized_documents_are_not_used(monkeypatc
         "retrieval_completed",
         "answer_composed",
     ]
-    answer_event = next(event for event in events.json() if event["event_type"] == "answer_composed")
+    answer_event = next(
+        event for event in events.json() if event["event_type"] == "answer_composed"
+    )
     assert answer_event["payload"]["insufficient_evidence"] is True

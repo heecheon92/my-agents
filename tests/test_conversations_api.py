@@ -772,6 +772,7 @@ def test_assistant_message_replay_warns_when_original_sources_are_deleted(monkey
     assert original.json()["citations"]
     assert original.json()["warnings"] == []
     assert _run_source_snapshot(original.json()["run_id"]) is not None
+    assert len(graph.calls) == 1
     assistant_message_id = _assistant_message_id(original.json()["run_id"])
 
     assert client.delete(f"/documents/{document_id}").status_code == 204
@@ -791,7 +792,8 @@ def test_assistant_message_replay_warns_when_original_sources_are_deleted(monkey
         }
     ]
     assert all(citation["document_id"] != document_id for citation in payload["citations"])
-    assert {context["document_id"] for context in graph.calls[-1]["retrieved_context"]} == set()
+    assert "enough relevant authorized document evidence" in payload["reply"]
+    assert len(graph.calls) == 1
 
 
 def test_assistant_message_replay_preserves_original_kb_selection(monkeypatch) -> None:  # noqa: ANN001
