@@ -169,6 +169,20 @@ Hosted smoke status on 2026-06-06:
 - Owner manual follow-up confirmed actual Resend guest-code inbox receipt and non-guest signup ->
   email verification -> login smoke.
 
+Agentic RAG Workflow v1 verification-lane status on 2026-06-06:
+
+- Redaction requirements and the final evidence checklist are documented in
+  `docs/product-chat-service/en/17-agentic-rag-v1-verification-plan.md`.
+- `scripts.local_demo_smoke.assert_redacted_run_events` now fails if run event payloads expose
+  sensitive keys such as `token`, `password`, `api_key`, `raw_context`, `prompt`, `message`,
+  `content`, or `reply`, and the smoke path checks for prompt/account/document strings in run
+  events.
+- `tests/test_local_demo_smoke.py` covers safe redacted payloads, raw prompt leakage, forbidden
+  nested payload keys, and malformed event payloads.
+- Full integration evidence is still pending the active backend orchestration and frontend trace
+  worker lanes; do not treat this docs/test lane as proof that the integrated Agentic RAG v1 story
+  is complete.
+
 Earlier hosted smoke status on 2026-06-03:
 
 - Local backend precheck passed with a temporary SQLite database and the backend-only smoke helper:
@@ -239,6 +253,25 @@ Earlier hosted smoke status on 2026-06-03:
 - Frontend integration lives in the separate frontend repository by design.
 
 ## Recommended next workflow
+
+### Current milestone: Agentic RAG Workflow v1 integration evidence
+
+Use `docs/product-chat-service/en/17-agentic-rag-v1-verification-plan.md` as the redaction and
+evidence gate for the active Agentic RAG v1 delivery. After backend orchestration and frontend trace
+lanes are integrated, run the targeted redaction tests, ContextForge/RAG/conversation tests, full
+pytest, Ruff check, Ruff format check, and `git diff --check`; then run local or hosted smoke and
+record a redacted evidence bundle.
+
+Stop condition:
+
+- Required run/SSE event types are present and frontend-safe.
+- Run event payloads expose only operational metadata, counts, route/answer-mode labels, selection
+  IDs/counts, and localization-neutral clarification data.
+- No run event payload exposes raw prompt, raw assistant reply, raw retrieved context/document
+  contents, hidden chain-of-thought/scratchpads, cookies, CSRF/session tokens, credentials, API
+  keys, provider payloads, or database URLs.
+- Backend tests/lint/format/diff checks pass after integration, and the smoke evidence is recorded
+  without mutating `.omx/ultragoal` or Codex goal state from a worker lane.
 
 ### Next milestone: hosted demo cleanup and smoke verification
 

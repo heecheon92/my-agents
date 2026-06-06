@@ -77,3 +77,36 @@ def test_assert_redacted_run_events_rejects_raw_prompt_leak() -> None:
             ],
             forbidden_text=["raw user prompt"],
         )
+
+
+@pytest.mark.parametrize("forbidden_key", ["token", "password", "api_key", "raw_context"])
+def test_assert_redacted_run_events_rejects_sensitive_payload_keys(forbidden_key: str) -> None:
+    with pytest.raises(SmokeFailure, match="forbidden payload keys"):
+        assert_redacted_run_events(
+            [
+                {"event_type": "user_message_stored", "payload": {"content_length": 18}},
+                {
+                    "event_type": "retrieval_completed",
+                    "payload": {
+                        "authorized_context_count": 1,
+                        "nested": {forbidden_key: "secret-ish value"},
+                    },
+                },
+                {"event_type": "graph_invoked", "payload": {"route_label": "general_assistant"}},
+                {"event_type": "answer_composed", "payload": {"reply_length": 42}},
+            ],
+            forbidden_text=[],
+        )
+
+
+def test_assert_redacted_run_events_rejects_non_object_payload() -> None:
+    with pytest.raises(SmokeFailure, match="payload is not an object"):
+        assert_redacted_run_events(
+            [
+                {"event_type": "user_message_stored", "payload": {"content_length": 18}},
+                {"event_type": "retrieval_completed", "payload": []},
+                {"event_type": "graph_invoked", "payload": {"route_label": "general_assistant"}},
+                {"event_type": "answer_composed", "payload": {"reply_length": 42}},
+            ],
+            forbidden_text=[],
+        )

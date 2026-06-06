@@ -21,6 +21,29 @@ from scripts.local_demo_seed import DEMO_DOCUMENT_TITLE, DEMO_EMAIL, DEMO_PASSWO
 DEFAULT_BASE_URL = "http://localhost:8000"
 DEFAULT_PROMPT = "How does the product chat service stream answers and persist app state?"
 JsonObject = dict[str, Any]
+SENSITIVE_EVENT_PAYLOAD_KEYS = frozenset(
+    {
+        "api_key",
+        "authorization",
+        "content",
+        "cookie",
+        "csrf_token",
+        "document_content",
+        "email",
+        "message",
+        "password",
+        "prompt",
+        "provider_payload",
+        "raw_context",
+        "raw_prompt",
+        "reply",
+        "secret",
+        "session",
+        "session_token",
+        "text",
+        "token",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -174,7 +197,7 @@ def run_smoke(
         raise SmokeFailure("run detail reply does not match run_completed reply")
 
     run_events = client.get_json(f"/conversations/{conversation_id}/runs/{run_id}/events")
-    assert_redacted_run_events(run_events, forbidden_text=[prompt])
+    assert_redacted_run_events(run_events, forbidden_text=[prompt, email, password, document_title])
 
     return SmokeResult(
         base_url=base_url.rstrip("/"),
@@ -225,7 +248,7 @@ def find_document_by_title(documents: Any, title: str) -> JsonObject:
 
 
 def assert_redacted_run_events(run_events: Any, *, forbidden_text: list[str]) -> None:
-    """Assert run events are present and do not leak raw prompt-like text."""
+    """Assert run events are present and do not leak raw prompt-like text or secrets."""
     if not isinstance(run_events, list) or len(run_events) < 4:
         raise SmokeFailure(f"run events are missing or incomplete: {run_events!r}")
     event_types = [event.get("event_type") for event in run_events if isinstance(event, dict)]
@@ -233,10 +256,39 @@ def assert_redacted_run_events(run_events: Any, *, forbidden_text: list[str]) ->
     missing = [event_type for event_type in expected if event_type not in event_types]
     if missing:
         raise SmokeFailure(f"run events are missing expected redacted events: {missing!r}")
+    forbidden_payload_keys: list[str] = []
+    for event in run_events:
+        if not isinstance(event, dict):
+            raise SmokeFailure(f"run event is not an object: {event!r}")
+        payload = event.get("payload")
+        if not isinstance(payload, dict):
+            raise SmokeFailure(f"run event payload is not an object: {event!r}")
+        forbidden_payload_keys.extend(_forbidden_payload_key_paths(payload))
+    if forbidden_payload_keys:
+        joined = ", ".join(sorted(forbidden_payload_keys))
+        raise SmokeFailure(f"run events exposed forbidden payload keys: {joined}")
     serialized = json.dumps(run_events, sort_keys=True)
     for text in forbidden_text:
         if text and text in serialized:
             raise SmokeFailure("run events leaked forbidden raw text")
+
+
+def _forbidden_payload_key_paths(value: Any, *, path: str = "payload") -> list[str]:
+    if isinstance(value, dict):
+        matches: list[str] = []
+        for key, nested in value.items():
+            key_text = str(key)
+            next_path = f"{path}.{key_text}"
+            if key_text.casefold() in SENSITIVE_EVENT_PAYLOAD_KEYS:
+                matches.append(next_path)
+            matches.extend(_forbidden_payload_key_paths(nested, path=next_path))
+        return matches
+    if isinstance(value, list):
+        matches = []
+        for index, nested in enumerate(value):
+            matches.extend(_forbidden_payload_key_paths(nested, path=f"{path}[{index}]"))
+        return matches
+    return []
 
 
 def _last_event_payload(events: list[JsonObject], event_name: str) -> JsonObject:
