@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from sqlalchemy import select
 
 from my_agents.auth.models import GuestAccessCodeModel, GuestAccessRequestModel
@@ -12,7 +14,7 @@ from my_agents.persistence.database import (
     reset_database_caches,
 )
 from my_agents.settings import Settings
-from scripts.issue_guest_access_code import issue_guest_access_code
+from scripts.issue_guest_access_code import issue_guest_access_code, resolve_env_file
 
 
 def _settings(monkeypatch, database_url: str) -> Settings:  # noqa: ANN001
@@ -54,3 +56,14 @@ def test_issue_guest_access_code_links_pending_request(tmp_path, monkeypatch) ->
     assert code_row.code_hash != result.code
 
     reset_database_caches()
+
+
+def test_resolve_env_file_uses_named_pgvector_profiles() -> None:
+    assert resolve_env_file(profile="pgvector.local") == Path(".env.pgvector.local")
+    assert resolve_env_file(profile="pgvector.production") == Path(".env.pgvector.production")
+
+
+def test_resolve_env_file_allows_explicit_override(tmp_path) -> None:
+    env_file = tmp_path / "operator.env"
+
+    assert resolve_env_file(profile="pgvector.local", env_file=env_file) == env_file

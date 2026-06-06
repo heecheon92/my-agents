@@ -30,11 +30,20 @@ class Base(DeclarativeBase):
 @lru_cache(maxsize=8)
 def _engine_for_url(database_url: str) -> Engine:
     deploy_log("database.engine.create", **safe_database_url_summary(database_url))
+    kwargs = _engine_kwargs_for_url(database_url)
+    return create_engine(database_url, **kwargs)
+
+
+def _engine_kwargs_for_url(database_url: str) -> dict:
+    """Return SQLAlchemy engine kwargs for this backend's supported database URLs."""
     kwargs: dict = {"future": True}
     if database_url == "sqlite+pysqlite:///:memory:":
         kwargs["connect_args"] = {"check_same_thread": False}
         kwargs["poolclass"] = StaticPool
-    return create_engine(database_url, **kwargs)
+    elif database_url.startswith("postgresql"):
+        kwargs["pool_pre_ping"] = True
+        kwargs["pool_recycle"] = 300
+    return kwargs
 
 
 @lru_cache(maxsize=8)

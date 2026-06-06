@@ -8,8 +8,10 @@ requester.
 from __future__ import annotations
 
 import argparse
+import sys
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from my_agents.auth.service import AuthService
 from my_agents.persistence.database import (
@@ -18,6 +20,11 @@ from my_agents.persistence.database import (
     reset_database_caches,
 )
 from my_agents.settings import Settings
+
+ENV_FILE_BY_PROFILE = {
+    "pgvector.local": Path(".env.pgvector.local"),
+    "pgvector.production": Path(".env.pgvector.production"),
+}
 
 
 @dataclass(frozen=True)
@@ -73,13 +80,37 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Override guest code TTL seconds. Defaults to MY_AGENTS_GUEST_CODE_TTL_SECONDS.",
     )
+    parser.add_argument(
+        "--env",
+        choices=tuple(ENV_FILE_BY_PROFILE),
+        default="pgvector.local",
+        help=(
+            "Named env file to load. Defaults to pgvector.local for safety; "
+            "use pgvector.production only when intentionally issuing against production."
+        ),
+    )
+    parser.add_argument(
+        "--env-file",
+        type=Path,
+        default=None,
+        help="Explicit env file path. Overrides --env when provided.",
+    )
     return parser
+
+
+def resolve_env_file(*, profile: str, env_file: Path | None = None) -> Path:
+    """Resolve the env file used for the guest-code issue operation."""
+    selected = env_file or ENV_FILE_BY_PROFILE[profile]
+    return selected.expanduser()
 
 
 def main() -> int:
     args = _build_parser().parse_args()
-    # settings = Settings(_env_file=".env", response_mode="deterministic")
-    settings = Settings(_env_file=".env.pgvector.local", response_mode="deterministic")
+    env_file = resolve_env_file(profile=args.env, env_file=args.env_file)
+    if not env_file.is_file():
+        print(f"error: env file does not exist: {env_file}", file=sys.stderr)
+        return 1
+    settings = Settings(_env_file=env_file)
     result = issue_guest_access_code(
         settings=settings,
         email=args.email,
@@ -87,6 +118,7 @@ def main() -> int:
         request_id=args.request_id,
     )
     print("Guest access code issued")
+    print(f"env_file={env_file}")
     print(f"email={result.email}")
     print(f"request_id={result.request_id}")
     print(f"code={result.code}")

@@ -13,6 +13,7 @@ Start here:
 7. [Parallel ingestion Postgres deadlock](./06-parallel-ingestion-postgres-deadlock.md)
 8. [PDF Upload Extraction Pipeline and NUL Byte Failures](./07-pdf-upload-extraction-pipeline-and-nul-byte-failures.md)
 9. [Structured retrieval gap: API docs without endpoint-list wording](./08-structured-retrieval-api-docs.md)
+10. [Production guest login stale Postgres SSL connection](./09-production-guest-login-stale-postgres-ssl-connection.md)
 
 This directory is the owner's learning path archive. The root numbered notes are personal learning logs. Focused learning tracks can live in subfolders, such as [`agent-lab/`](./agent-lab/). Project architecture docs that are not primarily learning logs live outside this directory, for example [`docs/product-chat-service/en/`](../product-chat-service/).
 

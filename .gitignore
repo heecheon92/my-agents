@@ -50,3 +50,4 @@ htmlcov/
 
 # Playwright MCP local artifacts
 .playwright-mcp/
+.understand-anything/

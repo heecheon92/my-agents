@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from sqlalchemy import Engine
 
-from my_agents.persistence.database import Base, initialize_database, reset_database_caches
+from my_agents.persistence.database import (
+    Base,
+    _engine_kwargs_for_url,
+    initialize_database,
+    reset_database_caches,
+)
 from my_agents.persistence.models import import_all_models
 from my_agents.settings import Settings
 
@@ -69,3 +74,17 @@ def test_initialize_database_skips_postgres_auto_create_by_default(
     initialize_database(settings)
 
     assert calls == []
+
+
+def test_postgres_engine_pre_pings_and_recycles_idle_connections() -> None:
+    kwargs = _engine_kwargs_for_url("postgresql+psycopg://app:pw@db/app")
+
+    assert kwargs["pool_pre_ping"] is True
+    assert kwargs["pool_recycle"] == 300
+
+
+def test_in_memory_sqlite_engine_keeps_static_pool() -> None:
+    kwargs = _engine_kwargs_for_url("sqlite+pysqlite:///:memory:")
+
+    assert kwargs["connect_args"] == {"check_same_thread": False}
+    assert kwargs["poolclass"].__name__ == "StaticPool"

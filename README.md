@@ -38,6 +38,7 @@
 | Public demo readiness | [`docs/product-chat-service/ko/12-public-demo-deployment-readiness.md`](./docs/product-chat-service/ko/12-public-demo-deployment-readiness.md) |
 | Hybrid retrieval reference | [`docs/product-chat-service/ko/12-retrieval-agent-hybrid-reference.md`](./docs/product-chat-service/ko/12-retrieval-agent-hybrid-reference.md) |
 | Container deployment path | [`docs/product-chat-service/ko/13-generic-container-deployment-path.md`](./docs/product-chat-service/ko/13-generic-container-deployment-path.md) |
+| Script commands / 스크립트 명령 | [`scripts/README.md`](./scripts/README.md) |
 | Layout-aware RAG idea | [`docs/idea/layout-aware-ingestion-rag-agent.md`](./docs/idea/layout-aware-ingestion-rag-agent.md) |
 
 ## 경계
@@ -197,6 +198,7 @@ uv run python -m scripts.local_demo_smoke --base-url http://127.0.0.1:8000
 - Product docs: [`docs/product-chat-service/ko/README.md`](./docs/product-chat-service/ko/README.md)
 - Ideas: [`docs/idea/`](./docs/idea/)
 - Learning notes: [`docs/learning/README.md`](./docs/learning/README.md)
+- Script commands / 스크립트 명령: [`scripts/README.md`](./scripts/README.md)
 - General assistant implementation: [`my_agents/agents/general_assistant/README.md`](./my_agents/agents/general_assistant/README.md)
 - ContextForge retrieval boundary: [`my_agents/agents/context_forge/README.md`](./my_agents/agents/context_forge/README.md)
 
