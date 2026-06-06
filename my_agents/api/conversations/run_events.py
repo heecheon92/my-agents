@@ -62,6 +62,15 @@ def retrieval_completed_payload(
     }
     if insufficient_evidence:
         payload["insufficient_evidence"] = True
+    payload["agent_trace"] = agent_trace_payload(
+        retrieval_agent_trace_steps(
+            retrieved_chunks=retrieved_chunks,
+            retrieval_decision=retrieval_decision,
+            answer_mode=answer_mode,
+            selection_context=selection_context,
+            retrieval_evidence=retrieval_evidence,
+        )
+    )
     if retrieval_evidence is not None:
         payload.update(
             {
@@ -131,12 +140,22 @@ def answer_composed_payload(
         "answer_mode": answer_mode,
         "document_scope": retrieval_decision.document_scope,
     }
-    clarification_required = clarification is not None
     if clarification is not None:
         payload["clarification_required"] = True
         payload["clarification"] = clarification.model_dump(mode="json")
     if insufficient_evidence:
         payload["insufficient_evidence"] = True
+    payload["agent_trace"] = agent_trace_payload(
+        [
+            answer_agent_trace_step(
+                citation_count=citation_count,
+                reply=reply,
+                retrieval_decision=retrieval_decision,
+                answer_mode=answer_mode,
+                clarification_required=clarification is not None,
+            )
+        ]
+    )
     payload.update(knowledge_base_selection_payload(selection_context))
     return payload
 

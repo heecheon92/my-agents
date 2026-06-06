@@ -182,36 +182,7 @@ def _complete_sync_conversation_run(
             selection_context=retrieval_context.knowledge_base_selection,
             warnings=warnings,
             insufficient_evidence=True,
-        )
-    if retrieval_context.insufficient_evidence:
-        route = classify_messages(messages)
-        return persist_completed_run(
-            db=db,
-            run_id=run.id,
-            conversation_id=conversation_id,
-            retrieved_chunks=[],
-            route=route,
-            reply=insufficient_evidence_reply(),
-            retrieval_decision=retrieval_context.decision,
-            answer_mode=retrieval_context.answer_mode,
-            selection_context=retrieval_context.knowledge_base_selection,
-            warnings=warnings,
-            insufficient_evidence=True,
-        )
-    if retrieval_context.insufficient_evidence:
-        route = classify_messages(messages)
-        return persist_completed_run(
-            db=db,
-            run_id=run.id,
-            conversation_id=conversation_id,
-            retrieved_chunks=[],
-            route=route,
-            reply=insufficient_evidence_reply(),
-            retrieval_decision=retrieval_context.decision,
-            answer_mode=retrieval_context.answer_mode,
-            selection_context=retrieval_context.knowledge_base_selection,
-            warnings=warnings,
-            insufficient_evidence=True,
+            retrieval_evidence=retrieval_context.retrieval_evidence,
         )
     graph_input = graph_input_for_run(
         messages=messages,
@@ -292,6 +263,7 @@ def persist_completed_run(
     warnings: list[ConversationRunWarning] | None = None,
     clarification: ConversationClarificationRequest | None = None,
     insufficient_evidence: bool = False,
+    retrieval_evidence: RetrievalEvidence | None = None,
 ) -> ConversationRunResponse:
     assistant_message = MessageModel(
         conversation_id=conversation_id,

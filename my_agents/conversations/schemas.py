@@ -43,8 +43,6 @@ class MessageResponse(BaseModel):
     content: str
 
 
-
-
 class AgentTraceText(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
