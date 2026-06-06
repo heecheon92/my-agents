@@ -70,9 +70,9 @@ def test_assert_redacted_run_events_rejects_raw_prompt_leak() -> None:
     with pytest.raises(SmokeFailure, match="leaked forbidden raw text"):
         assert_redacted_run_events(
             [
-                {"event_type": "user_message_stored", "payload": {"content": "raw user prompt"}},
+                {"event_type": "user_message_stored", "payload": {"content_length": 18}},
                 {"event_type": "retrieval_completed", "payload": {}},
-                {"event_type": "graph_invoked", "payload": {}},
+                {"event_type": "graph_invoked", "payload": {"route_label": "raw user prompt"}},
                 {"event_type": "answer_composed", "payload": {}},
             ],
             forbidden_text=["raw user prompt"],
