@@ -236,6 +236,7 @@ def conversation_run_events(
                 answer_mode=retrieval_context.answer_mode,
                 selection_context=retrieval_context.knowledge_base_selection,
                 insufficient_evidence=True,
+                retrieval_evidence=retrieval_context.retrieval_evidence,
             )
             yield sse_event(
                 AgentEventType.ANSWER_COMPOSED.value,
@@ -365,6 +366,7 @@ def conversation_run_events(
             retrieval_decision=retrieval_context.decision,
             answer_mode=retrieval_context.answer_mode,
             selection_context=retrieval_context.knowledge_base_selection,
+            retrieval_evidence=retrieval_context.retrieval_evidence,
         )
         yield sse_event(
             AgentEventType.ANSWER_COMPOSED.value,

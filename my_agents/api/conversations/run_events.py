@@ -116,6 +116,7 @@ def graph_invoked_payload(
                 retrieved_chunks=retrieved_chunks,
                 retrieval_decision=retrieval_decision,
                 answer_mode=answer_mode,
+                selection_context=selection_context,
             )
         ]
     )
@@ -152,6 +153,7 @@ def answer_composed_payload(
                 reply=reply,
                 retrieval_decision=retrieval_decision,
                 answer_mode=answer_mode,
+                selection_context=selection_context,
                 clarification_required=clarification is not None,
             )
         ]
