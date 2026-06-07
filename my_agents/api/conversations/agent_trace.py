@@ -10,10 +10,9 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from my_agents.agents.agentic_rag.contracts import AgenticRagStage
-from my_agents.agents.agentic_rag.planner import DeterministicAgenticRagPlanner
-from my_agents.agents.agentic_rag.verifier import DeterministicAgenticRagVerifier
 from my_agents.agents.context_forge.contracts import RetrievalEvidence
+from my_agents.agents.rag_agent.contracts import RagAgentStage
+from my_agents.agents.rag_agent.graph import invoke_rag_agent_graph
 from my_agents.conversations.schemas import AgentTraceStep, AgentTraceText
 from my_agents.knowledge.auth import KnowledgeBaseSelectionContext
 from my_agents.knowledge.retrieval import RetrievedChunk
@@ -27,8 +26,6 @@ _RETRIEVAL_STAGE_IDS = {
     "evidence_judge",
     "context_curator",
 }
-_PLANNER = DeterministicAgenticRagPlanner()
-_VERIFIER = DeterministicAgenticRagVerifier()
 
 
 def retrieval_agent_trace_steps(
@@ -42,7 +39,7 @@ def retrieval_agent_trace_steps(
     """Return compact ContextForge trace steps for retrieval completion."""
     return [
         _stage_to_trace_step(stage, event_type="retrieval_completed")
-        for stage in _verified_agentic_rag_stages(
+        for stage in _verified_rag_agent_stages(
             retrieved_chunks=retrieved_chunks,
             retrieval_decision=retrieval_decision,
             answer_mode=answer_mode,
@@ -116,7 +113,7 @@ def conversation_agent_trace_steps(
     clarification_required: bool = False,
 ) -> list[AgentTraceStep]:
     """Return the compact end-to-end trace for a completed run response."""
-    stages = _verified_agentic_rag_stages(
+    stages = _verified_rag_agent_stages(
         retrieved_chunks=retrieved_chunks,
         retrieval_decision=retrieval_decision,
         answer_mode=answer_mode,
@@ -164,7 +161,7 @@ def agent_trace_steps_from_event_payloads(
     return steps
 
 
-def _verified_agentic_rag_stages(
+def _verified_rag_agent_stages(
     *,
     retrieved_chunks: list[RetrievedChunk],
     retrieval_decision: RetrievalRoutingDecision,
@@ -175,7 +172,7 @@ def _verified_agentic_rag_stages(
     reply: str = "",
     retrieval_evidence: RetrievalEvidence | None = None,
     clarification_required: bool = False,
-) -> tuple[AgenticRagStage, ...]:
+) -> tuple[RagAgentStage, ...]:
     candidate_count = (
         retrieval_evidence.candidate_count
         if retrieval_evidence is not None
@@ -186,7 +183,7 @@ def _verified_agentic_rag_stages(
         if retrieval_evidence is not None
         else len(retrieved_chunks)
     )
-    plan = _PLANNER.plan(
+    plan = invoke_rag_agent_graph(
         retrieval_route=retrieval_decision.route,
         answer_mode=answer_mode,
         document_scope=retrieval_decision.document_scope,
@@ -217,21 +214,17 @@ def _verified_agentic_rag_stages(
         ),
         reply_length=len(reply),
     )
-    verification = _VERIFIER.verify(plan)
-    if not verification.passed:
-        errors = "; ".join(verification.errors)
-        raise RuntimeError(f"Agentic RAG trace contract failed verification: {errors}")
     return plan.stages
 
 
-def _stage_by_id(stage_id: str, **kwargs: Any) -> AgenticRagStage:
-    for stage in _verified_agentic_rag_stages(**kwargs):
+def _stage_by_id(stage_id: str, **kwargs: Any) -> RagAgentStage:
+    for stage in _verified_rag_agent_stages(**kwargs):
         if stage.id == stage_id:
             return stage
-    raise RuntimeError(f"Agentic RAG trace stage {stage_id!r} is unavailable")
+    raise RuntimeError(f"RAG Agent trace stage {stage_id!r} is unavailable")
 
 
-def _stage_to_trace_step(stage: AgenticRagStage, *, event_type: str) -> AgentTraceStep:
+def _stage_to_trace_step(stage: RagAgentStage, *, event_type: str) -> AgentTraceStep:
     return AgentTraceStep(
         id=stage.id,
         event_type=event_type,
@@ -242,7 +235,7 @@ def _stage_to_trace_step(stage: AgenticRagStage, *, event_type: str) -> AgentTra
     )
 
 
-def _event_type_for_stage(stage: AgenticRagStage) -> str:
+def _event_type_for_stage(stage: RagAgentStage) -> str:
     if stage.id in _RETRIEVAL_STAGE_IDS:
         return "retrieval_completed"
     if stage.id == "assistant_graph":

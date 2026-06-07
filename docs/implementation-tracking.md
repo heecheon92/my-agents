@@ -94,14 +94,14 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 - Text-based upload path for PDF, Markdown, and plain text with safe metadata persistence; PDFs keep page provenance and FlateDecode text-stream fallback support. Hosted ingestion can run through an external worker so heavy parser/embedding/indexing work no longer has to share the web request process.
 - Deterministic chunks, provider-backed JSON embeddings (deterministic by default, OpenAI opt-in), entity mentions, and co-occurrence relationships.
 - ContextForge now owns the conversation-run retrieval orchestration boundary through `my_agents/agents/context_forge/`, with deterministic query planning, source-boundary handoff, candidate fusion, deterministic default or optional cross-encoder reranking, high-recall context packing, redacted retrieval evidence, and opt-in Rich debug traces for role handoff messages.
-- `my_agents/agents/agentic_rag/` defines the Agentic RAG workflow contract layer: ContextForge remains the Retrieval Agent while deterministic planner/verifier code validates compact localized trace stages without moving auth, retrieval, ingestion, or provider work into the agent folder.
+- `my_agents/agents/rag_agent/` defines the RAG Agent contract layer inside the broader agentic RAG workflow: ContextForge remains the Retrieval Agent while a dedicated deterministic graph form runs planner/verifier code for compact localized trace stages without moving auth, retrieval, ingestion, or provider work into the agent folder.
 - Retrieval candidate gathering includes authorized document title/source-filename metadata matching, so filename-only user references can find the matching uploaded document even when the filename is absent from chunk content.
 - Ingestion stores structured knowledge entities for API endpoints, config keys, shell commands, error codes, and database table references with document/chunk/run/page/offset provenance.
 - Deterministic retrieval routing supports `no_retrieval`, `retrieval_required`, `retrieval_optional`, and `clarification_required`; clarification runs now return `reply: ""` plus a language-neutral `clarification` contract for human-in-the-loop localization instead of static English prose.
 - Permission-aware retrieval filters candidate chunks before ranking/expansion/composition.
 - Structured enumeration prompts such as “list API endpoints in this document” can retrieve by extracted entity type instead of relying only on vector/keyword wording overlap.
 - Broad personal-document fallback now retrieves recent authorized chunks for resume/profile/uploaded-document questions when exact term matching returns nothing.
-- Authorized retrieved context plus `answer_mode` is passed into the general assistant graph/provider prompt, then citation-backed replies are persisted only when context is used.
+- Authorized retrieved context plus `answer_mode` is still passed into the general assistant graph/provider prompt; the `rag_agent` contract graph now wraps that path with verified trace stages and grounding checks before citation-backed replies are persisted.
 
 ### Persistence and migrations
 
@@ -116,7 +116,7 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 - Bilingual root README pair: `README.md`, `README.en.md`.
 - General assistant README pair under `my_agents/agents/general_assistant/`.
 - ContextForge README pair under `my_agents/agents/context_forge/`.
-- Agentic RAG workflow README pair under `my_agents/agents/agentic_rag/`.
+- RAG Agent workflow README pair under `my_agents/agents/rag_agent/`.
 - Product architecture notes under `docs/product-chat-service/en/`.
 - Personal learning logs and agent-lab notes under `docs/learning/`.
 - Simulated-agent candidate materials exist for future learning/practice ideas.
@@ -159,9 +159,9 @@ The test harness sets `MY_AGENTS_ENV_FILE=` so a developer's local `.env` file c
 
 Agentic RAG workflow evidence on 2026-06-06:
 
-- Added `my_agents/agents/agentic_rag/` as a deterministic contract/verifier layer for the V1 Agentic RAG workflow. ContextForge remains the retrieval agent; authorization/retrieval/provider work stays in existing service boundaries.
+- Added `my_agents/agents/rag_agent/` as the deterministic RAG Agent contract/verifier layer for the V1 agentic RAG workflow. ContextForge remains the retrieval agent; authorization/retrieval/provider work stays in existing service boundaries.
 - Conversation run responses, persisted events, and SSE payloads now expose compact localized ko/en `agent_trace` steps while preserving existing citation/evidence UI fields and avoiding raw prompt/snippet/provider-error leakage.
-- Local verification: `uv run ruff check my_agents/api/conversations/agent_trace.py my_agents/api/conversations/run_events.py my_agents/api/conversations/run_lifecycle.py my_agents/api/conversations/serializers.py my_agents/api/conversations/endpoints/stream.py my_agents/conversations/schemas.py my_agents/agents/agentic_rag tests/test_agentic_rag_contracts.py tests/test_conversations_api.py` passed; `uv run pytest -q tests/test_agentic_rag_contracts.py tests/test_context_forge_contracts.py tests/test_conversations_api.py::test_conversation_run_uses_server_owned_history tests/test_conversations_api.py::test_streaming_conversation_run_emits_events_and_persists_result tests/test_conversations_api.py::test_streaming_ambiguous_document_scope_emits_human_clarification_state` passed.
+- Local verification: `uv run ruff check my_agents/api/conversations/agent_trace.py my_agents/api/conversations/run_events.py my_agents/api/conversations/run_lifecycle.py my_agents/api/conversations/serializers.py my_agents/api/conversations/endpoints/stream.py my_agents/conversations/schemas.py my_agents/agents/rag_agent tests/test_rag_agent_contracts.py tests/test_conversations_api.py` passed; `uv run pytest -q tests/test_rag_agent_contracts.py tests/test_context_forge_contracts.py tests/test_conversations_api.py::test_conversation_run_uses_server_owned_history tests/test_conversations_api.py::test_streaming_conversation_run_emits_events_and_persists_result tests/test_conversations_api.py::test_streaming_ambiguous_document_scope_emits_human_clarification_state` passed.
 - Hosted smoke was not run for this worker slice; production smoke status remains the separate entry below.
 
 Hosted smoke status on 2026-06-06:
@@ -178,7 +178,7 @@ Hosted smoke status on 2026-06-06:
 - Owner manual follow-up confirmed actual Resend guest-code inbox receipt and non-guest signup ->
   email verification -> login smoke.
 
-Agentic RAG Workflow v1 verification-lane status on 2026-06-06:
+Agentic RAG workflow v1 verification-lane status on 2026-06-06:
 
 - Redaction requirements and the final evidence checklist are documented in
   `docs/product-chat-service/en/17-agentic-rag-v1-verification-plan.md`.
@@ -189,7 +189,7 @@ Agentic RAG Workflow v1 verification-lane status on 2026-06-06:
 - `tests/test_local_demo_smoke.py` covers safe redacted payloads, raw prompt leakage, forbidden
   nested payload keys, and malformed event payloads.
 - Full integration evidence is still pending the active backend orchestration and frontend trace
-  worker lanes; do not treat this docs/test lane as proof that the integrated Agentic RAG v1 story
+  worker lanes; do not treat this docs/test lane as proof that the integrated agentic RAG v1 story
   is complete.
 
 Earlier hosted smoke status on 2026-06-03:
@@ -233,7 +233,7 @@ Earlier hosted smoke status on 2026-06-03:
 - Async ingestion progress is available through an additive endpoint (`POST /documents/{id}/ingest/async`) plus direct run polling. Local/default mode still supports in-process threads; hosted mode can set `MY_AGENTS_INGESTION_EXECUTION_MODE=external_worker` and run `python -m my_agents.ingestion_worker`. Durable queue semantics and stale-run recovery remain future work.
 - Embeddings use a provider boundary: deterministic 32-dimensional lexical-hash vectors by default, or opt-in OpenAI embeddings through `langchain-openai` when `MY_AGENTS_EMBEDDING_MODE=openai`; Postgres chunks also store a pgvector `embedding_vector` through Alembic migration `20260521_0007`.
 - Retrieval ranking is permission-first ContextForge orchestration over pgvector SQL vector search on Postgres, JSON cosine fallback for SQLite/tests, blended lexical score, entity expansion, structured entity retrieval, deterministic fusion/reranking, optional cross-encoder second-stage reranking over bounded authorized candidates, and a narrow personal-document fallback; LLM query rewrite, ANN/vector index tuning, production reranker packaging, and latency evals are still future work.
-- ContextForge is the dedicated retrieval-agent service boundary. A future LangGraph `RetrievalGraph` remains deferred until role-node orchestration adds value beyond the current package-level roles; hard authorization should remain in `RetrievalService` even then.
+- ContextForge is the dedicated retrieval-agent service boundary. The current `rag_agent` graph is a thin contract/verification graph around the RAG path; a deeper ContextForge LangGraph `RetrievalGraph` remains deferred until role-node/tool orchestration adds value beyond the current package-level roles. Hard authorization should remain in `RetrievalService` even then.
 - Entity extraction is deterministic regex/technical-term extraction, not production NLP/LLM extraction. Canonical entity creation is conflict-safe for concurrent async ingestion: names are pre-collected in stable order and inserted with dialect-aware `ON CONFLICT DO NOTHING` to avoid Postgres unique-index lock cycles.
 
 ### Agent/product behavior
@@ -263,10 +263,10 @@ Earlier hosted smoke status on 2026-06-03:
 
 ## Recommended next workflow
 
-### Current milestone: Agentic RAG Workflow v1 integration evidence
+### Current milestone: Agentic RAG workflow v1 integration evidence
 
 Use `docs/product-chat-service/en/17-agentic-rag-v1-verification-plan.md` as the redaction and
-evidence gate for the active Agentic RAG v1 delivery. After backend orchestration and frontend trace
+evidence gate for the active agentic RAG v1 delivery. After backend orchestration and frontend trace
 lanes are integrated, run the targeted redaction tests, ContextForge/RAG/conversation tests, full
 pytest, Ruff check, Ruff format check, and `git diff --check`; then run local or hosted smoke and
 record a redacted evidence bundle.
@@ -339,7 +339,7 @@ limits.
 
 | Date | Milestone | Evidence |
 | --- | --- | --- |
-| 2026-06-06 | Added Agentic RAG workflow contracts and compact localized trace payloads for run responses/SSE/events. | `my_agents/agents/agentic_rag/`; `my_agents/api/conversations/agent_trace.py`; `my_agents/api/conversations/run_events.py`; `my_agents/api/conversations/run_lifecycle.py`; `my_agents/api/conversations/serializers.py`; `my_agents/api/conversations/endpoints/stream.py`; `my_agents/conversations/schemas.py`; `tests/test_agentic_rag_contracts.py`; `tests/test_conversations_api.py`; Agentic RAG README pair; local targeted Ruff/pytest evidence. |
+| 2026-06-06 | Added RAG Agent contracts for the agentic RAG workflow and compact localized trace payloads for run responses/SSE/events. | `my_agents/agents/rag_agent/`; `my_agents/api/conversations/agent_trace.py`; `my_agents/api/conversations/run_events.py`; `my_agents/api/conversations/run_lifecycle.py`; `my_agents/api/conversations/serializers.py`; `my_agents/api/conversations/endpoints/stream.py`; `my_agents/conversations/schemas.py`; `tests/test_rag_agent_contracts.py`; `tests/test_conversations_api.py`; RAG Agent README pair; local targeted Ruff/pytest evidence. |
 | 2026-05-27 | Added external-worker ingestion mode so hosted async document ingestion no longer needs to run inside the web request process. | `my_agents/knowledge/ingestion_worker.py`; `my_agents/ingestion_worker.py`; `my_agents/api/documents.py`; `my_agents/settings.py`; `.env.example`; `tests/test_knowledge_ingestion.py`; `tests/test_settings.py`; README pair; Render migration/troubleshooting docs. |
 | 2026-05-27 | Basic hosted deployment and CI/CD baseline proven with Render backend, Vercel frontend, Neon Postgres, Resend HTTP email, verified `my-agents.dev`, and frontend auth email landing routes. | Backend commits `7a3b864`, `a6975cc`, `e455774`, `4f0b0b0`; frontend commit `7ade1aa`; `docs/product-chat-service/en/14-render-migration-and-rollback-notes.md`; `docs/product-chat-service/en/15-deployment-troubleshooting-log.md`; hosted logs showing `POST /auth/signup 201 Created` and `auth.email.resend_http.completed`. |
 | 2026-05-26 | Email-gated guest requests added so the browser receives only an acknowledgement while operators issue one-time codes manually. | `my_agents/auth/service.py`; `my_agents/api/auth.py`; `my_agents/auth/models.py`; `alembic/versions/20260526_0016_guest_access_requests.py`; `scripts/issue_guest_access_code.py`; `tests/test_guest_access_api.py`; `docs/product-chat-service/en/02-first-party-auth-sessions.md`. |

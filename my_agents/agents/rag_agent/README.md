@@ -1,12 +1,13 @@
-# Agentic RAG workflow
+# RAG Agent workflow
 
 [English](./README.en.md) | 한국어
 
-`agentic_rag`는 문서 기반 conversation run을 위한 production-facing workflow contract입니다. ContextForge를 대체하지 않고, ContextForge를 Retrieval Agent로 명명한 뒤 frontend가 표시할 compact trace state를 deterministic planner/verifier로 관리합니다.
+`rag_agent`는 문서 기반 conversation run을 위한 production-facing RAG Agent contract입니다. 이 코드베이스에서 **agentic RAG**는 더 넓은 architecture pattern / milestone을 뜻하고, **RAG Agent**는 그 안에 있는 구체적인 agent-facing contract를 뜻합니다. 이 패키지는 ContextForge를 대체하지 않고, ContextForge를 Retrieval Agent로 명명한 뒤 frontend가 표시할 compact trace state를 deterministic planner/verifier로 관리합니다.
 
 ## 현재 역할
 
 - Query Cartographer, Source Warden, Candidate Scouts, Evidence Judge, Context Curator, Assistant Graph, Answer Composer 단계 contract를 정의합니다.
+- 이 contract surface 전용 LangGraph form(`plan_workflow -> verify_workflow`)을 제공합니다.
 - 이미 redacted된 service-layer count로 stage status를 계획합니다.
 - stage 순서, 한/영 copy, ContextForge retrieval ownership, redacted evidence key를 검증합니다.
 - database retrieval, authorization, ingestion, reranking, LLM call, provider reasoning은 수행하지 않습니다.
@@ -16,6 +17,7 @@
 | 파일 | 책임 |
 | --- | --- |
 | `contracts.py` | dataclass contract, stage identifier, role name, expected stage order. |
+| `graph.py` | RAG Agent contract를 계획하고 검증하는 전용 LangGraph form. |
 | `planner.py` | compact run trace를 위한 deterministic stage planner. |
 | `verifier.py` | trace contract의 shape/safety를 검증하는 deterministic verifier. |
 | `README.md` / `README.en.md` | 한국어/영어 behavior 및 boundary 문서. |
@@ -24,16 +26,20 @@
 ## Graph 또는 실행 흐름
 
 ```mermaid
-flowchart TD
-    Run[Conversation run metadata] --> Planner[DeterministicAgenticRagPlanner]
-    Planner --> Q[Query Cartographer]
-    Q --> W[Source Warden]
-    W --> S[Candidate Scouts]
-    S --> J[Evidence Judge]
-    J --> C[Context Curator]
-    C --> G[Assistant Graph]
-    G --> A[Answer Composer]
-    Planner --> Verifier[DeterministicAgenticRagVerifier]
+sequenceDiagram
+    participant Service as Conversation run service
+    participant Graph as RAG Agent graph
+    participant Planner as plan_workflow
+    participant Verifier as verify_workflow
+    participant Trace as Agent trace consumer
+
+    Service->>Graph: redacted run metadata
+    Graph->>Planner: plan workflow stages
+    Planner-->>Graph: RagAgentWorkflowPlan
+    Graph->>Verifier: verify order, localization, evidence keys
+    Verifier-->>Graph: RagAgentVerification
+    Graph-->>Service: verified stages
+    Service-->>Trace: compact ko/en trace payload
 ```
 
 ## Route/tool/state 의미
@@ -45,7 +51,7 @@ flowchart TD
 
 ## Capability / boundary metadata
 
-이 패키지는 deterministic production contract layer입니다. Autonomous agent runtime이 아니며 provider credential이나 external side effect가 없습니다.
+이 패키지는 deterministic production contract layer이며 전용 LangGraph shape를 갖습니다. Agentic RAG workflow의 한 구성 요소이지 전체 pattern의 동의어가 아닙니다. Autonomous agent runtime이 아니며 provider credential이나 external side effect가 없습니다.
 
 ## Service layer와의 관계
 
@@ -57,6 +63,6 @@ API/conversation service가 이미 authorization을 통과한 count와 route met
 
 ## 변경 체크리스트
 
-- Contract 변경 시 `tests/test_agentic_rag_contracts.py`를 업데이트합니다.
+- Contract 변경 시 `tests/test_rag_agent_contracts.py`를 업데이트합니다.
 - Trace payload 변경 시 conversation API 테스트를 실행합니다.
 - README pair와 `CHANGELOG.md`를 함께 유지합니다.

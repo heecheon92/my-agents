@@ -1,18 +1,18 @@
-"""Deterministic planner for Agentic RAG workflow trace contracts."""
+"""Deterministic planner for RAG Agent workflow trace contracts."""
 
 from __future__ import annotations
 
-from my_agents.agents.agentic_rag.contracts import (
+from my_agents.agents.rag_agent.contracts import (
     ASSISTANT_AGENT_NAME,
     RETRIEVAL_AGENT_NAME,
-    AgenticRagStage,
-    AgenticRagWorkflowPlan,
-    LocalizedAgenticRagText,
+    LocalizedRagAgentText,
+    RagAgentStage,
+    RagAgentWorkflowPlan,
 )
 from my_agents.knowledge.routing import AnswerMode, DocumentScope, RetrievalRoute
 
 
-class DeterministicAgenticRagPlanner:
+class DeterministicRagAgentPlanner:
     """Plan compact workflow stages without provider calls or hidden reasoning."""
 
     def plan(
@@ -37,7 +37,7 @@ class DeterministicAgenticRagPlanner:
         structured_entity_types: tuple[str, ...] = (),
         budget_truncated: bool = False,
         reply_length: int = 0,
-    ) -> AgenticRagWorkflowPlan:
+    ) -> RagAgentWorkflowPlan:
         """Build the frontend-safe stage plan for one run.
 
         ContextForge remains the retrieval agent. The planner only summarizes stage
@@ -57,13 +57,13 @@ class DeterministicAgenticRagPlanner:
             context_curator_evidence["budget_truncated"] = budget_truncated
 
         stages = (
-            AgenticRagStage(
+            RagAgentStage(
                 id="query_cartographer",
                 role="retrieval_agent",
                 agent_name=RETRIEVAL_AGENT_NAME,
                 status="completed",
-                title=LocalizedAgenticRagText(en="Query Cartographer", ko="질문 지도화"),
-                description=LocalizedAgenticRagText(
+                title=LocalizedRagAgentText(en="Query Cartographer", ko="질문 지도화"),
+                description=LocalizedRagAgentText(
                     en=f"Planned a {retrieval_route} path for {intent}.",
                     ko=f"{intent} 요청을 {retrieval_route} 경로로 계획했습니다.",
                 ),
@@ -75,13 +75,13 @@ class DeterministicAgenticRagPlanner:
                     "structured_entity_types": list(structured_entity_types),
                 },
             ),
-            AgenticRagStage(
+            RagAgentStage(
                 id="source_warden",
                 role="retrieval_agent",
                 agent_name=RETRIEVAL_AGENT_NAME,
                 status="completed",
-                title=LocalizedAgenticRagText(en="Source Warden", ko="출처 경계 확인"),
-                description=LocalizedAgenticRagText(
+                title=LocalizedRagAgentText(en="Source Warden", ko="출처 경계 확인"),
+                description=LocalizedRagAgentText(
                     en=f"Resolved {resolved_knowledge_base_count} authorized sources.",
                     ko=f"승인된 출처 {resolved_knowledge_base_count}개를 확정했습니다.",
                 ),
@@ -93,13 +93,13 @@ class DeterministicAgenticRagPlanner:
                     ),
                 },
             ),
-            AgenticRagStage(
+            RagAgentStage(
                 id="candidate_scouts",
                 role="retrieval_agent",
                 agent_name=RETRIEVAL_AGENT_NAME,
                 status=scout_status,
-                title=LocalizedAgenticRagText(en="Candidate Scouts", ko="후보 검색"),
-                description=LocalizedAgenticRagText(
+                title=LocalizedRagAgentText(en="Candidate Scouts", ko="후보 검색"),
+                description=LocalizedRagAgentText(
                     en=f"Found {candidate_count} candidates; {authorized_context_count} chunks.",
                     ko=f"후보 {candidate_count}개, 청크 {authorized_context_count}개 확인.",
                 ),
@@ -108,37 +108,37 @@ class DeterministicAgenticRagPlanner:
                     "authorized_context_count": authorized_context_count,
                 },
             ),
-            AgenticRagStage(
+            RagAgentStage(
                 id="evidence_judge",
                 role="retrieval_agent",
                 agent_name=RETRIEVAL_AGENT_NAME,
                 status=judge_status,
-                title=LocalizedAgenticRagText(en="Evidence Judge", ko="근거 판정"),
-                description=LocalizedAgenticRagText(
+                title=LocalizedRagAgentText(en="Evidence Judge", ko="근거 판정"),
+                description=LocalizedRagAgentText(
                     en=f"Applied {reranker} relevance ordering.",
                     ko=f"{reranker} 관련도 정렬을 적용했습니다.",
                 ),
                 evidence={"reranker": reranker, "candidate_count": candidate_count},
             ),
-            AgenticRagStage(
+            RagAgentStage(
                 id="context_curator",
                 role="retrieval_agent",
                 agent_name=RETRIEVAL_AGENT_NAME,
                 status=curator_status,
-                title=LocalizedAgenticRagText(en="Context Curator", ko="컨텍스트 선별"),
-                description=LocalizedAgenticRagText(
+                title=LocalizedRagAgentText(en="Context Curator", ko="컨텍스트 선별"),
+                description=LocalizedRagAgentText(
                     en=f"Injected {injected_count} chunks and rejected {rejected_count}.",
                     ko=f"청크 {injected_count}개를 주입하고 {rejected_count}개를 제외했습니다.",
                 ),
                 evidence=context_curator_evidence,
             ),
-            AgenticRagStage(
+            RagAgentStage(
                 id="assistant_graph",
                 role="assistant_agent",
                 agent_name=ASSISTANT_AGENT_NAME,
                 status=graph_status,
-                title=LocalizedAgenticRagText(en="Assistant Graph", ko="어시스턴트 그래프"),
-                description=LocalizedAgenticRagText(
+                title=LocalizedRagAgentText(en="Assistant Graph", ko="어시스턴트 그래프"),
+                description=LocalizedRagAgentText(
                     en=f"Invoked {route_label} with {retrieved_chunk_count} context chunks.",
                     ko=f"{route_label} 경로에 컨텍스트 청크 {retrieved_chunk_count}개 전달.",
                 ),
@@ -149,13 +149,13 @@ class DeterministicAgenticRagPlanner:
                     "retrieved_chunk_count": retrieved_chunk_count,
                 },
             ),
-            AgenticRagStage(
+            RagAgentStage(
                 id="answer_composer",
                 role="assistant_agent",
                 agent_name=ASSISTANT_AGENT_NAME,
                 status=assistant_status,
-                title=LocalizedAgenticRagText(en="Answer Composer", ko="답변 작성"),
-                description=LocalizedAgenticRagText(
+                title=LocalizedRagAgentText(en="Answer Composer", ko="답변 작성"),
+                description=LocalizedRagAgentText(
                     en=f"Prepared answer state with {citation_count} citations.",
                     ko=f"인용 {citation_count}개의 답변 상태를 준비했습니다.",
                 ),
@@ -168,7 +168,7 @@ class DeterministicAgenticRagPlanner:
                 },
             ),
         )
-        return AgenticRagWorkflowPlan(
+        return RagAgentWorkflowPlan(
             retrieval_route=retrieval_route,
             answer_mode=answer_mode,
             document_scope=document_scope,

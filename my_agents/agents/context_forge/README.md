@@ -2,7 +2,7 @@
 
 한국어 | [English](./README.en.md)
 
-`context_forge`는 문서 근거 답변을 위한 전용 검색 계층 패키지입니다. `general_assistant`와 분리되어 있으며, ContextForge는 검색 계획, 소스 경계 전달, 승인된 후보 수집, 답변용 컨텍스트 패킹, redacted evidence 이벤트 생성을 담당하고 assistant는 최종 답변 작성에 집중합니다.
+`context_forge`는 문서 근거 답변을 위한 전용 검색 계층 패키지입니다. `general_assistant` 및 `rag_agent`와 분리되어 있으며, ContextForge는 검색 계획, 소스 경계 전달, 승인된 후보 수집, 답변용 컨텍스트 패킹, redacted evidence 생성을 담당합니다. RAG Agent contract는 assistant가 최종 prose를 쓰기 전후에 이 redacted evidence를 trace/grounding check에 사용합니다.
 
 ## 현재 역할
 
@@ -89,7 +89,7 @@ Cross-encoder는 이미 승인된 top-k 후보(`CandidateLimits.rerank_limit`)�
 
 ## 보안 경계
 
-ContextForge는 권한 판단을 prompt에 맡기지 않습니다. 후보 생성은 기존 resolved `KnowledgeBaseSelectionContext`와 low-level retrieval SQL filter에서 시작합니다. Deterministic/cross-encoder reranking, packing, graph input, citation, event는 승인된 후보만 받습니다.
+ContextForge는 권한 판단을 prompt에 맡기지 않습니다. 후보 생성은 기존 resolved `KnowledgeBaseSelectionContext`와 low-level retrieval SQL filter에서 시작합니다. Deterministic/cross-encoder reranking, packing, RAG Agent trace state, graph input, citation, event는 승인된 후보만 받습니다.
 모호한 문서 참조가 여러 승인 문서에 걸릴 때는 무리하게 전체 문서를 검색하지 않고, 정적 assistant 문장 없이 `message_key`/`input_slot` 기반 clarification contract로 멈춥니다.
 
 ## 테스트

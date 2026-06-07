@@ -1,6 +1,6 @@
-# Layout-aware ingestion for the future RAG agent
+# Layout-aware ingestion for a richer RAG Agent
 
-This note captures the product and architecture idea for using a document layout parser, such as Upstage Document Parse, as an ingestion-stage upgrade that feeds the future RAG agent graph.
+This note captures the product and architecture idea for using a document layout parser, such as Upstage Document Parse, as an ingestion-stage upgrade that feeds a future tool-using RAG Agent graph beyond the current contract graph.
 
 ## Core idea
 
@@ -14,14 +14,14 @@ Original upload
 → structured Markdown / HTML / layout element JSON
 → section-aware chunks with page + element provenance
 → embeddings + structured facts + metadata profile
-→ RAG agent tools retrieve, inspect, rerank, and answer with citations
+→ future RAG Agent tools retrieve, inspect, rerank, and answer with citations
 ```
 
 Markdown is a good canonical text surface for chunking, but it should not be the only stored parser output. The parsed layout element JSON is needed for page coordinates, table/figure/caption relationships, source previews, and trustworthy citation UX.
 
 ## Why this matters
 
-The current backend already has a dedicated RAG service boundary through `ContextForge`, but the ingestion path is still mostly text-centric. That is enough for a product V1 slice, but production RAG quality depends on preserving document structure before retrieval starts.
+The current backend already has a dedicated RAG service boundary through `ContextForge` and a thin `rag_agent` contract graph for trace/grounding verification, but the ingestion path is still mostly text-centric. That is enough for a product V1 slice, but production RAG quality depends on preserving document structure before retrieval starts.
 
 Layout parsing helps when documents contain:
 
@@ -32,7 +32,7 @@ Layout parsing helps when documents contain:
 - scanned or image-heavy pages;
 - forms, reports, contracts, manuals, API references, and Korean/English mixed layouts.
 
-Without layout-aware parsing, chunking can cut through the middle of a section or flatten tables into noisy text. The future RAG agent can reason better only if its retrieval tools expose meaningful document units.
+Without layout-aware parsing, chunking can cut through the middle of a section or flatten tables into noisy text. A future tool-using RAG Agent can reason better only if its retrieval tools expose meaningful document units.
 
 ## Current state
 
@@ -48,13 +48,15 @@ flowchart TD
     Chunks --> Entities["Entities + structured facts"]
     Embeddings --> ContextForge["ContextForge retrieval service"]
     Entities --> ContextForge
-    ContextForge --> GraphInput["Retrieved context injected into assistant graph"]
-    GraphInput --> Answer["Answer + citations + redacted events"]
+    ContextForge --> RAGAgent["RAG Agent contract graph"]
+    ContextForge --> GraphInput["Authorized context for general_assistant"]
+    GraphInput --> Answer["Answer + citations"]
+    RAGAgent --> AnswerTrace["Verified trace + grounding checks"]
 ```
 
 This gives a working permission-aware RAG slice, including citations, events, structured entity retrieval, metadata profiles, pgvector-backed search on Postgres, and deterministic fallbacks for tests.
 
-The missing production-depth piece is a durable parsed-document artifact layer that preserves layout and lets the future RAG agent retrieve at section/table/figure granularity.
+The missing production-depth piece is a durable parsed-document artifact layer that preserves layout and lets a future tool-using RAG Agent retrieve at section/table/figure granularity.
 
 ## Target architecture
 
@@ -74,7 +76,7 @@ flowchart TD
     LayoutJSON --> SectionChunker
     SectionChunker --> RetrievalStore["Chunks + embeddings + structured facts"]
     RetrievalStore --> Tools["RAG agent tools"]
-    Tools --> AgentGraph["Future RAG agent graph"]
+    Tools --> AgentGraph["Future tool-using RAG Agent graph"]
     AgentGraph --> Response["Grounded answer with source audit"]
 ```
 
@@ -83,7 +85,7 @@ The important separation is:
 - **source file**: original user upload, kept for audit/reparse/download;
 - **parse artifact**: Markdown/HTML/elements produced by a parser provider;
 - **retrieval units**: chunks, entities, table rows, figure captions, metadata profiles, and embeddings derived from the artifact;
-- **RAG agent tools**: permission-filtered operations that inspect and retrieve those units.
+- **Future RAG Agent tools**: permission-filtered operations that inspect and retrieve those units.
 
 ## Parser provider boundary
 
@@ -228,9 +230,9 @@ This should improve query classes like:
 - “compare the two policies”;
 - “what does the figure on page 4 show?”
 
-## Future RAG agent graph integration
+## Future tool-using RAG Agent graph integration
 
-The future RAG agent graph should not be only “retrieve top-k chunks then answer.” It should be able to reason over tools while still preserving hard authorization boundaries.
+The future tool-using RAG Agent graph should not be only “retrieve top-k chunks then answer.” It should be able to reason over tools while still preserving hard authorization boundaries.
 
 Candidate graph nodes:
 
@@ -322,7 +324,7 @@ Measure:
    - Add section/table/figure metadata to chunks and citations.
    - Teach ContextForge candidate scouts to use section/table/category fields.
 
-5. **RAG agent graph**
+5. **Tool-using RAG Agent graph**
    - Promote ContextForge roles into graph/tool nodes only after tools and evals justify the extra orchestration.
    - Keep hard authorization in service/tool boundaries.
 
@@ -347,4 +349,4 @@ Measure:
 
 ## Success criterion
 
-The feature is successful when a user can upload a complex document and the RAG agent can choose retrieval tools over sections, tables, figures, and structured entities, then return an answer with citations that identify the relevant document, page, section/table/figure, and source preview without leaking unauthorized content.
+The feature is successful when a user can upload a complex document and a tool-using RAG Agent can choose retrieval tools over sections, tables, figures, and structured entities, then return an answer with citations that identify the relevant document, page, section/table/figure, and source preview without leaking unauthorized content.

@@ -2,6 +2,15 @@
 
 This note captures the product/architecture idea behind turning retrieval quality work into a dedicated RAG agent milestone.
 
+## Current implementation status
+
+As of 2026-06-07, this idea is partially implemented in two layers:
+
+- `ContextForge` is the dedicated retrieval service boundary. It plans retrieval, enforces source policy, gathers authorized candidates, reranks/packs context, and emits redacted retrieval evidence.
+- `rag_agent` is the concrete RAG Agent contract graph. It does not replace ContextForge or the general assistant; it verifies compact trace stages and grounding rules around the existing ContextForge -> general assistant path.
+
+The remaining future work in this note is the deeper tool-using RAG Agent graph where retrieval roles become graph/tool nodes only after evals justify the extra orchestration.
+
 ## Core idea
 
 Build a first-class **Dedicated RAG Agent** that owns document-grounded answering. The general assistant should not be responsible for every retrieval decision. The RAG agent should plan retrieval, enforce source policy, gather and pack context, expose citations, and explain retrieval behavior before the general assistant or answer composer produces final prose.

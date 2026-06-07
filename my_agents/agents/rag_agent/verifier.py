@@ -1,16 +1,16 @@
-"""Deterministic verifier for Agentic RAG workflow trace contracts."""
+"""Deterministic verifier for RAG Agent workflow trace contracts."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 
-from my_agents.agents.agentic_rag.contracts import (
+from my_agents.agents.rag_agent.contracts import (
     EXPECTED_STAGE_ORDER,
     RETRIEVAL_AGENT_NAME,
-    AgenticRagGroundingVerification,
-    AgenticRagStage,
-    AgenticRagVerification,
-    AgenticRagWorkflowPlan,
+    RagAgentGroundingVerification,
+    RagAgentStage,
+    RagAgentVerification,
+    RagAgentWorkflowPlan,
 )
 from my_agents.knowledge.retrieval import RetrievedChunk
 from my_agents.knowledge.routing import (
@@ -32,20 +32,20 @@ _UNSAFE_EVIDENCE_KEYS = {
 _MAX_STRING_EVIDENCE_CHARS = 160
 
 
-class DeterministicAgenticRagVerifier:
+class DeterministicRagAgentVerifier:
     """Verify compact trace invariants before exposing them to clients."""
 
-    def verify(self, plan: AgenticRagWorkflowPlan) -> AgenticRagVerification:
+    def verify(self, plan: RagAgentWorkflowPlan) -> RagAgentVerification:
         errors: list[str] = []
         stage_ids = tuple(stage.id for stage in plan.stages)
         if stage_ids != EXPECTED_STAGE_ORDER:
             errors.append(f"unexpected stage order: {stage_ids!r}")
         for stage in plan.stages:
             errors.extend(_stage_errors(stage))
-        return AgenticRagVerification(passed=not errors, errors=tuple(errors))
+        return RagAgentVerification(passed=not errors, errors=tuple(errors))
 
 
-class DeterministicAgenticRagGroundingVerifier:
+class DeterministicRagAgentGroundingVerifier:
     """Verify deterministic citation/evidence invariants before completion.
 
     This is not a semantic model-output judge. It enforces the v1 invariants the
@@ -64,7 +64,7 @@ class DeterministicAgenticRagGroundingVerifier:
         insufficient_evidence: bool = False,
         clarification_required: bool = False,
         retrieval_attempt_count: int = 1,
-    ) -> AgenticRagGroundingVerification:
+    ) -> RagAgentGroundingVerification:
         errors: list[str] = []
         route = retrieval_decision.route
         relevant_chunk_count = sum(
@@ -85,7 +85,7 @@ class DeterministicAgenticRagGroundingVerifier:
         if clarification_required:
             if cited_chunks or citation_count:
                 errors.append("clarification runs must not cite document evidence")
-            return AgenticRagGroundingVerification(passed=not errors, errors=tuple(errors))
+            return RagAgentGroundingVerification(passed=not errors, errors=tuple(errors))
 
         if insufficient_evidence:
             if route != "retrieval_required":
@@ -94,7 +94,7 @@ class DeterministicAgenticRagGroundingVerifier:
                 errors.append("insufficient evidence fallback must not persist citations")
             if retrieval_attempt_count < 2:
                 errors.append("required retrieval fallback must follow the bounded retry")
-            return AgenticRagGroundingVerification(passed=not errors, errors=tuple(errors))
+            return RagAgentGroundingVerification(passed=not errors, errors=tuple(errors))
 
         if answer_mode == "general_knowledge":
             if cited_chunks or citation_count:
@@ -108,10 +108,10 @@ class DeterministicAgenticRagGroundingVerifier:
             if not cited_chunks or citation_count < 1:
                 errors.append("required retrieval completions must include citations")
 
-        return AgenticRagGroundingVerification(passed=not errors, errors=tuple(errors))
+        return RagAgentGroundingVerification(passed=not errors, errors=tuple(errors))
 
 
-def _stage_errors(stage: AgenticRagStage) -> list[str]:
+def _stage_errors(stage: RagAgentStage) -> list[str]:
     errors: list[str] = []
     if stage.role == "retrieval_agent" and stage.agent_name != RETRIEVAL_AGENT_NAME:
         errors.append(f"{stage.id}: retrieval role must use ContextForge")

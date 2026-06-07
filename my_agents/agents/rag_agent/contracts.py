@@ -1,4 +1,4 @@
-"""Typed contracts for the Agentic RAG workflow surface."""
+"""Typed contracts for the RAG Agent workflow surface."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from typing import Literal
 
 from my_agents.knowledge.routing import AnswerMode, DocumentScope, RetrievalRoute
 
-AgenticRagStageId = Literal[
+RagAgentStageId = Literal[
     "query_cartographer",
     "source_warden",
     "candidate_scouts",
@@ -16,12 +16,12 @@ AgenticRagStageId = Literal[
     "assistant_graph",
     "answer_composer",
 ]
-AgenticRagStageStatus = Literal["completed", "skipped", "waiting", "failed"]
-AgenticRagAgentRole = Literal["retrieval_agent", "assistant_agent"]
+RagAgentStageStatus = Literal["completed", "skipped", "waiting", "failed"]
+RagAgentAgentRole = Literal["retrieval_agent", "assistant_agent"]
 
 RETRIEVAL_AGENT_NAME = "ContextForge"
 ASSISTANT_AGENT_NAME = "GeneralAssistantGraph"
-EXPECTED_STAGE_ORDER: tuple[AgenticRagStageId, ...] = (
+EXPECTED_STAGE_ORDER: tuple[RagAgentStageId, ...] = (
     "query_cartographer",
     "source_warden",
     "candidate_scouts",
@@ -33,7 +33,7 @@ EXPECTED_STAGE_ORDER: tuple[AgenticRagStageId, ...] = (
 
 
 @dataclass(frozen=True)
-class LocalizedAgenticRagText:
+class LocalizedRagAgentText:
     """Bilingual frontend copy for compact trace rendering."""
 
     en: str
@@ -41,30 +41,30 @@ class LocalizedAgenticRagText:
 
 
 @dataclass(frozen=True)
-class AgenticRagStage:
+class RagAgentStage:
     """One redacted workflow stage exposed to API/SSE clients."""
 
-    id: AgenticRagStageId
-    role: AgenticRagAgentRole
+    id: RagAgentStageId
+    role: RagAgentAgentRole
     agent_name: str
-    status: AgenticRagStageStatus
-    title: LocalizedAgenticRagText
-    description: LocalizedAgenticRagText
+    status: RagAgentStageStatus
+    title: LocalizedRagAgentText
+    description: LocalizedRagAgentText
     evidence: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
-class AgenticRagWorkflowPlan:
-    """Deterministic plan for a conversation run's agentic RAG workflow."""
+class RagAgentWorkflowPlan:
+    """Deterministic plan for a conversation run's RAG Agent workflow."""
 
     retrieval_route: RetrievalRoute
     answer_mode: AnswerMode
     document_scope: DocumentScope
-    stages: tuple[AgenticRagStage, ...]
+    stages: tuple[RagAgentStage, ...]
 
 
 @dataclass(frozen=True)
-class AgenticRagVerification:
+class RagAgentVerification:
     """Result from deterministic workflow contract verification."""
 
     passed: bool
@@ -72,7 +72,7 @@ class AgenticRagVerification:
 
 
 @dataclass(frozen=True)
-class AgenticRagGroundingVerification:
+class RagAgentGroundingVerification:
     """Result from deterministic answer-grounding boundary verification."""
 
     passed: bool

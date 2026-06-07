@@ -10,10 +10,10 @@ from langchain_core.messages import BaseMessage
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from my_agents.agents.agentic_rag import DeterministicAgenticRagGroundingVerifier
 from my_agents.agents.context_forge.contracts import RetrievalEvidence
 from my_agents.agents.general_assistant.classifier import classify_messages
 from my_agents.agents.general_assistant.responders import ResponseProviderConfigurationError
+from my_agents.agents.rag_agent import DeterministicRagAgentGroundingVerifier
 from my_agents.api.assistant import GraphRunner
 from my_agents.api.conversations.agent_trace import conversation_agent_trace_steps
 from my_agents.api.conversations.retrieval_context import (
@@ -58,7 +58,7 @@ from my_agents.schemas import RouteDecision
 from my_agents.settings import get_settings
 
 ACTIVE_RUN_STATUSES = (RunStatus.RUNNING.value, RunStatus.CANCELLING.value)
-_GROUNDING_VERIFIER = DeterministicAgenticRagGroundingVerifier()
+_GROUNDING_VERIFIER = DeterministicRagAgentGroundingVerifier()
 
 
 def complete_sync_conversation_run(
@@ -288,7 +288,7 @@ def _verified_grounding_or_fallback(
         if fallback_verification.passed:
             return insufficient_evidence_reply(), [], True
     errors = "; ".join(verification.errors)
-    raise RuntimeError(f"Agentic RAG grounding verification failed: {errors}")
+    raise RuntimeError(f"RAG Agent grounding verification failed: {errors}")
 
 
 def persist_completed_run(

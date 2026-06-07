@@ -59,9 +59,12 @@ flowchart TD
     API --> Runs["Conversation runs / SSE"]
     KB --> Ingest["Ingestion + chunks + entities + embeddings"]
     Runs --> ContextForge["ContextForge permission-aware retrieval"]
-    ContextForge --> Graph["General assistant LangGraph"]
+    ContextForge --> RAGAgent["RAG Agent contract graph"]
+    ContextForge --> GraphInput["Authorized retrieved context"]
+    GraphInput --> Graph["General assistant LangGraph"]
     Graph --> Provider["OpenAI or deterministic provider"]
-    Runs --> Events["Citations + redacted events"]
+    RAGAgent --> Events["Verified agent trace + grounding checks"]
+    Graph --> Events
     Auth --> DB[("SQLAlchemy DB")]
     KB --> DB
     Ingest --> DB
@@ -69,7 +72,7 @@ flowchart TD
     Events --> DB
 ```
 
-Service layer가 auth, permission, source policy, persistence, retrieval boundary, citation, event를 소유합니다. LangGraph는 이 product boundary 안에서 assistant reply를 작성하는 데 사용됩니다.
+Service layer가 auth, permission, source policy, persistence, retrieval boundary, citation, event를 소유합니다. ContextForge는 여전히 general assistant에 전달할 authorized context를 검색하고, `rag_agent`는 그 경로를 감싸는 graph-shaped RAG Agent contract로 trace stage와 grounding check를 제공합니다.
 
 ## 설정
 
@@ -208,8 +211,8 @@ uv run python -m scripts.local_demo_smoke --base-url http://127.0.0.1:8000
 - Script commands / 스크립트 명령: [`scripts/README.md`](./scripts/README.md)
 - General assistant implementation: [`my_agents/agents/general_assistant/README.md`](./my_agents/agents/general_assistant/README.md)
 - ContextForge retrieval boundary: [`my_agents/agents/context_forge/README.md`](./my_agents/agents/context_forge/README.md)
-- Agentic RAG workflow contract: [`my_agents/agents/agentic_rag/README.md`](./my_agents/agents/agentic_rag/README.md)
+- RAG Agent workflow contract: [`my_agents/agents/rag_agent/README.md`](./my_agents/agents/rag_agent/README.md)
 
 ## 향후 방향
 
-Near-term work는 [`docs/implementation-tracking.md`](./docs/implementation-tracking.md)와 [`ROADMAP.md`](./ROADMAP.md)에 기록합니다. 중요한 future track은 production parser provider, layout-aware ingestion artifact, graph/tool-based RAG agent, retrieval eval 강화, deployment hardening, scoped instruction profile입니다.
+Near-term work는 [`docs/implementation-tracking.md`](./docs/implementation-tracking.md)와 [`ROADMAP.md`](./ROADMAP.md)에 기록합니다. 중요한 future track은 production parser provider, layout-aware ingestion artifact, 현재 contract graph를 넘어서는 richer tool-using RAG Agent graph, retrieval eval 강화, deployment hardening, scoped instruction profile입니다.

@@ -1,9 +1,9 @@
-# Agentic RAG Workflow v1 verification and redaction plan
+# Agentic RAG workflow v1 verification and redaction plan
 
 Last updated: 2026-06-06
 Owner lane: backend verification / redaction / hosted-smoke evidence
 
-This plan is the evidence checklist for the Agentic RAG Workflow v1 team delivery. It is intentionally backend-owned and does not mutate `.omx/ultragoal` or Codex goal state; the team leader owns that runtime checkpoint.
+This plan is the evidence checklist for the agentic RAG workflow v1 team delivery. In this codebase, `rag_agent` is the concrete RAG Agent contract inside that broader agentic RAG pattern. It is intentionally backend-owned and does not mutate `.omx/ultragoal` or Codex goal state; the team leader owns that runtime checkpoint.
 
 ## Redacted event contract
 
@@ -27,7 +27,7 @@ The local/hosted smoke helper enforces the core API-level gate through `assert_r
 
 ## Required backend evidence
 
-Run these from the backend repository before claiming Agentic RAG v1 backend readiness:
+Run these from the backend repository before claiming agentic RAG v1 backend readiness:
 
 ```bash
 uv run pytest -q tests/test_local_demo_smoke.py

@@ -59,9 +59,12 @@ flowchart TD
     API --> Runs["Conversation runs / SSE"]
     KB --> Ingest["Ingestion + chunks + entities + embeddings"]
     Runs --> ContextForge["ContextForge permission-aware retrieval"]
-    ContextForge --> Graph["General assistant LangGraph"]
+    ContextForge --> RAGAgent["RAG Agent contract graph"]
+    ContextForge --> GraphInput["Authorized retrieved context"]
+    GraphInput --> Graph["General assistant LangGraph"]
     Graph --> Provider["OpenAI or deterministic provider"]
-    Runs --> Events["Citations + redacted events"]
+    RAGAgent --> Events["Verified agent trace + grounding checks"]
+    Graph --> Events
     Auth --> DB[("SQLAlchemy DB")]
     KB --> DB
     Ingest --> DB
@@ -69,7 +72,7 @@ flowchart TD
     Events --> DB
 ```
 
-The service layer owns auth, permissions, source policy, persistence, retrieval boundaries, citations, and events. LangGraph is invoked inside that boundary to compose assistant replies.
+The service layer owns auth, permissions, source policy, persistence, retrieval boundaries, citations, and events. ContextForge still retrieves authorized context for the general assistant, while `rag_agent` provides the graph-shaped RAG Agent contract for trace stages and grounding checks around that path.
 
 ## Setup
 
@@ -204,8 +207,8 @@ Details: [`docs/product-chat-service/en/10-frontend-demo-runbook.md`](./docs/pro
 - Script commands: [`scripts/README.md`](./scripts/README.md)
 - General assistant implementation: [`my_agents/agents/general_assistant/README.en.md`](./my_agents/agents/general_assistant/README.en.md)
 - ContextForge retrieval boundary: [`my_agents/agents/context_forge/README.en.md`](./my_agents/agents/context_forge/README.en.md)
-- Agentic RAG workflow contract: [`my_agents/agents/agentic_rag/README.en.md`](./my_agents/agents/agentic_rag/README.en.md)
+- RAG Agent workflow contract: [`my_agents/agents/rag_agent/README.en.md`](./my_agents/agents/rag_agent/README.en.md)
 
 ## Future direction
 
-Near-term work is tracked in [`docs/implementation-tracking.md`](./docs/implementation-tracking.md) and [`ROADMAP.md`](./ROADMAP.md). Important future tracks include production parser providers, layout-aware ingestion artifacts, a graph/tool-based RAG agent, richer retrieval evals, stronger deployment hardening, and scoped instruction profiles.
+Near-term work is tracked in [`docs/implementation-tracking.md`](./docs/implementation-tracking.md) and [`ROADMAP.md`](./ROADMAP.md). Important future tracks include production parser providers, layout-aware ingestion artifacts, a richer tool-using RAG Agent graph beyond the current contract graph, retrieval evals, stronger deployment hardening, and scoped instruction profiles.

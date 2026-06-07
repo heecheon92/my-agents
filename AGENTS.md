@@ -171,6 +171,13 @@ Mermaid diagram guidance for Markdown work:
 - Keep each diagram focused on one concept and place it near the section it explains.
 - Use fenced `mermaid` blocks so diagrams stay version-controllable and render on GitHub-compatible surfaces.
 - If a diagram would become large or noisy, split it into smaller diagrams or keep the explanation textual.
+- Do not default to flowcharts automatically. Choose the Mermaid diagram type by the concept:
+  - `flowchart` for architecture, control flow, graph/node flow, pipelines, and decision trees.
+  - `sequenceDiagram` for request/response timelines, streaming flows, auth/email handshakes, and service interactions over time.
+  - `stateDiagram-v2` for lifecycle states such as conversation runs, ingestion jobs, auth tokens, or deployment phases.
+  - `erDiagram` for database tables, ownership relationships, and persistence models.
+  - `classDiagram` for Python contracts, dataclasses, service interfaces, and package-level type relationships.
+- Prefer `flowchart TD` / `flowchart LR` for new flowcharts, with quoted labels when node text includes spaces, punctuation, underscores, or implementation names that may confuse Markdown renderers.
 
 When behavior changes, update:
 

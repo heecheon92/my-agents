@@ -2,7 +2,7 @@
 
 [한국어](./README.md) | English
 
-`context_forge` is the dedicated retrieval-layer package for document-grounded answering. It is intentionally separate from `general_assistant`: ContextForge plans retrieval, enforces source-boundary handoff, gathers authorized candidates, packs answer-ready context, and emits redacted evidence before the assistant writes final prose.
+`context_forge` is the dedicated retrieval-layer package for document-grounded answering. It is intentionally separate from both `general_assistant` and `rag_agent`: ContextForge plans retrieval, enforces source-boundary handoff, gathers authorized candidates, packs answer-ready context, and emits redacted evidence. The RAG Agent contract consumes that redacted evidence for trace/grounding checks before and after the assistant writes final prose.
 
 ## Current role
 
@@ -90,7 +90,7 @@ Enable `MY_AGENTS_DEBUG_KNOWLEDGE_CONTEXT_LOGGING=true` to Rich-print ContextFor
 
 ## Security boundary
 
-ContextForge must never make authorization prompt-dependent. Candidate generation starts from the existing resolved `KnowledgeBaseSelectionContext` and low-level retrieval SQL filters. Deterministic/cross-encoder reranking, packing, graph input, citations, and events only receive authorized candidates.
+ContextForge must never make authorization prompt-dependent. Candidate generation starts from the existing resolved `KnowledgeBaseSelectionContext` and low-level retrieval SQL filters. Deterministic/cross-encoder reranking, packing, RAG Agent trace state, graph input, citations, and events only receive authorized candidates.
 When an ambiguous document reference spans multiple authorized documents, the run stops with a `message_key`/`input_slot` clarification contract instead of broadly searching every accessible document or generating backend-authored English text.
 
 ## Tests

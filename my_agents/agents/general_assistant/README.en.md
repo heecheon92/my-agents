@@ -63,22 +63,31 @@ This keeps the API honest: a `learning_coach` route may be useful for study guid
 
 The `general_assistant` folder owns the graph/classifier/responder boundary. Auth, group/document permissions, server-owned conversations, knowledge ingestion, retrieval selection, citations, and agent events are owned by service-layer modules such as `my_agents/api/`, `my_agents/knowledge/`, and `my_agents/conversations/`.
 
-Product conversation runs now execute a deterministic retrieval-routing policy in the service layer first. `general_assistant` receives only `retrieval_route`, `answer_mode`, `document_scope`, and compact `retrieved_context` that has already passed authorization. The graph/provider can adjust answer framing from that metadata, but it does not query vector or document storage directly. Permission decisions remain inside `RetrievalService` and the API/service layer.
+Product conversation runs now execute retrieval and RAG contract work before `general_assistant` writes prose. ContextForge retrieves authorized evidence, and `rag_agent` verifies compact trace/grounding contracts. `general_assistant` receives only `retrieval_route`, `answer_mode`, `document_scope`, and compact `retrieved_context` that has already passed authorization. The graph/provider can adjust answer framing from that metadata, but it does not query vector or document storage directly. Permission decisions remain inside `RetrievalService` and the API/service layer.
 
 ```mermaid
-flowchart LR
-    RunAPI["conversation run API"] --> Router["retrieval routing policy"]
-    Router -->|no_retrieval| Graph["general_assistant graph"]
-    Router -->|required/optional| Retrieval["RetrievalService permission + metadata filters"]
-    Retrieval --> GraphCtx["authorized compact context"]
-    GraphCtx --> Graph
-    RunAPI --> Citations["citations/events"]
-    Graph --> Provider["response provider with answer_mode"]
+sequenceDiagram
+    participant RunAPI as conversation run API
+    participant Retrieval as ContextForge / RetrievalService
+    participant RAG as rag_agent contract graph
+    participant Graph as general_assistant graph
+    participant Provider as response provider
+    participant Events as citations / events
+
+    RunAPI->>Retrieval: route and retrieve authorized context
+    Retrieval->>RAG: redacted evidence metadata
+    RAG-->>Events: verified trace stages
+    Retrieval-->>Graph: retrieval_route, answer_mode, retrieved_context
+    Graph->>Provider: compose with answer_mode
+    Provider-->>Graph: reply
+    Graph-->>RAG: reply and citation metadata
+    RAG-->>Events: grounding check result
+    Events-->>RunAPI: persisted reply, citations, trace
 ```
 
 This separation matters for the product: LangGraph demonstrates AI reply flow, while the RetrievalService/API layer demonstrates production boundaries such as auth, permissions, and provenance. Ingestion (upload/parse/chunk/embed) remains a separate pipeline from retrieval routing.
 
-A future `RetrievalGraph` can be added when retrieval becomes a multi-step workflow such as query rewrite, metadata planning, hybrid/vector search, reranking, or context compression. Even then, the hard authorization filter should remain inside `RetrievalService`, not in graph prompts.
+A future ContextForge `RetrievalGraph` can be added when retrieval itself needs graph/tool orchestration beyond the current RAG Agent contract graph, such as query rewrite, metadata planning, hybrid/vector search, reranking, or context compression. Even then, the hard authorization filter should remain inside `RetrievalService`, not in graph prompts.
 
 ## Where to add OpenAI hosted tools
 

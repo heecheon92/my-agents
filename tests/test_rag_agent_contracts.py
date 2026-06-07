@@ -1,23 +1,24 @@
-"""Agentic RAG workflow contract tests."""
+"""RAG Agent workflow contract tests."""
 
 from __future__ import annotations
 
 from dataclasses import replace
 
-from my_agents.agents.agentic_rag import (
+from my_agents.agents.rag_agent import (
     EXPECTED_STAGE_ORDER,
     RETRIEVAL_AGENT_NAME,
-    DeterministicAgenticRagGroundingVerifier,
-    DeterministicAgenticRagPlanner,
-    DeterministicAgenticRagVerifier,
+    DeterministicRagAgentGroundingVerifier,
+    DeterministicRagAgentPlanner,
+    DeterministicRagAgentVerifier,
+    invoke_rag_agent_graph,
 )
 from my_agents.api.conversations.run_lifecycle import _verified_grounding_or_fallback
 from my_agents.knowledge.retrieval import RetrievedChunk
 from my_agents.knowledge.routing import RetrievalRoutingDecision
 
 
-def test_agentic_rag_planner_uses_contextforge_as_retrieval_agent() -> None:
-    plan = DeterministicAgenticRagPlanner().plan(
+def test_rag_agent_planner_uses_contextforge_as_retrieval_agent() -> None:
+    plan = DeterministicRagAgentPlanner().plan(
         retrieval_route="retrieval_required",
         answer_mode="document_grounded",
         document_scope="user_documents",
@@ -37,11 +38,28 @@ def test_agentic_rag_planner_uses_contextforge_as_retrieval_agent() -> None:
     assert plan.stages[2].status == "completed"
     assert plan.stages[4].evidence == {"injected_count": 3, "rejected_count": 5}
     assert plan.stages[0].title.ko == "질문 지도화"
-    assert DeterministicAgenticRagVerifier().verify(plan).passed is True
+    assert DeterministicRagAgentVerifier().verify(plan).passed is True
 
 
-def test_agentic_rag_planner_marks_retrieval_stages_skipped_for_general_answer() -> None:
-    plan = DeterministicAgenticRagPlanner().plan(
+def test_rag_agent_graph_returns_verified_plan() -> None:
+    plan = invoke_rag_agent_graph(
+        retrieval_route="retrieval_required",
+        answer_mode="document_grounded",
+        document_scope="user_documents",
+        resolved_knowledge_base_count=1,
+        candidate_count=4,
+        injected_count=2,
+        citation_count=1,
+        structured_entity_types=("api_endpoint",),
+    )
+
+    assert tuple(stage.id for stage in plan.stages) == EXPECTED_STAGE_ORDER
+    assert plan.stages[0].evidence["structured_entity_types"] == ["api_endpoint"]
+    assert DeterministicRagAgentVerifier().verify(plan).passed is True
+
+
+def test_rag_agent_planner_marks_retrieval_stages_skipped_for_general_answer() -> None:
+    plan = DeterministicRagAgentPlanner().plan(
         retrieval_route="no_retrieval",
         answer_mode="general_knowledge",
         document_scope="unknown",
@@ -55,11 +73,11 @@ def test_agentic_rag_planner_marks_retrieval_stages_skipped_for_general_answer()
     assert statuses["context_curator"] == "skipped"
     assert statuses["assistant_graph"] == "completed"
     assert statuses["answer_composer"] == "completed"
-    assert DeterministicAgenticRagVerifier().verify(plan).errors == ()
+    assert DeterministicRagAgentVerifier().verify(plan).errors == ()
 
 
-def test_agentic_rag_verifier_rejects_unsafe_trace_evidence() -> None:
-    plan = DeterministicAgenticRagPlanner().plan(
+def test_rag_agent_verifier_rejects_unsafe_trace_evidence() -> None:
+    plan = DeterministicRagAgentPlanner().plan(
         retrieval_route="retrieval_required",
         answer_mode="document_grounded",
         document_scope="user_documents",
@@ -70,14 +88,14 @@ def test_agentic_rag_verifier_rejects_unsafe_trace_evidence() -> None:
     unsafe_stage = replace(plan.stages[0], evidence={"prompt": "raw user prompt must not leak"})
     unsafe_plan = replace(plan, stages=(unsafe_stage, *plan.stages[1:]))
 
-    result = DeterministicAgenticRagVerifier().verify(unsafe_plan)
+    result = DeterministicRagAgentVerifier().verify(unsafe_plan)
 
     assert result.passed is False
     assert "query_cartographer: unsafe evidence key 'prompt'" in result.errors
 
 
 def test_grounding_verifier_accepts_required_rag_with_relevant_citation() -> None:
-    result = DeterministicAgenticRagGroundingVerifier().verify(
+    result = DeterministicRagAgentGroundingVerifier().verify(
         retrieval_decision=RetrievalRoutingDecision(
             route="retrieval_required",
             reason="document requested",
@@ -102,7 +120,7 @@ def test_grounding_verifier_accepts_required_rag_with_relevant_citation() -> Non
 
 
 def test_grounding_verifier_rejects_required_rag_without_citations() -> None:
-    result = DeterministicAgenticRagGroundingVerifier().verify(
+    result = DeterministicRagAgentGroundingVerifier().verify(
         retrieval_decision=RetrievalRoutingDecision(
             route="retrieval_required",
             reason="document requested",
@@ -120,7 +138,7 @@ def test_grounding_verifier_rejects_required_rag_without_citations() -> None:
 
 
 def test_grounding_verifier_accepts_required_retry_safe_fallback() -> None:
-    result = DeterministicAgenticRagGroundingVerifier().verify(
+    result = DeterministicRagAgentGroundingVerifier().verify(
         retrieval_decision=RetrievalRoutingDecision(
             route="retrieval_required",
             reason="document requested",
@@ -138,7 +156,7 @@ def test_grounding_verifier_accepts_required_retry_safe_fallback() -> None:
 
 
 def test_grounding_verifier_rejects_unretried_safe_fallback() -> None:
-    result = DeterministicAgenticRagGroundingVerifier().verify(
+    result = DeterministicRagAgentGroundingVerifier().verify(
         retrieval_decision=RetrievalRoutingDecision(
             route="retrieval_required",
             reason="document requested",

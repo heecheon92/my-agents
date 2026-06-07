@@ -1,10 +1,10 @@
 # Retrieval agent hybrid reference
 
-This document is the backend-owned reference for the future retrieval-agent track. It intentionally keeps the design local to this repository so roadmap and implementation notes do not depend on files from other workspaces.
+This document is the backend-owned reference for the retrieval-agent track. It intentionally keeps the design local to this repository so roadmap and implementation notes do not depend on files from other workspaces. Current production status: ContextForge owns the retrieval service boundary, while `rag_agent` owns a thin RAG Agent contract graph for trace/grounding verification. The deeper tool-using retrieval graph described here remains a future expansion.
 
 ## Goal
 
-The retrieval agent should become the owner of document search quality before the general assistant writes an answer. It should take a user query plus authorization context, produce a small set of trustworthy cited chunks, and expose enough retrieval evidence for tests, debugging, and UI activity events.
+The retrieval agent track should keep document search quality out of the general assistant. ContextForge already takes a user query plus authorization context, produces trustworthy cited chunks, and exposes retrieval evidence. Future work can promote more of that retrieval planning into graph/tool nodes when evals justify the added orchestration.
 
 ## Target pipeline
 
@@ -25,7 +25,9 @@ flowchart TD
     Fuse --> Rerank[Optional cross-encoder reranker]
     Rerank --> Pack[Context packing and citation shaping]
     Pack --> Evidence[Retrieval events and eval facts]
+    Evidence --> RAGAgent[RAG Agent trace and grounding contract]
     Evidence --> Assistant[General assistant answer composition]
+    Assistant --> RAGAgent
 ```
 
 ## Minimal interface sketch
