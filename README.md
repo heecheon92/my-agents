@@ -119,12 +119,12 @@ operator가 one-time code를 발급합니다. `true`이면 backend가 code를 �
 `--lang en`으로 영어를 선택할 수 있습니다.
 
 ```bash
-uv run python -m scripts.auth_approval account approve \
+uv run python -m scripts.ops account approve \
   --email user@example.com \
   --send-email
 
 # 같은 코드를 출력하고, 추가로 기본 한국어 이메일을 전송합니다.
-MY_AGENTS_GUEST_ACCESS_ENABLED=true uv run python -m scripts.auth_approval guest issue \
+MY_AGENTS_GUEST_ACCESS_ENABLED=true uv run python -m scripts.ops guest issue \
   --email guest@example.com \
   --send-email
 ```

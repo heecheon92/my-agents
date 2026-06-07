@@ -12,7 +12,10 @@ from my_agents.auth.email import get_local_auth_email_outbox
 from my_agents.auth.models import AuthTokenModel, GuestAccessCodeModel, UserModel
 from my_agents.persistence.database import get_database_session
 from my_agents.settings import Settings, get_settings
-from scripts.auth_approval import approve_account, send_account_verification_email
+from scripts.approve_account_signup import (
+    approve_account_signup,
+    send_account_verification_email,
+)
 
 from .conftest import latest_auth_email_token, load_app, verify_latest_auth_email
 
@@ -196,7 +199,7 @@ def test_manual_account_approval_issues_verification_token_and_allows_login(
             "password": "correct horse battery staple",
         },
     )
-    result = approve_account(
+    result = approve_account_signup(
         settings=Settings(_env_file=None),
         email="manual-approval@example.com",
     )

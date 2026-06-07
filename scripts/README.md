@@ -10,10 +10,13 @@ repository root with `uv run python -m scripts.<name>`.
 | Command module | Purpose | Typical use |
 | --- | --- | --- |
 | `scripts.dev_pgvector` | Start and wire a disposable local Docker pgvector/Postgres database. | Local Postgres/pgvector development and migration smoke checks. |
-| `scripts.auth_approval` | Approve pending account signups and issue guest access codes. | Operator-only auth approval for public demos. |
+| `scripts.ops` | Interactive operational dispatcher that collects options and delegates to focused scripts. | Operator-friendly account/guest maintenance. |
+| `scripts.approve_account_signup` | Approve a pending account signup and print/send verification. | Manual signup approval. |
+| `scripts.reject_account_signup` | Reject a pending account signup. | Manual signup rejection. |
 | `scripts.local_demo_seed` | Seed a file-backed SQLite demo user, knowledge base, document, and extraction run. | Prepare a local demo database before starting the backend. |
 | `scripts.local_demo_smoke` | Smoke-test a running backend over HTTP only. | Verify the local V1 API path after seeding and starting the server. |
-| `scripts.issue_guest_access_code` | Legacy-compatible guest-code issue command. | Existing operator guest-code workflows. |
+| `scripts.issue_guest_access_code` | Issue a one-time guest access code for print-first operator delivery. | Guest-code workflows. |
+| `scripts.auth_approval` | Backward-compatible alias for `scripts.ops`. | Existing auth approval workflows. |
 | `scripts.learning_log` | Create numbered personal learning notes and update the learning index. | Add a new `docs/learning/` note without hand-numbering files. |
 
 ## How scripts are run
@@ -34,11 +37,11 @@ If you are in another directory, either `cd` into the repo first or use
 
 ```bash
 cd /Users/heecheonpark/Git/Portfolio/my-agents
-uv run python -m scripts.auth_approval --env pgvector.production guest issue --email guest@example.com
+uv run python -m scripts.ops --env pgvector.production guest issue --email guest@example.com
 
 # Equivalent from any working directory:
 uv --directory /Users/heecheonpark/Git/Portfolio/my-agents \
-  run python -m scripts.auth_approval \
+  run python -m scripts.ops \
   --env pgvector.production \
   guest issue \
   --email guest@example.com
@@ -200,58 +203,79 @@ uv run python -m scripts.local_demo_smoke \
 A successful run prints `Local V1 API smoke passed` plus the conversation/run
 IDs, answer-delta count, citation count, and event count.
 
-## `scripts.auth_approval`
+## `scripts.ops`
 
-Approves pending account signups and issues guest access codes from one operator
-surface. It loads `.env.pgvector.local` by default; pass `--env pgvector.production`
-only when intentionally operating on production.
+Interactive operational dispatcher. It gathers options and delegates to focused
+script modules such as `scripts.approve_account_signup`,
+`scripts.reject_account_signup`, and `scripts.issue_guest_access_code`. It loads
+`.env.pgvector.local` by default; pass `--env pgvector.production` only when
+intentionally operating on production.
 
 Current behavior:
 
 - `--interactive` prompts for the operation, email, email-delivery choice, language, and
   guest-code options instead of requiring every flag upfront.
-- `account approve` marks a pending registered user as approved and prints a verification
-  token/link.
-- `account approve --send-email` additionally sends the localized verification email.
-- `account reject` marks a pending registered user rejected without deleting the audit row.
-- `guest issue` prints a one-time guest code and can also email it with `--send-email`.
+- `account approve` delegates to `scripts.approve_account_signup`.
+- `account reject` delegates to `scripts.reject_account_signup`.
+- `guest issue` delegates to `scripts.issue_guest_access_code`.
 - Email content defaults to Korean; use `--lang en` for English.
 
 Commands:
 
 ```bash
 # Prompt for account/guest operation and required values.
-uv run python -m scripts.auth_approval --interactive
+uv run python -m scripts.ops --interactive
 
 # Approve a pending signup and print the verification token/link.
-uv run python -m scripts.auth_approval account approve \
+uv run python -m scripts.ops account approve \
   --email user@example.com
 
 # Approve and also send the Korean verification email.
-uv run python -m scripts.auth_approval --env pgvector.production account approve \
+uv run python -m scripts.ops --env pgvector.production account approve \
   --email user@example.com \
   --send-email
 
 # Reject a pending signup.
-uv run python -m scripts.auth_approval account reject \
+uv run python -m scripts.ops account reject \
   --email user@example.com
 
 # Issue a guest code and print it.
-uv run python -m scripts.auth_approval guest issue \
+uv run python -m scripts.ops guest issue \
   --email guest@example.com
 
 # Issue a guest code and also send English email copy.
-uv run python -m scripts.auth_approval --env pgvector.production guest issue \
+uv run python -m scripts.ops --env pgvector.production guest issue \
   --email guest@example.com \
   --send-email \
   --lang en
 ```
 
+`scripts.auth_approval` remains a compatibility alias for the same dispatcher.
+
+## `scripts.approve_account_signup`
+
+Focused non-interactive script for account approval. It marks a pending registered user
+approved, prints a verification token/link, and optionally sends the verification email:
+
+```bash
+uv run python -m scripts.approve_account_signup \
+  --email user@example.com \
+  --send-email
+```
+
+## `scripts.reject_account_signup`
+
+Focused non-interactive script for account rejection:
+
+```bash
+uv run python -m scripts.reject_account_signup --email user@example.com
+```
+
 ## `scripts.issue_guest_access_code`
 
-Legacy-compatible guest-only command for print-first operator delivery. Prefer
-`scripts.auth_approval guest issue` for new workflows. The public API records an email
-request but does not return a code to the browser unless guest auto-approval is enabled.
+Focused guest-only command for print-first operator delivery. The public API records an
+email request but does not return a code to the browser unless guest auto-approval is
+enabled. `scripts.ops guest issue` delegates to this script.
 
 Current behavior:
 

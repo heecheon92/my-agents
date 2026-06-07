@@ -118,12 +118,12 @@ with an email and receive only `status=accepted`. With
 usable code behind. Email content defaults to Korean; add `--lang en` for English copy:
 
 ```bash
-uv run python -m scripts.auth_approval account approve \
+uv run python -m scripts.ops account approve \
   --email user@example.com \
   --send-email
 
 # Print the same code and additionally send English email copy.
-MY_AGENTS_GUEST_ACCESS_ENABLED=true uv run python -m scripts.auth_approval guest issue \
+MY_AGENTS_GUEST_ACCESS_ENABLED=true uv run python -m scripts.ops guest issue \
   --email guest@example.com \
   --send-email \
   --lang en
