@@ -13,7 +13,7 @@
 - health, auth, groups, documents, knowledge bases, conversations, runs, streaming, events route를 제공하는 FastAPI app.
 - deterministic route classification과 기본 OpenAI-backed response generation을 사용하는 LangGraph general assistant path.
 - credential 없이 test/smoke check를 실행할 수 있는 deterministic offline/test mode.
-- email/password auth, app-owned session, CSRF-aware logout, dev outbox, guest access, signup disable switch.
+- email/password auth, app-owned session, CSRF-aware logout, dev outbox, signup/guest approval gates.
 - group, document, knowledge-base, permission 기반.
 - KB-scoped document upload/create, team-upload staging, ingestion, extraction-run progress, chunk, entity, metadata profile, embedding, pgvector-ready retrieval.
 - permission-aware RAG, structured entity retrieval, reranking seam, packed context, citation, redacted retrieval evidence를 담당하는 ContextForge retrieval service.
@@ -106,19 +106,25 @@ MY_AGENTS_RESPONSE_MODE=deterministic
 전체 설정 목록은 [`.env.example`](./.env.example)을 확인하세요. CORS, cookie, CSRF, dev outbox, seeded local data, SSE/run-detail expectation은 [frontend demo runbook](./docs/product-chat-service/ko/10-frontend-demo-runbook.md)에 정리되어 있습니다.
 중단된 대화 실행이 frontend에 계속 “작성 중”으로 남지 않도록 `MY_AGENTS_ACTIVE_RUN_STALE_AFTER_SECONDS` 기본값은 120초이며, hosted demo에서는 이 값을 짧게 유지하세요.
 
+Signup과 guest code는 별도 auto-approval gate를 가집니다. 두 gate의 기본값은
+`false`라서 public 배포에서 임의의 이메일 사용자가 바로 LLM route를 쓰지 못합니다.
+`MY_AGENTS_ACCOUNT_SIGNUP_AUTO_APPROVAL=false`이면 signup은 pending user만 만들고,
+operator가 approve하면 verification token/link를 출력합니다. `--send-email`을
+붙이면 같은 verification email도 보냅니다.
+
 Guest access를 켜면 public client는 `POST /auth/guest/request`에 email을 보내고
-`status=accepted`만 받습니다. 코드는 public API가 반환하지
-않고 DB에는 hash만 저장합니다. Operator는 pending request에 대해 one-time code를
-항상 stdout으로 출력할 수 있고, `--send-email`을 붙이면 선택된 env의 auth email
-provider로도 같은 코드를 보냅니다. 이메일 언어는 기본 한국어이며 `--lang en`으로
-영어를 선택할 수 있습니다.
+`status=accepted`만 받습니다. `MY_AGENTS_GUEST_CODE_AUTO_APPROVAL=false`이면
+operator가 one-time code를 발급합니다. `true`이면 backend가 code를 만들고 이메일로
+자동 발송하며, 발송 실패 시 usable code를 남기지 않습니다. 이메일 언어는 기본 한국어이며
+`--lang en`으로 영어를 선택할 수 있습니다.
 
 ```bash
-MY_AGENTS_GUEST_ACCESS_ENABLED=true uv run python -m scripts.issue_guest_access_code \
-  --email guest@example.com
+uv run python -m scripts.auth_approval account approve \
+  --email user@example.com \
+  --send-email
 
 # 같은 코드를 출력하고, 추가로 기본 한국어 이메일을 전송합니다.
-MY_AGENTS_GUEST_ACCESS_ENABLED=true uv run python -m scripts.issue_guest_access_code \
+MY_AGENTS_GUEST_ACCESS_ENABLED=true uv run python -m scripts.auth_approval guest issue \
   --email guest@example.com \
   --send-email
 ```

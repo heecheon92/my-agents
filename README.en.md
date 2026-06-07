@@ -13,7 +13,7 @@ The current backend is a thin but working product slice:
 - FastAPI app with health, auth, groups, documents, knowledge bases, conversations, runs, streaming, and event routes.
 - LangGraph general assistant path with deterministic route classification and OpenAI-backed response generation by default.
 - Deterministic offline/test mode for credential-free tests and smoke checks.
-- First-party email/password auth, app-owned sessions, CSRF-aware logout, dev outbox, guest access, and signup disable switch.
+- First-party email/password auth, app-owned sessions, CSRF-aware logout, dev outbox, and signup/guest approval gates.
 - Group, document, knowledge-base, and permission foundations.
 - KB-scoped document upload/creation, team-upload staging, ingestion, extraction-run progress, chunks, entities, metadata profiles, embeddings, and pgvector-ready retrieval.
 - ContextForge retrieval service for permission-aware RAG, structured entity retrieval, reranking seams, packed context, citations, and redacted retrieval evidence.
@@ -105,19 +105,25 @@ MY_AGENTS_RESPONSE_MODE=deterministic
 
 See [`.env.example`](./.env.example) for the full list of settings. See the [frontend demo runbook](./docs/product-chat-service/en/10-frontend-demo-runbook.md) for CORS, cookie, CSRF, dev outbox, seeded local data, and SSE/run-detail expectations.
 
+Signup and guest-code issuance have separate auto-approval gates. Both default to
+`false`, so public deployments do not let arbitrary email-verified users reach LLM-backed
+routes without operator approval. With `MY_AGENTS_ACCOUNT_SIGNUP_AUTO_APPROVAL=false`,
+signup creates a pending user; an operator approval prints the verification token/link and
+`--send-email` additionally sends the verification email.
+
 Guest access is email-gated when enabled: public clients call `POST /auth/guest/request`
-with an email and receive only `status=accepted`; the code is
-stored as a hash and is never returned by the public API. Operators can always print a
-one-time code for a pending request, and can add `--send-email` to also send it through the
-configured auth email provider. Email content defaults to Korean; add `--lang en` for
-English email copy:
+with an email and receive only `status=accepted`. With
+`MY_AGENTS_GUEST_CODE_AUTO_APPROVAL=false`, an operator issues the one-time code. When it is
+`true`, the backend creates and emails the code automatically, and email failure leaves no
+usable code behind. Email content defaults to Korean; add `--lang en` for English copy:
 
 ```bash
-MY_AGENTS_GUEST_ACCESS_ENABLED=true uv run python -m scripts.issue_guest_access_code \
-  --email guest@example.com
+uv run python -m scripts.auth_approval account approve \
+  --email user@example.com \
+  --send-email
 
 # Print the same code and additionally send English email copy.
-MY_AGENTS_GUEST_ACCESS_ENABLED=true uv run python -m scripts.issue_guest_access_code \
+MY_AGENTS_GUEST_ACCESS_ENABLED=true uv run python -m scripts.auth_approval guest issue \
   --email guest@example.com \
   --send-email \
   --lang en

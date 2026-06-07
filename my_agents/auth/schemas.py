@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+
+AuthEmailLanguage = Literal["ko", "en"]
+AccountApprovalStatus = Literal["approved", "pending", "rejected"]
 
 
 class SignupRequest(BaseModel):
@@ -74,6 +78,7 @@ class UserResponse(BaseModel):
     id: str
     email: EmailStr | None
     email_verified_at: datetime | None
+    approval_status: AccountApprovalStatus = "approved"
     is_guest: bool = False
     guest_expires_at: datetime | None = None
 
@@ -85,6 +90,7 @@ class SignupResponse(BaseModel):
 
     user: UserResponse
     verification_email_sent: bool
+    approval_required: bool = False
 
 
 class LoginResponse(BaseModel):
@@ -122,6 +128,7 @@ class GuestAccessRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     email: EmailStr
+    language: AuthEmailLanguage = "ko"
 
 
 class GuestLoginRequest(BaseModel):

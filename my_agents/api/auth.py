@@ -35,6 +35,8 @@ from my_agents.auth.schemas import (
     VerifyEmailRequest,
 )
 from my_agents.auth.service import (
+    AccountApprovalRequiredError,
+    AccountRejectedError,
     AuthService,
     DuplicateEmailError,
     InvalidAuthTokenError,
@@ -99,6 +101,7 @@ def signup(
             email=str(request.email),
             password=request.password,
             email_language=_auth_email_language(http_request),
+            auto_approve=settings.account_signup_auto_approval,
         )
     except DuplicateEmailError as exc:
         deploy_log(
@@ -148,6 +151,7 @@ def signup(
     return SignupResponse(
         user=_user_response(result.user),
         verification_email_sent=result.verification_email_sent,
+        approval_required=result.user.approval_status == "pending",
     )
 
 
@@ -168,13 +172,25 @@ def request_guest_access_code(
         )
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="guest access disabled")
     try:
-        auth_service.request_guest_access(email=str(request.email))
+        if settings.guest_code_auto_approval:
+            auth_service.issue_and_send_guest_access_code(
+                email=str(request.email),
+                ttl=timedelta(seconds=settings.guest_code_ttl_seconds),
+                email_language=request.language,
+            )
+        else:
+            auth_service.request_guest_access(email=str(request.email))
     except Exception as exc:
         deploy_log(
             "auth.api.guest_request.failed",
             error_class=exc.__class__.__name__,
             **email_context,
         )
+        if settings.guest_code_auto_approval:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="guest access temporarily unavailable",
+            ) from exc
         raise
     deploy_log("auth.api.guest_request.completed", **email_context)
     return AcceptedResponse()
@@ -263,6 +279,16 @@ def login(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="email verification required",
+        ) from exc
+    except AccountApprovalRequiredError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="account approval pending",
+        ) from exc
+    except AccountRejectedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="account unavailable",
         ) from exc
     abuse_guard.reset(action="login_email", identifier=email_identifier)
     abuse_guard.reset(action="login_client", identifier=client_identifier)
@@ -413,6 +439,7 @@ def _user_response(user: UserModel) -> UserResponse:
         id=user.id,
         email=None if is_guest else user.email,
         email_verified_at=user.email_verified_at,
+        approval_status="approved" if is_guest else user.approval_status,
         is_guest=is_guest,
         guest_expires_at=user.guest_expires_at if is_guest else None,
     )
