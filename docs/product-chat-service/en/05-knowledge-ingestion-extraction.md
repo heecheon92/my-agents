@@ -1,6 +1,6 @@
 ---
 created: 2026-05-17
-updated: 2026-05-30
+updated: 2026-06-07
 status: active
 topics:
   - knowledge-base
@@ -41,39 +41,39 @@ The ingestion pass creates:
 
 ```mermaid
 flowchart TD
-    Upload[POST /documents/upload] --> Dispatch{Upload type}
-    Dispatch -->|.pdf application/pdf| Parser[pypdf_text_v2]
-    Dispatch -->|.md/.markdown text/markdown| Markdown[utf8_markdown_v1]
-    Dispatch -->|.txt text/plain| Plain[utf8_text_v1]
-    Parser -->|low or empty text| Fallback[deterministic_stream_fallback_v1 for simple legacy fixtures]
-    Parser -->|enough text| Metadata[Document source metadata]
-    Parser -->|enough text| Content[Stored page-separated text]
+    Upload["POST /documents/upload"] --> Dispatch{"Upload type"}
+    Dispatch -->|".pdf application/pdf"| Parser["pypdf_text_v2"]
+    Dispatch -->|".md/.markdown text/markdown"| Markdown["utf8_markdown_v1"]
+    Dispatch -->|".txt text/plain"| Plain["utf8_text_v1"]
+    Parser -->|"low or empty text"| Fallback["deterministic_stream_fallback_v1 for simple legacy fixtures"]
+    Parser -->|"enough text"| Metadata["Document source metadata"]
+    Parser -->|"enough text"| Content["Stored page-separated text"]
     Fallback --> Metadata
     Fallback --> Content
     Markdown --> Metadata
     Markdown --> Content
     Plain --> Metadata
     Plain --> Content
-    Text[POST /documents JSON text] --> Content
-    Content --> RunChoice{Ingestion endpoint}
-    RunChoice -->|sync compatibility| Run[POST /documents/{id}/ingest]
-    RunChoice -->|async queued| Async[POST /documents/{id}/ingest/async]
-    Async --> Mode{Execution mode}
-    Mode -->|local in_process| Background[threaded local worker]
-    Mode -->|hosted external_worker| Worker[python -m my_agents.ingestion_worker]
-    Background --> Poll[GET /documents/{id}/extraction-runs/{run_id}]
+    Text["POST /documents JSON text"] --> Content
+    Content --> RunChoice{"Ingestion endpoint"}
+    RunChoice -->|"sync compatibility"| Run["POST /documents/{id}/ingest"]
+    RunChoice -->|"async queued"| Async["POST /documents/{id}/ingest/async"]
+    Async --> Mode{"Execution mode"}
+    Mode -->|"local in_process"| Background["threaded local worker"]
+    Mode -->|"hosted external_worker"| Worker["python -m my_agents.ingestion_worker"]
+    Background --> Poll["GET /documents/{id}/extraction-runs/{run_id}"]
     Worker --> Poll
-    Run --> Chunks[DocumentChunk rows]
+    Run --> Chunks["DocumentChunk rows"]
     Poll --> Chunks
-    Chunks --> Page[PDF source_page when available]
-    Chunks --> Provider{Embedding mode}
-    Provider -->|deterministic default| Embeddings[32-d lexical-hash embedding_json]
-    Provider -->|openai opt-in| OpenAI[langchain-openai JSON embedding_json]
-    Embeddings -->|Postgres migrations| Pgvector[embedding_vector pgvector column]
-    OpenAI -->|Postgres migrations| Pgvector
-    Chunks --> Entities[Entity extraction]
-    Entities --> Mentions[EntityMention provenance]
-    Mentions --> Relationships[EntityRelationship co_occurs_with]
+    Chunks --> Page["PDF source_page when available"]
+    Chunks --> Provider{"Embedding mode"}
+    Provider -->|"deterministic default"| Embeddings["32-d lexical-hash embedding_json"]
+    Provider -->|"openai opt-in"| OpenAI["langchain-openai JSON embedding_json"]
+    Embeddings -->|"Postgres migrations"| Pgvector["embedding_vector pgvector column"]
+    OpenAI -->|"Postgres migrations"| Pgvector
+    Chunks --> Entities["Entity extraction"]
+    Entities --> Mentions["EntityMention provenance"]
+    Mentions --> Relationships["EntityRelationship co_occurs_with"]
 ```
 
 ## Async ingestion progress contract
