@@ -29,8 +29,6 @@ class DeterministicRagAgentPlanner:
         reranker: str = "deterministic",
         clarification_required: bool = False,
         route_label: str = "general_assistant",
-        mandatory_group_knowledge_base_count: int = 0,
-        optional_personal_knowledge_base_count: int = 0,
         authorized_context_count: int = 0,
         retrieved_chunk_count: int = 0,
         intent: str = "semantic_qa",
@@ -87,10 +85,6 @@ class DeterministicRagAgentPlanner:
                 ),
                 evidence={
                     "resolved_knowledge_base_count": resolved_knowledge_base_count,
-                    "mandatory_group_knowledge_base_count": mandatory_group_knowledge_base_count,
-                    "optional_personal_knowledge_base_count": (
-                        optional_personal_knowledge_base_count
-                    ),
                 },
             ),
             RagAgentStage(

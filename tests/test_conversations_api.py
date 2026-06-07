@@ -128,6 +128,36 @@ def _create_document(client: TestClient, *, json: dict):  # noqa: ANN201
     return client.post("/documents", json=payload)
 
 
+def test_conversation_list_returns_newest_first(monkeypatch) -> None:  # noqa: ANN001
+    client = _client(monkeypatch, SpyGraph())
+    _signup_login(client, "conversation-order@example.com")
+    created = [
+        client.post("/conversations", json={"title": "Oldest"}).json(),
+        client.post("/conversations", json={"title": "Middle"}).json(),
+        client.post("/conversations", json={"title": "Newest"}).json(),
+    ]
+
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        for index, conversation in enumerate(created):
+            model = db.get(ConversationModel, conversation["id"])
+            assert model is not None
+            model.created_at = datetime(2026, 6, 7, 0, index, tzinfo=UTC)
+        db.commit()
+    finally:
+        session_generator.close()
+
+    response = client.get("/conversations")
+
+    assert response.status_code == 200
+    assert [conversation["title"] for conversation in response.json()] == [
+        "Newest",
+        "Middle",
+        "Oldest",
+    ]
+
+
 def test_conversation_run_uses_server_owned_history(monkeypatch) -> None:  # noqa: ANN001
     graph = SpyGraph()
     client = _client(monkeypatch, graph)
@@ -405,24 +435,22 @@ def test_conversation_messages_can_be_listed_in_server_owned_order(monkeypatch) 
     ]
 
 
-def test_group_conversation_transcript_is_owner_only(monkeypatch) -> None:  # noqa: ANN001
+def test_conversation_transcript_is_owner_only(monkeypatch) -> None:  # noqa: ANN001
     graph = SpyGraph()
     owner = _client(monkeypatch, graph)
     member = _client(monkeypatch, graph)
     outsider = _client(monkeypatch, graph)
     _signup_login(owner, "conv-owner@example.com")
-    member_id = _signup_login(member, "conv-member@example.com")
+    _signup_login(member, "conv-member@example.com")
     _signup_login(outsider, "conv-outsider@example.com")
 
-    group_id = owner.post("/groups", json={"name": "Conversation Group"}).json()["id"]
-    owner.post(f"/groups/{group_id}/members", json={"user_id": member_id, "role": "viewer"})
     conversation_id = owner.post(
         "/conversations",
-        json={"title": "Private Group Conversation", "group_id": group_id},
+        json={"title": "Private Conversation"},
     ).json()["id"]
     run = owner.post(
         f"/conversations/{conversation_id}/runs",
-        json={"message": "Owner-only group transcript secret"},
+        json={"message": "Owner-only transcript secret"},
     )
     run_id = run.json()["run_id"]
     assistant_message_id = _assistant_message_id(run_id)
@@ -454,7 +482,7 @@ def test_group_conversation_transcript_is_owner_only(monkeypatch) -> None:  # no
         outsider_detail,
     ):
         assert response.status_code == 404
-        assert "Owner-only group transcript secret" not in response.text
+        assert "Owner-only transcript secret" not in response.text
         assert "saw 1 messages" not in response.text
 
 
@@ -706,6 +734,61 @@ def test_assistant_message_replay_prunes_later_transcript_and_regenerates(monkey
     assert _row_count(CitationModel) == 0
 
 
+def test_streaming_assistant_message_replay_emits_deltas_and_prunes_after_success(
+    monkeypatch,
+) -> None:  # noqa: ANN001
+    graph = SpyGraph()
+    client = _client(monkeypatch, graph)
+    _signup_login(client, "replay-stream-success@example.com")
+    conversation_id = client.post("/conversations", json={"title": "Replay stream success"}).json()[
+        "id"
+    ]
+    first = client.post(f"/conversations/{conversation_id}/runs", json={"message": "First"})
+    second = client.post(f"/conversations/{conversation_id}/runs", json={"message": "Second"})
+    first_run_id = first.json()["run_id"]
+    second_run_id = second.json()["run_id"]
+    first_assistant_id = _assistant_message_id(first_run_id)
+    streaming_graph = StreamingSpyGraph()
+    client.app.dependency_overrides[get_graph_runner] = lambda: streaming_graph
+
+    with client.stream(
+        "POST",
+        f"/conversations/{conversation_id}/messages/{first_assistant_id}/replay/stream",
+    ) as response:
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/event-stream")
+        events = _parse_sse(response.read().decode())
+
+    event_names = [event["event"] for event in events]
+    delta_events = [event for event in events if event["event"] == "answer_delta"]
+    completed = events[-1]["data"]
+
+    assert event_names == [
+        "run_started",
+        "user_message_stored",
+        "retrieval_completed",
+        "graph_invoked",
+        "answer_delta",
+        "answer_delta",
+        "answer_composed",
+        "run_completed",
+    ]
+    assert [event["data"]["sequence"] for event in delta_events] == [1, 2]
+    assert "".join(event["data"]["delta"] for event in delta_events) == "streamed answer"
+    assert completed["run_id"] not in {first_run_id, second_run_id}
+    assert completed["reply"] == "streamed answer"
+    assert [message.content for message in streaming_graph.calls[-1]["messages"]] == ["First"]
+
+    transcript = client.get(f"/conversations/{conversation_id}/messages")
+    runs = client.get(f"/conversations/{conversation_id}/runs")
+
+    assert [(message["role"], message["content"]) for message in transcript.json()] == [
+        ("user", "First"),
+        ("assistant", "streamed answer"),
+    ]
+    assert [run["run_id"] for run in runs.json()] == [completed["run_id"]]
+
+
 def test_assistant_message_replay_failure_preserves_existing_transcript(monkeypatch) -> None:  # noqa: ANN001
     client = _client(monkeypatch, SpyGraph())
     _signup_login(client, "replay-failure-preserve@example.com")
@@ -740,6 +823,43 @@ def test_assistant_message_replay_failure_preserves_existing_transcript(monkeypa
         assert failed_run.assistant_message_id is None
     finally:
         session_generator.close()
+
+
+def test_streaming_assistant_message_replay_failure_preserves_existing_transcript(
+    monkeypatch,
+) -> None:  # noqa: ANN001
+    client = _client(monkeypatch, SpyGraph())
+    _signup_login(client, "replay-stream-failure-preserve@example.com")
+    conversation_id = client.post("/conversations", json={"title": "Replay stream failure"}).json()[
+        "id"
+    ]
+    first = client.post(f"/conversations/{conversation_id}/runs", json={"message": "First"})
+    second = client.post(f"/conversations/{conversation_id}/runs", json={"message": "Second"})
+    first_assistant_id = _assistant_message_id(first.json()["run_id"])
+
+    client.app.dependency_overrides[get_graph_runner] = lambda: FailingGraph()
+
+    with client.stream(
+        "POST",
+        f"/conversations/{conversation_id}/messages/{first_assistant_id}/replay/stream",
+    ) as response:
+        assert response.status_code == 200
+        events = _parse_sse(response.read().decode())
+
+    assert [event["event"] for event in events][-2:] == ["run_failed", "run_error"]
+    assert events[-1]["data"]["status_code"] == 502
+    transcript = client.get(f"/conversations/{conversation_id}/messages")
+    assert [(message["role"], message["content"]) for message in transcript.json()] == [
+        ("user", "First"),
+        ("assistant", "saw 1 messages"),
+        ("user", "Second"),
+        ("assistant", "saw 3 messages"),
+    ]
+    runs = client.get(f"/conversations/{conversation_id}/runs").json()
+    assert {run["run_id"] for run in runs}.issuperset(
+        {first.json()["run_id"], second.json()["run_id"]}
+    )
+    assert runs[0]["status"] == "failed"
 
 
 def test_assistant_message_replay_warns_when_original_sources_are_deleted(monkeypatch) -> None:  # noqa: ANN001
@@ -986,9 +1106,6 @@ def test_streaming_conversation_run_emits_events_and_persists_result(monkeypatch
     started = events[0]["data"]
     assert started["conversation_id"] == conversation_id
     assert started["knowledge_base_selection"] == {"mode": "all", "knowledge_base_ids": []}
-    assert started["source_context_group_id"] is None
-    assert started["mandatory_group_knowledge_base_count"] == 0
-    assert started["optional_personal_knowledge_base_count"] == 0
     assert started["resolved_knowledge_base_count"] >= 0
 
     completed = events[-1]["data"]

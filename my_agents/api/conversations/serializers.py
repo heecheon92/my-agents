@@ -57,19 +57,6 @@ def knowledge_base_selection_payload(
         "knowledge_base_selection": knowledge_base_selection_response(selection_context).model_dump(
             mode="json"
         ),
-        "source_context_group_id": selection_context.source_context_group_id,
-        "mandatory_group_knowledge_base_ids": list(
-            selection_context.mandatory_group_knowledge_base_ids
-        ),
-        "mandatory_group_knowledge_base_count": len(
-            selection_context.mandatory_group_knowledge_base_ids
-        ),
-        "optional_personal_knowledge_base_ids": list(
-            selection_context.optional_personal_knowledge_base_ids
-        ),
-        "optional_personal_knowledge_base_count": len(
-            selection_context.optional_personal_knowledge_base_ids
-        ),
         "resolved_knowledge_base_ids": list(selection_context.resolved_knowledge_base_ids),
         "resolved_knowledge_base_count": selection_context.resolved_count,
     }
@@ -93,17 +80,12 @@ def run_knowledge_base_selection(run: AgentRunModel) -> KnowledgeBaseSelection:
 
 def run_knowledge_base_context(run: AgentRunModel) -> KnowledgeBaseSelectionContext:
     selected_ids = tuple(_json_string_list(run.selected_knowledge_base_ids_json))
-    mandatory_group_ids = tuple(_json_string_list(run.mandatory_group_knowledge_base_ids_json))
-    optional_personal_ids = tuple(_json_string_list(run.optional_personal_knowledge_base_ids_json))
     resolved_ids = tuple(_json_string_list(run.resolved_knowledge_base_ids_json))
     if not resolved_ids and (run.knowledge_base_selection_mode == "selected"):
         resolved_ids = selected_ids
     return KnowledgeBaseSelectionContext(
         mode=run.knowledge_base_selection_mode or "all",
         knowledge_base_ids=selected_ids,
-        source_context_group_id=run.source_context_group_id,
-        mandatory_group_knowledge_base_ids=mandatory_group_ids,
-        optional_personal_knowledge_base_ids=optional_personal_ids,
         resolved_knowledge_base_ids=resolved_ids,
         resolved_count=run.resolved_knowledge_base_count,
     )
@@ -114,7 +96,6 @@ def conversation_response(conversation: ConversationModel) -> ConversationRespon
         id=conversation.id,
         title=conversation.title,
         owner_user_id=conversation.owner_user_id,
-        group_id=conversation.group_id,
     )
 
 

@@ -8,11 +8,11 @@ from fastapi import HTTPException, status
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
-from my_agents.conversations.models import ConversationModel
 from my_agents.groups.models import MembershipModel, MembershipRole
 from my_agents.knowledge.models import (
     KnowledgeBaseModel,
     KnowledgeBasePublicationModel,
+    KnowledgeBasePurpose,
     KnowledgeBaseScope,
 )
 from my_agents.knowledge.schemas import KnowledgeBaseSelection
@@ -25,16 +25,11 @@ class KnowledgeBaseSelectionContext:
     mode: str
     knowledge_base_ids: tuple[str, ...]
     resolved_count: int
-    source_context_group_id: str | None = None
-    mandatory_group_knowledge_base_ids: tuple[str, ...] = ()
-    optional_personal_knowledge_base_ids: tuple[str, ...] = ()
     resolved_knowledge_base_ids: tuple[str, ...] = ()
 
     @property
     def retrieval_knowledge_base_ids(self) -> tuple[str, ...] | None:
         """Return an explicit retrieval scope, or None for personal-chat all mode."""
-        if self.source_context_group_id is not None:
-            return self.resolved_knowledge_base_ids
         if self.mode == "selected":
             return self.resolved_knowledge_base_ids or self.knowledge_base_ids
         return None
@@ -43,7 +38,12 @@ class KnowledgeBaseSelectionContext:
 def get_authorized_knowledge_base_or_404(
     db: Session, knowledge_base_id: str, user_id: str
 ) -> KnowledgeBaseModel:
-    """Return an authorized KB or conceal missing/unauthorized KBs as 404."""
+    """Return an authorized KB or conceal missing/unauthorized KBs as 404.
+
+    This management-level check includes hidden staging KBs so upload/create
+    endpoints can write to them by direct ID. Chat/retrieval selection must use
+    `get_retrievable_knowledge_base_or_404` instead.
+    """
     knowledge_base = db.get(KnowledgeBaseModel, knowledge_base_id)
     if knowledge_base is None:
         raise HTTPException(
@@ -53,6 +53,19 @@ def get_authorized_knowledge_base_or_404(
     if user_can_select_knowledge_base(db, knowledge_base=knowledge_base, user_id=user_id):
         return knowledge_base
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="knowledge base not found")
+
+
+def get_retrievable_knowledge_base_or_404(
+    db: Session, knowledge_base_id: str, user_id: str
+) -> KnowledgeBaseModel:
+    """Return a user-selectable KB only when it participates in retrieval."""
+    knowledge_base = get_authorized_knowledge_base_or_404(db, knowledge_base_id, user_id)
+    if knowledge_base.purpose != KnowledgeBasePurpose.STANDARD.value:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="knowledge base is not selectable for chat retrieval",
+        )
+    return knowledge_base
 
 
 def user_can_select_knowledge_base(
@@ -86,10 +99,12 @@ def user_can_select_knowledge_base(
 
 
 def authorized_knowledge_base_filter(user_id: str):
-    """Return the SQL predicate for KBs selectable by a user.
+    """Return the SQL predicate for management-visible KBs authorized to a user.
 
     Personal KBs remain owner-scoped. Group KBs are group-authority scoped:
     the original creator does not retain access after membership is removed.
+    This predicate intentionally includes hidden staging KBs; use
+    `retrievable_knowledge_base_filter` for chat/list/retrieval surfaces.
     """
     group_ids = select(MembershipModel.group_id).where(MembershipModel.user_id == user_id)
     published_personal_kb_ids = published_personal_knowledge_base_ids_for_user(user_id)
@@ -107,6 +122,14 @@ def authorized_knowledge_base_filter(user_id: str):
             KnowledgeBaseModel.scope == KnowledgeBaseScope.PERSONAL.value,
             KnowledgeBaseModel.id.in_(published_personal_kb_ids),
         ),
+    )
+
+
+def retrievable_knowledge_base_filter(user_id: str):
+    """Return the SQL predicate for KBs that can appear in chat/RAG retrieval."""
+    return and_(
+        authorized_knowledge_base_filter(user_id),
+        KnowledgeBaseModel.purpose == KnowledgeBasePurpose.STANDARD.value,
     )
 
 
@@ -179,7 +202,7 @@ def resolve_knowledge_base_selection(
     if mode == "selected":
         resolved_ids = tuple(dict.fromkeys(knowledge_base_ids))
         for knowledge_base_id in resolved_ids:
-            get_authorized_knowledge_base_or_404(db, knowledge_base_id, user_id)
+            get_retrievable_knowledge_base_or_404(db, knowledge_base_id, user_id)
         return KnowledgeBaseSelectionContext(
             mode=mode,
             knowledge_base_ids=resolved_ids,
@@ -195,51 +218,14 @@ def resolve_conversation_knowledge_context(
     db: Session,
     *,
     user_id: str,
-    conversation: ConversationModel,
     requested_selection: KnowledgeBaseSelection,
-    optional_personal_knowledge_base_ids: list[str],
 ) -> KnowledgeBaseSelectionContext:
-    """Resolve source boundaries for a personal or group-context conversation.
-
-    Personal chat keeps the existing all/selected behavior and rejects the group-chat
-    optional personal attachment field to avoid two competing source semantics.
-    Group-context chat treats `all` as mandatory group KBs only, with an explicit
-    per-run optional personal attachment list.
-    """
-    if conversation.group_id is None:
-        if optional_personal_knowledge_base_ids:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="optional personal knowledge bases are only valid in group chat",
-            )
-        return resolve_knowledge_base_selection(
-            db,
-            user_id=user_id,
-            mode=requested_selection.mode,
-            knowledge_base_ids=requested_selection.knowledge_base_ids,
-        )
-
-    if requested_selection.mode != "all":
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="group chat uses mandatory group knowledge bases only",
-        )
-
-    mandatory_group_ids = _group_knowledge_base_ids(db, conversation.group_id)
-    optional_personal_ids = _validate_optional_personal_knowledge_base_ids(
+    """Resolve unified chat source boundaries for authorized standard KBs."""
+    return resolve_knowledge_base_selection(
         db,
         user_id=user_id,
-        knowledge_base_ids=optional_personal_knowledge_base_ids,
-    )
-    resolved_ids = tuple(dict.fromkeys((*mandatory_group_ids, *optional_personal_ids)))
-    return KnowledgeBaseSelectionContext(
-        mode="all",
-        knowledge_base_ids=(),
-        source_context_group_id=conversation.group_id,
-        mandatory_group_knowledge_base_ids=mandatory_group_ids,
-        optional_personal_knowledge_base_ids=optional_personal_ids,
-        resolved_knowledge_base_ids=resolved_ids,
-        resolved_count=len(resolved_ids),
+        mode=requested_selection.mode,
+        knowledge_base_ids=requested_selection.knowledge_base_ids,
     )
 
 
@@ -248,52 +234,8 @@ def authorized_knowledge_base_count(db: Session, *, user_id: str) -> int:
     return (
         db.scalar(
             select(func.count(KnowledgeBaseModel.id)).where(
-                authorized_knowledge_base_filter(user_id)
+                retrievable_knowledge_base_filter(user_id)
             )
         )
         or 0
     )
-
-
-def _group_knowledge_base_ids(db: Session, group_id: str) -> tuple[str, ...]:
-    group_rows = db.scalars(
-        select(KnowledgeBaseModel.id)
-        .where(
-            KnowledgeBaseModel.group_id == group_id,
-            KnowledgeBaseModel.scope == KnowledgeBaseScope.GROUP.value,
-        )
-        .order_by(KnowledgeBaseModel.created_at, KnowledgeBaseModel.id)
-    ).all()
-    published_personal_rows = db.scalars(
-        select(KnowledgeBasePublicationModel.knowledge_base_id)
-        .join(
-            KnowledgeBaseModel,
-            KnowledgeBaseModel.id == KnowledgeBasePublicationModel.knowledge_base_id,
-        )
-        .where(
-            KnowledgeBasePublicationModel.group_id == group_id,
-            KnowledgeBaseModel.scope == KnowledgeBaseScope.PERSONAL.value,
-            KnowledgeBaseModel.group_id.is_(None),
-        )
-        .order_by(KnowledgeBasePublicationModel.created_at, KnowledgeBasePublicationModel.id)
-    ).all()
-    return tuple(dict.fromkeys((*group_rows, *published_personal_rows)))
-
-
-def _validate_optional_personal_knowledge_base_ids(
-    db: Session, *, user_id: str, knowledge_base_ids: list[str]
-) -> tuple[str, ...]:
-    resolved_ids = tuple(dict.fromkeys(knowledge_base_ids))
-    for knowledge_base_id in resolved_ids:
-        knowledge_base = db.get(KnowledgeBaseModel, knowledge_base_id)
-        if (
-            knowledge_base is None
-            or knowledge_base.scope != KnowledgeBaseScope.PERSONAL.value
-            or knowledge_base.owner_user_id != user_id
-            or knowledge_base.group_id is not None
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="optional personal knowledge bases must be owned personal sources",
-            )
-    return resolved_ids

@@ -21,12 +21,13 @@ from my_agents.auth.contracts import Principal
 from my_agents.auth.dependencies import get_current_principal
 from my_agents.groups.models import MembershipModel, MembershipRole
 from my_agents.knowledge.auth import (
-    authorized_knowledge_base_filter,
     get_authorized_knowledge_base_or_404,
+    retrievable_knowledge_base_filter,
 )
 from my_agents.knowledge.models import (
     KnowledgeBaseModel,
     KnowledgeBasePublicationModel,
+    KnowledgeBasePurpose,
     KnowledgeBaseScope,
 )
 from my_agents.knowledge.schemas import (
@@ -78,9 +79,47 @@ def list_knowledge_bases(
     db: Annotated[Session, Depends(get_database_session)],
 ) -> list[KnowledgeBaseResponse]:
     knowledge_bases = db.scalars(
-        select(KnowledgeBaseModel).where(authorized_knowledge_base_filter(principal.user_id))
+        select(KnowledgeBaseModel).where(retrievable_knowledge_base_filter(principal.user_id))
     ).all()
     return [_knowledge_base_response(db, kb, user_id=principal.user_id) for kb in knowledge_bases]
+
+
+@knowledge_bases_router.post(
+    "/team-upload-staging",
+    response_model=KnowledgeBaseResponse,
+    status_code=status.HTTP_200_OK,
+)
+def ensure_team_upload_staging_knowledge_base(
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    db: Annotated[Session, Depends(get_database_session)],
+) -> KnowledgeBaseResponse:
+    """Return the user's hidden personal staging KB for team document publication.
+
+    Staging KBs are writable by direct ID, but excluded from ordinary KB lists,
+    chat source selection, and retrieval. Approved publish requests copy their
+    source document into a group KB, and only that group copy is ingested for
+    normal team retrieval.
+    """
+    knowledge_base = db.scalar(
+        select(KnowledgeBaseModel).where(
+            KnowledgeBaseModel.owner_user_id == principal.user_id,
+            KnowledgeBaseModel.scope == KnowledgeBaseScope.PERSONAL.value,
+            KnowledgeBaseModel.group_id.is_(None),
+            KnowledgeBaseModel.purpose == KnowledgeBasePurpose.TEAM_UPLOAD_STAGING.value,
+        )
+    )
+    if knowledge_base is None:
+        knowledge_base = KnowledgeBaseModel(
+            name="Team upload staging",
+            scope=KnowledgeBaseScope.PERSONAL.value,
+            owner_user_id=principal.user_id,
+            group_id=None,
+            purpose=KnowledgeBasePurpose.TEAM_UPLOAD_STAGING.value,
+        )
+        db.add(knowledge_base)
+        db.commit()
+        db.refresh(knowledge_base)
+    return _knowledge_base_response(db, knowledge_base, user_id=principal.user_id)
 
 
 @knowledge_bases_router.get("/{knowledge_base_id}", response_model=KnowledgeBaseResponse)
@@ -252,6 +291,7 @@ def _knowledge_base_response(
         scope=KnowledgeBaseScope(knowledge_base.scope),
         owner_user_id=knowledge_base.owner_user_id,
         group_id=knowledge_base.group_id,
+        purpose=KnowledgeBasePurpose(knowledge_base.purpose),
         published_group_ids=_published_group_ids_for_user(
             db,
             knowledge_base_id=knowledge_base.id,

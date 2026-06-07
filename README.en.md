@@ -15,7 +15,7 @@ The current backend is a thin but working product slice:
 - Deterministic offline/test mode for credential-free tests and smoke checks.
 - First-party email/password auth, app-owned sessions, CSRF-aware logout, dev outbox, guest access, and signup disable switch.
 - Group, document, knowledge-base, and permission foundations.
-- KB-scoped document upload/creation, ingestion, extraction-run progress, chunks, entities, metadata profiles, embeddings, and pgvector-ready retrieval.
+- KB-scoped document upload/creation, team-upload staging, ingestion, extraction-run progress, chunks, entities, metadata profiles, embeddings, and pgvector-ready retrieval.
 - ContextForge retrieval service for permission-aware RAG, structured entity retrieval, reranking seams, packed context, citations, and redacted retrieval evidence.
 - Server-owned conversations, run history, SSE assistant text streaming, run replay/cancel paths, persisted citations, and frontend-safe activity events.
 
@@ -38,6 +38,7 @@ More detail lives in the docs instead of this README:
 | Public demo readiness | [`docs/product-chat-service/en/12-public-demo-deployment-readiness.md`](./docs/product-chat-service/en/12-public-demo-deployment-readiness.md) |
 | Hybrid retrieval reference | [`docs/product-chat-service/en/12-retrieval-agent-hybrid-reference.md`](./docs/product-chat-service/en/12-retrieval-agent-hybrid-reference.md) |
 | Container deployment path | [`docs/product-chat-service/en/13-generic-container-deployment-path.md`](./docs/product-chat-service/en/13-generic-container-deployment-path.md) |
+| Team upload staging | [`docs/product-chat-service/en/18-team-upload-staging-flow.md`](./docs/product-chat-service/en/18-team-upload-staging-flow.md) |
 | Script commands | [`scripts/README.md`](./scripts/README.md) |
 | Layout-aware RAG idea | [`docs/idea/layout-aware-ingestion-rag-agent.md`](./docs/idea/layout-aware-ingestion-rag-agent.md) |
 
@@ -72,7 +73,7 @@ flowchart TD
     Events --> DB
 ```
 
-The service layer owns auth, permissions, source policy, persistence, retrieval boundaries, citations, and events. ContextForge still retrieves authorized context for the general assistant, while `rag_agent` provides the graph-shaped RAG Agent contract for trace stages and grounding checks around that path.
+Team uploads use a hidden personal staging KB that is excluded from RAG retrieval until approval copies the source into a group KB. The service layer owns auth, permissions, source policy, persistence, retrieval boundaries, citations, and events. ContextForge still retrieves authorized context for the general assistant, while `rag_agent` provides the graph-shaped RAG Agent contract for trace stages and grounding checks around that path. Chat runs use one unified `knowledge_base_selection` contract across authorized personal, shared, and team KBs; conversation transcripts remain owner-private.
 
 ## Setup
 

@@ -195,12 +195,6 @@ def _verified_rag_agent_stages(
         reranker=retrieval_evidence.reranker if retrieval_evidence is not None else "deterministic",
         clarification_required=clarification_required,
         route_label=route.label if route is not None else "general_assistant",
-        mandatory_group_knowledge_base_count=len(
-            selection_context.mandatory_group_knowledge_base_ids
-        ),
-        optional_personal_knowledge_base_count=len(
-            selection_context.optional_personal_knowledge_base_ids
-        ),
         authorized_context_count=len(retrieved_chunks),
         retrieved_chunk_count=len(retrieved_chunks),
         intent=retrieval_evidence.intent if retrieval_evidence is not None else "semantic_qa",

@@ -35,13 +35,10 @@ def test_query_cartographer_requires_structured_retrieval_when_docs_exist() -> N
     assert plan.route_decision.route == "retrieval_required"
 
 
-def test_source_warden_preserves_resolved_group_context_boundary() -> None:
+def test_source_warden_preserves_resolved_source_boundary() -> None:
     selection_context = KnowledgeBaseSelectionContext(
-        mode="all",
-        knowledge_base_ids=(),
-        source_context_group_id="group-1",
-        mandatory_group_knowledge_base_ids=("group-kb",),
-        optional_personal_knowledge_base_ids=("personal-kb",),
+        mode="selected",
+        knowledge_base_ids=("group-kb", "personal-kb"),
         resolved_knowledge_base_ids=("group-kb", "personal-kb"),
         resolved_count=2,
     )

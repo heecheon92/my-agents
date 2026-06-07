@@ -30,6 +30,8 @@ from my_agents.knowledge.models import (
     EntityRelationshipModel,
     ExtractionRunModel,
     ExtractionStatus,
+    KnowledgeBaseModel,
+    KnowledgeBasePurpose,
     StructuredKnowledgeEntityModel,
 )
 from my_agents.knowledge.pdf_uploads import DoclingExtractionConfig, TesseractOcrConfig
@@ -254,12 +256,15 @@ def list_documents(
         DocumentPermissionModel.can_read.is_(True),
     )
     docs = db.scalars(
-        select(DocumentModel).where(
+        select(DocumentModel)
+        .join(KnowledgeBaseModel, KnowledgeBaseModel.id == DocumentModel.knowledge_base_id)
+        .where(
+            KnowledgeBaseModel.purpose == KnowledgeBasePurpose.STANDARD.value,
             or_(
                 DocumentModel.owner_user_id == principal.user_id,
                 DocumentModel.group_id.in_(group_ids),
                 DocumentModel.id.in_(explicit_ids),
-            )
+            ),
         )
     ).all()
     auth = AuthorizationService(db)

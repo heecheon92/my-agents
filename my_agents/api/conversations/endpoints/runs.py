@@ -7,10 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from my_agents.api.assistant import GraphRunner, get_graph_runner
-from my_agents.api.conversations.auth import (
-    get_authorized_conversation,
-    require_conversation_source_membership,
-)
+from my_agents.api.conversations.auth import get_authorized_conversation
 from my_agents.api.conversations.run_lifecycle import (
     assert_no_active_run,
     cleanup_stale_active_runs,
@@ -45,15 +42,12 @@ def run_conversation(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> ConversationRunResponse:
     assert_guest_can_send_prompt(db, principal, settings)
-    conversation = get_authorized_conversation(db, conversation_id, principal.user_id)
-    require_conversation_source_membership(db, conversation, principal.user_id)
+    get_authorized_conversation(db, conversation_id, principal.user_id)
     assert_no_active_run(db, conversation_id)
     selection_context = resolve_conversation_knowledge_context(
         db,
         user_id=principal.user_id,
-        conversation=conversation,
         requested_selection=request.knowledge_base_selection,
-        optional_personal_knowledge_base_ids=request.optional_personal_knowledge_base_ids,
     )
     user_message = store_user_message(db, conversation_id, request.message)
     run = start_run(

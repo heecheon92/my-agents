@@ -7,7 +7,11 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from my_agents.knowledge.models import KnowledgeBaseScope, KnowledgePublishRequestStatus
+from my_agents.knowledge.models import (
+    KnowledgeBasePurpose,
+    KnowledgeBaseScope,
+    KnowledgePublishRequestStatus,
+)
 
 
 class KnowledgeBaseCreateRequest(BaseModel):
@@ -26,6 +30,7 @@ class KnowledgeBaseResponse(BaseModel):
     scope: KnowledgeBaseScope
     owner_user_id: str
     group_id: str | None
+    purpose: KnowledgeBasePurpose = KnowledgeBasePurpose.STANDARD
     published_group_ids: list[str] = Field(default_factory=list)
 
 

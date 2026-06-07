@@ -20,7 +20,7 @@ This note documents the backend-only streaming contract for the product chat ser
 The frontend still belongs in a separate repository; this backend exposes the API shape a
 frontend can consume.
 
-## Implemented endpoint
+## Implemented endpoints
 
 ```text
 POST /conversations/{conversation_id}/runs/stream
@@ -146,6 +146,31 @@ partial `answer_delta` events before the failure event. The persisted run status
 redacted persisted event sequence. The stream intentionally does not expose raw user
 prompts, private provider exceptions, chain-of-thought, or document content.
 
+## Assistant-message replay streaming
+
+```text
+POST /conversations/{conversation_id}/messages/{message_id}/replay/stream
+Content-Type: application/json
+Accept: text/event-stream
+```
+
+Request body is the same optional `ConversationReplayRequest` accepted by the
+non-streaming replay endpoint. When the original assistant run exists, replay uses that
+run's unified knowledge-base selection so regeneration matches the original
+source boundary without reviving the deprecated group/private source split.
+
+The replay stream emits the same frontend-safe event family as a normal streamed run:
+`run_started`, `user_message_stored`, `retrieval_completed`, optional `graph_invoked`,
+zero or more `answer_delta`, `answer_composed`, and `run_completed`. The
+`user_message_stored` event references the existing preceding user message; replay does
+not duplicate the user prompt in the transcript.
+
+Replay pruning is success-only. The target assistant message and later transcript rows,
+old run data, events, and citations remain visible while the new answer streams. After
+`run_completed`, the backend prunes the old suffix and preserves the completed replay
+run. If streaming replay fails, the backend persists a redacted failed run and emits
+`run_failed` plus `run_error`, but it does **not** prune the old transcript.
+
 ## Cancellation / send-immediately steering
 
 The stream supports cooperative cancellation for frontend steering UX. The frontend should
@@ -200,7 +225,11 @@ observed until that call returns or yields.
 
 - Use `/conversations/{conversation_id}/runs/stream` for chat UX that wants live progress
   and incremental assistant text.
-- Use `/conversations/{conversation_id}/runs` when a full-response request is sufficient.
+- Use `/conversations/{conversation_id}/messages/{message_id}/replay/stream` for
+  regeneration UI that should look like a fresh answer generation while preserving the old
+  transcript on failure.
+- Use `/conversations/{conversation_id}/runs` or non-streaming `/messages/{message_id}/replay`
+  when a full-response request is sufficient.
 - Do not use legacy `/assistant/chat` for product personal/group knowledge-base chat.
 - After `run_completed`, the frontend can refresh messages from
   `GET /conversations/{conversation_id}/messages` and inspect persisted activity through
@@ -223,3 +252,4 @@ observed until that call returns or yields.
 - 2026-05-19: Created after adding the SSE conversation-run stream endpoint.
 - 2026-05-19: Added `answer_delta` events for incremental assistant text streaming.
 - 2026-05-21: Added early `run_started`, cooperative run cancellation, and active-run rejection for send-immediately steering.
+- 2026-06-07: Added assistant-message replay streaming with success-only transcript pruning and failure-safe old-answer preservation.

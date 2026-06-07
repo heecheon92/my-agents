@@ -6,7 +6,7 @@ from fastapi import Depends, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from my_agents.api.conversations.auth import get_authorized_conversation, require_group_membership
+from my_agents.api.conversations.auth import get_authorized_conversation
 from my_agents.api.conversations.run_lifecycle import assert_no_active_run
 from my_agents.api.conversations.serializers import conversation_response
 from my_agents.api.conversations.transcripts import delete_conversation_tree
@@ -29,11 +29,8 @@ def create_conversation(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> ConversationResponse:
     assert_guest_can_create_conversation(db, principal, settings)
-    if request.group_id is not None:
-        require_group_membership(db, request.group_id, principal.user_id)
     conversation = ConversationModel(
         owner_user_id=principal.user_id,
-        group_id=request.group_id,
         title=request.title.strip(),
     )
     db.add(conversation)
@@ -48,7 +45,9 @@ def list_conversations(
 ) -> list[ConversationResponse]:
     assert_guest_access_active(db, principal)
     conversations = db.scalars(
-        select(ConversationModel).where(ConversationModel.owner_user_id == principal.user_id)
+        select(ConversationModel)
+        .where(ConversationModel.owner_user_id == principal.user_id)
+        .order_by(ConversationModel.created_at.desc(), ConversationModel.id.desc())
     ).all()
     return [conversation_response(conversation) for conversation in conversations]
 

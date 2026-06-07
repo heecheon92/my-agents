@@ -80,10 +80,11 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 
 ### Conversations and runs
 
-- Server-owned conversations.
+- Server-owned conversations, listed newest-first for frontend sidebar recency.
 - Persisted user and assistant messages.
 - Conversation run endpoint applies deterministic retrieval routing before invoking the current graph.
 - SSE conversation-run stream emits redacted progress events, retrieval-route/answer-mode metadata, compact localized ko/en `agent_trace` steps, `answer_delta` assistant text chunks, and a final run response.
+- Assistant-message replay now also supports an SSE stream path, so regeneration can show live progress and answer deltas while preserving the old transcript unless the replay completes successfully.
 - Run summaries and run activity events are persisted and readable.
 - Failure path records a failed run with redacted event metadata.
 
@@ -339,6 +340,7 @@ limits.
 
 | Date | Milestone | Evidence |
 | --- | --- | --- |
+| 2026-06-07 | Added real streamed assistant-message replay and newest-first conversation list ordering for the chat sidebar. | `my_agents/api/conversations/endpoints/replay.py`; `my_agents/api/conversations/endpoints/conversations.py`; `tests/test_conversations_api.py`; `tests/test_kb_openapi_contract.py`; streaming frontend contract docs; `uv run ruff check . --no-cache`; `uv run ruff format --check .`; `uv run pytest -q` (306 passed, 2 skipped). |
 | 2026-06-06 | Added RAG Agent contracts for the agentic RAG workflow and compact localized trace payloads for run responses/SSE/events. | `my_agents/agents/rag_agent/`; `my_agents/api/conversations/agent_trace.py`; `my_agents/api/conversations/run_events.py`; `my_agents/api/conversations/run_lifecycle.py`; `my_agents/api/conversations/serializers.py`; `my_agents/api/conversations/endpoints/stream.py`; `my_agents/conversations/schemas.py`; `tests/test_rag_agent_contracts.py`; `tests/test_conversations_api.py`; RAG Agent README pair; local targeted Ruff/pytest evidence. |
 | 2026-05-27 | Added external-worker ingestion mode so hosted async document ingestion no longer needs to run inside the web request process. | `my_agents/knowledge/ingestion_worker.py`; `my_agents/ingestion_worker.py`; `my_agents/api/documents.py`; `my_agents/settings.py`; `.env.example`; `tests/test_knowledge_ingestion.py`; `tests/test_settings.py`; README pair; Render migration/troubleshooting docs. |
 | 2026-05-27 | Basic hosted deployment and CI/CD baseline proven with Render backend, Vercel frontend, Neon Postgres, Resend HTTP email, verified `my-agents.dev`, and frontend auth email landing routes. | Backend commits `7a3b864`, `a6975cc`, `e455774`, `4f0b0b0`; frontend commit `7ade1aa`; `docs/product-chat-service/en/14-render-migration-and-rollback-notes.md`; `docs/product-chat-service/en/15-deployment-troubleshooting-log.md`; hosted logs showing `POST /auth/signup 201 Created` and `auth.email.resend_http.completed`. |
@@ -382,3 +384,12 @@ Before starting a new workflow on any machine:
 3. Run or inspect the latest relevant tests.
 4. Update this file if your workflow changes completion, priorities, or known gaps.
 5. Keep `.omx/` notes as local-only; do not rely on them for cross-machine continuity.
+### 2026-06-07 — Team upload hidden staging boundary
+
+- Added `KnowledgeBasePurpose` and a `team_upload_staging` purpose for private upload buffers.
+- Added `POST /knowledge-bases/team-upload-staging` to create/reuse a hidden personal staging KB for team document publication.
+- Excluded staging KBs from normal KB lists, chat selected/all source resolution, retrieval filters, and whole-KB publish requests.
+- Preserved document-copy publication: staged documents can be copied into a target group KB, and only the approved group copy is ingested/retrieved.
+- Captured the service flow in `docs/product-chat-service/en/18-team-upload-staging-flow.md` and the Korean companion note.
+
+Verification so far: targeted pytest for staging publish/retrieval, OpenAPI contract, and Alembic head migration.

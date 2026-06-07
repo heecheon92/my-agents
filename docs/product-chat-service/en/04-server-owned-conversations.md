@@ -1,6 +1,6 @@
 ---
 created: 2026-05-17
-updated: 2026-05-21
+updated: 2026-06-07
 status: active
 topics:
   - conversations
@@ -47,7 +47,7 @@ sequenceDiagram
 
 ## What is implemented now
 
-- `ConversationModel` stores owner/group scope.
+- `ConversationModel` stores owner-private conversation scope only.
 - `MessageModel` stores user and assistant messages.
 - `AgentRunModel` stores the first durable run boundary.
 - `/conversations/{id}/messages` returns the authorized server-owned transcript for frontend display.
@@ -55,12 +55,12 @@ sequenceDiagram
 - `/conversations/{id}/runs` also supports `GET` so a frontend can list completed and failed runs.
 - Runs now include retrieval route, answer mode, permission-aware retrieval context IDs, citations, and redacted events.
 - Failed graph invocations persist a failed run and redacted `run_failed` event before returning a client-safe error.
-- Group conversations are visible to group members.
+- Group membership does not grant transcript access; team knowledge is selected separately through `knowledge_base_selection`.
 - Outsiders receive safe denial.
 
 ## Legacy boundary
 
-`/assistant/chat` still exists for v0 compatibility and deterministic smoke tests. It should not become the product endpoint for personal/group KB access.
+`/assistant/chat` still exists for v0 compatibility and deterministic smoke tests. It should not become the product endpoint for knowledge-backed chat access.
 
 Frontend work should use conversation/run endpoints for product chat.
 
@@ -82,12 +82,13 @@ Retrieval routing, citations, streaming, and redacted events now exist as later 
 - run listing returns frontend-safe run summaries without reply or event payloads;
 - failed graph invocation stores `status=failed` and a redacted `run_failed` event;
 - graph invocation receives `principal_id`, `conversation_id`, retrieval route, answer mode, and authorized context;
-- group members can read group conversations;
-- outsiders cannot read group conversations or message transcripts;
+- group members cannot read another user's owner-private conversation merely through shared team membership;
+- outsiders cannot read conversation message transcripts;
 - legacy `/assistant/chat` does not return product run fields.
 
 ## Revision history
 
+- 2026-06-07: Removed deprecated group-conversation scope; conversations are owner-private and team knowledge is selected through the unified source-selection contract.
 - 2026-05-21: Updated run flow for retrieval routing, answer modes, and streaming-era metadata.
 - 2026-05-17: Added run history and redacted failed-run persistence.
 - 2026-05-17: Added authorized conversation transcript listing for frontend display.

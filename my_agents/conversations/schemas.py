@@ -16,7 +16,6 @@ class ConversationCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     title: str = Field(default="Untitled conversation", min_length=1, max_length=200)
-    group_id: str | None = None
 
 
 class ConversationResponse(BaseModel):
@@ -25,7 +24,6 @@ class ConversationResponse(BaseModel):
     id: str
     title: str
     owner_user_id: str
-    group_id: str | None
 
 
 class MessageCreateRequest(BaseModel):
@@ -94,14 +92,12 @@ class ConversationRunRequest(BaseModel):
 
     message: str = Field(min_length=1)
     knowledge_base_selection: KnowledgeBaseSelection = Field(default_factory=KnowledgeBaseSelection)
-    optional_personal_knowledge_base_ids: list[str] = Field(default_factory=list)
 
 
 class ConversationReplayRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     knowledge_base_selection: KnowledgeBaseSelection | None = None
-    optional_personal_knowledge_base_ids: list[str] = Field(default_factory=list)
 
 
 class ConversationRunResponse(BaseModel):
@@ -116,11 +112,6 @@ class ConversationRunResponse(BaseModel):
     answer_mode: AnswerMode
     document_scope: DocumentScope
     knowledge_base_selection: KnowledgeBaseSelection
-    source_context_group_id: str | None = None
-    mandatory_group_knowledge_base_ids: list[str] = Field(default_factory=list)
-    mandatory_group_knowledge_base_count: int = 0
-    optional_personal_knowledge_base_ids: list[str] = Field(default_factory=list)
-    optional_personal_knowledge_base_count: int = 0
     resolved_knowledge_base_ids: list[str] = Field(default_factory=list)
     resolved_knowledge_base_count: int = 0
     citations: list[CitationResponse] = Field(default_factory=list)
@@ -145,11 +136,6 @@ class AgentRunSummaryResponse(BaseModel):
     status: str
     route_label: str | None
     knowledge_base_selection: KnowledgeBaseSelection
-    source_context_group_id: str | None = None
-    mandatory_group_knowledge_base_ids: list[str] = Field(default_factory=list)
-    mandatory_group_knowledge_base_count: int = 0
-    optional_personal_knowledge_base_ids: list[str] = Field(default_factory=list)
-    optional_personal_knowledge_base_count: int = 0
     resolved_knowledge_base_ids: list[str] = Field(default_factory=list)
     resolved_knowledge_base_count: int = 0
     created_at: datetime

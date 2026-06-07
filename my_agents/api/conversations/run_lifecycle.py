@@ -522,13 +522,6 @@ def start_run(
         selected_knowledge_base_ids_json=json.dumps(
             list(selection_context.knowledge_base_ids), sort_keys=True
         ),
-        source_context_group_id=selection_context.source_context_group_id,
-        mandatory_group_knowledge_base_ids_json=json.dumps(
-            list(selection_context.mandatory_group_knowledge_base_ids), sort_keys=True
-        ),
-        optional_personal_knowledge_base_ids_json=json.dumps(
-            list(selection_context.optional_personal_knowledge_base_ids), sort_keys=True
-        ),
         resolved_knowledge_base_ids_json=json.dumps(
             list(selection_context.resolved_knowledge_base_ids), sort_keys=True
         ),
@@ -580,13 +573,6 @@ def record_run_retrieval_metadata(
     run.knowledge_base_selection_mode = selection_context.mode
     run.selected_knowledge_base_ids_json = json.dumps(
         list(selection_context.knowledge_base_ids), sort_keys=True
-    )
-    run.source_context_group_id = selection_context.source_context_group_id
-    run.mandatory_group_knowledge_base_ids_json = json.dumps(
-        list(selection_context.mandatory_group_knowledge_base_ids), sort_keys=True
-    )
-    run.optional_personal_knowledge_base_ids_json = json.dumps(
-        list(selection_context.optional_personal_knowledge_base_ids), sort_keys=True
     )
     run.resolved_knowledge_base_ids_json = json.dumps(
         list(selection_context.resolved_knowledge_base_ids), sort_keys=True

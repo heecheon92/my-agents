@@ -22,3 +22,4 @@ They live outside `docs/learning/` because `docs/learning/` is reserved for the 
 15. [Generic container deployment path](./13-generic-container-deployment-path.md)
 16. [Render migration and rollback notes](./14-render-migration-and-rollback-notes.md)
 17. [Deployment troubleshooting log](./15-deployment-troubleshooting-log.md)
+18. [Team upload staging flow](./18-team-upload-staging-flow.md)

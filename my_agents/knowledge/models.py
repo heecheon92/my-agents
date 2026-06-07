@@ -42,6 +42,13 @@ class KnowledgeBaseScope(StrEnum):
     GROUP = "group"
 
 
+class KnowledgeBasePurpose(StrEnum):
+    """Product purpose for a knowledge-base container."""
+
+    STANDARD = "standard"
+    TEAM_UPLOAD_STAGING = "team_upload_staging"
+
+
 class ExtractionStatus(StrEnum):
     """Document extraction run status."""
 
@@ -79,6 +86,9 @@ class KnowledgeBaseModel(Base):
     scope: Mapped[str] = mapped_column(String(20), nullable=False)
     owner_user_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     group_id: Mapped[str | None] = mapped_column(ForeignKey("groups.id"), nullable=True, index=True)
+    purpose: Mapped[str] = mapped_column(
+        String(40), default=KnowledgeBasePurpose.STANDARD.value, nullable=False, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )
@@ -193,7 +203,7 @@ class KnowledgePublishRequestModel(Base):
 
 
 class KnowledgeBasePublicationModel(Base):
-    """Approved personal KB binding that makes a member KB a mandatory group source."""
+    """Approved personal KB binding that makes a KB selectable by group members."""
 
     __tablename__ = "knowledge_base_publications"
     __table_args__ = (

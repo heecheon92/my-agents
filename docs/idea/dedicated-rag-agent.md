@@ -51,10 +51,10 @@ The RAG agent should own:
    - decide whether the task is semantic Q&A, overview, enumeration, comparison, or source lookup.
 
 2. **Source policy**
+   - unified `knowledge_base_selection` over every authorized standard KB;
    - personal KB retrieval;
-   - mandatory group KB retrieval;
-   - approved published personal KBs in group context;
-   - optional personal KB attachment inside group chat;
+   - group KB retrieval when the user is a current member;
+   - owner-approved published personal KBs visible through group membership;
    - deleted-source behavior with no ghost knowledge.
 
 3. **Candidate generation**
@@ -119,11 +119,10 @@ flowchart TD
 The RAG agent must not bypass security or source rules.
 
 - No unauthorized documents.
-- No transcript leakage between group members.
+- No transcript leakage between users; chat transcripts are owner-private.
 - No personal KB publication without owner approval.
 - No ghost knowledge from deleted documents.
-- Mandatory group KB retrieval stays mandatory in group chat.
-- Optional personal KB attachment stays private to that user's group-chat run.
+- Group knowledge is not implicit or mandatory; it is used through the same authorized source-selection contract as personal knowledge.
 
 ## Why this belongs as a milestone
 

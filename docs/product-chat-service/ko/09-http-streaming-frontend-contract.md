@@ -6,6 +6,8 @@
 
 이 문서는 `product-chat-service/09-http-streaming-frontend-contract.md`의 한국어 문서 트랙 항목입니다. 현재는 핵심 목적과 영어 원문 위치를 안내하는 요약본입니다.
 
+현재 영어 원문은 일반 대화 실행의 `POST /conversations/{conversation_id}/runs/stream`뿐 아니라 답변 재생성용 `POST /conversations/{conversation_id}/messages/{message_id}/replay/stream`도 다룹니다. 재생성 스트림은 진행 이벤트와 `answer_delta`를 제공하고, 새 답변이 성공적으로 완료된 뒤에만 기존 답변 이후 transcript를 정리합니다. 실패 시 기존 답변은 보존됩니다.
+
 ## 문서 상태
 
 - 영어 원문은 `docs/product-chat-service/en/09-http-streaming-frontend-contract.md`에 있습니다.

@@ -35,8 +35,6 @@ class RagAgentGraphState(TypedDict, total=False):
     reranker: str
     clarification_required: bool
     route_label: str
-    mandatory_group_knowledge_base_count: int
-    optional_personal_knowledge_base_count: int
     authorized_context_count: int
     retrieved_chunk_count: int
     intent: str
@@ -66,12 +64,6 @@ def plan_workflow(state: RagAgentGraphState) -> RagAgentGraphState:
             reranker=state.get("reranker", "deterministic"),
             clarification_required=state.get("clarification_required", False),
             route_label=state.get("route_label", "general_assistant"),
-            mandatory_group_knowledge_base_count=state.get(
-                "mandatory_group_knowledge_base_count", 0
-            ),
-            optional_personal_knowledge_base_count=state.get(
-                "optional_personal_knowledge_base_count", 0
-            ),
             authorized_context_count=state.get("authorized_context_count", 0),
             retrieved_chunk_count=state.get("retrieved_chunk_count", 0),
             intent=state.get("intent", "semantic_qa"),

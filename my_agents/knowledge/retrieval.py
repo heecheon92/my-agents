@@ -15,8 +15,8 @@ from sqlalchemy.orm import Session
 
 from my_agents.groups.models import MembershipModel
 from my_agents.knowledge.auth import (
-    authorized_knowledge_base_filter,
     published_personal_knowledge_base_ids_for_user,
+    retrievable_knowledge_base_filter,
 )
 from my_agents.knowledge.embeddings import EmbeddingProvider, get_embedding_provider
 from my_agents.knowledge.models import (
@@ -129,7 +129,11 @@ class RetrievalService:
         return (
             self._db.scalar(
                 select(func.count(DocumentModel.id.distinct())).where(
-                    _authorized_document_filter(user_id, knowledge_base_ids=knowledge_base_ids)
+                    _authorized_document_filter(
+                        user_id,
+                        knowledge_base_ids=knowledge_base_ids,
+                        require_standard_purpose=_schema_has_knowledge_base_purpose(self._db),
+                    )
                 )
             )
             or 0
@@ -156,7 +160,11 @@ class RetrievalService:
             )
             .join(DocumentModel, StructuredKnowledgeEntityModel.document_id == DocumentModel.id)
             .where(
-                _authorized_document_filter(user_id, knowledge_base_ids=knowledge_base_ids),
+                _authorized_document_filter(
+                    user_id,
+                    knowledge_base_ids=knowledge_base_ids,
+                    require_standard_purpose=_schema_has_knowledge_base_purpose(self._db),
+                ),
                 StructuredKnowledgeEntityModel.entity_type.in_(unique_entity_types),
             )
             .order_by(
@@ -506,7 +514,13 @@ class RetrievalService:
         statement = (
             select(DocumentMetadataProfileModel, DocumentModel)
             .join(DocumentModel, DocumentMetadataProfileModel.document_id == DocumentModel.id)
-            .where(_authorized_document_filter(user_id, knowledge_base_ids=knowledge_base_ids))
+            .where(
+                _authorized_document_filter(
+                    user_id,
+                    knowledge_base_ids=knowledge_base_ids,
+                    require_standard_purpose=_schema_has_knowledge_base_purpose(self._db),
+                )
+            )
             .order_by(desc(DocumentModel.created_at), desc(DocumentMetadataProfileModel.created_at))
         )
         return list(self._db.execute(statement).all())
@@ -523,6 +537,7 @@ class RetrievalService:
                     user_id,
                     knowledge_base_ids=knowledge_base_ids,
                     include_published_personal_kbs=include_published_personal_kbs,
+                    require_standard_purpose=_schema_has_knowledge_base_purpose(self._db),
                 )
             )
             .order_by(desc(DocumentModel.created_at), DocumentChunkModel.ordinal)
@@ -557,6 +572,7 @@ def _authorized_document_filter(
     *,
     knowledge_base_ids: Sequence[str] | None = None,
     include_published_personal_kbs: bool = True,
+    require_standard_purpose: bool = True,
 ):
     group_ids = select(MembershipModel.group_id).where(MembershipModel.user_id == user_id)
     explicit_doc_ids = select(DocumentPermissionModel.document_id).where(
@@ -579,6 +595,7 @@ def _authorized_document_filter(
             user_id,
             knowledge_base_ids,
             include_published_personal_kbs=include_published_personal_kbs,
+            require_standard_purpose=require_standard_purpose,
         ),
         or_(*readable_document_predicates),
     )
@@ -589,11 +606,17 @@ def _knowledge_base_scope_filter(
     knowledge_base_ids: Sequence[str] | None = None,
     *,
     include_published_personal_kbs: bool = True,
+    require_standard_purpose: bool = True,
 ):
     from my_agents.knowledge.models import KnowledgeBaseModel
 
     if include_published_personal_kbs:
-        authorized_filter = authorized_knowledge_base_filter(user_id)
+        if require_standard_purpose:
+            authorized_filter = retrievable_knowledge_base_filter(user_id)
+        else:
+            from my_agents.knowledge.auth import authorized_knowledge_base_filter
+
+            authorized_filter = authorized_knowledge_base_filter(user_id)
     else:
         group_ids = select(MembershipModel.group_id).where(MembershipModel.user_id == user_id)
         authorized_filter = or_(
@@ -601,10 +624,12 @@ def _knowledge_base_scope_filter(
                 KnowledgeBaseModel.scope == "personal",
                 KnowledgeBaseModel.group_id.is_(None),
                 KnowledgeBaseModel.owner_user_id == user_id,
+                *([KnowledgeBaseModel.purpose == "standard"] if require_standard_purpose else []),
             ),
             and_(
                 KnowledgeBaseModel.scope == "group",
                 KnowledgeBaseModel.group_id.in_(group_ids),
+                *([KnowledgeBaseModel.purpose == "standard"] if require_standard_purpose else []),
             ),
         )
     authorized_kb_ids = select(KnowledgeBaseModel.id).where(authorized_filter)
@@ -621,6 +646,14 @@ def _knowledge_base_scope_filter(
 
 def _schema_has_knowledge_base_publications(db: Session) -> bool:
     return inspect(db.get_bind()).has_table("knowledge_base_publications")
+
+
+def _schema_has_knowledge_base_purpose(db: Session) -> bool:
+    if not inspect(db.get_bind()).has_table("knowledge_bases"):
+        return False
+    return "purpose" in {
+        column["name"] for column in inspect(db.get_bind()).get_columns("knowledge_bases")
+    }
 
 
 def _schema_has_document_metadata_profiles(db: Session) -> bool:

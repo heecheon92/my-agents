@@ -151,6 +151,9 @@ def test_alembic_offline_sql_generation_covers_initial_schema(monkeypatch) -> No
     assert "20260524_0014" in sql
     assert "20260525_0015" in sql
     assert "20260526_0016" in sql
+    assert "20260607_0017" in sql
+    assert "20260607_0018" in sql
+    assert "20260607_0019" in sql
     assert "CREATE TABLE guest_access_requests" in sql
     assert "CREATE TABLE knowledge_publish_requests" in sql
     assert "CREATE TABLE knowledge_base_publications" in sql
@@ -159,6 +162,8 @@ def test_alembic_offline_sql_generation_covers_initial_schema(monkeypatch) -> No
     assert "embedding_vector" in sql
     assert "progress_percent" in sql
     assert "completed_at" in sql
+    assert "purpose" in sql
+    assert "DROP COLUMN group_id" in sql
 
 
 def test_sqlite_json_fallback_reads_chunks_created_before_pgvector_migration(

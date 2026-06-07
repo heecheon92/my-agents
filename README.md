@@ -15,7 +15,7 @@
 - credential 없이 test/smoke check를 실행할 수 있는 deterministic offline/test mode.
 - email/password auth, app-owned session, CSRF-aware logout, dev outbox, guest access, signup disable switch.
 - group, document, knowledge-base, permission 기반.
-- KB-scoped document upload/create, ingestion, extraction-run progress, chunk, entity, metadata profile, embedding, pgvector-ready retrieval.
+- KB-scoped document upload/create, team-upload staging, ingestion, extraction-run progress, chunk, entity, metadata profile, embedding, pgvector-ready retrieval.
 - permission-aware RAG, structured entity retrieval, reranking seam, packed context, citation, redacted retrieval evidence를 담당하는 ContextForge retrieval service.
 - server-owned conversation, run history, SSE assistant text streaming, run replay/cancel, persisted citation, frontend-safe activity event와 compact ko/en agent trace.
 
@@ -38,6 +38,7 @@
 | Public demo readiness | [`docs/product-chat-service/ko/12-public-demo-deployment-readiness.md`](./docs/product-chat-service/ko/12-public-demo-deployment-readiness.md) |
 | Hybrid retrieval reference | [`docs/product-chat-service/ko/12-retrieval-agent-hybrid-reference.md`](./docs/product-chat-service/ko/12-retrieval-agent-hybrid-reference.md) |
 | Container deployment path | [`docs/product-chat-service/ko/13-generic-container-deployment-path.md`](./docs/product-chat-service/ko/13-generic-container-deployment-path.md) |
+| Team upload staging / 팀 업로드 임시 저장 | [`docs/product-chat-service/ko/18-team-upload-staging-flow.md`](./docs/product-chat-service/ko/18-team-upload-staging-flow.md) |
 | Script commands / 스크립트 명령 | [`scripts/README.md`](./scripts/README.md) |
 | Layout-aware RAG idea | [`docs/idea/layout-aware-ingestion-rag-agent.md`](./docs/idea/layout-aware-ingestion-rag-agent.md) |
 
@@ -72,7 +73,7 @@ flowchart TD
     Events --> DB
 ```
 
-Service layer가 auth, permission, source policy, persistence, retrieval boundary, citation, event를 소유합니다. ContextForge는 여전히 general assistant에 전달할 authorized context를 검색하고, `rag_agent`는 그 경로를 감싸는 graph-shaped RAG Agent contract로 trace stage와 grounding check를 제공합니다.
+팀 업로드는 RAG retrieval에서 제외되는 숨겨진 개인 임시 KB를 사용하고, 승인 후 소스를 팀 KB로 복사한 뒤에만 검색됩니다. Service layer가 auth, permission, source policy, persistence, retrieval boundary, citation, event를 소유합니다. ContextForge는 여전히 general assistant에 전달할 authorized context를 검색하고, `rag_agent`는 그 경로를 감싸는 graph-shaped RAG Agent contract로 trace stage와 grounding check를 제공합니다. Chat run은 권한이 있는 개인·공유·팀 KB를 하나의 `knowledge_base_selection` contract로 선택하며, conversation transcript는 사용자 소유 비공개 범위로 유지됩니다.
 
 ## 설정
 

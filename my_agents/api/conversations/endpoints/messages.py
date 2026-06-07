@@ -6,10 +6,7 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from my_agents.api.conversations.auth import (
-    get_authorized_conversation,
-    require_conversation_source_membership,
-)
+from my_agents.api.conversations.auth import get_authorized_conversation
 from my_agents.api.conversations.serializers import message_response
 from my_agents.auth.contracts import Principal
 from my_agents.auth.dependencies import get_current_principal
@@ -35,8 +32,7 @@ def add_message(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> MessageResponse:
     assert_guest_can_send_prompt(db, principal, settings)
-    conversation = get_authorized_conversation(db, conversation_id, principal.user_id)
-    require_conversation_source_membership(db, conversation, principal.user_id)
+    get_authorized_conversation(db, conversation_id, principal.user_id)
     message = MessageModel(
         conversation_id=conversation_id,
         role=MessageRole.USER.value,

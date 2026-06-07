@@ -49,7 +49,6 @@ class ConversationModel(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     owner_user_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
-    group_id: Mapped[str | None] = mapped_column(ForeignKey("groups.id"), nullable=True, index=True)
     title: Mapped[str] = mapped_column(String(200), nullable=False, default="Untitled conversation")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
@@ -90,11 +89,6 @@ class AgentRunModel(Base):
     document_scope: Mapped[str | None] = mapped_column(String(40), nullable=True)
     knowledge_base_selection_mode: Mapped[str | None] = mapped_column(String(20), nullable=True)
     selected_knowledge_base_ids_json: Mapped[str | None] = mapped_column(Text, nullable=True)
-    source_context_group_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    mandatory_group_knowledge_base_ids_json: Mapped[str | None] = mapped_column(Text, nullable=True)
-    optional_personal_knowledge_base_ids_json: Mapped[str | None] = mapped_column(
-        Text, nullable=True
-    )
     resolved_knowledge_base_ids_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     resolved_knowledge_base_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     retrieval_source_snapshot_json: Mapped[str | None] = mapped_column(Text, nullable=True)

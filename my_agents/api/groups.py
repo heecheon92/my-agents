@@ -23,6 +23,7 @@ from my_agents.knowledge.models import (
     DocumentModel,
     KnowledgeBaseModel,
     KnowledgeBasePublicationModel,
+    KnowledgeBasePurpose,
     KnowledgeBaseScope,
     KnowledgePublishRequestModel,
     KnowledgePublishRequestStatus,
@@ -342,6 +343,7 @@ def _get_owned_personal_source_knowledge_base(
     if (
         source_knowledge_base.scope != KnowledgeBaseScope.PERSONAL.value
         or source_knowledge_base.group_id is not None
+        or source_knowledge_base.purpose != KnowledgeBasePurpose.STANDARD.value
     ):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -389,6 +391,7 @@ def _get_target_group_knowledge_base(
         knowledge_base is None
         or knowledge_base.scope != KnowledgeBaseScope.GROUP.value
         or knowledge_base.group_id != group_id
+        or knowledge_base.purpose != KnowledgeBasePurpose.STANDARD.value
     ):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -454,6 +457,7 @@ def _approve_knowledge_base_publish_request(
     if (
         source_knowledge_base.scope != KnowledgeBaseScope.PERSONAL.value
         or source_knowledge_base.group_id is not None
+        or source_knowledge_base.purpose != KnowledgeBasePurpose.STANDARD.value
     ):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,

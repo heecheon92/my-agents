@@ -12,10 +12,7 @@ from sqlalchemy.orm import Session
 from my_agents.agents.general_assistant.classifier import classify_messages
 from my_agents.agents.general_assistant.responders import ResponseProviderConfigurationError
 from my_agents.api.assistant import GraphRunner, get_graph_runner
-from my_agents.api.conversations.auth import (
-    get_authorized_conversation,
-    require_conversation_source_membership,
-)
+from my_agents.api.conversations.auth import get_authorized_conversation
 from my_agents.api.conversations.graph_streaming import fallback_answer_deltas, stream_graph_items
 from my_agents.api.conversations.retrieval_context import (
     chunks_used_for_answer,
@@ -104,15 +101,12 @@ def stream_conversation_run(
     exception text.
     """
     assert_guest_can_send_prompt(db, principal, settings)
-    conversation = get_authorized_conversation(db, conversation_id, principal.user_id)
-    require_conversation_source_membership(db, conversation, principal.user_id)
+    get_authorized_conversation(db, conversation_id, principal.user_id)
     assert_no_active_run(db, conversation_id)
     selection_context = resolve_conversation_knowledge_context(
         db,
         user_id=principal.user_id,
-        conversation=conversation,
         requested_selection=request.knowledge_base_selection,
-        optional_personal_knowledge_base_ids=request.optional_personal_knowledge_base_ids,
     )
     return StreamingResponse(
         conversation_run_events(

@@ -119,6 +119,7 @@ Generated from `MY_AGENTS_ENV_FILE= MY_AGENTS_RESPONSE_MODE=deterministic my_age
 | `POST` | `/conversations/{conversation_id}/messages` | `MessageCreateRequest` | `201 MessageResponse` | explicit message add path |
 | `GET` | `/conversations/{conversation_id}/messages` | none | `200 array[MessageResponse]` | server-owned transcript |
 | `POST` | `/conversations/{conversation_id}/messages/{message_id}/replay` | `ConversationReplayRequest` | `200 ConversationRunResponse` | regenerate from a prior user message while preserving old answer until success |
+| `POST` | `/conversations/{conversation_id}/messages/{message_id}/replay/stream` | `ConversationReplayRequest` | `200 text/event-stream` | streamed regeneration with answer deltas and success-only transcript pruning |
 | `POST` | `/conversations/{conversation_id}/runs` | `ConversationRunRequest` | `200 ConversationRunResponse` | non-streaming product chat run |
 | `GET` | `/conversations/{conversation_id}/runs` | none | `200 array[AgentRunSummaryResponse]` | run summaries; also terminalizes stale active runs |
 | `POST` | `/conversations/{conversation_id}/runs/stream` | `ConversationRunRequest` | `200 text/event-stream` | streaming product chat run with progress and `answer_delta` events |
