@@ -226,6 +226,8 @@ def test_service_foundation_settings_have_safe_defaults(
     monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
     monkeypatch.delenv("MY_AGENTS_DATABASE_URL", raising=False)
     monkeypatch.delenv("MY_AGENTS_TEST_DATABASE_URL", raising=False)
+    monkeypatch.delenv("MY_AGENTS_ACCOUNT_SIGNUP_AUTO_APPROVAL", raising=False)
+    monkeypatch.delenv("MY_AGENTS_GUEST_CODE_AUTO_APPROVAL", raising=False)
 
     settings = Settings(_env_file=None)
 
@@ -240,6 +242,7 @@ def test_service_foundation_settings_have_safe_defaults(
     assert settings.deployment_environment == "local"
     assert settings.auth_email_mode == "local"
     assert settings.auth_signup_enabled is True
+    assert settings.account_signup_auto_approval is False
     assert settings.auth_public_app_base_url is None
     assert settings.auth_smtp_host is None
     assert settings.auth_smtp_from_email is None
@@ -252,6 +255,7 @@ def test_service_foundation_settings_have_safe_defaults(
     assert settings.auth_password_hash_memory_cost_kib == 19_456
     assert settings.auth_password_hash_parallelism == 1
     assert settings.guest_access_enabled is False
+    assert settings.guest_code_auto_approval is False
     assert settings.guest_code_ttl_seconds == 900
     assert settings.guest_access_ttl_seconds == 86400
     assert settings.guest_max_conversations == 1
@@ -276,6 +280,7 @@ def test_service_foundation_settings_accept_overrides(
     monkeypatch.setenv("MY_AGENTS_DEPLOYMENT_ENVIRONMENT", "preview")
     monkeypatch.setenv("MY_AGENTS_AUTH_EMAIL_MODE", "smtp")
     monkeypatch.setenv("MY_AGENTS_AUTH_SIGNUP_ENABLED", "false")
+    monkeypatch.setenv("MY_AGENTS_ACCOUNT_SIGNUP_AUTO_APPROVAL", "true")
     monkeypatch.setenv("MY_AGENTS_AUTH_PUBLIC_APP_BASE_URL", "https://demo.example.com/")
     monkeypatch.setenv("MY_AGENTS_AUTH_SMTP_HOST", "smtp.example.com")
     monkeypatch.setenv("MY_AGENTS_AUTH_SMTP_PORT", "2525")
@@ -293,6 +298,7 @@ def test_service_foundation_settings_accept_overrides(
     monkeypatch.setenv("MY_AGENTS_AUTH_PASSWORD_HASH_MEMORY_COST_KIB", "32768")
     monkeypatch.setenv("MY_AGENTS_AUTH_PASSWORD_HASH_PARALLELISM", "2")
     monkeypatch.setenv("MY_AGENTS_GUEST_ACCESS_ENABLED", "true")
+    monkeypatch.setenv("MY_AGENTS_GUEST_CODE_AUTO_APPROVAL", "true")
     monkeypatch.setenv("MY_AGENTS_GUEST_CODE_TTL_SECONDS", "600")
     monkeypatch.setenv("MY_AGENTS_GUEST_ACCESS_TTL_SECONDS", "86400")
     monkeypatch.setenv("MY_AGENTS_GUEST_MAX_CONVERSATIONS", "1")
@@ -312,6 +318,7 @@ def test_service_foundation_settings_accept_overrides(
     assert settings.deployment_environment == "preview"
     assert settings.auth_email_mode == "smtp"
     assert settings.auth_signup_enabled is False
+    assert settings.account_signup_auto_approval is True
     assert settings.auth_public_app_base_url == "https://demo.example.com"
     assert settings.auth_smtp_host == "smtp.example.com"
     assert settings.auth_smtp_port == 2525
@@ -331,6 +338,7 @@ def test_service_foundation_settings_accept_overrides(
     assert settings.auth_password_hash_memory_cost_kib == 32_768
     assert settings.auth_password_hash_parallelism == 2
     assert settings.guest_access_enabled is True
+    assert settings.guest_code_auto_approval is True
     assert settings.guest_code_ttl_seconds == 600
     assert settings.guest_access_ttl_seconds == 86400
     assert settings.guest_max_conversations == 1

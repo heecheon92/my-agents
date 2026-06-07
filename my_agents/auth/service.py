@@ -68,6 +68,14 @@ class UnverifiedEmailError(AuthError):
     """Raised when a user must verify their email before logging in."""
 
 
+class AccountApprovalRequiredError(AuthError):
+    """Raised when a registered user is waiting for operator approval."""
+
+
+class AccountRejectedError(AuthError):
+    """Raised when a registered user's signup request was rejected."""
+
+
 class InvalidSessionError(AuthError):
     """Raised when a session token is absent, unknown, or revoked."""
 
@@ -108,6 +116,14 @@ class GuestAccessCodeResult:
     email: str | None = None
 
 
+@dataclass(frozen=True)
+class AccountApprovalResult:
+    """Manual account approval result with printable verification token."""
+
+    user: UserModel
+    verification_token: str
+
+
 class AuthService:
     """Own first-party users, password hashes, sessions, and account lifecycle tokens."""
 
@@ -127,6 +143,7 @@ class AuthService:
         email: str,
         password: str,
         email_language: AuthEmailLanguage = "ko",
+        auto_approve: bool = False,
     ) -> SignupResult:
         normalized_email = _normalize_email(email)
         email_context = safe_email_context(normalized_email)
@@ -149,6 +166,8 @@ class AuthService:
             email=normalized_email,
             password_hash=password_hash,
             account_type="registered",
+            approval_status="approved" if auto_approve else "pending",
+            approved_at=datetime.now(UTC) if auto_approve else None,
         )
         self._db.add(user)
         deploy_log("auth.service.signup.user_add.completed", user_id=user.id, **email_context)
@@ -161,15 +180,20 @@ class AuthService:
             elapsed_ms=round((perf_counter() - flush_started_at) * 1000, 2),
             **email_context,
         )
-        token = self._create_token(
-            user_id=user.id,
-            purpose="email_verification",
-            ttl=EMAIL_VERIFICATION_TOKEN_TTL,
-        )
-        deploy_log("auth.service.signup.token_created", user_id=user.id, **email_context)
+        token = None
+        if auto_approve:
+            token = self._create_token(
+                user_id=user.id,
+                purpose="email_verification",
+                ttl=EMAIL_VERIFICATION_TOKEN_TTL,
+            )
+            deploy_log("auth.service.signup.token_created", user_id=user.id, **email_context)
         self._db.commit()
         deploy_log("auth.service.signup.db_committed", user_id=user.id, **email_context)
         self._db.refresh(user)
+        if token is None:
+            deploy_log("auth.service.signup.pending_approval", user_id=user.id, **email_context)
+            return SignupResult(user=user, verification_email_sent=False)
         deploy_log("auth.service.signup.email_send.start", user_id=user.id, **email_context)
         self._email_sender.send_email_verification(
             recipient_email=user.email,
@@ -191,6 +215,12 @@ class AuthService:
         except VerifyMismatchError as exc:
             raise InvalidCredentialsError("invalid email or password") from exc
         if not is_valid:
+            raise InvalidCredentialsError("invalid email or password")
+        if user.approval_status == "pending":
+            raise AccountApprovalRequiredError("account approval pending")
+        if user.approval_status == "rejected":
+            raise AccountRejectedError("account approval rejected")
+        if user.approval_status != "approved":
             raise InvalidCredentialsError("invalid email or password")
         if user.email_verified_at is None:
             raise UnverifiedEmailError("email verification required")
@@ -234,7 +264,7 @@ class AuthService:
         """Create a reset token for known users without revealing account existence."""
         normalized_email = _normalize_email(email)
         user = self._db.scalar(select(UserModel).where(UserModel.email == normalized_email))
-        if user is None or user.account_type != "registered":
+        if user is None or user.account_type != "registered" or user.approval_status != "approved":
             return
         token = self._create_token(
             user_id=user.id,
@@ -292,6 +322,41 @@ class AuthService:
         self._db.commit()
         self._db.refresh(request)
         return request
+
+    def approve_account_signup(self, *, email: str) -> AccountApprovalResult:
+        """Approve a pending registered account and create a verification token."""
+        normalized_email = _normalize_email(email)
+        user = self._db.scalar(select(UserModel).where(UserModel.email == normalized_email))
+        if user is None or user.account_type != "registered":
+            raise InvalidAuthTokenError("account not found")
+        if user.approval_status == "rejected":
+            raise InvalidAuthTokenError("account signup was rejected")
+        if user.approval_status != "approved":
+            user.approval_status = "approved"
+            user.approved_at = datetime.now(UTC)
+            user.rejected_at = None
+        token = self._create_token(
+            user_id=user.id,
+            purpose="email_verification",
+            ttl=EMAIL_VERIFICATION_TOKEN_TTL,
+        )
+        self._db.add(user)
+        self._db.commit()
+        self._db.refresh(user)
+        return AccountApprovalResult(user=user, verification_token=token)
+
+    def reject_account_signup(self, *, email: str) -> UserModel:
+        """Reject a pending registered account without deleting the audit row."""
+        normalized_email = _normalize_email(email)
+        user = self._db.scalar(select(UserModel).where(UserModel.email == normalized_email))
+        if user is None or user.account_type != "registered":
+            raise InvalidAuthTokenError("account not found")
+        user.approval_status = "rejected"
+        user.rejected_at = datetime.now(UTC)
+        self._db.add(user)
+        self._db.commit()
+        self._db.refresh(user)
+        return user
 
     def create_guest_access_code(self, *, ttl: timedelta) -> GuestAccessCodeResult:
         """Create a short-lived one-time guest access code without an email request."""
@@ -370,6 +435,79 @@ class AuthService:
             expires_at=expires_at,
             request_id=request.id if request is not None else None,
             email=normalized_email if email is not None else None,
+        )
+
+    def issue_and_send_guest_access_code(
+        self,
+        *,
+        email: str,
+        ttl: timedelta,
+        email_language: AuthEmailLanguage = "ko",
+    ) -> GuestAccessCodeResult:
+        """Issue and email a one-time guest code, rolling back if delivery fails."""
+        normalized_email = _normalize_email(email)
+        if not normalized_email:
+            raise ValueError("email must not be blank")
+        request = self._db.scalar(
+            select(GuestAccessRequestModel)
+            .where(
+                GuestAccessRequestModel.email == normalized_email,
+                GuestAccessRequestModel.status.in_(["pending", "issued"]),
+                GuestAccessRequestModel.rejected_at.is_(None),
+            )
+            .order_by(GuestAccessRequestModel.created_at.desc(), GuestAccessRequestModel.id.desc())
+        )
+        if request is None:
+            request = GuestAccessRequestModel(
+                id=str(uuid.uuid4()),
+                email=normalized_email,
+                status="pending",
+            )
+            self._db.add(request)
+            self._db.flush()
+
+        code = secrets.token_urlsafe(18)
+        expires_at = datetime.now(UTC) + ttl
+        guest_code = self._db.scalar(
+            select(GuestAccessCodeModel)
+            .where(
+                GuestAccessCodeModel.request_id == request.id,
+                GuestAccessCodeModel.consumed_at.is_(None),
+            )
+            .order_by(GuestAccessCodeModel.created_at.desc(), GuestAccessCodeModel.id.desc())
+        )
+        if guest_code is None:
+            guest_code = GuestAccessCodeModel(
+                id=str(uuid.uuid4()),
+                request_id=request.id,
+                code_hash=_digest(code),
+                expires_at=expires_at,
+            )
+        else:
+            guest_code.code_hash = _digest(code)
+            guest_code.expires_at = expires_at
+        now = datetime.now(UTC)
+        request.status = "issued"
+        request.approved_at = request.approved_at or now
+        request.sent_at = now
+        self._db.add_all([request, guest_code])
+        try:
+            self._db.flush()
+            self._email_sender.send_guest_access_code(
+                recipient_email=normalized_email,
+                code=code,
+                expires_at=expires_at,
+                language=email_language,
+            )
+            self._db.commit()
+        except Exception:
+            self._db.rollback()
+            raise
+        return GuestAccessCodeResult(
+            code=code,
+            expires_at=expires_at,
+            request_id=request.id,
+            email=normalized_email,
         )
 
     def redeem_guest_access_code(

@@ -207,9 +207,17 @@ class Settings(BaseSettings):
         default=True,
         validation_alias=AliasChoices("MY_AGENTS_AUTH_SIGNUP_ENABLED"),
     )
+    account_signup_auto_approval: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("MY_AGENTS_ACCOUNT_SIGNUP_AUTO_APPROVAL"),
+    )
     guest_access_enabled: bool = Field(
         default=False,
         validation_alias=AliasChoices("MY_AGENTS_GUEST_ACCESS_ENABLED"),
+    )
+    guest_code_auto_approval: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("MY_AGENTS_GUEST_CODE_AUTO_APPROVAL"),
     )
     guest_code_ttl_seconds: int = Field(
         default=900,

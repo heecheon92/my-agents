@@ -7,10 +7,12 @@ from datetime import UTC, datetime, timedelta
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+from my_agents.auth.dependencies import get_configured_auth_email_sender
 from my_agents.auth.email import get_local_auth_email_outbox
-from my_agents.auth.models import AuthTokenModel, UserModel
+from my_agents.auth.models import AuthTokenModel, GuestAccessCodeModel, UserModel
 from my_agents.persistence.database import get_database_session
-from my_agents.settings import get_settings
+from my_agents.settings import Settings, get_settings
+from scripts.auth_approval import approve_account, send_account_verification_email
 
 from .conftest import latest_auth_email_token, load_app, verify_latest_auth_email
 
@@ -136,6 +138,171 @@ def test_signup_is_enabled_by_default(monkeypatch) -> None:  # noqa: ANN001
 
     assert response.status_code == 201
     assert response.json()["user"]["email"] == "default-signup@example.com"
+
+
+def test_signup_auto_approval_defaults_to_pending_account(monkeypatch) -> None:  # noqa: ANN001
+    monkeypatch.delenv("MY_AGENTS_ACCOUNT_SIGNUP_AUTO_APPROVAL", raising=False)
+    get_settings.cache_clear()
+    client = _client(monkeypatch)
+
+    response = client.post(
+        "/auth/signup",
+        json={
+            "email": "pending-default@example.com",
+            "password": "correct horse battery staple",
+        },
+    )
+    login = client.post(
+        "/auth/login",
+        json={
+            "email": "pending-default@example.com",
+            "password": "correct horse battery staple",
+        },
+    )
+    reset = client.post(
+        "/auth/password-reset/request",
+        json={"email": "pending-default@example.com"},
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["verification_email_sent"] is False
+    assert payload["approval_required"] is True
+    assert payload["user"]["approval_status"] == "pending"
+    assert get_local_auth_email_outbox().messages() == ()
+    assert login.status_code == 403
+    assert login.json()["detail"] == "account approval pending"
+    assert reset.status_code == 202
+    assert get_local_auth_email_outbox().messages() == ()
+
+
+def test_manual_account_approval_issues_verification_token_and_allows_login(
+    monkeypatch,
+    tmp_path,
+) -> None:  # noqa: ANN001
+    monkeypatch.setenv(
+        "MY_AGENTS_DATABASE_URL",
+        f"sqlite+pysqlite:///{tmp_path / 'manual-account-approval.sqlite3'}",
+    )
+    monkeypatch.setenv("MY_AGENTS_AUTO_CREATE_TABLES", "true")
+    monkeypatch.delenv("MY_AGENTS_ACCOUNT_SIGNUP_AUTO_APPROVAL", raising=False)
+    get_settings.cache_clear()
+    client = _client(monkeypatch)
+
+    signup = client.post(
+        "/auth/signup",
+        json={
+            "email": "manual-approval@example.com",
+            "password": "correct horse battery staple",
+        },
+    )
+    result = approve_account(
+        settings=Settings(_env_file=None),
+        email="manual-approval@example.com",
+    )
+    send_account_verification_email(
+        settings=Settings(_env_file=None),
+        result=result,
+        language="ko",
+    )
+    verified = client.post("/auth/verify-email", json={"token": result.verification_token})
+    login = client.post(
+        "/auth/login",
+        json={
+            "email": "manual-approval@example.com",
+            "password": "correct horse battery staple",
+        },
+    )
+
+    assert signup.status_code == 201
+    assert result.email == "manual-approval@example.com"
+    assert result.verification_token
+    assert get_local_auth_email_outbox().messages()[-1].purpose == "email_verification"
+    assert verified.status_code == 200
+    assert login.status_code == 200
+    assert login.json()["user"]["approval_status"] == "approved"
+
+
+def test_guest_request_manual_default_records_without_code_or_email(monkeypatch) -> None:  # noqa: ANN001
+    monkeypatch.setenv("MY_AGENTS_GUEST_ACCESS_ENABLED", "true")
+    monkeypatch.delenv("MY_AGENTS_GUEST_CODE_AUTO_APPROVAL", raising=False)
+    get_settings.cache_clear()
+    client = _client(monkeypatch)
+
+    response = client.post("/auth/guest/request", json={"email": "guest-manual@example.com"})
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "accepted"}
+    assert get_local_auth_email_outbox().messages() == ()
+
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        guest_code = db.scalar(select(GuestAccessCodeModel))
+    finally:
+        session_generator.close()
+
+    assert guest_code is None
+
+
+def test_guest_auto_approval_emails_code_and_allows_guest_login(monkeypatch) -> None:  # noqa: ANN001
+    monkeypatch.setenv("MY_AGENTS_GUEST_ACCESS_ENABLED", "true")
+    monkeypatch.setenv("MY_AGENTS_GUEST_CODE_AUTO_APPROVAL", "true")
+    get_settings.cache_clear()
+    client = _client(monkeypatch)
+
+    response = client.post(
+        "/auth/guest/request",
+        json={"email": "guest-auto@example.com", "language": "en"},
+    )
+    messages = get_local_auth_email_outbox().messages()
+    code = messages[-1].token
+    login = client.post("/auth/guest/login", json={"code": code})
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "accepted"}
+    assert messages[-1].recipient_email == "guest-auto@example.com"
+    assert messages[-1].purpose == "guest_access_code"
+    assert login.status_code == 200
+    assert login.json()["user"]["is_guest"] is True
+
+
+def test_guest_auto_approval_email_failure_does_not_persist_code(monkeypatch) -> None:  # noqa: ANN001
+    class FailingGuestEmailSender:
+        def send_email_verification(self, **kwargs) -> None:  # noqa: ANN003
+            return None
+
+        def send_password_reset(self, **kwargs) -> None:  # noqa: ANN003
+            return None
+
+        def send_guest_access_code(self, **kwargs) -> None:  # noqa: ANN003
+            raise RuntimeError("email provider failed")
+
+    monkeypatch.setenv("MY_AGENTS_GUEST_ACCESS_ENABLED", "true")
+    monkeypatch.setenv("MY_AGENTS_GUEST_CODE_AUTO_APPROVAL", "true")
+    get_settings.cache_clear()
+    app = load_app()
+    app.dependency_overrides[get_configured_auth_email_sender] = lambda: FailingGuestEmailSender()
+    client = TestClient(app)
+    try:
+        response = client.post(
+            "/auth/guest/request",
+            json={"email": "guest-failure@example.com"},
+        )
+    finally:
+        app.dependency_overrides.pop(get_configured_auth_email_sender, None)
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "guest access temporarily unavailable"
+
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        guest_code = db.scalar(select(GuestAccessCodeModel))
+    finally:
+        session_generator.close()
+
+    assert guest_code is None
 
 
 def test_disabled_signup_does_not_create_user_token_or_email(monkeypatch) -> None:  # noqa: ANN001

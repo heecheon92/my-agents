@@ -21,6 +21,11 @@ class UserModel(Base):
     email_verified_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    approval_status: Mapped[str] = mapped_column(
+        String(20), default="approved", nullable=False, index=True
+    )
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    rejected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     account_type: Mapped[str] = mapped_column(String(20), default="registered", nullable=False)
     guest_expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
