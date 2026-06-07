@@ -1,4 +1,4 @@
-"""Approve a pending account signup and print a verification token."""
+"""Resend account email verification for an approved, unverified signup."""
 
 from __future__ import annotations
 
@@ -20,55 +20,41 @@ from scripts.ops_common import add_env_arguments, resolve_env_file
 
 
 @dataclass(frozen=True)
-class AccountApprovalCliResult:
-    """Printable account approval result."""
+class AccountVerificationResendResult:
+    """Printable account verification resend result."""
 
     email: str
     user_id: str
-    verification_token: str | None
+    verification_token: str
     verification_url: str | None
-    email_marked_verified: bool = False
-    was_email_already_verified: bool = False
 
 
-def approve_account_signup(
+def resend_account_verification(
     *,
     settings: Settings,
     email: str,
-    mark_email_verified: bool = False,
-) -> AccountApprovalCliResult:
-    """Approve a registered account and return printable verification metadata."""
+) -> AccountVerificationResendResult:
+    """Create a fresh email-verification token for an approved unverified account."""
     reset_database_caches()
     initialize_database(settings)
     session_factory = _sessionmaker_for_url(settings.database_url)
     with session_factory() as db:
-        result = AuthService(db).approve_account_signup(
-            email=email,
-            mark_email_verified=mark_email_verified,
-        )
-        return AccountApprovalCliResult(
+        result = AuthService(db).resend_account_verification(email=email)
+        return AccountVerificationResendResult(
             email=result.user.email,
             user_id=result.user.id,
             verification_token=result.verification_token,
-            verification_url=(
-                _action_url(settings, "/verify-email", result.verification_token)
-                if result.verification_token is not None
-                else None
-            ),
-            email_marked_verified=result.email_marked_verified,
-            was_email_already_verified=result.was_email_already_verified,
+            verification_url=_action_url(settings, "/verify-email", result.verification_token),
         )
 
 
 def send_account_verification_email(
     *,
     settings: Settings,
-    result: AccountApprovalCliResult,
+    result: AccountVerificationResendResult,
     language: AuthEmailLanguage = "ko",
 ) -> None:
-    """Send a verification email for an approved account."""
-    if result.verification_token is None:
-        raise ValueError("verification token was not issued")
+    """Send a fresh verification email for an approved account."""
     sender = build_auth_email_sender(settings)
     sender.send_email_verification(
         recipient_email=result.email,
@@ -78,9 +64,9 @@ def send_account_verification_email(
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Build the non-interactive account approval parser."""
+    """Build the non-interactive account verification resend parser."""
     parser = argparse.ArgumentParser(
-        description="Approve a pending account signup and print a verification token."
+        description="Resend account email verification for an approved, unverified signup."
     )
     add_env_arguments(parser)
     parser.add_argument("--email", required=True, help="Signup email address.")
@@ -88,11 +74,6 @@ def build_parser() -> argparse.ArgumentParser:
         "--send-email",
         action="store_true",
         help="Also send the verification email using the selected env's provider.",
-    )
-    parser.add_argument(
-        "--mark-verified",
-        action="store_true",
-        help="Set email_verified_at immediately instead of issuing a verification token.",
     )
     parser.add_argument(
         "--lang",
@@ -104,29 +85,20 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Run the account approval command."""
-    parser = build_parser()
-    args = parser.parse_args(argv)
-    if args.mark_verified and args.send_email:
-        parser.error("--mark-verified cannot be combined with --send-email")
+    """Run the account verification resend command."""
+    args = build_parser().parse_args(argv)
     env_file = resolve_env_file(profile=args.env, env_file=args.env_file)
     if not env_file.is_file():
         print(f"error: env file does not exist: {env_file}", file=sys.stderr)
         return 1
     settings = Settings(_env_file=env_file)
-    result = approve_account_signup(
-        settings=settings,
-        email=args.email,
-        mark_email_verified=args.mark_verified,
-    )
-    print("Account signup approved")
+    result = resend_account_verification(settings=settings, email=args.email)
+    print("Account verification token refreshed")
     print(f"env_file={env_file}")
     print(f"email={result.email}")
     print(f"user_id={result.user_id}")
-    print(f"verification_token={result.verification_token or ''}")
+    print(f"verification_token={result.verification_token}")
     print(f"verification_url={result.verification_url or ''}")
-    print(f"email_marked_verified={result.email_marked_verified}")
-    print(f"was_email_already_verified={result.was_email_already_verified}")
     email_sent = False
     if args.send_email:
         try:

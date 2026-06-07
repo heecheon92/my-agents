@@ -11,7 +11,8 @@ repository root with `uv run python -m scripts.<name>`.
 | --- | --- | --- |
 | `scripts.dev_pgvector` | Start and wire a disposable local Docker pgvector/Postgres database. | Local Postgres/pgvector development and migration smoke checks. |
 | `scripts.ops` | Interactive operational dispatcher that collects options and delegates to focused scripts. | Operator-friendly account/guest maintenance. |
-| `scripts.approve_account_signup` | Approve a pending account signup and print/send verification. | Manual signup approval. |
+| `scripts.approve_account_signup` | Approve a pending account signup and print/send verification or mark email verified. | Manual signup approval and verification bypass. |
+| `scripts.resend_account_verification` | Refresh an expired/missing verification token for an approved unverified account. | Recover signups blocked by expired verification links. |
 | `scripts.reject_account_signup` | Reject a pending account signup. | Manual signup rejection. |
 | `scripts.local_demo_seed` | Seed a file-backed SQLite demo user, knowledge base, document, and extraction run. | Prepare a local demo database before starting the backend. |
 | `scripts.local_demo_smoke` | Smoke-test a running backend over HTTP only. | Verify the local V1 API path after seeding and starting the server. |
@@ -207,15 +208,19 @@ IDs, answer-delta count, citation count, and event count.
 
 Interactive operational dispatcher. It gathers options and delegates to focused
 script modules such as `scripts.approve_account_signup`,
-`scripts.reject_account_signup`, and `scripts.issue_guest_access_code`. It loads
+`scripts.resend_account_verification`, `scripts.reject_account_signup`, and
+`scripts.issue_guest_access_code`. It loads
 `.env.pgvector.local` by default; pass `--env pgvector.production` only when
 intentionally operating on production.
 
 Current behavior:
 
-- `--interactive` prompts for the operation, email, email-delivery choice, language, and
-  guest-code options instead of requiring every flag upfront.
+- `--interactive` shows numbered menus for operation, yes/no choices, and language,
+  so operators can choose common paths with minimal typing. Enter `q`, `quit`, or
+  `exit` at any interactive prompt to cancel gracefully. It still prompts for
+  values that cannot be inferred, such as email and optional guest-code fields.
 - `account approve` delegates to `scripts.approve_account_signup`.
+- `account resend-verification` delegates to `scripts.resend_account_verification`.
 - `account reject` delegates to `scripts.reject_account_signup`.
 - `guest issue` delegates to `scripts.issue_guest_access_code`.
 - Email content defaults to Korean; use `--lang en` for English.
@@ -223,7 +228,7 @@ Current behavior:
 Commands:
 
 ```bash
-# Prompt for account/guest operation and required values.
+# Show a numbered account/guest operation menu and prompt for required values.
 uv run python -m scripts.ops --interactive
 
 # Approve a pending signup and print the verification token/link.
@@ -232,6 +237,16 @@ uv run python -m scripts.ops account approve \
 
 # Approve and also send the Korean verification email.
 uv run python -m scripts.ops --env pgvector.production account approve \
+  --email user@example.com \
+  --send-email
+
+# Approve and mark the user's email verified immediately, without issuing a link.
+uv run python -m scripts.ops --env pgvector.production account approve \
+  --email user@example.com \
+  --mark-verified
+
+# Resend a fresh verification token/link after an old signup verification expired.
+uv run python -m scripts.ops account resend-verification \
   --email user@example.com \
   --send-email
 
@@ -255,10 +270,27 @@ uv run python -m scripts.ops --env pgvector.production guest issue \
 ## `scripts.approve_account_signup`
 
 Focused non-interactive script for account approval. It marks a pending registered user
-approved, prints a verification token/link, and optionally sends the verification email:
+approved, then either prints/sends a verification token or directly marks the email
+verified with `--mark-verified`:
 
 ```bash
 uv run python -m scripts.approve_account_signup \
+  --email user@example.com \
+  --send-email
+
+uv run python -m scripts.approve_account_signup \
+  --email user@example.com \
+  --mark-verified
+```
+
+## `scripts.resend_account_verification`
+
+Focused non-interactive script for approved accounts whose email verification
+link expired or was lost. It does not approve pending accounts; use
+`scripts.approve_account_signup` first for pending signups.
+
+```bash
+uv run python -m scripts.resend_account_verification \
   --email user@example.com \
   --send-email
 ```

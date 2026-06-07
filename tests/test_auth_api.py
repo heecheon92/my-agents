@@ -16,6 +16,7 @@ from scripts.approve_account_signup import (
     approve_account_signup,
     send_account_verification_email,
 )
+from scripts.resend_account_verification import resend_account_verification
 
 from .conftest import latest_auth_email_token, load_app, verify_latest_auth_email
 
@@ -224,6 +225,110 @@ def test_manual_account_approval_issues_verification_token_and_allows_login(
     assert verified.status_code == 200
     assert login.status_code == 200
     assert login.json()["user"]["approval_status"] == "approved"
+
+
+def test_manual_account_approval_can_mark_email_verified_without_token(
+    monkeypatch,
+    tmp_path,
+) -> None:  # noqa: ANN001
+    monkeypatch.setenv(
+        "MY_AGENTS_DATABASE_URL",
+        f"sqlite+pysqlite:///{tmp_path / 'manual-account-approval-verified.sqlite3'}",
+    )
+    monkeypatch.setenv("MY_AGENTS_AUTO_CREATE_TABLES", "true")
+    monkeypatch.delenv("MY_AGENTS_ACCOUNT_SIGNUP_AUTO_APPROVAL", raising=False)
+    get_settings.cache_clear()
+    client = _client(monkeypatch)
+
+    signup = client.post(
+        "/auth/signup",
+        json={
+            "email": "manual-mark-verified@example.com",
+            "password": "correct horse battery staple",
+        },
+    )
+    result = approve_account_signup(
+        settings=Settings(_env_file=None),
+        email="manual-mark-verified@example.com",
+        mark_email_verified=True,
+    )
+    login = client.post(
+        "/auth/login",
+        json={
+            "email": "manual-mark-verified@example.com",
+            "password": "correct horse battery staple",
+        },
+    )
+
+    assert signup.status_code == 201
+    assert result.email == "manual-mark-verified@example.com"
+    assert result.verification_token is None
+    assert result.email_marked_verified is True
+    assert result.was_email_already_verified is False
+    assert login.status_code == 200
+    assert login.json()["user"]["approval_status"] == "approved"
+    assert login.json()["user"]["email_verified_at"] is not None
+
+
+def test_resend_account_verification_recovers_expired_signup_token(
+    monkeypatch,
+    tmp_path,
+) -> None:  # noqa: ANN001
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'expired-signup-token.sqlite3'}"
+    monkeypatch.setenv("MY_AGENTS_DATABASE_URL", database_url)
+    monkeypatch.setenv("MY_AGENTS_AUTO_CREATE_TABLES", "true")
+    monkeypatch.setenv("MY_AGENTS_ACCOUNT_SIGNUP_AUTO_APPROVAL", "true")
+    get_settings.cache_clear()
+    client = _client(monkeypatch)
+
+    signup = client.post(
+        "/auth/signup",
+        json={
+            "email": "expired-token@example.com",
+            "password": "correct horse battery staple",
+        },
+    )
+    expired_token = latest_auth_email_token("expired-token@example.com", "email_verification")
+
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        auth_token = db.scalar(select(AuthTokenModel))
+        assert auth_token is not None
+        auth_token.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+        db.add(auth_token)
+        db.commit()
+    finally:
+        session_generator.close()
+
+    expired_verify = client.post("/auth/verify-email", json={"token": expired_token})
+    duplicate_signup = client.post(
+        "/auth/signup",
+        json={
+            "email": "expired-token@example.com",
+            "password": "correct horse battery staple",
+        },
+    )
+    result = resend_account_verification(
+        settings=Settings(_env_file=None),
+        email="expired-token@example.com",
+    )
+    verified = client.post("/auth/verify-email", json={"token": result.verification_token})
+    login = client.post(
+        "/auth/login",
+        json={
+            "email": "expired-token@example.com",
+            "password": "correct horse battery staple",
+        },
+    )
+
+    assert signup.status_code == 201
+    assert expired_verify.status_code == 400
+    assert duplicate_signup.status_code == 409
+    assert result.email == "expired-token@example.com"
+    assert result.verification_token != expired_token
+    assert verified.status_code == 200
+    assert login.status_code == 200
 
 
 def test_guest_request_manual_default_records_without_code_or_email(monkeypatch) -> None:  # noqa: ANN001

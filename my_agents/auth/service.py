@@ -118,10 +118,12 @@ class GuestAccessCodeResult:
 
 @dataclass(frozen=True)
 class AccountApprovalResult:
-    """Manual account approval result with printable verification token."""
+    """Manual account approval result with printable verification metadata."""
 
     user: UserModel
-    verification_token: str
+    verification_token: str | None
+    email_marked_verified: bool = False
+    was_email_already_verified: bool = False
 
 
 class AuthService:
@@ -323,8 +325,13 @@ class AuthService:
         self._db.refresh(request)
         return request
 
-    def approve_account_signup(self, *, email: str) -> AccountApprovalResult:
-        """Approve a pending registered account and create a verification token."""
+    def approve_account_signup(
+        self,
+        *,
+        email: str,
+        mark_email_verified: bool = False,
+    ) -> AccountApprovalResult:
+        """Approve a registered account and either issue or bypass email verification."""
         normalized_email = _normalize_email(email)
         user = self._db.scalar(select(UserModel).where(UserModel.email == normalized_email))
         if user is None or user.account_type != "registered":
@@ -335,18 +342,50 @@ class AuthService:
             user.approval_status = "approved"
             user.approved_at = datetime.now(UTC)
             user.rejected_at = None
+        was_email_already_verified = user.email_verified_at is not None
+        token = None
+        if mark_email_verified:
+            if user.email_verified_at is None:
+                user.email_verified_at = datetime.now(UTC)
+        else:
+            token = self._create_token(
+                user_id=user.id,
+                purpose="email_verification",
+                ttl=EMAIL_VERIFICATION_TOKEN_TTL,
+            )
+        self._db.add(user)
+        self._db.commit()
+        self._db.refresh(user)
+        return AccountApprovalResult(
+            user=user,
+            verification_token=token,
+            email_marked_verified=mark_email_verified,
+            was_email_already_verified=was_email_already_verified,
+        )
+
+    def resend_account_verification(self, *, email: str) -> AccountApprovalResult:
+        """Create a fresh email verification token for an approved, unverified account."""
+        normalized_email = _normalize_email(email)
+        user = self._db.scalar(select(UserModel).where(UserModel.email == normalized_email))
+        if user is None or user.account_type != "registered":
+            raise InvalidAuthTokenError("account not found")
+        if user.approval_status == "pending":
+            raise AccountApprovalRequiredError("account approval pending")
+        if user.approval_status == "rejected":
+            raise AccountRejectedError("account approval rejected")
+        if user.approval_status != "approved" or user.email_verified_at is not None:
+            raise InvalidAuthTokenError("account is not eligible for verification resend")
         token = self._create_token(
             user_id=user.id,
             purpose="email_verification",
             ttl=EMAIL_VERIFICATION_TOKEN_TTL,
         )
-        self._db.add(user)
         self._db.commit()
         self._db.refresh(user)
         return AccountApprovalResult(user=user, verification_token=token)
 
     def reject_account_signup(self, *, email: str) -> UserModel:
-        """Reject a pending registered account without deleting the audit row."""
+        """Reject a pending account signup without deleting the audit row."""
         normalized_email = _normalize_email(email)
         user = self._db.scalar(select(UserModel).where(UserModel.email == normalized_email))
         if user is None or user.account_type != "registered":
