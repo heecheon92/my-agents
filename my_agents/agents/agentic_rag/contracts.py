@@ -69,3 +69,11 @@ class AgenticRagVerification:
 
     passed: bool
     errors: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class AgenticRagGroundingVerification:
+    """Result from deterministic answer-grounding boundary verification."""
+
+    passed: bool
+    errors: tuple[str, ...] = ()

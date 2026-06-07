@@ -10,6 +10,7 @@ from langchain_core.messages import BaseMessage
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from my_agents.agents.agentic_rag import DeterministicAgenticRagGroundingVerifier
 from my_agents.agents.context_forge.contracts import RetrievalEvidence
 from my_agents.agents.general_assistant.classifier import classify_messages
 from my_agents.agents.general_assistant.responders import ResponseProviderConfigurationError
@@ -57,6 +58,7 @@ from my_agents.schemas import RouteDecision
 from my_agents.settings import get_settings
 
 ACTIVE_RUN_STATUSES = (RunStatus.RUNNING.value, RunStatus.CANCELLING.value)
+_GROUNDING_VERIFIER = DeterministicAgenticRagGroundingVerifier()
 
 
 def complete_sync_conversation_run(
@@ -231,6 +233,13 @@ def _complete_sync_conversation_run(
     route = coerce_route(result["route"])
     used_chunks = chunks_used_for_answer(retrieval_context)
     reply = compose_rag_reply(result["reply"], used_chunks, retrieval_context.answer_mode)
+    reply, used_chunks, completion_insufficient_evidence = _verified_grounding_or_fallback(
+        reply=reply,
+        cited_chunks=used_chunks,
+        retrieval_decision=retrieval_context.decision,
+        answer_mode=retrieval_context.answer_mode,
+        retrieval_attempt_count=retrieval_context.retrieval_attempt_count,
+    )
     if is_run_cancelling(db, run.id):
         mark_run_cancelled(db, run.id)
         raise HTTPException(status_code=409, detail="conversation run cancelled")
@@ -245,8 +254,41 @@ def _complete_sync_conversation_run(
         answer_mode=retrieval_context.answer_mode,
         selection_context=retrieval_context.knowledge_base_selection,
         warnings=warnings,
+        insufficient_evidence=completion_insufficient_evidence,
         retrieval_evidence=retrieval_context.retrieval_evidence,
     )
+
+
+def _verified_grounding_or_fallback(
+    *,
+    reply: str,
+    cited_chunks: list[RetrievedChunk],
+    retrieval_decision: RetrievalRoutingDecision,
+    answer_mode: AnswerMode,
+    retrieval_attempt_count: int,
+) -> tuple[str, list[RetrievedChunk], bool]:
+    verification = _GROUNDING_VERIFIER.verify(
+        retrieval_decision=retrieval_decision,
+        answer_mode=answer_mode,
+        cited_chunks=cited_chunks,
+        citation_count=len(cited_chunks),
+        retrieval_attempt_count=retrieval_attempt_count,
+    )
+    if verification.passed:
+        return reply, cited_chunks, False
+    if retrieval_decision.route == "retrieval_required" and retrieval_attempt_count >= 2:
+        fallback_verification = _GROUNDING_VERIFIER.verify(
+            retrieval_decision=retrieval_decision,
+            answer_mode=answer_mode,
+            cited_chunks=[],
+            citation_count=0,
+            insufficient_evidence=True,
+            retrieval_attempt_count=retrieval_attempt_count,
+        )
+        if fallback_verification.passed:
+            return insufficient_evidence_reply(), [], True
+    errors = "; ".join(verification.errors)
+    raise RuntimeError(f"Agentic RAG grounding verification failed: {errors}")
 
 
 def persist_completed_run(

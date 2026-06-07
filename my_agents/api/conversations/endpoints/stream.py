@@ -35,6 +35,7 @@ from my_agents.api.conversations.run_events import (
     user_message_stored_payload,
 )
 from my_agents.api.conversations.run_lifecycle import (
+    _verified_grounding_or_fallback,
     assert_no_active_run,
     cancelled_sse_event,
     fail_active_run,
@@ -332,6 +333,13 @@ def conversation_run_events(
         base_reply = result.get("reply") or "".join(streamed_base_reply_parts).strip()
         used_chunks = chunks_used_for_answer(retrieval_context)
         reply = compose_rag_reply(base_reply, used_chunks, retrieval_context.answer_mode)
+        reply, used_chunks, completion_insufficient_evidence = _verified_grounding_or_fallback(
+            reply=reply,
+            cited_chunks=used_chunks,
+            retrieval_decision=retrieval_context.decision,
+            answer_mode=retrieval_context.answer_mode,
+            retrieval_attempt_count=retrieval_context.retrieval_attempt_count,
+        )
         if not graph_invoked:
             graph_payload = graph_invoked_payload(
                 route=route,
@@ -347,7 +355,7 @@ def conversation_run_events(
                 graph_payload,
             )
         if not streamed_base_reply_parts:
-            for delta in fallback_answer_deltas(base_reply):
+            for delta in fallback_answer_deltas(reply):
                 if is_run_cancelling(db, run.id):
                     yield cancelled_sse_event(db, run.id)
                     return
@@ -366,6 +374,7 @@ def conversation_run_events(
             retrieval_decision=retrieval_context.decision,
             answer_mode=retrieval_context.answer_mode,
             selection_context=retrieval_context.knowledge_base_selection,
+            insufficient_evidence=completion_insufficient_evidence,
             retrieval_evidence=retrieval_context.retrieval_evidence,
         )
         yield sse_event(
@@ -376,6 +385,7 @@ def conversation_run_events(
                 retrieval_decision=retrieval_context.decision,
                 answer_mode=retrieval_context.answer_mode,
                 selection_context=retrieval_context.knowledge_base_selection,
+                insufficient_evidence=completion_insufficient_evidence,
             ),
         )
         yield sse_event("run_completed", response.model_dump(mode="json"))
