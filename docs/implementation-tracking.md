@@ -1,6 +1,6 @@
 # Implementation tracking
 
-Last updated: 2026-06-06
+Last updated: 2026-06-07
 Status owner: repo-tracked source of truth for cross-machine agent handoff
 
 This file exists because `.omx/` is local runtime state and is not shared across machines. When working with an agent on any machine, start here before re-discovering project status from the codebase.
@@ -229,8 +229,9 @@ Earlier hosted smoke status on 2026-06-03:
 
 ### Knowledge ingestion and retrieval
 
-- Text-based upload and extraction supports text-based PDFs through `pypdf_text_v2`, Markdown through `utf8_markdown_v1`, and plain text through `utf8_text_v1`; simple PDFs keep a deterministic literal/FlateDecode stream fallback.
-- Scanned/encrypted/image-only PDFs, OCR, docx, HTML, and CSV/JSON structural parsing are intentionally unsupported.
+- Text-based upload and extraction supports PDFs through the current local parser chain (`pymupdf_text_v1` primary, then `pypdf_text_v2`, Docling Markdown, constrained Tesseract OCR, and deterministic stream fallback), Markdown through `utf8_markdown_v1`, and plain text through `utf8_text_v1`.
+- Original uploaded file bytes are not retained yet; only extracted text plus source metadata are stored, so future parser upgrades cannot reprocess old uploads unless users upload the source file again.
+- Scanned/image-heavy PDFs have only a constrained local OCR fallback; docx, HTML, CSV/JSON structural parsing, durable parse artifacts, and production layout-aware parsing remain future work.
 - Async ingestion progress is available through an additive endpoint (`POST /documents/{id}/ingest/async`) plus direct run polling. Local/default mode still supports in-process threads; hosted mode can set `MY_AGENTS_INGESTION_EXECUTION_MODE=external_worker` and run `python -m my_agents.ingestion_worker`. Durable queue semantics and stale-run recovery remain future work.
 - Embeddings use a provider boundary: deterministic 32-dimensional lexical-hash vectors by default, or opt-in OpenAI embeddings through `langchain-openai` when `MY_AGENTS_EMBEDDING_MODE=openai`; Postgres chunks also store a pgvector `embedding_vector` through Alembic migration `20260521_0007`.
 - Retrieval ranking is permission-first ContextForge orchestration over pgvector SQL vector search on Postgres, JSON cosine fallback for SQLite/tests, blended lexical score, entity expansion, structured entity retrieval, deterministic fusion/reranking, optional cross-encoder second-stage reranking over bounded authorized candidates, and a narrow personal-document fallback; LLM query rewrite, ANN/vector index tuning, production reranker packaging, and latency evals are still future work.
@@ -282,6 +283,24 @@ Stop condition:
   keys, provider payloads, or database URLs.
 - Backend tests/lint/format/diff checks pass after integration, and the smoke evidence is recorded
   without mutating `.omx/ultragoal` or Codex goal state from a worker lane.
+
+### Near implementation milestone: Upstage-backed layout-aware ingestion foundation
+
+The next ingestion-quality milestone is to preserve original uploaded files and introduce a provider-backed parse artifact layer before wiring Upstage Document Parse as an optional cloud parser. The near-term plan lives in `docs/plan/upstage-integration.md`, and the broader architecture idea lives in `docs/idea/layout-aware-ingestion-rag-agent.md`.
+
+Suggested order:
+
+1. Add original source-file retention through a local/dev storage provider plus production-ready storage abstraction.
+2. Add a generic `document_parse_artifacts` layer for Markdown/HTML/layout metadata, while keeping current `documents.content` compatibility.
+3. Introduce a parser provider boundary so current local parsing and future Upstage parsing share one internal contract.
+4. Add cost-aware routing and parse caching by source hash + provider/version/mode.
+5. Add a re-extract + re-ingest path that can regenerate document text, chunks, embeddings, entities, and metadata from the retained original.
+
+Stop condition:
+
+- Old behavior still supports local/offline parsing and deterministic tests.
+- New behavior can retain originals, write parse artifacts, reuse cached parser output, and distinguish re-index from re-extract.
+- Upstage can be enabled by config without becoming mandatory for all uploads or tests.
 
 ### Next milestone: hosted demo cleanup and smoke verification
 
