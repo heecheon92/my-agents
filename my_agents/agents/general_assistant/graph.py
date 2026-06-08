@@ -42,10 +42,7 @@ def select_response_node(state: AssistantState) -> str:
     route = state["route"].label
     return {
         "general_assistant": "respond_general",
-        "learning_coach": "respond_learning",
         "research_helper": "respond_research",
-        "project_planner": "respond_project",
-        "career_helper": "respond_career",
     }[route]
 
 
@@ -58,41 +55,12 @@ def respond_general(state: AssistantState) -> AssistantState:
     }
 
 
-def respond_learning(state: AssistantState) -> AssistantState:
-    return {
-        "reply": _compose_reply(
-            state,
-            "A useful learning path is to define the concept, build a tiny example, then test it.",
-        )
-    }
-
-
 def respond_research(state: AssistantState) -> AssistantState:
     return {
         "reply": _compose_reply(
             state,
             "A useful research pass is to list source questions, prefer primary docs, "
             "and capture findings with links.",
-        )
-    }
-
-
-def respond_project(state: AssistantState) -> AssistantState:
-    return {
-        "reply": _compose_reply(
-            state,
-            "A useful planning pass is to name the goal, split the next milestone, "
-            "and define verification evidence.",
-        )
-    }
-
-
-def respond_career(state: AssistantState) -> AssistantState:
-    return {
-        "reply": _compose_reply(
-            state,
-            "A useful career-material pass is to clarify the audience, the evidence, "
-            "and the outcome you want the wording to prove.",
         )
     }
 
@@ -115,10 +83,7 @@ def build_graph():
     graph = StateGraph(AssistantState)
     graph.add_node("classify_request", classify_request)
     graph.add_node("respond_general", respond_general)
-    graph.add_node("respond_learning", respond_learning)
     graph.add_node("respond_research", respond_research)
-    graph.add_node("respond_project", respond_project)
-    graph.add_node("respond_career", respond_career)
 
     graph.add_edge(START, "classify_request")
     graph.add_conditional_edges(
@@ -126,19 +91,10 @@ def build_graph():
         select_response_node,
         {
             "respond_general": "respond_general",
-            "respond_learning": "respond_learning",
             "respond_research": "respond_research",
-            "respond_project": "respond_project",
-            "respond_career": "respond_career",
         },
     )
-    for node_name in (
-        "respond_general",
-        "respond_learning",
-        "respond_research",
-        "respond_project",
-        "respond_career",
-    ):
+    for node_name in ("respond_general", "respond_research"):
         graph.add_edge(node_name, END)
 
     return graph.compile()

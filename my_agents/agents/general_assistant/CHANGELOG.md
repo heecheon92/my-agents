@@ -18,7 +18,7 @@ meaningful behavior, graph-state, provider, or documentation changes.
 ## 2026-05-21 — Classify route labels from the latest user turn only
 
 - **Why:** Prior assistant or project-planning history could pollute a later document
-  question and incorrectly route it to `project_planner`.
+  question and incorrectly route it as planning-oriented instead of `general_assistant`.
 - **Behavior/contract impact:** Deterministic route-label classification now uses the
   latest user message only. Retrieval routing still independently detects uploaded-document
   questions such as `연말정산 관련 문서 업로드 했는데 내용좀 알려줘`.

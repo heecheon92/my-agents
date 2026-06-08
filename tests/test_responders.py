@@ -30,7 +30,7 @@ class FakeChatModel:
 
 def test_deterministic_provider_is_credential_free() -> None:
     provider = DeterministicResponseProvider()
-    route = RouteDecision(label="project_planner", explanation="planning request")
+    route = RouteDecision(label="general_assistant", explanation="planning request")
 
     reply = provider.compose_reply(
         messages=[HumanMessage(content="Plan the next milestone")],
@@ -38,7 +38,7 @@ def test_deterministic_provider_is_credential_free() -> None:
         guidance="Break the work into one verifiable milestone.",
     )
 
-    assert "project_planner" in reply
+    assert "general_assistant" in reply
     assert "deterministic response mode" in reply
 
 
@@ -54,7 +54,7 @@ def test_openai_provider_passes_gpt_variant_and_optional_tuning(
     settings = Settings(_env_file=None)
     chat_model = FakeChatModel()
     provider = OpenAIResponseProvider(settings=settings, chat_model=chat_model)
-    route = RouteDecision(label="learning_coach", explanation="study request")
+    route = RouteDecision(label="general_assistant", explanation="study request")
 
     reply = provider.compose_reply(
         messages=[HumanMessage(content="Help me learn LangGraph")],
@@ -68,7 +68,7 @@ def test_openai_provider_passes_gpt_variant_and_optional_tuning(
     messages = chat_model.calls[0]
     assert isinstance(messages[0], SystemMessage)
     assert isinstance(messages[-1], HumanMessage)
-    assert "Route label: learning_coach" in str(messages[-1].content)
+    assert "Route label: general_assistant" in str(messages[-1].content)
 
     model_args = _build_chat_model_args(settings)
     assert model_args["model"] == "gpt-5.5"
@@ -79,21 +79,22 @@ def test_openai_provider_passes_gpt_variant_and_optional_tuning(
     assert model_args["verbosity"] == "low"
 
 
-def test_deterministic_provider_discloses_simulated_capability() -> None:
+def test_deterministic_provider_discloses_capability_boundaries() -> None:
     from my_agents.agents.capabilities import get_capability_for_route
 
     provider = DeterministicResponseProvider()
-    route = RouteDecision(label="project_planner", explanation="planning request")
+    route = RouteDecision(label="general_assistant", explanation="planning request")
 
     reply = provider.compose_reply(
         messages=[HumanMessage(content="Plan the next milestone")],
         route=route,
-        capability=get_capability_for_route("project_planner"),
+        capability=get_capability_for_route("general_assistant"),
         guidance="Break the work into one verifiable milestone.",
     )
 
-    assert "Capability mode `simulation`" in reply
-    assert "not a real-world integration" in reply
+    assert "Capability `general_assistant_router`" in reply
+    assert "OpenAI API call when OpenAI mode is enabled" in reply
+    assert "simulation" not in reply.lower()
 
 
 def test_openai_provider_includes_capability_metadata_in_prompt() -> None:
@@ -105,14 +106,15 @@ def test_openai_provider_includes_capability_metadata_in_prompt() -> None:
 
     provider.compose_reply(
         messages=[HumanMessage(content="Help me study LangGraph")],
-        route=RouteDecision(label="learning_coach", explanation="study request"),
-        capability=get_capability_for_route("learning_coach"),
+        route=RouteDecision(label="general_assistant", explanation="study request"),
+        capability=get_capability_for_route("general_assistant"),
         guidance="Define, build, and test one tiny example.",
     )
 
     final_prompt = str(chat_model.calls[0][-1].content)
-    assert "Capability mode: simulation" in final_prompt
-    assert "simulated_learning_coach" in final_prompt
+    assert "Capability name: general_assistant_router" in final_prompt
+    assert "OpenAI API call when OpenAI mode is enabled" in final_prompt
+    assert "Capability mode" not in final_prompt
     assert "Do not invent" in final_prompt
 
 
@@ -148,7 +150,7 @@ def test_openai_provider_includes_authorized_document_context_in_prompt() -> Non
         ("research_helper", "Find sources about LangGraph memory", [[{"type": "web_search"}]]),
         ("general_assistant", "What is the latest LangGraph release?", [[{"type": "web_search"}]]),
         ("general_assistant", "Help me organize my next task", []),
-        ("project_planner", "Plan my next milestone", []),
+        ("general_assistant", "Plan my next milestone", []),
     ],
 )
 def test_openai_provider_binds_web_search_by_route_and_latest_message_need(

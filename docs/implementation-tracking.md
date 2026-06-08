@@ -29,7 +29,7 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 | Demo-quality backend v0 | Hosted demo baseline proven | 95-97% | Thin end-to-end backend slice exists and now has a basic hosted path: Render backend, Vercel frontend CI/CD, Neon Postgres, Resend HTTP email from verified `my-agents.dev`, hosted signup/email verification, external-worker ingestion mode, and deployment troubleshooting docs. Remaining demo risk is mostly worker deployment wiring, ingestion smoke evidence, and deploy diagnostic/log-volume tuning. |
 | Production SaaS readiness | Early but hosted | 57-62% | Account lifecycle works in hosted demo mode with provider email, and ingestion can now run outside the web process, but production readiness still needs shared rate limits, durable queue/stale-run recovery, ingestion performance hardening, automated smoke/migration gates, observability cleanup, and production security review. |
 | Full AI agents product vision | Early/mid | 25-35% | Current production graph is one assistant/router path; richer agent/tool workflows are future milestones. |
-| Learning/practice simulated agents | Active learning lab | Ongoing | `my_agents/simulated_agents/` is meaningful practice code, intentionally separate from production API/CLI surfaces. |
+| Learning/practice simulated agents | Moved out | Ongoing in separate repo | Simulated-agent practice code now lives in `~/Git/Playground/langgraph-playground`; this repo stays focused on production API/CLI surfaces. |
 
 ## Implemented and verified baseline
 
@@ -119,8 +119,8 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 - ContextForge README pair under `my_agents/agents/context_forge/`.
 - RAG Agent workflow README pair under `my_agents/agents/rag_agent/`.
 - Product architecture notes under `docs/product-chat-service/en/`.
-- Personal learning logs and agent-lab notes under `docs/learning/`.
-- Simulated-agent candidate materials exist for future learning/practice ideas.
+- Personal backend learning logs and my-agents-specific project notes under `docs/learning/`.
+- Reusable LangGraph practice conventions, pattern docs, and runnable simulated-agent implementations now live in `~/Git/Playground/langgraph-playground`.
 
 ## Latest verification evidence
 

@@ -29,7 +29,7 @@ def test_cli_chat_loop_handles_one_turn_and_exit() -> None:
     run_chat_loop(input_func=lambda _prompt: next(inputs), print_func=outputs.append)
 
     assert outputs[0] == "my-agents terminal chat"
-    assert any("learning_coach" in output for output in outputs)
+    assert any("general_assistant" in output for output in outputs)
     assert outputs[-1] == "Goodbye."
 
 

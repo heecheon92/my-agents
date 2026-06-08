@@ -197,9 +197,9 @@ def _build_input_messages(
                 "When authorized document context is present and relevant, use it instead "
                 "of saying you cannot access uploaded documents. "
                 "If authorized context is insufficient for a document-grounded request, say "
-                "what is missing. If capability mode is simulation, "
-                "be honest that it is an experimental or placeholder capability when that "
-                "affects the answer. Do not invent completed actions, persistent memory, "
+                "what is missing. Use capability metadata to stay honest about available "
+                "tools, data sources, and side effects. Do not invent completed actions, "
+                "persistent memory, "
                 "hidden tools, real-world side effects, or a frontend."
             )
         )
@@ -243,16 +243,8 @@ def _capability_guidance(capability: AgentCapability | None) -> str:
 def _deterministic_capability_sentence(capability: AgentCapability | None) -> str:
     if capability is None:
         return ""
-    if capability.mode == "simulation":
-        return (
-            f"Capability mode `{capability.mode}`; `{capability.name}` is a "
-            f"{capability.maturity} learning/test capability, not a real-world integration. "
-        )
-    return (
-        f"Capability mode `{capability.mode}`; `{capability.name}` is a "
-        f"{capability.maturity} capability with side effects: "
-        f"{', '.join(capability.side_effects) if capability.side_effects else 'none'}. "
-    )
+    side_effects = ", ".join(capability.side_effects) if capability.side_effects else "none"
+    return f"Capability `{capability.name}` has side effects: {side_effects}. "
 
 
 def _build_chat_model_args(settings: Settings) -> dict[str, Any]:

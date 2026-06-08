@@ -6,10 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 RouteLabel = Literal[
     "general_assistant",
-    "learning_coach",
     "research_helper",
-    "project_planner",
-    "career_helper",
 ]
 HistoryRole = Literal["user", "assistant"]
 HistoryItem = dict[str, str]

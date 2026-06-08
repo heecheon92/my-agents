@@ -47,7 +47,7 @@
 - 이 저장소는 backend-only입니다. 프론트엔드 작업은 `~/Git/my-agents-frontend` 같은 별도 저장소에서 다룹니다.
 - Production-surface 동작의 LLM provider는 OpenAI를 기준으로 합니다. Test는 기본적으로 offline이어야 합니다.
 - Route label은 deterministic classification과 capability metadata를 설명합니다. 아직 별도 specialized agent가 실행된다는 뜻은 아닙니다.
-- 학습용 graph experiment는 [`my_agents/simulated_agents/`](./my_agents/simulated_agents/) 아래에 있으며 production API/CLI surface가 아닙니다.
+- 학습용 simulated-agent graph experiment는 `~/Git/Playground/langgraph-playground`의 standalone `simulated_agents/` 패키지로 이동했습니다. 이 backend repo는 production API surface에 집중합니다.
 - 실제 secret을 commit하지 마세요. Local `.env` 파일은 git에서 무시하며, `.env.example`은 안전한 placeholder 문서입니다.
 
 ## 아키텍처 요약

@@ -8,7 +8,7 @@
 
 - It is the single LangGraph reply path invoked by legacy FastAPI `/assistant/chat`, the terminal CLI, and product conversation runs.
 - Route labels are metadata for choosing response behavior.
-- Route labels are paired with `AgentCapability` metadata so replies can distinguish real-world prototype behavior from simulation-only placeholders.
+- Route labels are paired with `AgentCapability` metadata so replies can honestly reflect available tools, data sources, and side effects.
 - Current route-specific nodes do not mean separate specialized agents executed.
 - OpenAI reply generation goes through `langchain-openai` `ChatOpenAI`.
 - deterministic mode remains available for tests and offline smoke checks.
@@ -29,15 +29,9 @@ flowchart TD
     Start([START]) --> Classify["classify_request"]
     Classify --> Route{"route label"}
     Route -->|general_assistant| General["respond_general"]
-    Route -->|learning_coach| Learning["respond_learning"]
     Route -->|research_helper| Research["respond_research"]
-    Route -->|project_planner| Project["respond_project"]
-    Route -->|career_helper| Career["respond_career"]
     General --> Provider["response provider"]
-    Learning --> Provider
     Research --> Provider
-    Project --> Provider
-    Career --> Provider
     Provider --> End([END])
 ```
 
@@ -45,19 +39,16 @@ flowchart TD
 
 | Label | Current meaning |
 | --- | --- |
-| `general_assistant` | General requests, organization, practical next-step suggestions |
-| `learning_coach` | Study planning, explanations, practice direction |
+| `general_assistant` | General requests, organization, learning/planning/career help, practical next-step suggestions |
 | `research_helper` | Research questions, source discovery, source-oriented answer direction |
-| `project_planner` | Project milestones, scope, verification planning |
-| `career_helper` | Resume, interview, and career wording improvements |
 
 
 
 ## Capability metadata
 
-`my_agents/agents/capabilities.py` records the route capability name, mode, maturity, tools, data sources, and side effects. The graph attaches this metadata after classification, and `responders.py` includes it in deterministic replies and OpenAI prompts.
+`my_agents/agents/capabilities.py` records the route capability name, purpose, tools, data sources, and side effects. The graph attaches this metadata after classification, and `responders.py` includes it in deterministic replies and OpenAI prompts.
 
-This keeps the API honest: a `learning_coach` route may be useful for study guidance, but the metadata can disclose when the capability is only a simulation rather than a real production integration.
+This keeps the API honest: `research_helper` may use hosted `web_search` in OpenAI mode, while `general_assistant` does not claim task-database or external project-management side effects.
 
 ## Relationship to the product service layer
 
@@ -124,9 +115,6 @@ This is not implemented yet. When implemented, start with a small step.
 | --- | --- |
 | `general_assistant` | Allow only when the user asks for current/recent/source-backed/web-searched information or current facts are required |
 | `research_helper` | Allow by default |
-| `learning_coach` | Off by default |
-| `project_planner` | Off by default |
-| `career_helper` | Off by default |
 
 The first implementation milestone should verify tool binding inside the provider without changing the API response schema. Add citations and tool metadata to `ChatResponse` only after confirming the real response shape.
 

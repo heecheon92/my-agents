@@ -1,6 +1,6 @@
 ---
 created: 2026-05-15
-updated: 2026-05-18
+updated: 2026-06-08
 status: active
 topics:
   - python
@@ -10,7 +10,6 @@ topics:
 related_code:
   - my_agents/agents/general_assistant/classifier.py
   - my_agents/agents/general_assistant/responders.py
-  - my_agents/simulated_agents/mbti/graph.py
 ---
 
 # Python syntax catch-up: `*`, `Iterable`, and `**`
@@ -224,3 +223,4 @@ flowchart TD
 
 - 2026-05-18: Revised section 2 to explain `*iterable` unpacking separately from keyword-only `*`.
 - 2026-05-15: Created learning log for `Python syntax catch-up: *, Iterable, and **`.
+- 2026-06-08: Removed stale simulated-agent related-code path after moving runnable practice code to `langgraph-playground`.

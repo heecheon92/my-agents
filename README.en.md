@@ -47,7 +47,7 @@ More detail lives in the docs instead of this README:
 - This repository is backend-only. Frontend work belongs in a separate repository such as `~/Git/my-agents-frontend`.
 - OpenAI is the planned LLM provider for production-surface behavior. Tests must stay offline by default.
 - Route labels describe deterministic classification and capability metadata. They do not mean separate specialized agents are running yet.
-- Learning-only graph experiments live under [`my_agents/simulated_agents/`](./my_agents/simulated_agents/) and are not production API/CLI surfaces.
+- Learning-only simulated-agent graph experiments moved to the standalone `simulated_agents/` package in `~/Git/Playground/langgraph-playground`. This backend repo now stays focused on production API surfaces.
 - Do not commit real secrets. Local `.env` files are ignored; `.env.example` is safe placeholder documentation.
 
 ## Architecture at a glance

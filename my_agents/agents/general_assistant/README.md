@@ -8,7 +8,7 @@
 
 - FastAPI legacy `/assistant/chat`, 터미널 CLI, product conversation run에서 호출되는 단일 LangGraph 응답 경로입니다.
 - 라우트 라벨은 응답 방식을 고르는 메타데이터입니다.
-- 라우트 라벨은 `AgentCapability` metadata와 연결되어 real-world prototype과 simulation-only placeholder를 구분합니다.
+- 라우트 라벨은 `AgentCapability` metadata와 연결되어 사용 가능한 tool, data source, side effect를 정직하게 전달합니다.
 - 현재 라우트별 노드는 별도의 전문 에이전트 실행을 의미하지 않습니다.
 - OpenAI 응답 생성은 `langchain-openai`의 `ChatOpenAI`를 통해 수행합니다.
 - deterministic 모드는 테스트와 오프라인 smoke check를 위해 유지합니다.
@@ -29,15 +29,9 @@ flowchart TD
     Start([START]) --> Classify["classify_request"]
     Classify --> Route{"route label"}
     Route -->|general_assistant| General["respond_general"]
-    Route -->|learning_coach| Learning["respond_learning"]
     Route -->|research_helper| Research["respond_research"]
-    Route -->|project_planner| Project["respond_project"]
-    Route -->|career_helper| Career["respond_career"]
     General --> Provider["response provider"]
-    Learning --> Provider
     Research --> Provider
-    Project --> Provider
-    Career --> Provider
     Provider --> End([END])
 ```
 
@@ -45,19 +39,16 @@ flowchart TD
 
 | 라벨 | 현재 의미 |
 | --- | --- |
-| `general_assistant` | 일반 요청, 정리, 다음 단계 제안 |
-| `learning_coach` | 학습 계획, 설명, 연습 방향 |
+| `general_assistant` | 일반 요청, 정리, 학습/계획/커리어 도움, 다음 단계 제안 |
 | `research_helper` | 리서치 질문, 자료 탐색, 출처 중심 답변 방향 |
-| `project_planner` | 프로젝트 마일스톤, 범위, 검증 계획 |
-| `career_helper` | 이력서, 인터뷰, 커리어 문구 개선 |
 
 
 
 ## Capability metadata
 
-`my_agents/agents/capabilities.py`는 route capability name, mode, maturity, tool, data source, side effect를 기록합니다. 그래프는 classification 뒤에 이 metadata를 붙이고, `responders.py`는 deterministic reply와 OpenAI prompt에 이를 포함합니다.
+`my_agents/agents/capabilities.py`는 route capability name, purpose, tool, data source, side effect를 기록합니다. 그래프는 classification 뒤에 이 metadata를 붙이고, `responders.py`는 deterministic reply와 OpenAI prompt에 이를 포함합니다.
 
-이 구조는 API를 정직하게 유지합니다. 예를 들어 `learning_coach` route가 학습 안내에는 유용하더라도, metadata를 통해 해당 capability가 실제 production integration이 아니라 simulation임을 드러낼 수 있습니다.
+이 구조는 API를 정직하게 유지합니다. 예를 들어 `research_helper` route는 OpenAI mode에서 hosted `web_search`를 사용할 수 있지만, `general_assistant` route는 별도 task database나 외부 project-management tool side effect를 주장하지 않습니다.
 
 ## Product service layer와의 관계
 
@@ -124,9 +115,6 @@ responders.py
 | --- | --- |
 | `general_assistant` | 사용자가 최신/최근/출처/웹 검색을 명시하거나 현재 정보가 필요한 경우에만 허용 |
 | `research_helper` | 기본 허용 |
-| `learning_coach` | 기본 비활성화 |
-| `project_planner` | 기본 비활성화 |
-| `career_helper` | 기본 비활성화 |
 
 첫 구현 milestone은 API 응답 스키마를 바꾸지 않고 provider 내부에서만 tool binding을 검증하는 것입니다. Citation과 tool metadata는 실제 응답 형태를 확인한 뒤 `ChatResponse`에 추가하는 것이 안전합니다.
 
