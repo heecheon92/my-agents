@@ -158,6 +158,7 @@ class ChunkResponse(BaseModel):
     start_offset: int
     end_offset: int
     source_page: int | None = None
+    source_location_json: dict[str, object] | None = None
 
 
 class EntityResponse(BaseModel):
@@ -186,4 +187,5 @@ class CitationResponse(BaseModel):
     chunk_id: str
     snippet: str
     source_page: int | None = None
+    source_location_json: dict[str, object] | None = None
     source_filename: str | None = None

@@ -15,7 +15,7 @@
 - credential 없이 test/smoke check를 실행할 수 있는 deterministic offline/test mode.
 - email/password auth, app-owned session, CSRF-aware logout, dev outbox, signup/guest approval gates.
 - group, document, knowledge-base, permission 기반.
-- KB-scoped document upload/create, team-upload staging, ingestion, extraction-run progress, chunk, entity, metadata profile, embedding, pgvector-ready retrieval.
+- PDF, Markdown, plain text, `.xlsx`, `.pptx`를 지원하는 KB-scoped document upload/create, team-upload staging, ingestion, extraction-run progress, chunk, entity, metadata profile, embedding, pgvector-ready retrieval.
 - permission-aware RAG, structured entity retrieval, reranking seam, packed context, citation, redacted retrieval evidence를 담당하는 ContextForge retrieval service.
 - server-owned conversation, run history, SSE assistant text streaming, run replay/cancel, persisted citation, frontend-safe activity event와 compact ko/en agent trace.
 
@@ -74,6 +74,27 @@ flowchart TD
 ```
 
 팀 업로드는 RAG retrieval에서 제외되는 숨겨진 개인 임시 KB를 사용하고, 승인 후 소스를 팀 KB로 복사한 뒤에만 검색됩니다. Service layer가 auth, permission, source policy, persistence, retrieval boundary, citation, event를 소유합니다. ContextForge는 여전히 general assistant에 전달할 authorized context를 검색하고, `rag_agent`는 그 경로를 감싸는 graph-shaped RAG Agent contract로 trace stage와 grounding check를 제공합니다. Chat run은 권한이 있는 개인·공유·팀 KB를 하나의 `knowledge_base_selection` contract로 선택하며, conversation transcript는 사용자 소유 비공개 범위로 유지됩니다.
+
+## 문서 업로드 지원
+
+Knowledge-base document upload는 현재 다음 형식을 받습니다.
+
+- text-based PDF (`.pdf`)
+- Markdown (`.md`, `.markdown`)
+- UTF-8 plain text (`.txt`)
+- modern Excel workbook (`.xlsx`)
+- modern PowerPoint deck (`.pptx`)
+
+Office upload는 `openpyxl`과 `python-pptx`로 local parsing하여 canonical Markdown으로
+변환합니다. Backend는 원본 Office bytes나 object-storage key를 knowledge base에 보관하지 않고,
+derived parse artifact만 저장합니다. 저장되는 artifact는 Markdown, parser metadata, warning,
+worksheet cell range 또는 slide/shape number 같은 source-location element입니다. Office에서 생성된
+chunk citation은 `source_location_json`을 노출하고, PDF citation은 기존처럼 `source_page`를 유지합니다.
+
+현재 제한: modern OOXML `.xlsx`/`.pptx`만 지원합니다. Legacy `.xls`/`.ppt`/`.doc` 형식과 Word
+upload는 거절됩니다. Upload는 기존 V1 문서 제한인 5 MiB를 공유하며, 안전한 OOXML archive/parser
+budget 안에 들어와야 합니다. Office parsing은 보이는 workbook cell, slide text, slide table을
+추출합니다. OCR이나 pixel-perfect layout 보존은 아직 하지 않습니다.
 
 ## 설정
 

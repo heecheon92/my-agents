@@ -19,6 +19,7 @@ from my_agents.knowledge.routing import (
     RetrievalRoutingDecision,
     is_relevant_retrieval_result,
 )
+from my_agents.knowledge.source_locations import parse_source_location_json
 
 logger = logging.getLogger(__name__)
 
@@ -171,6 +172,7 @@ def retrieved_context_for_graph(retrieved_chunks: list[RetrievedChunk]) -> list[
             "title": item.document.title,
             "snippet": item.chunk.content[:_RETRIEVED_CONTEXT_SNIPPET_CHARS],
             "source_page": item.chunk.source_page,
+            "source_location_json": parse_source_location_json(item.chunk.source_location_json),
             "source_filename": item.document.source_filename,
             "source": item.source,
         }
@@ -224,6 +226,7 @@ def _debug_chunk_payload(item: RetrievedChunk, *, snippet_limit: int) -> dict[st
         "title": item.document.title,
         "source_filename": item.document.source_filename,
         "source_page": item.chunk.source_page,
+        "source_location_json": parse_source_location_json(item.chunk.source_location_json),
         "source": item.source,
         "score": item.score,
         "snippet": item.chunk.content[:snippet_limit],

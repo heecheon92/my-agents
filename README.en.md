@@ -15,7 +15,7 @@ The current backend is a thin but working product slice:
 - Deterministic offline/test mode for credential-free tests and smoke checks.
 - First-party email/password auth, app-owned sessions, CSRF-aware logout, dev outbox, and signup/guest approval gates.
 - Group, document, knowledge-base, and permission foundations.
-- KB-scoped document upload/creation, team-upload staging, ingestion, extraction-run progress, chunks, entities, metadata profiles, embeddings, and pgvector-ready retrieval.
+- KB-scoped document upload/creation for PDF, Markdown, plain text, `.xlsx`, and `.pptx`; team-upload staging, ingestion, extraction-run progress, chunks, entities, metadata profiles, embeddings, and pgvector-ready retrieval.
 - ContextForge retrieval service for permission-aware RAG, structured entity retrieval, reranking seams, packed context, citations, and redacted retrieval evidence.
 - Server-owned conversations, run history, SSE assistant text streaming, run replay/cancel paths, persisted citations, and frontend-safe activity events.
 
@@ -74,6 +74,29 @@ flowchart TD
 ```
 
 Team uploads use a hidden personal staging KB that is excluded from RAG retrieval until approval copies the source into a group KB. The service layer owns auth, permissions, source policy, persistence, retrieval boundaries, citations, and events. ContextForge still retrieves authorized context for the general assistant, while `rag_agent` provides the graph-shaped RAG Agent contract for trace stages and grounding checks around that path. Chat runs use one unified `knowledge_base_selection` contract across authorized personal, shared, and team KBs; conversation transcripts remain owner-private.
+
+## Document upload support
+
+Knowledge-base document upload currently accepts:
+
+- text-based PDF (`.pdf`);
+- Markdown (`.md`, `.markdown`);
+- UTF-8 plain text (`.txt`);
+- modern Excel workbooks (`.xlsx`);
+- modern PowerPoint decks (`.pptx`).
+
+Office uploads are parsed locally with `openpyxl` and `python-pptx` into canonical
+Markdown. The backend stores derived parse artifacts only: Markdown, parser metadata,
+warnings, and source-location elements such as worksheet cell ranges or slide/shape
+numbers. It does not retain the original Office bytes or object-storage keys in the
+knowledge base. Citations for Office-derived chunks expose `source_location_json`; PDF
+citations continue to use `source_page`.
+
+Current limitations: only modern OOXML `.xlsx`/`.pptx` files are supported; legacy
+`.xls`/`.ppt`/`.doc` formats and Word uploads are rejected. Uploads share the existing
+5 MiB V1 document limit and must also fit safe OOXML archive/parser budgets. Office
+parsing extracts visible workbook cells, slide text, and slide tables rather than running
+OCR or preserving pixel-perfect layout.
 
 ## Setup
 

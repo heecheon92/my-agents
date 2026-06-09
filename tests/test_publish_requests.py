@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+from io import BytesIO
+
 from fastapi.testclient import TestClient
+from openpyxl import Workbook
 from sqlalchemy import select
 
 from my_agents.api import create_app
 from my_agents.knowledge.models import (
     DocumentModel,
+    DocumentParseArtifactModel,
     KnowledgeBasePublicationModel,
     KnowledgePublishRequestModel,
 )
@@ -17,10 +21,14 @@ from my_agents.persistence.database import get_database_session
 from .conftest import verify_latest_auth_email
 
 
-def _client(monkeypatch) -> TestClient:  # noqa: ANN001 - pytest monkeypatch fixture
+def _client(
+    monkeypatch,  # noqa: ANN001 - pytest monkeypatch fixture
+    *,
+    raise_server_exceptions: bool = True,
+) -> TestClient:
     monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
     monkeypatch.setenv("MY_AGENTS_SESSION_COOKIE_SECURE", "false")
-    return TestClient(create_app())
+    return TestClient(create_app(), raise_server_exceptions=raise_server_exceptions)
 
 
 def _signup_login(client: TestClient, email: str) -> str:
@@ -66,6 +74,33 @@ def _create_document(client: TestClient, *, kb_id: str, title: str, content: str
     )
     assert response.status_code == 201
     return response.json()["id"]
+
+
+def _upload_xlsx_document(client: TestClient, *, kb_id: str, title: str) -> str:
+    response = client.post(
+        f"/knowledge-bases/{kb_id}/documents/upload",
+        data={"title": title},
+        files={
+            "file": (
+                "publish-metrics.xlsx",
+                _xlsx_bytes(),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+    )
+    assert response.status_code == 201
+    return response.json()["id"]
+
+
+def _xlsx_bytes() -> bytes:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Publish Metrics"
+    sheet.append(["Metric", "Value"])
+    sheet.append(["GKPublishOfficeArtifact", "present"])
+    buffer = BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
 
 
 def _ingest(client: TestClient, *, kb_id: str, document_id: str) -> None:
@@ -357,6 +392,111 @@ def test_owner_admin_approval_copies_and_ingests_group_document_without_exposing
         assert copied.knowledge_base_id == target_kb_id
         assert copied.content == original.content
         assert publish_request.published_document_id == published_document_id
+    finally:
+        session_generator.close()
+
+
+def test_owner_approval_copies_office_parse_artifact_to_group_document(monkeypatch) -> None:  # noqa: ANN001
+    owner = _client(monkeypatch)
+    requester = _client(monkeypatch)
+    _owner_id = _signup_login(owner, "publish-office-owner@example.com")
+    requester_id = _signup_login(requester, "publish-office-requester@example.com")
+    group_id = _create_group(owner, name="Office Publish Group")
+    _add_member(owner, group_id, requester_id, "viewer")
+    target_kb_id = _create_group_kb(owner, group_id, "Office Publish KB")
+    personal_kb_id = _create_personal_kb(requester, "Office Publish Personal KB")
+    source_document_id = _upload_xlsx_document(
+        requester,
+        kb_id=personal_kb_id,
+        title="Publish Metrics Workbook",
+    )
+
+    request = requester.post(
+        f"/groups/{group_id}/publish-requests",
+        json={"source_document_id": source_document_id, "target_knowledge_base_id": target_kb_id},
+    )
+    assert request.status_code == 201
+
+    approved = owner.post(f"/groups/{group_id}/publish-requests/{request.json()['id']}/approve")
+
+    assert approved.status_code == 200
+    published_document_id = approved.json()["published_document_id"]
+    assert published_document_id and published_document_id != source_document_id
+
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        source_artifact = db.scalar(
+            select(DocumentParseArtifactModel).where(
+                DocumentParseArtifactModel.document_id == source_document_id
+            )
+        )
+        copied_artifact = db.scalar(
+            select(DocumentParseArtifactModel).where(
+                DocumentParseArtifactModel.document_id == published_document_id
+            )
+        )
+        assert source_artifact is not None
+        assert copied_artifact is not None
+        assert copied_artifact.id != source_artifact.id
+        assert copied_artifact.markdown_content == source_artifact.markdown_content
+        assert copied_artifact.elements_json == source_artifact.elements_json
+        assert copied_artifact.source_filename == "publish-metrics.xlsx"
+        assert copied_artifact.source_sha256 == source_artifact.source_sha256
+    finally:
+        session_generator.close()
+
+
+def test_publish_approval_rolls_back_group_copy_when_ingestion_fails(monkeypatch) -> None:  # noqa: ANN001
+    def fail_ingestion(self, document):  # noqa: ANN001, ARG001
+        raise RuntimeError("fixture ingestion failure")
+
+    monkeypatch.setattr(
+        "my_agents.api.groups.KnowledgeExtractionService.ingest_document",
+        fail_ingestion,
+    )
+    owner = _client(monkeypatch, raise_server_exceptions=False)
+    requester = _client(monkeypatch, raise_server_exceptions=False)
+    _owner_id = _signup_login(owner, "publish-ingest-fail-owner@example.com")
+    requester_id = _signup_login(requester, "publish-ingest-fail-requester@example.com")
+    group_id = _create_group(owner, name="Ingest Failure Group")
+    _add_member(owner, group_id, requester_id, "viewer")
+    target_kb_id = _create_group_kb(owner, group_id, "Ingest Failure KB")
+    personal_kb_id = _create_personal_kb(requester, "Ingest Failure Personal KB")
+    source_document_id = _create_document(
+        requester,
+        kb_id=personal_kb_id,
+        title="Rollback Source",
+        content="Publish rollback should not leave an approved group copy.",
+    )
+    request = requester.post(
+        f"/groups/{group_id}/publish-requests",
+        json={"source_document_id": source_document_id, "target_knowledge_base_id": target_kb_id},
+    )
+    assert request.status_code == 201
+    request_id = request.json()["id"]
+
+    approved = owner.post(f"/groups/{group_id}/publish-requests/{request_id}/approve")
+
+    assert approved.status_code == 500
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        publish_request = db.scalar(
+            select(KnowledgePublishRequestModel).where(
+                KnowledgePublishRequestModel.id == request_id
+            )
+        )
+        leaked_group_copies = db.scalars(
+            select(DocumentModel).where(
+                DocumentModel.knowledge_base_id == target_kb_id,
+                DocumentModel.title == "Rollback Source",
+            )
+        ).all()
+        assert publish_request is not None
+        assert publish_request.status == "pending"
+        assert publish_request.published_document_id is None
+        assert leaked_group_copies == []
     finally:
         session_generator.close()
 

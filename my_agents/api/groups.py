@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from my_agents.auth.contracts import Principal
@@ -20,13 +20,21 @@ from my_agents.groups.schemas import (
 )
 from my_agents.knowledge.extraction import KnowledgeExtractionService
 from my_agents.knowledge.models import (
+    CitationModel,
+    DocumentChunkModel,
+    DocumentMetadataProfileModel,
     DocumentModel,
+    DocumentParseArtifactModel,
+    EntityMentionModel,
+    EntityRelationshipModel,
+    ExtractionRunModel,
     KnowledgeBaseModel,
     KnowledgeBasePublicationModel,
     KnowledgeBasePurpose,
     KnowledgeBaseScope,
     KnowledgePublishRequestModel,
     KnowledgePublishRequestStatus,
+    StructuredKnowledgeEntityModel,
 )
 from my_agents.knowledge.schemas import (
     KnowledgePublishRequestCreateRequest,
@@ -259,14 +267,25 @@ def approve_publish_request(
     )
     db.add(published_document)
     db.flush()
+    _copy_parse_artifacts_for_group_document(
+        db,
+        source_document=source_document,
+        published_document=published_document,
+    )
+    published_document_id = published_document.id
+    try:
+        KnowledgeExtractionService(db).ingest_document(published_document)
+    except Exception:
+        db.rollback()
+        _delete_unapproved_group_document_copy(db, document_id=published_document_id)
+        db.commit()
+        raise
     publish_request.status = KnowledgePublishRequestStatus.APPROVED.value
     publish_request.reviewer_user_id = principal.user_id
-    publish_request.published_document_id = published_document.id
+    publish_request.published_document_id = published_document_id
     publish_request.reviewed_at = datetime.now(UTC)
     db.add(publish_request)
     db.commit()
-    db.refresh(publish_request)
-    KnowledgeExtractionService(db).ingest_document(published_document)
     db.refresh(publish_request)
     return _publish_request_response(publish_request)
 
@@ -440,6 +459,65 @@ def _copy_document_for_group_knowledge_base(
         group_id=target_knowledge_base.group_id,
         knowledge_base_id=target_knowledge_base.id,
     )
+
+
+def _copy_parse_artifacts_for_group_document(
+    db: Session,
+    *,
+    source_document: DocumentModel,
+    published_document: DocumentModel,
+) -> None:
+    artifacts = db.scalars(
+        select(DocumentParseArtifactModel).where(
+            DocumentParseArtifactModel.document_id == source_document.id
+        )
+    ).all()
+    for artifact in artifacts:
+        db.add(
+            DocumentParseArtifactModel(
+                document_id=published_document.id,
+                source_sha256=artifact.source_sha256,
+                source_filename=artifact.source_filename,
+                source_content_type=artifact.source_content_type,
+                source_type=artifact.source_type,
+                parser_provider=artifact.parser_provider,
+                parser_name=artifact.parser_name,
+                parser_version=artifact.parser_version,
+                parser_mode=artifact.parser_mode,
+                markdown_content=artifact.markdown_content,
+                elements_json=artifact.elements_json,
+                warnings_json=artifact.warnings_json,
+            )
+        )
+
+
+def _delete_unapproved_group_document_copy(db: Session, *, document_id: str) -> None:
+    """Remove a group-copy document when publish approval ingestion fails."""
+    db.execute(delete(CitationModel).where(CitationModel.document_id == document_id))
+    db.execute(
+        delete(StructuredKnowledgeEntityModel).where(
+            StructuredKnowledgeEntityModel.document_id == document_id
+        )
+    )
+    db.execute(
+        delete(DocumentMetadataProfileModel).where(
+            DocumentMetadataProfileModel.document_id == document_id
+        )
+    )
+    db.execute(
+        delete(EntityRelationshipModel).where(EntityRelationshipModel.document_id == document_id)
+    )
+    db.execute(delete(EntityMentionModel).where(EntityMentionModel.document_id == document_id))
+    db.execute(delete(DocumentChunkModel).where(DocumentChunkModel.document_id == document_id))
+    db.execute(delete(ExtractionRunModel).where(ExtractionRunModel.document_id == document_id))
+    db.execute(
+        delete(DocumentParseArtifactModel).where(
+            DocumentParseArtifactModel.document_id == document_id
+        )
+    )
+    document = db.get(DocumentModel, document_id)
+    if document is not None:
+        db.delete(document)
 
 
 def _approve_knowledge_base_publish_request(

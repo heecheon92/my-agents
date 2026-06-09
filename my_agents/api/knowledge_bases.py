@@ -179,7 +179,9 @@ async def upload_knowledge_base_document(
     title: Annotated[str, Form(min_length=1, max_length=200)],
     file: Annotated[
         UploadFile,
-        File(description="Supported file: text-based PDF, Markdown, or plain text."),
+        File(
+            description=("Supported file: text-based PDF, Markdown, plain text, .xlsx, or .pptx.")
+        ),
     ],
 ) -> DocumentResponse:
     return await upload_document_in_knowledge_base(

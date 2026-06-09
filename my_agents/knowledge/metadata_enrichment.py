@@ -185,12 +185,14 @@ class OpenAIDocumentMetadataGenerator:
 
 
 def _build_metadata_chat_model_args(settings: Settings) -> dict[str, Any]:
-    """Build ChatOpenAI args for metadata extraction without Responses parsed warnings."""
+    """Build ChatOpenAI args for metadata extraction over the Responses API."""
     return {
         "model": settings.document_metadata_model or settings.openai_model,
         "api_key": settings.openai_api_key_value(),
         "timeout": settings.openai_timeout_seconds,
         "max_completion_tokens": min(settings.openai_max_output_tokens, 1600),
+        "use_responses_api": True,
+        "output_version": "responses/v1",
     }
 
 

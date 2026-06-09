@@ -54,3 +54,16 @@ def test_openapi_exposes_kb_first_document_and_chat_selection_contract() -> None
     assert kb_response_schema["properties"]["purpose"]["$ref"] == (
         "#/components/schemas/KnowledgeBasePurpose"
     )
+
+    upload_body_ref = schema["paths"]["/documents/upload"]["post"]["requestBody"]["content"][
+        "multipart/form-data"
+    ]["schema"]["$ref"]
+    kb_upload_body_ref = schema["paths"]["/knowledge-bases/{knowledge_base_id}/documents/upload"][
+        "post"
+    ]["requestBody"]["content"]["multipart/form-data"]["schema"]["$ref"]
+    upload_contract = str(schema["components"]["schemas"][upload_body_ref.rsplit("/", 1)[-1]])
+    kb_upload_contract = str(schema["components"]["schemas"][kb_upload_body_ref.rsplit("/", 1)[-1]])
+    assert ".xlsx" in upload_contract
+    assert ".pptx" in upload_contract
+    assert ".xlsx" in kb_upload_contract
+    assert ".pptx" in kb_upload_contract

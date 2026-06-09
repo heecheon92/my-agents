@@ -32,6 +32,7 @@ from my_agents.knowledge.models import CitationModel, DocumentChunkModel, Docume
 from my_agents.knowledge.retrieval import RetrievedChunk
 from my_agents.knowledge.routing import AnswerMode, RetrievalRoutingDecision
 from my_agents.knowledge.schemas import CitationResponse, KnowledgeBaseSelection
+from my_agents.knowledge.source_locations import parse_source_location_json
 from my_agents.schemas import RouteDecision
 
 
@@ -194,6 +195,7 @@ def completed_run_response(
                 chunk_id=citation.chunk_id,
                 snippet=citation.snippet,
                 source_page=item.chunk.source_page,
+                source_location_json=parse_source_location_json(item.chunk.source_location_json),
                 source_filename=item.document.source_filename,
             )
             for citation, item in zip(citations, retrieved_chunks, strict=True)
@@ -220,6 +222,9 @@ def citation_response(db: Session, citation: CitationModel) -> CitationResponse:
         chunk_id=citation.chunk_id,
         snippet=citation.snippet,
         source_page=chunk.source_page if chunk is not None else None,
+        source_location_json=parse_source_location_json(
+            chunk.source_location_json if chunk is not None else None
+        ),
         source_filename=document.source_filename if document is not None else None,
     )
 

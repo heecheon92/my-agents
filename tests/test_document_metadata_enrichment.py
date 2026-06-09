@@ -43,7 +43,7 @@ class FakeMetadataChatModel:
         return self.structured
 
 
-def test_metadata_chat_args_do_not_use_responses_api_parsed_output(
+def test_metadata_chat_args_use_responses_api_by_default(
     monkeypatch,
 ) -> None:  # noqa: ANN001
     monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
@@ -55,8 +55,8 @@ def test_metadata_chat_args_do_not_use_responses_api_parsed_output(
 
     assert args["model"] == "gpt-metadata"
     assert args["api_key"] == "test-key"
-    assert "use_responses_api" not in args
-    assert "output_version" not in args
+    assert args["use_responses_api"] is True
+    assert args["output_version"] == "responses/v1"
 
 
 def test_openai_metadata_generator_uses_function_calling_structured_output(
