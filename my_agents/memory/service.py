@@ -5,10 +5,11 @@ from __future__ import annotations
 import json
 import re
 import uuid
+from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from my_agents.memory.models import (
@@ -62,6 +63,10 @@ class UserMemoryService:
     def __init__(self, db: Session) -> None:
         self._db = db
 
+    def _expire_user_pending_suggestions(self, user_id: str) -> None:
+        """Scrub expired pending suggestions during normal user-scoped memory traffic."""
+        self.expire_pending_suggestions(user_id=user_id)
+
     def get_settings(self, user_id: str) -> UserMemorySettingsModel | None:
         """Return stored memory settings without creating a row."""
         return self._db.scalar(
@@ -74,6 +79,7 @@ class UserMemoryService:
         return bool(settings and settings.enabled)
 
     def get_or_create_settings(self, user_id: str) -> UserMemorySettingsModel:
+        self._expire_user_pending_suggestions(user_id)
         settings = self.get_settings(user_id)
         if settings is not None:
             return settings
@@ -84,6 +90,7 @@ class UserMemoryService:
         return settings
 
     def set_enabled(self, user_id: str, enabled: bool) -> UserMemorySettingsModel:
+        self._expire_user_pending_suggestions(user_id)
         settings = self.get_or_create_settings(user_id)
         settings.enabled = enabled
         settings.updated_at = datetime.now(UTC)
@@ -104,6 +111,7 @@ class UserMemoryService:
         source_document_id: str | None = None,
     ) -> UserMemoryModel:
         """Persist an explicit user-requested memory after policy validation."""
+        self._expire_user_pending_suggestions(user_id)
         policy = evaluate_memory_write(
             content=_policy_text(content, value),
             category=category,
@@ -140,6 +148,7 @@ class UserMemoryService:
         source_document_id: str | None = None,
     ) -> UserMemoryModel | None:
         """Persist a bounded auto-memory, returning None when policy/opt-in rejects it."""
+        self._expire_user_pending_suggestions(user_id)
         if not self.memory_enabled(user_id):
             return None
         policy = evaluate_memory_write(
@@ -179,6 +188,7 @@ class UserMemoryService:
         expires_at: datetime | None = None,
     ) -> MemorySuggestionModel:
         """Create a pending suggest-confirm record without activating memory."""
+        self._expire_user_pending_suggestions(user_id)
         if not self.memory_enabled(user_id):
             raise MemoryDisabledError("long-term memory is disabled for this user")
         policy = evaluate_memory_write(
@@ -228,7 +238,7 @@ class UserMemoryService:
         user_id: str,
         include_decided: bool = False,
     ) -> list[MemorySuggestionModel]:
-        self.expire_pending_suggestions(user_id=user_id)
+        self._expire_user_pending_suggestions(user_id)
         statuses = [MemorySuggestionStatus.PENDING.value]
         if include_decided:
             statuses.extend(
@@ -387,6 +397,7 @@ class UserMemoryService:
         include_deleted: bool = False,
     ) -> list[UserMemoryModel]:
         """List manageable memories for a user without crossing user boundaries."""
+        self._expire_user_pending_suggestions(user_id)
         statuses = [MemoryStatus.ACTIVE.value]
         if include_inactive:
             statuses.append(MemoryStatus.INACTIVE.value)
@@ -412,6 +423,7 @@ class UserMemoryService:
 
         Disabled user memory returns an empty list while retaining manageable records.
         """
+        self._expire_user_pending_suggestions(user_id)
         if not self.memory_enabled(user_id):
             return []
         statement = select(UserMemoryModel).where(
@@ -438,6 +450,7 @@ class UserMemoryService:
         return relevant[:limit]
 
     def deactivate_memory(self, *, user_id: str, memory_id: str) -> UserMemoryModel:
+        self._expire_user_pending_suggestions(user_id)
         memory = self._memory_for_user(user_id=user_id, memory_id=memory_id)
         if memory.status == MemoryStatus.DELETED.value:
             raise MemoryNotFoundError("memory not found")
@@ -450,6 +463,7 @@ class UserMemoryService:
         return memory
 
     def delete_memory(self, *, user_id: str, memory_id: str) -> None:
+        self._expire_user_pending_suggestions(user_id)
         memory = self._memory_for_user(user_id=user_id, memory_id=memory_id)
         if memory.status == MemoryStatus.DELETED.value:
             raise MemoryNotFoundError("memory not found")
@@ -490,6 +504,46 @@ class UserMemoryService:
         memories = self._db.scalars(
             select(UserMemoryModel).where(
                 UserMemoryModel.source_document_id == source_document_id,
+                UserMemoryModel.status == MemoryStatus.ACTIVE.value,
+                UserMemoryModel.stale_at.is_(None),
+            )
+        ).all()
+        for memory in memories:
+            memory.stale_at = now
+            memory.stale_reason = stale_reason
+            memory.updated_at = now
+        if memories and commit:
+            self._db.commit()
+        elif memories:
+            self._db.flush()
+        return len(memories)
+
+    def mark_transcript_memories_stale(
+        self,
+        *,
+        source_conversation_id: str | None = None,
+        source_message_ids: Iterable[str] = (),
+        source_run_ids: Iterable[str] = (),
+        stale_reason: str = "source_transcript_deleted",
+        commit: bool = True,
+    ) -> int:
+        """Exclude memories whose conversation transcript source was pruned or deleted."""
+        message_ids = _unique_non_empty(source_message_ids)
+        run_ids = _unique_non_empty(source_run_ids)
+        clauses = []
+        if source_conversation_id:
+            clauses.append(UserMemoryModel.source_conversation_id == source_conversation_id)
+        if message_ids:
+            clauses.append(UserMemoryModel.source_message_id.in_(message_ids))
+        if run_ids:
+            clauses.append(UserMemoryModel.source_run_id.in_(run_ids))
+        if not clauses:
+            return 0
+
+        now = datetime.now(UTC)
+        memories = self._db.scalars(
+            select(UserMemoryModel).where(
+                or_(*clauses),
                 UserMemoryModel.status == MemoryStatus.ACTIVE.value,
                 UserMemoryModel.stale_at.is_(None),
             )
@@ -615,6 +669,10 @@ def _meaningful_tokens(text: str) -> set[str]:
 
 def _json_dumps(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _unique_non_empty(values: Iterable[str]) -> list[str]:
+    return list(dict.fromkeys(value for value in values if value))
 
 
 def _enum_value(

@@ -12,6 +12,7 @@ from my_agents.conversations.models import (
     MessageRole,
 )
 from my_agents.knowledge.models import CitationModel
+from my_agents.memory.service import UserMemoryService
 
 
 def persisted_messages_for_conversation(db: Session, conversation_id: str) -> list[MessageModel]:
@@ -95,6 +96,12 @@ def prune_conversation_from_message(
 
     if preserved_run_ids:
         run_ids_to_prune.difference_update(preserved_run_ids)
+    UserMemoryService(db).mark_transcript_memories_stale(
+        source_message_ids=removed_message_ids,
+        source_run_ids=run_ids_to_prune,
+        stale_reason="source_transcript_pruned",
+        commit=False,
+    )
     if run_ids_to_prune:
         db.execute(delete(CitationModel).where(CitationModel.run_id.in_(run_ids_to_prune)))
         db.execute(delete(AgentEventModel).where(AgentEventModel.run_id.in_(run_ids_to_prune)))
@@ -109,6 +116,16 @@ def delete_conversation_tree(db: Session, conversation: ConversationModel) -> No
     run_ids = db.scalars(
         select(AgentRunModel.id).where(AgentRunModel.conversation_id == conversation.id)
     ).all()
+    message_ids = db.scalars(
+        select(MessageModel.id).where(MessageModel.conversation_id == conversation.id)
+    ).all()
+    UserMemoryService(db).mark_transcript_memories_stale(
+        source_conversation_id=conversation.id,
+        source_message_ids=message_ids,
+        source_run_ids=run_ids,
+        stale_reason="source_conversation_deleted",
+        commit=False,
+    )
     if run_ids:
         db.execute(delete(CitationModel).where(CitationModel.run_id.in_(run_ids)))
         db.execute(delete(AgentEventModel).where(AgentEventModel.run_id.in_(run_ids)))

@@ -230,7 +230,6 @@ def memory_source_snapshot_json(
         "memories": [
             {
                 "id": memory.get("id"),
-                "key": memory.get("key"),
                 "category": memory.get("category"),
                 "provenance_type": memory.get("provenance_type"),
                 "source_conversation_id": memory.get("source_conversation_id"),

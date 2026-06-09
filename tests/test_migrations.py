@@ -162,6 +162,7 @@ def test_alembic_offline_sql_generation_covers_initial_schema(monkeypatch) -> No
     assert "20260609_0021" in sql
     assert "20260609_0022" in sql
     assert "20260609_0023" in sql
+    assert "20260609_0024" in sql
     assert "CREATE TABLE guest_access_requests" in sql
     assert "CREATE TABLE knowledge_publish_requests" in sql
     assert "CREATE TABLE knowledge_base_publications" in sql
@@ -178,6 +179,7 @@ def test_alembic_offline_sql_generation_covers_initial_schema(monkeypatch) -> No
     assert "purpose" in sql
     assert "DROP COLUMN group_id" in sql
     assert "approval_status" in sql
+    assert "memory_source_snapshot_json" in sql
 
 
 def test_parse_artifacts_store_only_derived_parser_outputs(

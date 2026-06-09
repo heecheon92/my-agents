@@ -366,3 +366,150 @@ def test_context_recall_minimizes_non_preference_memory_by_query(monkeypatch) ->
         assert related == [project, stable]
     finally:
         session_generator.close()
+
+
+def test_expired_suggestions_are_scrubbed_during_context_recall(monkeypatch) -> None:  # noqa: ANN001
+    from datetime import UTC, datetime, timedelta
+
+    from my_agents.memory.models import MemorySuggestionStatus
+
+    monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        service = UserMemoryService(db)
+        service.set_enabled("expiry-recall-user", True)
+        suggestion = service.create_memory_suggestion(
+            user_id="expiry-recall-user",
+            content="User uses private legacy test stack",
+            category=MemoryCategory.PROJECT_CONTEXT,
+            expires_at=datetime.now(UTC) - timedelta(seconds=1),
+        )
+
+        assert (
+            service.active_memories_for_context(
+                user_id="expiry-recall-user", query="legacy test stack"
+            )
+            == []
+        )
+        db.refresh(suggestion)
+        assert suggestion.status == MemorySuggestionStatus.EXPIRED.value
+        assert suggestion.content == ""
+        assert "private legacy test stack" not in suggestion.value_json
+    finally:
+        session_generator.close()
+
+
+def test_pruned_transcript_memories_are_staled_without_staling_preserved_prefix(
+    monkeypatch,
+) -> None:  # noqa: ANN001
+    from my_agents.api.conversations.transcripts import prune_conversation_from_message
+    from my_agents.conversations.models import (
+        AgentRunModel,
+        ConversationModel,
+        MessageModel,
+        MessageRole,
+        RunStatus,
+    )
+
+    monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        service = UserMemoryService(db)
+        service.set_enabled("replay-user", True)
+        conversation = ConversationModel(owner_user_id="replay-user", title="Replay prune")
+        db.add(conversation)
+        db.flush()
+        first_user_message = MessageModel(
+            conversation_id=conversation.id,
+            role=MessageRole.USER.value,
+            content="I prefer concise answers.",
+        )
+        assistant_message = MessageModel(
+            conversation_id=conversation.id,
+            role=MessageRole.ASSISTANT.value,
+            content="Noted.",
+        )
+        later_user_message = MessageModel(
+            conversation_id=conversation.id,
+            role=MessageRole.USER.value,
+            content="I also prefer Socratic answers.",
+        )
+        db.add_all([first_user_message, assistant_message, later_user_message])
+        db.flush()
+        run = AgentRunModel(
+            conversation_id=conversation.id,
+            user_id="replay-user",
+            status=RunStatus.COMPLETED.value,
+            assistant_message_id=assistant_message.id,
+        )
+        db.add(run)
+        db.commit()
+
+        preserved = service._store_memory_after_policy(
+            user_id="replay-user",
+            content="User prefers concise answers",
+            category=MemoryCategory.STABLE_PREFERENCE,
+            provenance_type=MemoryProvenanceType.EXPLICIT_USER,
+            source_conversation_id=conversation.id,
+            source_message_id=first_user_message.id,
+        )
+        pruned = service._store_memory_after_policy(
+            user_id="replay-user",
+            content="User prefers Socratic answers",
+            category=MemoryCategory.STABLE_PREFERENCE,
+            provenance_type=MemoryProvenanceType.ASSISTANT_SUGGESTED,
+            source_conversation_id=conversation.id,
+            source_message_id=assistant_message.id,
+            source_run_id=run.id,
+        )
+
+        prune_conversation_from_message(
+            db,
+            conversation_id=conversation.id,
+            target_message=assistant_message,
+            removed_messages=[assistant_message, later_user_message],
+            original_run=run,
+        )
+
+        db.refresh(preserved)
+        db.refresh(pruned)
+        assert preserved.stale_at is None
+        assert pruned.stale_reason == "source_transcript_pruned"
+        assert service.active_memories_for_context(user_id="replay-user") == [preserved]
+    finally:
+        session_generator.close()
+
+
+def test_deleted_conversation_stales_conversation_sourced_memories(monkeypatch) -> None:  # noqa: ANN001
+    from my_agents.api.conversations.transcripts import delete_conversation_tree
+    from my_agents.conversations.models import ConversationModel
+
+    monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        service = UserMemoryService(db)
+        service.set_enabled("delete-conversation-user", True)
+        conversation = ConversationModel(
+            owner_user_id="delete-conversation-user", title="Delete memory sources"
+        )
+        db.add(conversation)
+        db.commit()
+        db.refresh(conversation)
+        memory = service._store_memory_after_policy(
+            user_id="delete-conversation-user",
+            content="User prefers Korean answers",
+            category=MemoryCategory.STABLE_PREFERENCE,
+            provenance_type=MemoryProvenanceType.EXPLICIT_USER,
+            source_conversation_id=conversation.id,
+        )
+
+        delete_conversation_tree(db, conversation)
+
+        db.refresh(memory)
+        assert memory.stale_reason == "source_conversation_deleted"
+        assert service.active_memories_for_context(user_id="delete-conversation-user") == []
+    finally:
+        session_generator.close()
