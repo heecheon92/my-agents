@@ -241,6 +241,7 @@ Earlier hosted smoke status on 2026-06-03:
 ### Agent/product behavior
 
 - Product conversation runs support SSE progress streaming and incremental `answer_delta` assistant text events.
+- Known near-future gap: streamed run execution is still coupled to the client HTTP/SSE request. If the client disconnects before `run_completed`, the assistant response may never be persisted; durable server-owned/background run execution is required.
 - Completed conversation runs can be refetched with persisted reply, route, and citations.
 - `uv run python -m scripts.local_demo_seed` seeds a verified local demo user, text document, and extraction run for file-backed SQLite demos.
 - `uv run python -m scripts.local_demo_smoke --base-url http://localhost:8000` verifies the seeded V1 API path without the frontend.
