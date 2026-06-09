@@ -19,6 +19,7 @@
 | --- | --- |
 | `graph.py` | LangGraph `StateGraph`, 노드, 조건부 라우팅, graph state 정의 |
 | `classifier.py` | LangChain messages를 읽고 결정론적 `RouteDecision` 생성 |
+| `context.py` | Product DB conversation message, authorized document context, stored memory context, material source conflict를 명시적인 provider source context로 조립 |
 | `responders.py` | deterministic/OpenAI response provider, OpenAI 호출 경계, 향후 hosted tool policy 위치 |
 | `__init__.py` | 패키지 경계 |
 
@@ -54,7 +55,7 @@ flowchart TD
 
 `general_assistant` 폴더는 graph/classifier/responder 경계를 소유합니다. Auth, group/document permission, server-owned conversation, knowledge ingestion, retrieval selection, citation, agent event는 `my_agents/api/`, `my_agents/knowledge/`, `my_agents/conversations/` 같은 서비스 레이어에서 소유합니다.
 
-제품용 conversation run은 `general_assistant`가 prose를 작성하기 전에 retrieval과 RAG contract 작업을 실행합니다. ContextForge가 authorized evidence를 검색하고, `rag_agent`가 compact trace/grounding contract를 검증합니다. `general_assistant`는 `retrieval_route`, `answer_mode`, `document_scope`, 이미 권한 확인이 끝난 compact `retrieved_context` payload만 받습니다. Graph/provider는 이 metadata로 답변 방식을 조정하지만, vector/document storage를 직접 조회하지 않습니다. 보안 결정과 permission filter는 계속 `RetrievalService`와 API/service layer에 남습니다.
+제품용 conversation run은 `general_assistant`가 prose를 작성하기 전에 retrieval과 RAG contract 작업을 실행합니다. ContextForge가 authorized evidence를 검색하고, `rag_agent`가 compact trace/grounding contract를 검증합니다. `general_assistant`는 `retrieval_route`, `answer_mode`, `document_scope`, 이미 권한 확인이 끝난 compact `retrieved_context`, relevance-minimized active user `memory_context`, `source_conflicts`만 받습니다. Graph/provider는 이 metadata로 답변 방식을 조정하지만, vector/document storage를 직접 조회하지 않습니다. Provider prompt 구성은 이제 명시적인 `SourceContextBundle`을 거칩니다. 최근 Product DB conversation message, opt-in stored memory, authorized document context, material source conflict가 암묵적인 message slice가 아니라 분리된 channel로 전달됩니다. 보안 결정과 permission filter는 계속 `RetrievalService`와 API/service layer에 남습니다.
 
 ```mermaid
 sequenceDiagram
@@ -69,6 +70,7 @@ sequenceDiagram
     Retrieval->>RAG: redacted evidence metadata
     RAG-->>Events: verified trace stages
     Retrieval-->>Graph: retrieval_route, answer_mode, retrieved_context
+    RunAPI->>Graph: active memory_context and source_conflicts
     Graph->>Provider: compose with answer_mode
     Provider-->>Graph: reply
     Graph-->>RAG: reply and citation metadata
@@ -79,6 +81,23 @@ sequenceDiagram
 이 분리는 제품 설명에서 중요합니다. LangGraph는 AI 응답 흐름을 보여주고, RetrievalService/API 레이어는 실제 제품에 필요한 auth/permission/provenance 경계를 보여줍니다. Ingestion(upload/parse/chunk/embed)은 retrieval routing과 분리된 별도 pipeline입니다.
 
 향후 retrieval 자체가 현재 RAG Agent contract graph를 넘어 query rewrite, metadata planning, hybrid/vector search, reranking, context compression 같은 graph/tool orchestration을 필요로 하면 ContextForge `RetrievalGraph`를 추가할 수 있습니다. 다만 그 경우에도 hard authorization filter는 graph prompt가 아니라 `RetrievalService` 안에 남겨야 합니다.
+
+## Conversation / source context assembly
+
+`context.py`는 provider context 선택을 명시적으로 관리합니다. Product conversation run은 여전히 graph invocation 전에 server-owned SQL transcript를 로드하지만, provider는 prompt 구성 내부의 숨겨진 `messages[-6:]` slice에 직접 의존하지 않고 `SourceContextBundle`을 통해 제한된 최근 conversation window를 받습니다.
+
+현재 channel은 다음과 같습니다.
+
+| Channel | 현재 source | 비고 |
+| --- | --- | --- |
+| recent conversation | graph state로 전달된 Product DB transcript | Product DB가 visible transcript source of truth입니다 |
+| stored memory | active opt-in user memory에서 만든 service-layer `memory_context` | disabled, sensitive, stale, inactive, deleted, stable-preference shape이 아닌 memory, query-irrelevant non-preference memory는 제외됩니다 |
+| authorized documents | service-layer `retrieved_context` | graph에 들어오기 전에 permission filter를 통과합니다 |
+| material conflicts | service-layer `source_conflicts` | stored memory와 충돌하면 최신 conversation을 우선하고, document-grounded claim은 authorized document를 우선합니다 |
+
+Memory service는 이 agent folder 밖의 `my_agents/memory/`와 `my_agents/api/memories.py`에 있습니다. Public memory write는 client가 주장하는 provenance ID를 받지 않으며, service-owned path가 document-derived memory를 만들 때 provenance를 제공해야 합니다. Agent는 untrusted JSON prompt data로 직렬화된 active memory context와 conflict metadata만 받으며, memory table을 직접 조회하거나 수정하지 않습니다. Replay/regeneration은 historical memory content가 아니라 현재 active memory context를 사용하며, completed run에는 audit용 redacted memory-source snapshot을 남깁니다.
+
+이 구조는 향후 LangGraph checkpointer 작업의 guardrail이기도 합니다. 현재 full-message graph를 그대로 checkpointer-enabled로 만들면 Product DB transcript data가 checkpoint state에 중복 저장될 수 있으므로 금지합니다.
 
 ## OpenAI hosted tools를 추가할 위치
 

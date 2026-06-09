@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import re
 from dataclasses import dataclass
 
 from langchain_core.messages import BaseMessage
@@ -20,6 +22,8 @@ from my_agents.knowledge.routing import (
     is_relevant_retrieval_result,
 )
 from my_agents.knowledge.source_locations import parse_source_location_json
+from my_agents.memory.models import UserMemoryModel
+from my_agents.memory.service import UserMemoryService
 
 logger = logging.getLogger(__name__)
 
@@ -95,18 +99,32 @@ def prepare_retrieval_context(
 
 def graph_input_for_run(
     *,
+    db: Session,
     messages: list[BaseMessage],
     user_id: str,
     conversation_id: str,
     retrieval_context: ConversationRetrievalContext,
 ) -> dict[str, object]:
     used_chunks = chunks_used_for_answer(retrieval_context)
+    retrieved_context = retrieved_context_for_graph(used_chunks)
+    memory_context = memory_context_for_graph(
+        UserMemoryService(db).active_memories_for_context(
+            user_id=user_id, query=_latest_human_text(messages)
+        )
+    )
+    source_conflicts = source_conflicts_for_graph(
+        messages=messages,
+        memory_context=memory_context,
+        retrieved_context=retrieved_context,
+    )
     return {
         "messages": messages,
         "principal_id": user_id,
         "conversation_id": conversation_id,
         "retrieved_chunk_ids": [item.chunk.id for item in used_chunks],
-        "retrieved_context": retrieved_context_for_graph(used_chunks),
+        "retrieved_context": retrieved_context,
+        "memory_context": memory_context,
+        "source_conflicts": source_conflicts,
         "retrieval_route": retrieval_context.decision.route,
         "answer_mode": retrieval_context.answer_mode,
         "document_scope": retrieval_context.decision.document_scope,
@@ -178,6 +196,104 @@ def retrieved_context_for_graph(retrieved_chunks: list[RetrievedChunk]) -> list[
         }
         for item in retrieved_chunks
     ]
+
+
+def memory_context_for_graph(memories: list[UserMemoryModel]) -> list[dict[str, object]]:
+    """Serialize active user memories for graph/provider context."""
+    return [
+        {
+            "id": memory.id,
+            "key": memory.key,
+            "category": memory.category,
+            "content": memory.content,
+            "provenance_type": memory.provenance_type,
+            "source_conversation_id": memory.source_conversation_id,
+            "source_message_id": memory.source_message_id,
+            "source_run_id": memory.source_run_id,
+            "source_document_id": memory.source_document_id,
+        }
+        for memory in memories
+    ]
+
+
+def memory_source_snapshot_json(
+    *,
+    memory_context: list[dict[str, object]],
+    source_conflicts: list[dict[str, object]],
+) -> str | None:
+    """Return a redacted run-audit snapshot for memory-influenced context."""
+    if not memory_context and not source_conflicts:
+        return None
+    snapshot = {
+        "memory_count": len(memory_context),
+        "conflict_count": len(source_conflicts),
+        "memories": [
+            {
+                "id": memory.get("id"),
+                "key": memory.get("key"),
+                "category": memory.get("category"),
+                "provenance_type": memory.get("provenance_type"),
+                "source_conversation_id": memory.get("source_conversation_id"),
+                "source_message_id": memory.get("source_message_id"),
+                "source_run_id": memory.get("source_run_id"),
+                "source_document_id": memory.get("source_document_id"),
+            }
+            for memory in memory_context
+        ],
+        "conflicts": [
+            {
+                "primary": conflict.get("primary"),
+                "secondary": conflict.get("secondary"),
+                "material": conflict.get("material"),
+            }
+            for conflict in source_conflicts
+        ],
+    }
+    return json.dumps(snapshot, sort_keys=True)
+
+
+def source_conflicts_for_graph(
+    *,
+    messages: list[BaseMessage],
+    memory_context: list[dict[str, object]],
+    retrieved_context: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    """Detect material source conflicts between recent conversation and older memory/docs."""
+    conflicts: list[dict[str, object]] = []
+    latest_user_text = _latest_human_text(messages)
+    for memory in memory_context:
+        memory_content = str(memory.get("content") or "")
+        if _looks_like_user_correction(latest_user_text, memory_content):
+            conflicts.append(
+                {
+                    "primary": "conversation",
+                    "secondary": "memory",
+                    "description": (
+                        "The latest user message appears to revise or contradict stored memory "
+                        f"{memory.get('id')}. Prefer the latest conversation unless "
+                        "the user confirms the stored memory is still correct."
+                    ),
+                    "material": True,
+                }
+            )
+    for document in retrieved_context:
+        snippet = str(document.get("snippet") or "")
+        for memory in memory_context:
+            memory_content = str(memory.get("content") or "")
+            if _one_side_negates_shared_fact(memory_content, snippet):
+                conflicts.append(
+                    {
+                        "primary": "document",
+                        "secondary": "memory",
+                        "description": (
+                            "Authorized document context appears to conflict with stored memory "
+                            f"{memory.get('id')}. Prefer authorized document context for "
+                            "document-grounded claims and explain the discrepancy."
+                        ),
+                        "material": True,
+                    }
+                )
+    return conflicts
 
 
 def log_retrieval_context_for_llm(
@@ -258,3 +374,49 @@ def compose_rag_reply(
     like broken assistant prose and wasted the UI's citation affordance.
     """
     return base_reply
+
+
+def _latest_human_text(messages: list[BaseMessage]) -> str:
+    for message in reversed(messages):
+        if getattr(message, "type", None) == "human":
+            return _message_text(message)
+    return ""
+
+
+def _message_text(message: BaseMessage) -> str:
+    content = message.content
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return " ".join(
+            item["text"]
+            for item in content
+            if isinstance(item, dict) and isinstance(item.get("text"), str)
+        )
+    return str(content)
+
+
+def _looks_like_user_correction(latest_user_text: str, memory_content: str) -> bool:
+    latest = latest_user_text.casefold()
+    if not latest or not memory_content.strip():
+        return False
+    correction_markers = ("actually", "no longer", "not", "instead", "changed", "correction")
+    if not any(marker in latest for marker in correction_markers):
+        return False
+    return bool(_meaningful_tokens(latest_user_text) & _meaningful_tokens(memory_content))
+
+
+def _one_side_negates_shared_fact(left: str, right: str) -> bool:
+    shared = _meaningful_tokens(left) & _meaningful_tokens(right)
+    if not shared:
+        return False
+    return _has_negation(left) != _has_negation(right)
+
+
+def _has_negation(text: str) -> bool:
+    lowered = text.casefold()
+    return any(marker in lowered for marker in (" not ", " no ", "never", "no longer", "without"))
+
+
+def _meaningful_tokens(text: str) -> set[str]:
+    return set(re.findall(r"[\w가-힣]{4,}", text.casefold()))

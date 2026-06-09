@@ -18,6 +18,7 @@
 - PDF, Markdown, plain text, `.xlsx`, `.pptx`를 지원하는 KB-scoped document upload/create, team-upload staging, ingestion, extraction-run progress, chunk, entity, metadata profile, embedding, pgvector-ready retrieval.
 - permission-aware RAG, structured entity retrieval, reranking seam, packed context, citation, redacted retrieval evidence를 담당하는 ContextForge retrieval service.
 - server-owned conversation, run history, SSE assistant text streaming, run replay/cancel, persisted citation, frontend-safe activity event와 compact ko/en agent trace.
+- review/list/delete API, relevance-minimized recall, deterministic write-policy gate, suggest-confirm lifecycle, document-derived provenance/staleness, conflict-aware provider context를 가진 사용자별 opt-in long-term memory.
 
 자세한 설명은 README 대신 docs에 둡니다.
 
@@ -60,9 +61,11 @@ flowchart TD
     API --> Runs["Conversation runs / SSE"]
     KB --> Ingest["Ingestion + chunks + entities + embeddings"]
     Runs --> ContextForge["ContextForge permission-aware retrieval"]
+    Runs --> Memory["Opt-in user memory service"]
     ContextForge --> RAGAgent["RAG Agent contract graph"]
     ContextForge --> GraphInput["Authorized retrieved context"]
     GraphInput --> Graph["General assistant LangGraph"]
+    Memory --> GraphInput
     Graph --> Provider["OpenAI or deterministic provider"]
     RAGAgent --> Events["Verified agent trace + grounding checks"]
     Graph --> Events
@@ -70,10 +73,36 @@ flowchart TD
     KB --> DB
     Ingest --> DB
     Runs --> DB
+    Memory --> DB
     Events --> DB
 ```
 
 팀 업로드는 RAG retrieval에서 제외되는 숨겨진 개인 임시 KB를 사용하고, 승인 후 소스를 팀 KB로 복사한 뒤에만 검색됩니다. Service layer가 auth, permission, source policy, persistence, retrieval boundary, citation, event를 소유합니다. ContextForge는 여전히 general assistant에 전달할 authorized context를 검색하고, `rag_agent`는 그 경로를 감싸는 graph-shaped RAG Agent contract로 trace stage와 grounding check를 제공합니다. Chat run은 권한이 있는 개인·공유·팀 KB를 하나의 `knowledge_base_selection` contract로 선택하며, conversation transcript는 사용자 소유 비공개 범위로 유지됩니다.
+
+## Long-term memory
+
+Long-term memory는 기본적으로 꺼져 있으며 authenticated user 단위로 격리됩니다.
+Product DB는 계속 visible conversation, final assistant answer, citation, billing/audit,
+run event, redacted memory-source snapshot의 source of truth입니다. Memory는 사용자가 opt in한 뒤에만 provider context에
+들어갈 수 있는 별도 source channel입니다.
+
+구현된 memory route는 다음과 같습니다.
+
+- `GET /memories/settings`, `PATCH /memories/settings`: opt-in 상태 확인/변경
+- `GET /memories`, `POST /memories`, `POST /memories/{id}/deactivate`,
+  `DELETE /memories/{id}`: 명시적 user memory 관리. Public create request는 client가 주장하는 provenance ID, arbitrary value payload, suggestion TTL을 받지 않습니다
+- `GET /memories/suggestions`, `POST /memories/suggestions`,
+  `POST /memories/suggestions/{id}/confirm`,
+  `POST /memories/suggestions/{id}/reject`: suggest-confirm write lifecycle
+
+Memory가 disabled이면 memory retrieval을 주입하지 않고 write도 받지 않습니다. 다만 기존
+record는 사용자가 review/delete할 수 있게 남겨둡니다. Delete는 저장된 content/value를 scrub하고 최소 tombstone만 남깁니다. Rejected/expired/confirmed suggestion도 제안된 memory text를 scrub해서 declined/decided suggestion에 duplicate memory content가 남지 않게 합니다. Auto-store와
+suggest-confirm path는 deterministic category/sensitivity guard를 거치며, sensitive fact는 저장하지
+않습니다. Stable preference는 durable preference처럼 보이는 내용만 global recall 대상이 될 수 있습니다. Document-derived memory는 document provenance가 필요하고, source document가 삭제되면
+같은 transaction에서 stale로 표시되어 provider context에서 제외됩니다. General assistant는 `SourceContextBundle`을 통해
+recent Product DB conversation, authorized document context, relevance-minimized stored memory, material source conflict를
+분리해서 받습니다. 검증된 stable preference는 global하게 recall될 수 있지만, project/personal/document-derived memory는 query relevance가 필요합니다. 최신 conversation과 stored memory가 충돌하면 provider prompt는 최신
+conversation을 우선하고 conflict를 설명하도록 지시합니다. Replay/regeneration은 historical memory content를 재사용하지 않고 현재 memory opt-in 상태와 현재 active memory를 사용합니다. Completed run에는 audit용 redacted memory ID/category/provenance/conflict count만 저장합니다.
 
 ## 문서 업로드 지원
 

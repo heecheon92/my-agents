@@ -18,6 +18,7 @@ The current backend is a thin but working product slice:
 - KB-scoped document upload/creation for PDF, Markdown, plain text, `.xlsx`, and `.pptx`; team-upload staging, ingestion, extraction-run progress, chunks, entities, metadata profiles, embeddings, and pgvector-ready retrieval.
 - ContextForge retrieval service for permission-aware RAG, structured entity retrieval, reranking seams, packed context, citations, and redacted retrieval evidence.
 - Server-owned conversations, run history, SSE assistant text streaming, run replay/cancel paths, persisted citations, and frontend-safe activity events.
+- Opt-in per-user long-term memory with review/list/delete APIs, relevance-minimized recall, deterministic write-policy gates, suggest-confirm lifecycle, document-derived provenance/staleness, and conflict-aware provider context.
 
 More detail lives in the docs instead of this README:
 
@@ -60,9 +61,11 @@ flowchart TD
     API --> Runs["Conversation runs / SSE"]
     KB --> Ingest["Ingestion + chunks + entities + embeddings"]
     Runs --> ContextForge["ContextForge permission-aware retrieval"]
+    Runs --> Memory["Opt-in user memory service"]
     ContextForge --> RAGAgent["RAG Agent contract graph"]
     ContextForge --> GraphInput["Authorized retrieved context"]
     GraphInput --> Graph["General assistant LangGraph"]
+    Memory --> GraphInput
     Graph --> Provider["OpenAI or deterministic provider"]
     RAGAgent --> Events["Verified agent trace + grounding checks"]
     Graph --> Events
@@ -70,10 +73,37 @@ flowchart TD
     KB --> DB
     Ingest --> DB
     Runs --> DB
+    Memory --> DB
     Events --> DB
 ```
 
 Team uploads use a hidden personal staging KB that is excluded from RAG retrieval until approval copies the source into a group KB. The service layer owns auth, permissions, source policy, persistence, retrieval boundaries, citations, and events. ContextForge still retrieves authorized context for the general assistant, while `rag_agent` provides the graph-shaped RAG Agent contract for trace stages and grounding checks around that path. Chat runs use one unified `knowledge_base_selection` contract across authorized personal, shared, and team KBs; conversation transcripts remain owner-private.
+
+## Long-term memory
+
+Long-term memory is disabled by default and is scoped to the authenticated user. The
+Product DB remains the source of truth for visible conversations, final assistant
+answers, citations, billing/audit, run events, and redacted memory-source snapshots. Memory is a separate source channel
+that can enter provider context only after the user opts in.
+
+Implemented memory routes include:
+
+- `GET /memories/settings` and `PATCH /memories/settings` to review or change opt-in state;
+- `GET /memories`, `POST /memories`, `POST /memories/{id}/deactivate`, and
+  `DELETE /memories/{id}` for explicit user memory management; public create requests do not accept client-asserted provenance IDs, arbitrary value payloads, or suggestion TTLs;
+- `GET /memories/suggestions`, `POST /memories/suggestions`,
+  `POST /memories/suggestions/{id}/confirm`, and
+  `POST /memories/suggestions/{id}/reject` for suggest-confirm writes.
+
+Disabled memory means no memory retrieval is injected and no memory writes are accepted,
+but existing records remain manageable until the user deletes them. Deleting a memory scrubs its stored content/value and leaves only a minimal tombstone. Rejected, expired, and confirmed suggestions also scrub proposed memory text so declined/decided suggestions do not retain duplicate memory content. Auto-store and
+suggest-confirm paths use deterministic category/sensitivity guards; sensitive facts are
+not stored, stable preferences must look like durable preferences before they can be globally recalled, and document-derived memories require document provenance and are marked
+stale in the same transaction when the source document is deleted. The general assistant receives relevance-minimized memory through
+`SourceContextBundle` alongside recent Product DB conversation, authorized document
+context, and material source conflicts. Validated stable preferences may be recalled globally; project, personal, and document-derived memories require query relevance. When recent conversation conflicts with stored
+memory, prompt guidance tells the provider to prefer the latest conversation and explain
+the conflict. Replay/regeneration uses the current memory opt-in state and current active memories rather than replaying historical memory content; completed runs keep only redacted memory IDs/categories/provenance/conflict counts for audit.
 
 ## Document upload support
 

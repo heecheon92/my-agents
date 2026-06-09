@@ -50,6 +50,7 @@ from my_agents.knowledge.uploads import (
     UnsupportedDocumentUploadError,
     parse_uploaded_document,
 )
+from my_agents.memory.service import UserMemoryService
 from my_agents.permissions.contracts import DocumentOperation
 from my_agents.permissions.service import AuthorizationService
 from my_agents.persistence.database import get_database_session
@@ -337,6 +338,7 @@ def delete_document(
         operation=DocumentOperation.DELETE,
     ):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="document not found")
+    UserMemoryService(db).mark_document_memories_stale(source_document_id=document_id, commit=False)
     _delete_document_dependencies(db, document_id)
     db.delete(document)
     db.commit()

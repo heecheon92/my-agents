@@ -62,6 +62,9 @@ EXPECTED_SERVICE_TABLES = {
     "entity_relationships",
     "structured_knowledge_entities",
     "citations",
+    "user_memory_settings",
+    "user_memories",
+    "memory_suggestions",
 }
 
 
@@ -157,10 +160,15 @@ def test_alembic_offline_sql_generation_covers_initial_schema(monkeypatch) -> No
     assert "20260607_0019" in sql
     assert "20260607_0020" in sql
     assert "20260609_0021" in sql
+    assert "20260609_0022" in sql
+    assert "20260609_0023" in sql
     assert "CREATE TABLE guest_access_requests" in sql
     assert "CREATE TABLE knowledge_publish_requests" in sql
     assert "CREATE TABLE knowledge_base_publications" in sql
     assert "CREATE TABLE document_parse_artifacts" in sql
+    assert "CREATE TABLE user_memory_settings" in sql
+    assert "CREATE TABLE user_memories" in sql
+    assert "CREATE TABLE memory_suggestions" in sql
     assert "CREATE TABLE structured_knowledge_entities" in sql
     assert "CREATE TABLE document_metadata_profiles" in sql
     assert "source_location_json" in sql

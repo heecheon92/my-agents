@@ -23,6 +23,7 @@ from my_agents.api.conversations.retrieval_context import (
     graph_input_for_run,
     insufficient_evidence_reply,
     log_retrieval_context_for_llm,
+    memory_source_snapshot_json,
     prepare_retrieval_context,
 )
 from my_agents.api.conversations.run_events import (
@@ -187,6 +188,7 @@ def _complete_sync_conversation_run(
             retrieval_evidence=retrieval_context.retrieval_evidence,
         )
     graph_input = graph_input_for_run(
+        db=db,
         messages=messages,
         user_id=user_id,
         conversation_id=conversation_id,
@@ -210,6 +212,10 @@ def _complete_sync_conversation_run(
             retrieval_decision=retrieval_context.decision,
             answer_mode=retrieval_context.answer_mode,
             selection_context=retrieval_context.knowledge_base_selection,
+            memory_source_snapshot_json=memory_source_snapshot_json(
+                memory_context=graph_input["memory_context"],  # type: ignore[arg-type]
+                source_conflicts=graph_input["source_conflicts"],  # type: ignore[arg-type]
+            ),
         ),
     )
     try:
@@ -256,6 +262,10 @@ def _complete_sync_conversation_run(
         warnings=warnings,
         insufficient_evidence=completion_insufficient_evidence,
         retrieval_evidence=retrieval_context.retrieval_evidence,
+        memory_source_snapshot=memory_source_snapshot_json(
+            memory_context=graph_input["memory_context"],  # type: ignore[arg-type]
+            source_conflicts=graph_input["source_conflicts"],  # type: ignore[arg-type]
+        ),
     )
 
 
@@ -306,6 +316,7 @@ def persist_completed_run(
     clarification: ConversationClarificationRequest | None = None,
     insufficient_evidence: bool = False,
     retrieval_evidence: RetrievalEvidence | None = None,
+    memory_source_snapshot: str | None = None,
 ) -> ConversationRunResponse:
     assistant_message = MessageModel(
         conversation_id=conversation_id,
@@ -324,6 +335,7 @@ def persist_completed_run(
     run.answer_mode = answer_mode
     run.document_scope = retrieval_decision.document_scope
     run.retrieval_source_snapshot_json = _retrieval_source_snapshot_json(retrieved_chunks)
+    run.memory_source_snapshot_json = memory_source_snapshot
     run.assistant_message_id = assistant_message.id
     db.flush()
     citations = [

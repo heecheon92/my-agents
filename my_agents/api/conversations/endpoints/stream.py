@@ -21,6 +21,7 @@ from my_agents.api.conversations.retrieval_context import (
     graph_input_for_run,
     insufficient_evidence_reply,
     log_retrieval_context_for_llm,
+    memory_source_snapshot_json,
     prepare_retrieval_context,
 )
 from my_agents.api.conversations.run_events import (
@@ -248,6 +249,7 @@ def conversation_run_events(
             return
 
         graph_input = graph_input_for_run(
+            db=db,
             messages=messages,
             user_id=user_id,
             conversation_id=conversation_id,
@@ -259,6 +261,10 @@ def conversation_run_events(
             user_id=user_id,
             retrieval_context=retrieval_context,
             graph_input=graph_input,
+        )
+        memory_snapshot = memory_source_snapshot_json(
+            memory_context=graph_input["memory_context"],  # type: ignore[arg-type]
+            source_conflicts=graph_input["source_conflicts"],  # type: ignore[arg-type]
         )
         stream_route = classify_messages(messages)
         graph_invoked = False
@@ -275,6 +281,7 @@ def conversation_run_events(
                         retrieval_decision=retrieval_context.decision,
                         answer_mode=retrieval_context.answer_mode,
                         selection_context=retrieval_context.knowledge_base_selection,
+                        memory_source_snapshot_json=memory_snapshot,
                     )
                     append_run_event(db, run.id, AgentEventType.GRAPH_INVOKED, graph_payload)
                     yield sse_event(
@@ -342,6 +349,7 @@ def conversation_run_events(
                 retrieval_decision=retrieval_context.decision,
                 answer_mode=retrieval_context.answer_mode,
                 selection_context=retrieval_context.knowledge_base_selection,
+                memory_source_snapshot_json=memory_snapshot,
             )
             append_run_event(db, run.id, AgentEventType.GRAPH_INVOKED, graph_payload)
             yield sse_event(
@@ -370,6 +378,7 @@ def conversation_run_events(
             selection_context=retrieval_context.knowledge_base_selection,
             insufficient_evidence=completion_insufficient_evidence,
             retrieval_evidence=retrieval_context.retrieval_evidence,
+            memory_source_snapshot=memory_snapshot,
         )
         yield sse_event(
             AgentEventType.ANSWER_COMPOSED.value,

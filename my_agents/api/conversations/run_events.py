@@ -100,6 +100,7 @@ def graph_invoked_payload(
     retrieval_decision: RetrievalRoutingDecision,
     answer_mode: AnswerMode,
     selection_context: KnowledgeBaseSelectionContext,
+    memory_source_snapshot_json: str | None = None,
 ) -> dict:
     payload = {
         "route_label": route.label,
@@ -109,6 +110,11 @@ def graph_invoked_payload(
         "message_count": len(messages),
         "retrieved_chunk_count": len(retrieved_chunks),
     }
+    if memory_source_snapshot_json:
+        memory_snapshot = json.loads(memory_source_snapshot_json)
+        payload["memory_count"] = memory_snapshot.get("memory_count", 0)
+        payload["memory_conflict_count"] = memory_snapshot.get("conflict_count", 0)
+        payload["memory_source_snapshot"] = memory_snapshot
     payload["agent_trace"] = agent_trace_payload(
         [
             graph_agent_trace_step(

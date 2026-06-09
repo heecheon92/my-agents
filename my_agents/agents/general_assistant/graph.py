@@ -24,6 +24,8 @@ class AssistantState(TypedDict, total=False):
     reply: str
     handled_by: str
     retrieved_context: list[dict[str, object]]
+    memory_context: list[dict[str, object]]
+    source_conflicts: list[dict[str, object]]
     retrieval_route: RetrievalRoute
     answer_mode: AnswerMode
     document_scope: DocumentScope
@@ -73,6 +75,8 @@ def _compose_reply(state: AssistantState, guidance: str) -> str:
         capability=state["capability"],
         guidance=guidance,
         retrieved_context=state.get("retrieved_context", []),
+        memory_context=state.get("memory_context", []),
+        source_conflicts=state.get("source_conflicts", []),
         answer_mode=state.get("answer_mode", "general_knowledge"),
         debug_empty_response=state.get("debug_empty_openai_response", False),
     )

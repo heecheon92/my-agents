@@ -15,6 +15,7 @@ from my_agents.api.assistant import get_graph_runner
 from my_agents.api.conversations.endpoints.stream import conversation_run_events
 from my_agents.conversations.models import (
     AgentEventModel,
+    AgentEventType,
     AgentRunModel,
     ConversationModel,
     MessageModel,
@@ -1820,3 +1821,82 @@ def _parse_sse(body: str) -> list[dict[str, Any]]:
                 data = line.removeprefix("data: ")
         events.append({"event": event_name, "data": json.loads(data)})
     return events
+
+
+def test_conversation_run_injects_enabled_user_memory_and_conflicts(monkeypatch) -> None:  # noqa: ANN001
+    graph = SpyGraph()
+    client = _client(monkeypatch, graph)
+    _signup_login(client, "memory-context@example.com")
+    assert client.patch("/memories/settings", json={"enabled": True}).status_code == 200
+    created_memory = client.post(
+        "/memories",
+        json={"content": "User prefers concise answers", "category": "stable_preference"},
+    )
+    assert created_memory.status_code == 201
+    conversation_id = client.post("/conversations", json={"title": "Memory Context"}).json()["id"]
+
+    response = client.post(
+        f"/conversations/{conversation_id}/runs",
+        json={"message": "Actually I no longer prefer concise answers"},
+    )
+
+    assert response.status_code == 200
+    graph_input = graph.calls[-1]
+    assert graph_input["memory_context"][0]["content"] == "User prefers concise answers"
+    assert graph_input["memory_context"][0]["id"] == created_memory.json()["id"]
+    assert graph_input["source_conflicts"]
+    assert graph_input["source_conflicts"][0]["primary"] == "conversation"
+    assert graph_input["source_conflicts"][0]["secondary"] == "memory"
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        run = db.scalar(
+            select(AgentRunModel)
+            .where(AgentRunModel.conversation_id == conversation_id)
+            .order_by(AgentRunModel.created_at.desc())
+        )
+        assert run is not None
+        assert run.memory_source_snapshot_json is not None
+        memory_snapshot = json.loads(run.memory_source_snapshot_json)
+        assert memory_snapshot["memory_count"] == 1
+        assert memory_snapshot["memories"][0]["id"] == created_memory.json()["id"]
+        assert "User prefers concise answers" not in run.memory_source_snapshot_json
+        graph_event = db.scalar(
+            select(AgentEventModel)
+            .where(
+                AgentEventModel.run_id == run.id,
+                AgentEventModel.event_type == AgentEventType.GRAPH_INVOKED.value,
+            )
+            .order_by(AgentEventModel.sequence.desc())
+        )
+        assert graph_event is not None
+        event_payload = json.loads(graph_event.payload_json)
+        assert event_payload["memory_count"] == 1
+        assert "User prefers concise answers" not in graph_event.payload_json
+    finally:
+        session_generator.close()
+
+
+def test_conversation_run_excludes_disabled_user_memory(monkeypatch) -> None:  # noqa: ANN001
+    graph = SpyGraph()
+    client = _client(monkeypatch, graph)
+    _signup_login(client, "memory-disabled-context@example.com")
+    assert client.patch("/memories/settings", json={"enabled": True}).status_code == 200
+    assert (
+        client.post(
+            "/memories",
+            json={"content": "User prefers concise answers", "category": "stable_preference"},
+        ).status_code
+        == 201
+    )
+    assert client.patch("/memories/settings", json={"enabled": False}).status_code == 200
+    conversation_id = client.post("/conversations", json={"title": "No Memory"}).json()["id"]
+
+    response = client.post(
+        f"/conversations/{conversation_id}/runs",
+        json={"message": "Plan my next backend task"},
+    )
+
+    assert response.status_code == 200
+    assert graph.calls[-1]["memory_context"] == []
+    assert graph.calls[-1]["source_conflicts"] == []
