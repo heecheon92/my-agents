@@ -29,7 +29,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-AuthEmailPurpose = Literal["email_verification", "password_reset", "guest_access_code"]
+AuthEmailPurpose = Literal[
+    "email_verification",
+    "password_reset",
+    "guest_access_code",
+    "group_invitation",
+]
 AuthEmailLanguage = Literal["ko", "en"]
 
 
@@ -88,6 +93,17 @@ class AuthEmailSender(Protocol):
         language: AuthEmailLanguage = "ko",
     ) -> None:
         """Send or record an operator-issued guest access code."""
+        ...
+
+    def send_group_invitation(
+        self,
+        *,
+        recipient_email: str,
+        token: str,
+        expires_at: datetime,
+        language: AuthEmailLanguage = "ko",
+    ) -> None:
+        """Send or record a group invitation acceptance token."""
         ...
 
 
@@ -161,6 +177,30 @@ class InMemoryAuthEmailSender:
                 subject=message.subject,
                 body=message.body,
                 token=code,
+            )
+        )
+
+    def send_group_invitation(
+        self,
+        *,
+        recipient_email: str,
+        token: str,
+        expires_at: datetime,
+        language: AuthEmailLanguage = "ko",
+    ) -> None:
+        message = _group_invitation_message(
+            token=token,
+            expires_at=expires_at,
+            language=language,
+            base_url="",
+        )
+        self._messages.append(
+            AuthEmailMessage(
+                recipient_email=recipient_email,
+                purpose="group_invitation",
+                subject=message.subject,
+                body=message.body,
+                token=token,
             )
         )
 
@@ -252,6 +292,26 @@ class SmtpAuthEmailSender:
             code=code,
             expires_at=expires_at,
             language=language,
+        )
+        self._send(
+            recipient_email=recipient_email,
+            subject=message.subject,
+            body=message.body,
+        )
+
+    def send_group_invitation(
+        self,
+        *,
+        recipient_email: str,
+        token: str,
+        expires_at: datetime,
+        language: AuthEmailLanguage = "ko",
+    ) -> None:
+        message = _group_invitation_message(
+            token=token,
+            expires_at=expires_at,
+            language=language,
+            base_url=self._public_app_base_url,
         )
         self._send(
             recipient_email=recipient_email,
@@ -412,6 +472,26 @@ class ResendHttpAuthEmailSender:
             body=message.body,
         )
 
+    def send_group_invitation(
+        self,
+        *,
+        recipient_email: str,
+        token: str,
+        expires_at: datetime,
+        language: AuthEmailLanguage = "ko",
+    ) -> None:
+        message = _group_invitation_message(
+            token=token,
+            expires_at=expires_at,
+            language=language,
+            base_url=self._public_app_base_url,
+        )
+        self._send(
+            recipient_email=recipient_email,
+            subject=message.subject,
+            body=message.body,
+        )
+
     def _send(self, *, recipient_email: str, subject: str, body: str) -> None:
         context = _email_log_context(recipient_email)
         deploy_log(
@@ -502,6 +582,22 @@ def _guest_access_code_message(
         purpose="guest_access_code",
         language=language,
         code=code,
+        expires_at=expires_at_utc.isoformat(),
+    )
+
+
+def _group_invitation_message(
+    *, token: str, expires_at: datetime, language: AuthEmailLanguage, base_url: str
+) -> RenderedAuthEmail:
+    expires_at_utc = expires_at
+    if expires_at_utc.tzinfo is None:
+        expires_at_utc = expires_at_utc.replace(tzinfo=UTC)
+    else:
+        expires_at_utc = expires_at_utc.astimezone(UTC)
+    return _auth_email_message(
+        purpose="group_invitation",
+        language=language,
+        link=_action_link("/group-invitations/accept", token, base_url=base_url),
         expires_at=expires_at_utc.isoformat(),
     )
 

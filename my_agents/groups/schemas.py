@@ -1,10 +1,12 @@
-"""Pydantic schemas for group and membership APIs."""
+"""Pydantic schemas for group, invitation, and membership APIs."""
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
+from datetime import datetime
 
-from my_agents.groups.models import MembershipRole
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
+
+from my_agents.groups.models import GroupInvitationStatus, MembershipRole
 
 
 class GroupCreateRequest(BaseModel):
@@ -21,14 +23,50 @@ class GroupResponse(BaseModel):
     role: MembershipRole
 
 
-class MemberUpsertRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    user_id: str = Field(min_length=1)
-    role: MembershipRole
-
-
 class MemberPatchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     role: MembershipRole
+
+
+class MemberResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    member_id: str
+    user_id: str
+    role: MembershipRole
+    created_at: datetime
+
+
+class GroupInvitationCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    email: EmailStr
+    role: MembershipRole
+
+
+class GroupInvitationUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    role: MembershipRole
+
+
+class GroupInvitationResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    group_id: str
+    invited_email: EmailStr
+    role: MembershipRole
+    status: GroupInvitationStatus
+    created_at: datetime
+    expires_at: datetime
+    accepted_at: datetime | None = None
+    cancelled_at: datetime | None = None
+    resent_at: datetime | None = None
+
+
+class GroupInvitationAcceptRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    token: str = Field(min_length=1, max_length=512)

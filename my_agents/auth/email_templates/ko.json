@@ -10,5 +10,9 @@
   "guest_access_code": {
     "subject": "my-agents 게스트 데모 접근 코드",
     "body": "my-agents 게스트 데모 접근 코드는 다음과 같습니다.\n\n{code}\n\n이 일회용 코드는 {expires_at}에 만료됩니다.\n로그인 후 게스트 세션은 24시간 동안 유지되며 대화 1개, 프롬프트 5개, 문서 업로드 3개로 제한됩니다.\n\n게스트 접근을 요청하지 않았다면 이 이메일은 무시해도 됩니다."
+  },
+  "group_invitation": {
+    "subject": "my-agents 그룹 초대",
+    "body": "my-agents 그룹에 초대되었습니다. 이 이메일 주소로 로그인한 뒤 아래 링크에서 초대를 수락하세요:\n\n{link}\n\n이 초대는 {expires_at}에 만료됩니다.\n\n예상하지 못한 초대라면 이 이메일은 무시해도 됩니다."
   }
 }
