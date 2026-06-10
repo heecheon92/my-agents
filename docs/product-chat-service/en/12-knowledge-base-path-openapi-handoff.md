@@ -1,6 +1,7 @@
 # Knowledge Base Path OpenAPI Handoff
 
-This is the backend-to-frontend handoff for the KB-first document, team-upload staging, and chat-source path.
+This is the backend-to-frontend handoff for the KB-first document,
+team-upload staging, and chat-source path.
 The filtered OpenAPI artifact is:
 
 - `docs/product-chat-service/en/12-knowledge-base-path-openapi-handoff.json`
@@ -11,8 +12,13 @@ A knowledge base is the user-facing searchable document library. The frontend fl
 
 1. Create or choose a knowledge base.
 2. For personal content, add text/PDF/Markdown/plain-text files to that knowledge base.
-3. For team content that needs approval, call `POST /knowledge-bases/team-upload-staging` to create or reuse the uploader's hidden staging KB, then write the source document into that staging KB.
-4. Submit the staged document with `POST /groups/{group_id}/publish-requests` and approve/reject it with the group review endpoints.
+3. For team content that needs approval, call
+   `POST /knowledge-bases/team-upload-staging` to create or reuse the
+   uploader's hidden staging KB, then write the source document into that
+   staging KB.
+4. Submit the staged document with
+   `POST /groups/{group_id}/publish-requests` and approve/reject it with
+   the group review endpoints.
 5. Ingest the approved group copy inside the target group knowledge base.
 6. In chat, choose either All KBs or one or more selected KBs as the assistant retrieval source.
 
@@ -36,17 +42,26 @@ Use the KB-nested and group publish routes for the product UI:
 - `POST /groups/{group_id}/publish-requests/{request_id}/approve`
 - `POST /groups/{group_id}/publish-requests/{request_id}/reject`
 
-Compatibility routes `/documents` and `/documents/upload` still exist for standalone/developer usage,
+Compatibility routes `/documents` and `/documents/upload` still exist
+for standalone/developer usage,
 but write calls require an authorized `knowledge_base_id`. They are not the primary product UX.
 
 ## Team upload and publish-request rules
 
-- `POST /knowledge-bases/team-upload-staging` returns a hidden personal KB with `purpose=team_upload_staging`.
-- Staging KBs are writable by direct KB-scoped document create/upload routes, but are excluded from normal KB lists, chat source selection, and ordinary retrieval.
+- `POST /knowledge-bases/team-upload-staging` returns a hidden personal
+  KB with `purpose=team_upload_staging`.
+- Staging KBs are writable by direct KB-scoped document create/upload
+  routes, but are excluded from normal KB lists, chat source selection,
+  and ordinary retrieval.
 - Document-copy publish requests require `source_document_id` plus `target_knowledge_base_id`.
-- Whole-KB publish requests require `source_knowledge_base_id` and target the group directly; they must not send `target_knowledge_base_id`.
-- `KnowledgePublishRequestResponse` is the canonical UI payload for pending/approved/rejected team publication state.
-- Approval copies the source into the target group KB and ingests the group copy; retrieval should use the approved group copy, not the staging source.
+- Whole-KB publish requests require `source_knowledge_base_id` and
+  target the group directly; they must not send
+  `target_knowledge_base_id`.
+- `KnowledgePublishRequestResponse` is the canonical UI payload for
+  pending/approved/rejected team publication state.
+- Approval copies the source into the target group KB and ingests the
+  group copy; retrieval should use the approved group copy, not the
+  staging source.
 
 ## Chat source selection
 

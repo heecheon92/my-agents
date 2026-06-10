@@ -37,7 +37,9 @@ def test_openapi_exposes_kb_first_document_and_chat_selection_contract() -> None
     selection_schema = schema["components"]["schemas"]["KnowledgeBaseSelection"]
     kb_response_schema = schema["components"]["schemas"]["KnowledgeBaseResponse"]
     publish_request_schema = schema["components"]["schemas"]["KnowledgePublishRequestResponse"]
-    publish_request_create_schema = schema["components"]["schemas"]["KnowledgePublishRequestCreateRequest"]
+    publish_request_create_schema = schema["components"]["schemas"][
+        "KnowledgePublishRequestCreateRequest"
+    ]
 
     assert request_schema["properties"]["knowledge_base_selection"] == {
         "$ref": "#/components/schemas/KnowledgeBaseSelection"
@@ -63,7 +65,10 @@ def test_openapi_exposes_kb_first_document_and_chat_selection_contract() -> None
     assert publish_request_schema["properties"]["status"]["$ref"] == (
         "#/components/schemas/KnowledgePublishRequestStatus"
     )
-    assert publish_request_create_schema["properties"]["target_knowledge_base_id"]["anyOf"][0]["type"] == "string"
+    assert (
+        publish_request_create_schema["properties"]["target_knowledge_base_id"]["anyOf"][0]["type"]
+        == "string"
+    )
 
     upload_body_ref = schema["paths"]["/documents/upload"]["post"]["requestBody"]["content"][
         "multipart/form-data"
