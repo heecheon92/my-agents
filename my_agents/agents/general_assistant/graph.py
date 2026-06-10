@@ -8,6 +8,10 @@ from langgraph.graph.message import add_messages
 
 from my_agents.agents.capabilities import AgentCapability, get_capability_for_route
 from my_agents.agents.general_assistant.classifier import classify_messages
+from my_agents.agents.general_assistant.memory_recall import (
+    AssistantRuntimeContext,
+    retrieve_memory_context,
+)
 from my_agents.agents.general_assistant.responders import get_response_provider
 from my_agents.knowledge.routing import AnswerMode, DocumentScope, RetrievalRoute
 from my_agents.schemas import RouteDecision
@@ -23,6 +27,9 @@ class AssistantState(TypedDict, total=False):
     capability: AgentCapability
     reply: str
     handled_by: str
+    principal_id: str
+    conversation_id: str
+    retrieved_chunk_ids: list[str]
     retrieved_context: list[dict[str, object]]
     memory_context: list[dict[str, object]]
     source_conflicts: list[dict[str, object]]
@@ -84,14 +91,16 @@ def _compose_reply(state: AssistantState, guidance: str) -> str:
 
 def build_graph():
     """Build and compile the real LangGraph StateGraph."""
-    graph = StateGraph(AssistantState)
+    graph = StateGraph(AssistantState, context_schema=AssistantRuntimeContext)
     graph.add_node("classify_request", classify_request)
+    graph.add_node("retrieve_memory", retrieve_memory_context)
     graph.add_node("respond_general", respond_general)
     graph.add_node("respond_research", respond_research)
 
     graph.add_edge(START, "classify_request")
+    graph.add_edge("classify_request", "retrieve_memory")
     graph.add_conditional_edges(
-        "classify_request",
+        "retrieve_memory",
         select_response_node,
         {
             "respond_general": "respond_general",

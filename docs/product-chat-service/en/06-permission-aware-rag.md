@@ -1,6 +1,6 @@
 ---
 created: 2026-05-17
-updated: 2026-05-25
+updated: 2026-06-10
 status: active
 topics:
   - rag
@@ -37,6 +37,9 @@ The current implementation is intentionally deterministic so tests stay offline:
   human-in-the-loop localization instead of hard-coded English prose;
 - filename/title-like document references are matched against authorized document metadata
   before body-only retrieval, so visible upload names can resolve even when absent from text;
+- conversation runs enter retrieval through a thin ContextForge LangGraph RetrievalGraph wrapper,
+  which currently delegates to the permission-first retrieval service and records bounded
+  retry/sufficiency state;
 - citations are stored against the `AgentRunModel` only when retrieved chunks are actually used;
 - the response payload returns routing metadata plus citation IDs, document IDs, chunk IDs, and snippets.
 
@@ -47,6 +50,7 @@ sequenceDiagram
     participant UI as Frontend
     participant API as Conversation run API
     participant Auth as Auth dependency
+    participant CG as ContextForge RetrievalGraph
     participant R as RetrievalService
     participant G as LangGraph assistant
     participant DB as Database
@@ -59,9 +63,11 @@ sequenceDiagram
         API->>DB: persist empty assistant message + clarification run state
         API-->>UI: reply "" + clarification object for localized human prompt
     else retrieval/answer path
-        API->>R: retrieve(user_id, query) only for required/optional
+        API->>CG: invoke_context_forge_graph(request)
+        CG->>R: retrieve(user_id, query) only for required/optional
         R->>DB: select chunks from authorized documents only
         R->>DB: expand through authorized entity mentions
+        CG-->>API: ContextForgeResult + attempt/sufficiency state
         API->>G: invoke with server-owned messages, answer_mode, and authorized context
         API->>DB: persist assistant message, run, citations
         API-->>UI: reply + citations
@@ -106,15 +112,17 @@ an entity with an authorized chunk.
 These constraints are acceptable for this demo stage because they make the security
 boundary testable before adding more impressive retrieval infrastructure.
 
-## Future RetrievalGraph milestone
+## RetrievalGraph augmentation milestone
 
-A separate retrieval LangGraph is intentionally deferred. The current production-shaped
-boundary is: Conversation API decides retrieval route, `RetrievalService` enforces
-permissions and returns packaged context, and `general_assistant` only receives authorized
-compact context plus `answer_mode` metadata.
+An initial retrieval LangGraph now exists as a thin wrapper around ContextForge. The
+current production-shaped boundary is: Conversation API prepares the run request,
+`invoke_context_forge_graph(...)` orchestrates the retrieval attempt and bounded
+sufficiency retry, `RetrievalService` enforces permissions and returns packaged context,
+and `general_assistant` only receives authorized compact context plus `answer_mode`
+metadata.
 
-Promote retrieval to its own graph only when retrieval has enough internal workflow to
-justify graph orchestration, for example:
+Promote more of retrieval into graph nodes only when retrieval has enough internal
+workflow to justify the added orchestration, for example:
 
 - query rewrite;
 - metadata/scope planning;
@@ -126,12 +134,13 @@ justify graph orchestration, for example:
   separate product/privacy review.
 
 Even then, hard authorization should remain in `RetrievalService`, not in graph prompts,
-agent reasoning, vector-store configuration, or cross-encoder prompts. A future shape can be:
+agent reasoning, vector-store configuration, or cross-encoder prompts. The current and
+future shape is:
 
 ```mermaid
 flowchart LR
     API[Conversation API] --> Router[Retrieval routing policy]
-    Router --> RG[Future RetrievalGraph]
+    Router --> RG[ContextForge RetrievalGraph]
     RG --> RS[RetrievalService authorization + search]
     RS --> RG
     RG --> GA[general_assistant graph]
@@ -151,6 +160,7 @@ flowchart LR
 
 ## Revision history
 
+- 2026-06-10: Added the thin ContextForge RetrievalGraph wrapper as the active retrieval entrypoint while keeping deeper tool-using graph orchestration future-gated.
 - 2026-05-25: Clarification-required runs now return structured human-in-the-loop state instead of deterministic English text.
 - 2026-05-25: Added authorized title/source-filename metadata matching for filename-only document references.
 - 2026-05-21: Added deterministic retrieval routing, answer modes, clarification route, and response/event metadata.

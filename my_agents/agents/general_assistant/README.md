@@ -19,6 +19,7 @@
 | --- | --- |
 | `graph.py` | LangGraph `StateGraph`, 노드, 조건부 라우팅, graph state 정의 |
 | `classifier.py` | LangChain messages를 읽고 결정론적 `RouteDecision` 생성 |
+| `memory_recall.py` | graph-owned memory recall node helper와 source-conflict 감지 |
 | `context.py` | Product DB conversation message, authorized document context, stored memory context, material source conflict를 명시적인 provider source context로 조립 |
 | `responders.py` | deterministic/OpenAI response provider, OpenAI 호출 경계, 향후 hosted tool policy 위치 |
 | `__init__.py` | 패키지 경계 |
@@ -28,7 +29,8 @@
 ```mermaid
 flowchart TD
     Start([START]) --> Classify["classify_request"]
-    Classify --> Route{"route label"}
+    Classify --> Memory["retrieve_memory"]
+    Memory --> Route{"route label"}
     Route -->|general_assistant| General["respond_general"]
     Route -->|research_helper| Research["respond_research"]
     General --> Provider["response provider"]
@@ -55,7 +57,7 @@ flowchart TD
 
 `general_assistant` 폴더는 graph/classifier/responder 경계를 소유합니다. Auth, group/document permission, server-owned conversation, knowledge ingestion, retrieval selection, citation, agent event는 `my_agents/api/`, `my_agents/knowledge/`, `my_agents/conversations/` 같은 서비스 레이어에서 소유합니다.
 
-제품용 conversation run은 `general_assistant`가 prose를 작성하기 전에 retrieval과 RAG contract 작업을 실행합니다. ContextForge가 authorized evidence를 검색하고, `rag_agent`가 compact trace/grounding contract를 검증합니다. `general_assistant`는 `retrieval_route`, `answer_mode`, `document_scope`, 이미 권한 확인이 끝난 compact `retrieved_context`, relevance-minimized active user `memory_context`, `source_conflicts`만 받습니다. Graph/provider는 이 metadata로 답변 방식을 조정하지만, vector/document storage를 직접 조회하지 않습니다. Provider prompt 구성은 이제 명시적인 `SourceContextBundle`을 거칩니다. 최근 Product DB conversation message, opt-in stored memory, authorized document context, material source conflict가 암묵적인 message slice가 아니라 분리된 channel로 전달됩니다. 보안 결정과 permission filter는 계속 `RetrievalService`와 API/service layer에 남습니다.
+제품용 conversation run은 `general_assistant`가 prose를 작성하기 전에 retrieval과 RAG contract 작업을 실행합니다. ContextForge가 authorized evidence를 검색하고, `rag_agent`가 compact trace/grounding contract를 검증합니다. `general_assistant`는 service layer에서 `retrieval_route`, `answer_mode`, `document_scope`, 이미 권한 확인이 끝난 compact `retrieved_context`를 받은 뒤, 응답 생성 전에 자체 `retrieve_memory` node를 실행합니다. 이 node는 LangGraph `context`로 전달된 runtime-only `MemoryRuntime` adapter를 사용해 opt-in/governance filter가 적용된 active user memory를 검색하고, compact `memory_context`와 `source_conflicts`를 graph state에 기록합니다. Graph/provider는 이 metadata로 답변 방식을 조정하지만, vector/document storage를 직접 조회하지 않습니다. Provider prompt 구성은 명시적인 `SourceContextBundle`을 거칩니다. 최근 Product DB conversation message, opt-in stored memory, authorized document context, material source conflict가 암묵적인 message slice가 아니라 분리된 channel로 전달됩니다. 보안 결정과 permission filter는 계속 `RetrievalService`와 API/service layer에 남고, memory governance는 `my_agents/memory/`가 계속 소유합니다.
 
 ```mermaid
 sequenceDiagram
@@ -70,7 +72,8 @@ sequenceDiagram
     Retrieval->>RAG: redacted evidence metadata
     RAG-->>Events: verified trace stages
     Retrieval-->>Graph: retrieval_route, answer_mode, retrieved_context
-    RunAPI->>Graph: active memory_context and source_conflicts
+    RunAPI->>Graph: runtime MemoryRuntime via LangGraph context
+    Graph->>Graph: retrieve_memory node writes memory_context and source_conflicts
     Graph->>Provider: compose with answer_mode
     Provider-->>Graph: reply
     Graph-->>RAG: reply and citation metadata
@@ -80,7 +83,7 @@ sequenceDiagram
 
 이 분리는 제품 설명에서 중요합니다. LangGraph는 AI 응답 흐름을 보여주고, RetrievalService/API 레이어는 실제 제품에 필요한 auth/permission/provenance 경계를 보여줍니다. Ingestion(upload/parse/chunk/embed)은 retrieval routing과 분리된 별도 pipeline입니다.
 
-향후 retrieval 자체가 현재 RAG Agent contract graph를 넘어 query rewrite, metadata planning, hybrid/vector search, reranking, context compression 같은 graph/tool orchestration을 필요로 하면 ContextForge `RetrievalGraph`를 추가할 수 있습니다. 다만 그 경우에도 hard authorization filter는 graph prompt가 아니라 `RetrievalService` 안에 남겨야 합니다.
+현재 ContextForge 경로는 assistant graph에 authorized context를 넘기기 전에 이미 얇은 `RetrievalGraph` wrapper를 통과합니다. 향후 retrieval 자체가 현재 RAG Agent contract graph를 넘어 query rewrite, metadata planning, hybrid/vector search, reranking, context compression 같은 더 깊은 role-node/tool orchestration을 필요로 하면 이 wrapper를 확장합니다. 다만 그 경우에도 hard authorization filter는 graph prompt가 아니라 `RetrievalService` 안에 남겨야 합니다.
 
 ## Conversation / source context assembly
 
@@ -91,13 +94,13 @@ sequenceDiagram
 | Channel | 현재 source | 비고 |
 | --- | --- | --- |
 | recent conversation | graph state로 전달된 Product DB transcript | Product DB가 visible transcript source of truth입니다 |
-| stored memory | active opt-in user memory에서 만든 service-layer `memory_context` | disabled, sensitive, stale, inactive, deleted, stable-preference shape이 아닌 memory, query-irrelevant non-preference memory는 제외됩니다 |
+| stored memory | runtime `MemoryRuntime`을 사용하는 graph-owned `retrieve_memory` node | disabled, sensitive, stale, inactive, deleted, stable-preference shape이 아닌 memory, query-irrelevant non-preference memory는 현재 Product DB-backed adapter에서 제외됩니다 |
 | authorized documents | service-layer `retrieved_context` | graph에 들어오기 전에 permission filter를 통과합니다 |
-| material conflicts | service-layer `source_conflicts` | stored memory와 충돌하면 최신 conversation을 우선하고, document-grounded claim은 authorized document를 우선합니다 |
+| material conflicts | `memory_recall.py`의 graph-owned `source_conflicts` | stored memory와 충돌하면 최신 conversation을 우선하고, document-grounded claim은 authorized document를 우선합니다 |
 
-Memory service는 이 agent folder 밖의 `my_agents/memory/`와 `my_agents/api/memories.py`에 있습니다. Public memory write는 client가 주장하는 provenance ID를 받지 않으며, service-owned path가 document-derived memory를 만들 때 provenance를 제공해야 합니다. Agent는 untrusted JSON prompt data로 직렬화된 active memory context와 conflict metadata만 받으며, memory table을 직접 조회하거나 수정하지 않습니다. Replay/regeneration은 historical memory content가 아니라 현재 active memory context를 사용하며, completed run에는 audit용 redacted memory-source snapshot을 남깁니다.
+Memory service는 이 agent folder 밖의 `my_agents/memory/`와 `my_agents/api/memories.py`에 있습니다. Public memory write는 client가 주장하는 provenance ID를 받지 않으며, service-owned path가 document-derived memory를 만들 때 provenance를 제공해야 합니다. Agent graph는 recall orchestration을 소유하지만 persistence/governance는 `MemoryRuntime` 뒤에 유지합니다. Graph state는 untrusted JSON prompt data로 직렬화된 active memory context와 conflict metadata만 받습니다. Replay/regeneration은 historical memory content가 아니라 현재 active memory context를 사용합니다. Completed/failed run에는 내부 audit용 redacted memory-source snapshot을 남길 수 있지만, frontend-visible run event에는 memory count/category/provenance type만 노출합니다.
 
-이 service-layer injection은 현재 안전한 V1 구조이며 최종 LangGraph-native memory target은 아닙니다. Migration 방향은 graph-owned `retrieve_memory` node, 별도 `memory_graph` extraction/suggest-confirm workflow, LangGraph Store-backed active memory search를 추가하되 Product DB가 opt-in, provenance, source invalidation, delete/deactivate governance를 계속 소유하는 것입니다. 자세한 내용은 [`docs/product-chat-service/ko/19-langgraph-native-memory-migration.md`](../../../docs/product-chat-service/ko/19-langgraph-native-memory-migration.md)를 봅니다.
+이것은 LangGraph-native memory target으로 가는 첫 migration slice입니다. Recall은 graph-owned가 되었지만 runtime adapter는 아직 기존 Product DB memory service를 감쌉니다. 남은 작업은 별도 `memory_graph` extraction/suggest-confirm workflow와 LangGraph Store-backed active memory search를 추가하되 Product DB가 opt-in, provenance, source invalidation, delete/deactivate governance를 계속 소유하게 하는 것입니다. 자세한 내용은 [`docs/product-chat-service/ko/19-langgraph-native-memory-migration.md`](../../../docs/product-chat-service/ko/19-langgraph-native-memory-migration.md)를 봅니다.
 
 이 구조는 향후 LangGraph checkpointer 작업의 guardrail이기도 합니다. 현재 full-message graph를 그대로 checkpointer-enabled로 만들면 Product DB transcript data가 checkpoint state에 중복 저장될 수 있으므로 금지합니다. Checkpointer는 conversation history나 long-term memory가 아니라 run-scoped execution/HITL state로만 사용해야 합니다.
 

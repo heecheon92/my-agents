@@ -1,6 +1,6 @@
 # LangGraph-native memory migration note
 
-Status: migration direction / architecture decision
+Status: migration in progress / architecture decision
 
 Date: 2026-06-10
 
@@ -33,13 +33,23 @@ LangGraph memory_graph = extraction/update workflow
 LangGraph checkpointer = run-scoped execution/HITL state
 ```
 
+Implementation update on 2026-06-10: Phase 1 and the recall part of Phase 2 have
+started. `general_assistant` now has a graph-owned `retrieve_memory` node and a
+`MemoryRuntime` boundary. The initial adapter still wraps the existing Product DB
+memory service; LangGraph Store, `memory_graph`, and run-scoped checkpointer work
+remain future phases.
+
 ## Why this migration exists
 
-The merged V1 stores memory records in SQLAlchemy tables, filters them in the
-service layer, and injects `memory_context` into the general assistant graph. That
-is intentionally conservative: opt-in is explicit, suggestions are confirm/reject,
+The merged V1 stored memory records in SQLAlchemy tables, filtered them in the
+service layer, and injected `memory_context` into the general assistant graph. That
+was intentionally conservative: opt-in is explicit, suggestions are confirm/reject,
 content is scrubbed on deletion/decision, and transcript/document source deletion
 marks affected memories stale.
+
+The first migration slice has moved recall orchestration into the graph while keeping
+that Product DB governance. The graph now calls a runtime adapter instead of receiving
+fully preassembled memory context from FastAPI.
 
 However, if left as-is, the project drifts away from a LangGraph-native agent
 architecture:
@@ -86,7 +96,8 @@ The following V1 behavior is intentional and should survive the migration:
   instructions;
 - recent conversation wins over conflicting stored memory, and authorized documents
   win for document-grounded claims;
-- completed runs store only redacted memory-source snapshots.
+- completed/failed runs can store internal redacted memory-source audit snapshots, while
+  frontend-visible run events expose only memory counts/categories/provenance types.
 
 These are governance/product guarantees, not implementation details.
 
@@ -132,7 +143,8 @@ Already merged:
 - SQLAlchemy models for settings, memories, suggestions, lifecycle metadata, source
   IDs, and stale/delete state.
 - API routes for settings, memory CRUD, and suggestion confirm/reject.
-- Service-layer recall and conflict detection.
+- Initial service-layer recall and conflict detection, now superseded by the Phase 2
+  graph-owned recall node while keeping the same governance filters.
 - Redacted run snapshots.
 - Source invalidation for document deletion and transcript replay/delete.
 
@@ -141,29 +153,30 @@ memory.
 
 ### Phase 1 — Introduce a memory runtime boundary
 
-Add a small interface around recall/write operations before changing persistence:
+Started. A small interface now exists around recall operations before changing
+persistence:
 
 ```python
 class MemoryRuntime(Protocol):
-    async def search(self, *, user_id: str, query: str, limit: int) -> list[MemoryItem]: ...
-    async def put(self, *, user_id: str, item: MemoryItem) -> MemoryItem: ...
-    async def delete(self, *, user_id: str, key: str) -> None: ...
+    def search(self, *, user_id: str, query: str, limit: int) -> list[MemoryItem]: ...
 ```
 
-Initial adapter may wrap the existing Product DB tables. The important part is to
-stop spreading direct table/service assumptions across graph and API code.
+The initial adapter wraps the existing Product DB tables through `UserMemoryService`.
+The important part is to stop spreading direct table/service assumptions across graph
+and API code. Write/delete runtime methods should be added when `memory_graph` or
+Store-backed writes are introduced.
 
 ### Phase 2 — Move recall into the graph
 
-Add a graph node before response generation:
+Started. The chat graph now has a recall node before response generation:
 
 ```text
 classify_request -> retrieve_memory -> respond_general/respond_research
 ```
 
-The node should receive `user_id`, latest user text, and answer/source metadata through
-state/config, check governance settings, call `MemoryRuntime.search`, and output compact
-`memory_context` plus `source_conflicts`.
+The node receives `user_id` and a `MemoryRuntime` through LangGraph runtime context,
+uses the latest user text from graph state, calls `MemoryRuntime.search`, and outputs
+compact `memory_context` plus `source_conflicts`.
 
 This makes memory a graph capability instead of a pre-graph FastAPI preprocessing step.
 

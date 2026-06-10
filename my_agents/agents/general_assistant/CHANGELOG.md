@@ -3,6 +3,12 @@
 This changelog records why the production-surface `general_assistant` agent folder needed
 meaningful behavior, graph-state, provider, or documentation changes.
 
+## 2026-06-10 — Move memory recall into the LangGraph flow
+
+- **Why:** The memory migration plan calls for recall to be graph-owned instead of preassembled by the FastAPI conversation service, while keeping Product DB governance intact until LangGraph Store is introduced.
+- **Behavior/contract impact:** `graph.py` now runs `classify_request -> retrieve_memory -> respond_*`. `retrieve_memory` receives a runtime-only `MemoryRuntime` through LangGraph `context`, searches the current Product DB-backed adapter, and writes `memory_context` plus `source_conflicts` into graph state. API run paths pass runtime context and persist the internal memory-source audit snapshot from graph output/update state, including failed runs when memory recall completed before a later provider failure. Frontend-visible run events expose only public-safe memory counts/categories, not raw memory/source IDs. Checkpointer is still not enabled.
+- **Verification:** `uv run pytest -q tests/test_graph.py tests/test_memory_service.py tests/test_conversations_api.py::test_conversation_run_injects_enabled_user_memory_and_conflicts tests/test_conversations_api.py::test_conversation_run_excludes_disabled_user_memory tests/test_conversations_api.py::test_streaming_conversation_run_emits_events_and_persists_result tests/test_conversations_api.py::test_streaming_conversation_run_emits_answer_deltas_before_completion tests/test_conversations_api.py::test_streaming_cancelled_run_does_not_persist_partial_assistant tests/test_conversations_api.py::test_streaming_assistant_message_replay_emits_deltas_and_prunes_after_success` passed.
+
 ## 2026-06-09 — Inject opt-in memory and source conflicts into provider context
 
 - **Why:** The memory architecture now has durable per-user memory records and write policy gates, so conversation runs need to pass active memory into the responder without giving the agent folder direct persistence ownership.

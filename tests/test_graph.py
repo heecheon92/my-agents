@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import pytest
 
+from my_agents.memory.runtime import MemoryRuntimeItem
+
 from .conftest import (
     REPRESENTATIVE_PROMPTS,
     assert_chat_response_shape,
@@ -43,6 +45,51 @@ def test_graph_accepts_history_context_without_claiming_persistent_memory() -> N
     assert_chat_response_shape(result)
     assert "persistent memory" not in str(result).lower()
     assert_no_delegation_claims(result)
+
+
+def test_graph_retrieves_memory_from_runtime_context() -> None:
+    graph = get_compiled_graph()
+    memory_runtime = FakeMemoryRuntime(
+        [
+            MemoryRuntimeItem(
+                id="memory-1",
+                key="stable-preference-memory-1",
+                category="stable_preference",
+                content="User prefers concise answers",
+                provenance_type="explicit_user",
+            )
+        ]
+    )
+
+    result = graph.invoke(
+        {
+            "messages": invoke_graph_messages("Actually I no longer prefer concise answers"),
+            "retrieved_context": [],
+        },
+        context={"user_id": "user-a", "memory_runtime": memory_runtime},
+    )
+
+    assert memory_runtime.queries == ["Actually I no longer prefer concise answers"]
+    assert result["memory_context"][0]["content"] == "User prefers concise answers"
+    assert result["source_conflicts"][0]["primary"] == "conversation"
+    assert result["source_conflicts"][0]["secondary"] == "memory"
+
+
+class FakeMemoryRuntime:
+    def __init__(self, items: list[MemoryRuntimeItem]) -> None:
+        self._items = items
+        self.queries: list[str] = []
+
+    def search(
+        self,
+        *,
+        user_id: str,  # noqa: ARG002 - fake keeps the query assertion focused.
+        query: str,
+        categories: list[object] | None = None,  # noqa: ARG002
+        limit: int = 8,  # noqa: ARG002
+    ) -> list[MemoryRuntimeItem]:
+        self.queries.append(query)
+        return self._items
 
 
 def invoke_graph_messages(message: str):

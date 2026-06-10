@@ -5,6 +5,8 @@
 ## 요약
 
 이 문서는 `product-chat-service/12-retrieval-agent-hybrid-reference.md`의 한국어 문서 트랙 항목입니다. 현재는 핵심 목적과 영어 원문 위치를 안내하는 요약본입니다.
+2026-06-10 기준 영어 원문은 현재 ContextForge가 얇은 LangGraph `RetrievalGraph` wrapper를 통해 호출되며,
+더 깊은 retrieval planning/tool node 확장은 이 wrapper 위에서 점진적으로 진행할 future seam임을 설명합니다.
 
 ## 문서 상태
 

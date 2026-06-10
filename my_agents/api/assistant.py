@@ -13,7 +13,7 @@ from my_agents.schemas import ChatRequest, ChatResponse, RouteDecision
 class GraphRunner(Protocol):
     """Minimal protocol for an invokable LangGraph runner."""
 
-    def invoke(self, input: dict) -> dict:  # noqa: A002 - matches LangGraph API name
+    def invoke(self, input: dict, **kwargs: Any) -> dict:  # noqa: A002 - matches LangGraph API
         """Invoke the graph with a state dictionary."""
         ...
 

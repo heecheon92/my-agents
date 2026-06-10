@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import json
 import logging
-import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from langchain_core.messages import BaseMessage
 from rich import print as rich_print
 from sqlalchemy.orm import Session
 
-from my_agents.agents.context_forge import ContextForgeService
+from my_agents.agents.context_forge import invoke_context_forge_graph
 from my_agents.agents.context_forge.contracts import ContextForgeRequest, RetrievalEvidence
 from my_agents.conversations.schemas import ConversationClarificationRequest
 from my_agents.knowledge.auth import KnowledgeBaseSelectionContext
@@ -22,13 +22,10 @@ from my_agents.knowledge.routing import (
     is_relevant_retrieval_result,
 )
 from my_agents.knowledge.source_locations import parse_source_location_json
-from my_agents.memory.models import UserMemoryModel
-from my_agents.memory.service import UserMemoryService
 
 logger = logging.getLogger(__name__)
 
 _RETRIEVED_CONTEXT_SNIPPET_CHARS = 1200
-_MAX_CONTEXTFORGE_RETRIES = 1
 _INSUFFICIENT_EVIDENCE_REPLY = (
     "I couldn't find enough relevant authorized document evidence to answer that safely. "
     "Please choose or upload the source document and try again."
@@ -58,33 +55,17 @@ def prepare_retrieval_context(
     messages: list[BaseMessage],
     selection_context: KnowledgeBaseSelectionContext,
 ) -> ConversationRetrievalContext:
-    service = ContextForgeService(db)
-    result = service.retrieve(
-        ContextForgeRequest(
+    graph_result = invoke_context_forge_graph(
+        db=db,
+        request=ContextForgeRequest(
             user_id=user_id,
             conversation_id=conversation_id,
             query=message,
             messages=messages,
             selection_context=selection_context,
-        )
+        ),
     )
-    retrieval_attempt_count = 1
-    if _needs_required_evidence_retry(result):
-        retrieval_attempt_count += 1
-        retry_result = service.retrieve(
-            ContextForgeRequest(
-                user_id=user_id,
-                conversation_id=conversation_id,
-                query=_retry_query_for_required_evidence(message, result.decision.rewritten_query),
-                messages=messages,
-                selection_context=selection_context,
-            )
-        )
-        result = retry_result
-    insufficient_evidence = _requires_document_evidence_without_context(
-        route=result.decision.route,
-        retrieved_chunks=result.retrieved_chunks,
-    )
+    result = graph_result.result
     return ConversationRetrievalContext(
         decision=result.decision,
         answer_mode=result.answer_mode,
@@ -92,14 +73,13 @@ def prepare_retrieval_context(
         retrieval_latency_ms=result.retrieval_latency_ms,
         knowledge_base_selection=selection_context,
         retrieval_evidence=result.evidence,
-        retrieval_attempt_count=retrieval_attempt_count,
-        insufficient_evidence=insufficient_evidence,
+        retrieval_attempt_count=graph_result.retrieval_attempt_count,
+        insufficient_evidence=graph_result.insufficient_evidence,
     )
 
 
 def graph_input_for_run(
     *,
-    db: Session,
     messages: list[BaseMessage],
     user_id: str,
     conversation_id: str,
@@ -107,24 +87,16 @@ def graph_input_for_run(
 ) -> dict[str, object]:
     used_chunks = chunks_used_for_answer(retrieval_context)
     retrieved_context = retrieved_context_for_graph(used_chunks)
-    memory_context = memory_context_for_graph(
-        UserMemoryService(db).active_memories_for_context(
-            user_id=user_id, query=_latest_human_text(messages)
-        )
-    )
-    source_conflicts = source_conflicts_for_graph(
-        messages=messages,
-        memory_context=memory_context,
-        retrieved_context=retrieved_context,
-    )
     return {
         "messages": messages,
         "principal_id": user_id,
         "conversation_id": conversation_id,
         "retrieved_chunk_ids": [item.chunk.id for item in used_chunks],
         "retrieved_context": retrieved_context,
-        "memory_context": memory_context,
-        "source_conflicts": source_conflicts,
+        # Memory recall is graph-owned. These defaults keep test doubles and legacy
+        # graph runners compatible; the real graph overwrites them in `retrieve_memory`.
+        "memory_context": [],
+        "source_conflicts": [],
         "retrieval_route": retrieval_context.decision.route,
         "answer_mode": retrieval_context.answer_mode,
         "document_scope": retrieval_context.decision.document_scope,
@@ -152,36 +124,6 @@ def chunks_used_for_answer(
     ]
 
 
-def _needs_required_evidence_retry(result) -> bool:  # noqa: ANN001
-    if _MAX_CONTEXTFORGE_RETRIES < 1:
-        return False
-    return _requires_document_evidence_without_context(
-        route=result.decision.route,
-        retrieved_chunks=result.retrieved_chunks,
-    )
-
-
-def _requires_document_evidence_without_context(
-    *,
-    route: str,
-    retrieved_chunks: list[RetrievedChunk],
-) -> bool:
-    if route != "retrieval_required":
-        return False
-    return not any(
-        is_relevant_retrieval_result(route=route, source=item.source, score=item.score)
-        for item in retrieved_chunks
-    )
-
-
-def _retry_query_for_required_evidence(message: str, rewritten_query: str) -> str:
-    retry_terms = "authorized document source citation evidence"
-    base_query = rewritten_query.strip() or message.strip()
-    if retry_terms in base_query.casefold():
-        return base_query
-    return f"{base_query} {retry_terms}".strip()
-
-
 def retrieved_context_for_graph(retrieved_chunks: list[RetrievedChunk]) -> list[dict[str, object]]:
     return [
         {
@@ -195,24 +137,6 @@ def retrieved_context_for_graph(retrieved_chunks: list[RetrievedChunk]) -> list[
             "source": item.source,
         }
         for item in retrieved_chunks
-    ]
-
-
-def memory_context_for_graph(memories: list[UserMemoryModel]) -> list[dict[str, object]]:
-    """Serialize active user memories for graph/provider context."""
-    return [
-        {
-            "id": memory.id,
-            "key": memory.key,
-            "category": memory.category,
-            "content": memory.content,
-            "provenance_type": memory.provenance_type,
-            "source_conversation_id": memory.source_conversation_id,
-            "source_message_id": memory.source_message_id,
-            "source_run_id": memory.source_run_id,
-            "source_document_id": memory.source_document_id,
-        }
-        for memory in memories
     ]
 
 
@@ -251,48 +175,18 @@ def memory_source_snapshot_json(
     return json.dumps(snapshot, sort_keys=True)
 
 
-def source_conflicts_for_graph(
-    *,
-    messages: list[BaseMessage],
-    memory_context: list[dict[str, object]],
-    retrieved_context: list[dict[str, object]],
-) -> list[dict[str, object]]:
-    """Detect material source conflicts between recent conversation and older memory/docs."""
-    conflicts: list[dict[str, object]] = []
-    latest_user_text = _latest_human_text(messages)
-    for memory in memory_context:
-        memory_content = str(memory.get("content") or "")
-        if _looks_like_user_correction(latest_user_text, memory_content):
-            conflicts.append(
-                {
-                    "primary": "conversation",
-                    "secondary": "memory",
-                    "description": (
-                        "The latest user message appears to revise or contradict stored memory "
-                        f"{memory.get('id')}. Prefer the latest conversation unless "
-                        "the user confirms the stored memory is still correct."
-                    ),
-                    "material": True,
-                }
-            )
-    for document in retrieved_context:
-        snippet = str(document.get("snippet") or "")
-        for memory in memory_context:
-            memory_content = str(memory.get("content") or "")
-            if _one_side_negates_shared_fact(memory_content, snippet):
-                conflicts.append(
-                    {
-                        "primary": "document",
-                        "secondary": "memory",
-                        "description": (
-                            "Authorized document context appears to conflict with stored memory "
-                            f"{memory.get('id')}. Prefer authorized document context for "
-                            "document-grounded claims and explain the discrepancy."
-                        ),
-                        "material": True,
-                    }
-                )
-    return conflicts
+def graph_memory_source_snapshot_json(graph_state: Mapping[str, object]) -> str | None:
+    """Return the redacted memory snapshot from graph-owned state, when present."""
+    return memory_source_snapshot_json(
+        memory_context=_mapping_list(graph_state.get("memory_context")),
+        source_conflicts=_mapping_list(graph_state.get("source_conflicts")),
+    )
+
+
+def _mapping_list(value: object) -> list[dict[str, object]]:
+    if not isinstance(value, list):
+        return []
+    return [dict(item) for item in value if isinstance(item, Mapping)]
 
 
 def log_retrieval_context_for_llm(
@@ -373,49 +267,3 @@ def compose_rag_reply(
     like broken assistant prose and wasted the UI's citation affordance.
     """
     return base_reply
-
-
-def _latest_human_text(messages: list[BaseMessage]) -> str:
-    for message in reversed(messages):
-        if getattr(message, "type", None) == "human":
-            return _message_text(message)
-    return ""
-
-
-def _message_text(message: BaseMessage) -> str:
-    content = message.content
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        return " ".join(
-            item["text"]
-            for item in content
-            if isinstance(item, dict) and isinstance(item.get("text"), str)
-        )
-    return str(content)
-
-
-def _looks_like_user_correction(latest_user_text: str, memory_content: str) -> bool:
-    latest = latest_user_text.casefold()
-    if not latest or not memory_content.strip():
-        return False
-    correction_markers = ("actually", "no longer", "not", "instead", "changed", "correction")
-    if not any(marker in latest for marker in correction_markers):
-        return False
-    return bool(_meaningful_tokens(latest_user_text) & _meaningful_tokens(memory_content))
-
-
-def _one_side_negates_shared_fact(left: str, right: str) -> bool:
-    shared = _meaningful_tokens(left) & _meaningful_tokens(right)
-    if not shared:
-        return False
-    return _has_negation(left) != _has_negation(right)
-
-
-def _has_negation(text: str) -> bool:
-    lowered = text.casefold()
-    return any(marker in lowered for marker in (" not ", " no ", "never", "no longer", "without"))
-
-
-def _meaningful_tokens(text: str) -> set[str]:
-    return set(re.findall(r"[\w가-힣]{4,}", text.casefold()))

@@ -95,7 +95,7 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 - Text document ingestion remains compatible.
 - Text-based upload path for PDF, Markdown, and plain text with safe metadata persistence; PDFs keep page provenance and FlateDecode text-stream fallback support. Hosted ingestion can run through an external worker so heavy parser/embedding/indexing work no longer has to share the web request process.
 - Deterministic chunks, provider-backed JSON embeddings (deterministic by default, OpenAI opt-in), entity mentions, and co-occurrence relationships.
-- ContextForge now owns the conversation-run retrieval orchestration boundary through `my_agents/agents/context_forge/`, with deterministic query planning, source-boundary handoff, candidate fusion, deterministic default or optional cross-encoder reranking, high-recall context packing, redacted retrieval evidence, and opt-in Rich debug traces for role handoff messages.
+- ContextForge now owns the conversation-run retrieval orchestration boundary through `my_agents/agents/context_forge/`, with a thin LangGraph RetrievalGraph wrapper over deterministic query planning, source-boundary handoff, candidate fusion, deterministic default or optional cross-encoder reranking, high-recall context packing, redacted retrieval evidence, and opt-in Rich debug traces for role handoff messages.
 - `my_agents/agents/rag_agent/` defines the RAG Agent contract layer inside the broader agentic RAG workflow: ContextForge remains the Retrieval Agent while a dedicated deterministic graph form runs planner/verifier code for compact localized trace stages without moving auth, retrieval, ingestion, or provider work into the agent folder.
 - Retrieval candidate gathering includes authorized document title/source-filename metadata matching, so filename-only user references can find the matching uploaded document even when the filename is absent from chunk content.
 - Ingestion stores structured knowledge entities for API endpoints, config keys, shell commands, error codes, and database table references with document/chunk/run/page/offset provenance.
@@ -125,14 +125,17 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 
 ## Latest verification evidence
 
-Memory architecture merge and documentation direction on 2026-06-10:
+Memory architecture / ContextForge graph review follow-up on 2026-06-10:
 
 ```text
+uv run pytest -q tests/test_graph.py tests/test_conversations_api.py tests/test_context_forge_contracts.py tests/test_context_forge_reranking.py tests/test_context_forge_structured_retrieval.py tests/test_permission_aware_rag.py tests/test_rag_agent_contracts.py
+85 passed, 5 warnings
+
 uv run pytest -q
-345 passed, 1 skipped, 9 warnings
+349 passed, 1 skipped, 9 warnings
 
 uv run ruff format --check .
-passed
+183 files already formatted
 
 uv run ruff check . --no-cache
 All checks passed
@@ -141,7 +144,7 @@ git diff --check
 passed
 ```
 
-Docs-only memory migration note update on 2026-06-10: `docs/product-chat-service/en/19-langgraph-native-memory-migration.md` and Korean counterpart were added to clarify that current SQLAlchemy memory is a safe V1 governance/runtime scaffold, while the target runtime is LangGraph Store + separate `memory_graph`; checkpointers are reserved for run-scoped HITL/resume state.
+Review follow-up on 2026-06-10: graph-owned memory recall now preserves internal redacted memory-source audit snapshots for failed runs when recall completed before a later provider failure, while frontend-visible run events expose only memory counts/categories/provenance types. Documentation now states that ContextForge `RetrievalGraph` is already a thin runtime wrapper and must not be checkpointer-persisted as raw retrieval state.
 
 Previous full local verification run: 2026-05-30
 
@@ -254,7 +257,7 @@ Earlier hosted smoke status on 2026-06-03:
 - Async ingestion progress is available through an additive endpoint (`POST /documents/{id}/ingest/async`) plus direct run polling. Local/default mode still supports in-process threads; hosted mode can set `MY_AGENTS_INGESTION_EXECUTION_MODE=external_worker` and run `python -m my_agents.ingestion_worker`. Durable queue semantics and stale-run recovery remain future work.
 - Embeddings use a provider boundary: deterministic 32-dimensional lexical-hash vectors by default, or opt-in OpenAI embeddings through `langchain-openai` when `MY_AGENTS_EMBEDDING_MODE=openai`; Postgres chunks also store a pgvector `embedding_vector` through Alembic migration `20260521_0007`.
 - Retrieval ranking is permission-first ContextForge orchestration over pgvector SQL vector search on Postgres, JSON cosine fallback for SQLite/tests, blended lexical score, entity expansion, structured entity retrieval, deterministic fusion/reranking, optional cross-encoder second-stage reranking over bounded authorized candidates, and a narrow personal-document fallback; LLM query rewrite, ANN/vector index tuning, production reranker packaging, and latency evals are still future work.
-- ContextForge is the dedicated retrieval-agent service boundary. The current `rag_agent` graph is a thin contract/verification graph around the RAG path; a deeper ContextForge LangGraph `RetrievalGraph` remains deferred until role-node/tool orchestration adds value beyond the current package-level roles. Hard authorization should remain in `RetrievalService` even then.
+- ContextForge is the dedicated retrieval-agent service boundary. Conversation runs now enter it through a thin LangGraph `RetrievalGraph` wrapper that preserves current service behavior while creating a future agent tool/subgraph seam. The current `rag_agent` graph remains a separate thin contract/verification graph around the RAG path. Hard authorization stays in `RetrievalService`.
 - Entity extraction is deterministic regex/technical-term extraction, not production NLP/LLM extraction. Canonical entity creation is conflict-safe for concurrent async ingestion: names are pre-collected in stable order and inserted with dialect-aware `ON CONFLICT DO NOTHING` to avoid Postgres unique-index lock cycles.
 
 ### Agent/product behavior
@@ -271,7 +274,7 @@ Earlier hosted smoke status on 2026-06-03:
 - Current production graph is still one assistant/router path.
 - Most route labels are capability metadata and response paths, not separate production specialist agents.
 - Tool workflows beyond hosted web search are not implemented as production graph capabilities yet.
-- Memory runtime is not yet LangGraph-native. Current active memory storage/search is SQLAlchemy/service-layer owned; target migration is LangGraph Store-backed recall plus a separate `memory_graph`, with Product DB retained for governance/audit.
+- Memory runtime migration is in progress. Recall orchestration now runs inside `general_assistant` through a graph-owned `retrieve_memory` node and `MemoryRuntime` adapter, but the active adapter still wraps SQLAlchemy/Product DB memory service. Target migration remains LangGraph Store-backed active memory search plus a separate `memory_graph`, with Product DB retained for governance/audit.
 - No human-in-the-loop interrupts/checkpointed product workflow yet; when added, checkpointer state should be run-scoped execution state rather than conversation history or long-term memory.
 
 ### Deployment/ops
@@ -380,6 +383,7 @@ limits.
 
 | Date | Milestone | Evidence |
 | --- | --- | --- |
+| 2026-06-10 | Added a thin ContextForge LangGraph `RetrievalGraph` wrapper as the conversation-run retrieval entrypoint and future agent tool/subgraph seam. | `my_agents/agents/context_forge/graph.py`; `my_agents/agents/context_forge/__init__.py`; `my_agents/api/conversations/retrieval_context.py`; `tests/test_context_forge_contracts.py`; ContextForge README pair; retrieval architecture docs; targeted ContextForge/RAG tests. |
 | 2026-06-07 | Added real streamed assistant-message replay and newest-first conversation list ordering for the chat sidebar. | `my_agents/api/conversations/endpoints/replay.py`; `my_agents/api/conversations/endpoints/conversations.py`; `tests/test_conversations_api.py`; `tests/test_kb_openapi_contract.py`; streaming frontend contract docs; `uv run ruff check . --no-cache`; `uv run ruff format --check .`; `uv run pytest -q` (306 passed, 2 skipped). |
 | 2026-06-06 | Added RAG Agent contracts for the agentic RAG workflow and compact localized trace payloads for run responses/SSE/events. | `my_agents/agents/rag_agent/`; `my_agents/api/conversations/agent_trace.py`; `my_agents/api/conversations/run_events.py`; `my_agents/api/conversations/run_lifecycle.py`; `my_agents/api/conversations/serializers.py`; `my_agents/api/conversations/endpoints/stream.py`; `my_agents/conversations/schemas.py`; `tests/test_rag_agent_contracts.py`; `tests/test_conversations_api.py`; RAG Agent README pair; local targeted Ruff/pytest evidence. |
 | 2026-05-27 | Added external-worker ingestion mode so hosted async document ingestion no longer needs to run inside the web request process. | `my_agents/knowledge/ingestion_worker.py`; `my_agents/ingestion_worker.py`; `my_agents/api/documents.py`; `my_agents/settings.py`; `.env.example`; `tests/test_knowledge_ingestion.py`; `tests/test_settings.py`; README pair; Render migration/troubleshooting docs. |

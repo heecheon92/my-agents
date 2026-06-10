@@ -19,6 +19,7 @@
 | --- | --- |
 | `graph.py` | LangGraph `StateGraph`, nodes, conditional routing, graph state definition |
 | `classifier.py` | Reads LangChain messages and produces deterministic `RouteDecision` values |
+| `memory_recall.py` | Graph-owned memory recall node helpers and source-conflict detection |
 | `context.py` | Assembles explicit provider source context from Product DB conversation messages, authorized document context, stored memory context, and material source conflicts |
 | `responders.py` | deterministic/OpenAI response providers, OpenAI call boundary, future hosted tool policy location |
 | `__init__.py` | Package boundary |
@@ -28,7 +29,8 @@
 ```mermaid
 flowchart TD
     Start([START]) --> Classify["classify_request"]
-    Classify --> Route{"route label"}
+    Classify --> Memory["retrieve_memory"]
+    Memory --> Route{"route label"}
     Route -->|general_assistant| General["respond_general"]
     Route -->|research_helper| Research["respond_research"]
     General --> Provider["response provider"]
@@ -55,7 +57,7 @@ This keeps the API honest: `research_helper` may use hosted `web_search` in Open
 
 The `general_assistant` folder owns the graph/classifier/responder boundary. Auth, group/document permissions, server-owned conversations, knowledge ingestion, retrieval selection, citations, and agent events are owned by service-layer modules such as `my_agents/api/`, `my_agents/knowledge/`, and `my_agents/conversations/`.
 
-Product conversation runs now execute retrieval and RAG contract work before `general_assistant` writes prose. ContextForge retrieves authorized evidence, and `rag_agent` verifies compact trace/grounding contracts. `general_assistant` receives only `retrieval_route`, `answer_mode`, `document_scope`, compact `retrieved_context`, relevance-minimized active user-scoped `memory_context`, and `source_conflicts` that have already passed service-layer authorization and opt-in checks. The graph/provider can adjust answer framing from that metadata, but it does not query vector or document storage directly. Provider prompt construction now goes through an explicit `SourceContextBundle`: recent Product DB conversation messages, opt-in stored memory, authorized document context, and material source conflicts are separate channels instead of an implicit hidden message slice. Permission decisions remain inside `RetrievalService` and the API/service layer.
+Product conversation runs now execute retrieval and RAG contract work before `general_assistant` writes prose. ContextForge retrieves authorized evidence, and `rag_agent` verifies compact trace/grounding contracts. `general_assistant` receives `retrieval_route`, `answer_mode`, `document_scope`, and compact `retrieved_context` from the service layer, then runs its own `retrieve_memory` node before response generation. That node receives a runtime-only `MemoryRuntime` adapter through LangGraph `context`, searches active user-scoped memory after opt-in/governance filtering, and writes compact `memory_context` plus `source_conflicts` into graph state. The graph/provider can adjust answer framing from that metadata, but it still does not query vector or document storage directly. Provider prompt construction goes through an explicit `SourceContextBundle`: recent Product DB conversation messages, opt-in stored memory, authorized document context, and material source conflicts are separate channels instead of an implicit hidden message slice. Permission decisions remain inside `RetrievalService` and the API/service layer; memory governance remains under `my_agents/memory/`.
 
 ```mermaid
 sequenceDiagram
@@ -70,7 +72,8 @@ sequenceDiagram
     Retrieval->>RAG: redacted evidence metadata
     RAG-->>Events: verified trace stages
     Retrieval-->>Graph: retrieval_route, answer_mode, retrieved_context
-    RunAPI->>Graph: active memory_context and source_conflicts
+    RunAPI->>Graph: runtime MemoryRuntime via LangGraph context
+    Graph->>Graph: retrieve_memory node writes memory_context and source_conflicts
     Graph->>Provider: compose with answer_mode
     Provider-->>Graph: reply
     Graph-->>RAG: reply and citation metadata
@@ -80,7 +83,7 @@ sequenceDiagram
 
 This separation matters for the product: LangGraph demonstrates AI reply flow, while the RetrievalService/API layer demonstrates production boundaries such as auth, permissions, and provenance. Ingestion (upload/parse/chunk/embed) remains a separate pipeline from retrieval routing.
 
-A future ContextForge `RetrievalGraph` can be added when retrieval itself needs graph/tool orchestration beyond the current RAG Agent contract graph, such as query rewrite, metadata planning, hybrid/vector search, reranking, or context compression. Even then, the hard authorization filter should remain inside `RetrievalService`, not in graph prompts.
+The current ContextForge path already enters a thin `RetrievalGraph` wrapper before the assistant graph receives authorized context. Future work can deepen that wrapper into role-node/tool orchestration beyond the current RAG Agent contract graph, such as query rewrite, metadata planning, hybrid/vector search, reranking, or context compression. Even then, the hard authorization filter should remain inside `RetrievalService`, not in graph prompts.
 
 ## Conversation and source context assembly
 
@@ -91,13 +94,13 @@ Current channels are:
 | Channel | Current source | Notes |
 | --- | --- | --- |
 | recent conversation | Product DB transcript passed into graph state | Product DB remains the visible transcript source of truth |
-| stored memory | service-layer `memory_context` from active opt-in user memories | Disabled, sensitive, stale, inactive, deleted, invalid stable-preference-shaped, and query-irrelevant non-preference memories are excluded |
+| stored memory | graph-owned `retrieve_memory` node using runtime `MemoryRuntime` | Disabled, sensitive, stale, inactive, deleted, invalid stable-preference-shaped, and query-irrelevant non-preference memories are excluded by the current Product DB-backed adapter |
 | authorized documents | service-layer `retrieved_context` | Already permission-filtered before entering the graph |
-| material conflicts | service-layer `source_conflicts` | Recent conversation is preferred over conflicting stored memory; authorized documents are preferred for document-grounded claims |
+| material conflicts | graph-owned `source_conflicts` from `memory_recall.py` | Recent conversation is preferred over conflicting stored memory; authorized documents are preferred for document-grounded claims |
 
-The memory service lives outside this agent folder under `my_agents/memory/` and `my_agents/api/memories.py`. Public memory writes do not accept client-asserted provenance IDs; service-owned paths must provide provenance when they create document-derived memories. The agent receives only serialized active memory context and conflict metadata, with memory/document snippets encoded as untrusted JSON prompt data; it does not query or mutate memory tables directly. Replay/regeneration uses current active memory context rather than historical memory content, while completed runs retain a redacted memory-source snapshot for audit.
+The memory service lives outside this agent folder under `my_agents/memory/` and `my_agents/api/memories.py`. Public memory writes do not accept client-asserted provenance IDs; service-owned paths must provide provenance when they create document-derived memories. The agent graph now owns recall orchestration, but persistence/governance still stays behind `MemoryRuntime`; graph state receives only serialized active memory context and conflict metadata, with memory/document snippets encoded as untrusted JSON prompt data. Replay/regeneration uses current active memory context rather than historical memory content. Completed and failed runs can retain an internal redacted memory-source audit snapshot, but frontend-visible run events expose only memory counts/categories/provenance types.
 
-That service-layer injection is the current safe V1 shape, not the final LangGraph-native memory target. The migration direction is to add a graph-owned `retrieve_memory` node, a separate `memory_graph` extraction/suggest-confirm workflow, and LangGraph Store-backed active memory search while preserving Product DB governance for opt-in, provenance, source invalidation, and delete/deactivate. See [`docs/product-chat-service/en/19-langgraph-native-memory-migration.md`](../../../docs/product-chat-service/en/19-langgraph-native-memory-migration.md).
+This is the first migration slice toward the LangGraph-native memory target: recall is graph-owned, but the runtime adapter still wraps the existing Product DB memory service. Remaining work is a separate `memory_graph` extraction/suggest-confirm workflow and LangGraph Store-backed active memory search while preserving Product DB governance for opt-in, provenance, source invalidation, and delete/deactivate. See [`docs/product-chat-service/en/19-langgraph-native-memory-migration.md`](../../../docs/product-chat-service/en/19-langgraph-native-memory-migration.md).
 
 This is also the guardrail for future LangGraph checkpoint work: the current full-message graph should not be checkpointer-enabled as-is because Product DB transcript data would become duplicated in checkpoint state. Checkpointers should be run-scoped execution/HITL state, not conversation history or long-term memory.
 

@@ -1,5 +1,11 @@
 # ContextForge changelog
 
+## 2026-06-10 — Add thin LangGraph RetrievalGraph wrapper
+
+- **Why:** Future agents should be able to call knowledge-base retrieval as a typed graph/tool capability when they need more evidence, but the product must keep hard authorization and retrieval SQL inside existing service boundaries.
+- **Behavior / contract impact:** `graph.py` now exposes a real ContextForge LangGraph wrapper (`retrieve_context -> retry_required_evidence? -> assess_evidence`) and `invoke_context_forge_graph(...)`. Conversation run retrieval goes through this graph without changing API response shape. The graph returns the underlying `ContextForgeResult`, bounded attempt count, and insufficient-evidence flag. Documentation now treats this graph state as runtime-only and warns future agents not to checkpoint or persist raw retrieval graph state.
+- **Verification evidence:** Added graph contract tests for required-evidence retry and no-retrieval skip behavior; targeted ContextForge/RAG tests passed.
+
 ## 2026-05-25 — Add generated document metadata profile retrieval
 
 - **Why:** Chunk-only vector search can miss documents when the user asks by purpose, domain, alias, or another language and the important meaning is distributed across a large PDF.

@@ -7,6 +7,8 @@
 ## Current role
 
 - Production-surface retrieval orchestration for conversation runs.
+- Conversation runs enter ContextForge through a thin LangGraph retrieval wrapper so the
+  same retrieval capability can later be exposed as a typed subgraph/tool for agents.
 - Multi-role structure implemented as testable Python classes, not as separate hosted agents.
 - Keeps hard document and knowledge-base authorization inside `RetrievalService` and existing source-selection helpers.
 - Uses deterministic offline behavior by default; cross-encoder reranking is an optional second-stage seam enabled with `MY_AGENTS_RERANKER_MODE=cross_encoder`.
@@ -17,14 +19,16 @@
 
 ```mermaid
 flowchart TD
-    Request[ContextForgeRequest] --> Planner[Query Cartographer]
+    Request[ContextForgeRequest] --> Graph[ContextForge RetrievalGraph]
+    Graph --> Planner[Query Cartographer]
     Planner --> Warden[Source Warden]
     Warden --> Scouts[Candidate Scouts]
     Scouts --> Fusion[Candidate Fusion]
     Fusion --> Judge[Evidence Judge\nDeterministic or cross-encoder]
     Judge --> Curator[Context Curator]
     Curator --> Auditor[Citation Auditor evidence]
-    Auditor --> Result[ContextForgeResult]
+    Auditor --> Assess[Assess sufficiency / bounded retry]
+    Assess --> Result[ContextForgeGraphResult]
 ```
 
 ## File responsibilities
@@ -41,7 +45,7 @@ flowchart TD
 | `packing.py` | Context Curator high-recall packing under explicit budgets |
 | `observability.py` | Citation Auditor redacted evidence payloads |
 | `service.py` | Main `ContextForgeService.retrieve(...)` orchestration boundary |
-| `graph.py` | Reserved LangGraph seam for future role-node orchestration |
+| `graph.py` | Thin LangGraph retrieval wrapper around `ContextForgeService.retrieve(...)`, bounded required-evidence retry, and sufficiency assessment |
 
 ## Document metadata retrieval
 
@@ -90,8 +94,27 @@ Enable `MY_AGENTS_DEBUG_KNOWLEDGE_CONTEXT_LOGGING=true` to Rich-print ContextFor
 
 ## Security boundary
 
-ContextForge must never make authorization prompt-dependent. Candidate generation starts from the existing resolved `KnowledgeBaseSelectionContext` and low-level retrieval SQL filters. Deterministic/cross-encoder reranking, packing, RAG Agent trace state, graph input, citations, and events only receive authorized candidates.
+ContextForge must never make authorization prompt-dependent. Candidate generation starts from the existing resolved `KnowledgeBaseSelectionContext` and low-level retrieval SQL filters. The LangGraph wrapper orchestrates service calls and sufficiency state; it does not authorize sources, query storage directly, or expose hidden scratchpads. Deterministic/cross-encoder reranking, packing, RAG Agent trace state, graph input, citations, and events only receive authorized candidates.
 When an ambiguous document reference spans multiple authorized documents, the run stops with a `message_key`/`input_slot` clarification contract instead of broadly searching every accessible document or generating backend-authored English text.
+
+## RetrievalGraph / tool seam
+
+`graph.py` exposes `invoke_context_forge_graph(...)`. Current conversation runs use it
+without changing API response shape. The graph state returns:
+
+- the underlying `ContextForgeResult`;
+- bounded `retrieval_attempt_count`;
+- `insufficient_evidence` for required-document fallback handling.
+
+Future agents should call this graph as an evidence-retrieval tool that returns
+authorized context and redacted evidence, not as a final-answer generator. Final answer
+composition, citations, run events, and persistence stay in the conversation/assistant
+layers.
+
+Persistence guardrail: `ContextForgeGraphState` is runtime-only. Do not compile this
+retrieval wrapper with a checkpointer or persist raw graph state unless the state is first
+compacted/redacted into an explicit product-owned artifact. Retrieval source truth remains
+with the knowledge tables, citations, and conversation run/event records.
 
 ## Tests
 

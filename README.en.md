@@ -62,11 +62,12 @@ flowchart TD
     API --> Runs["Conversation runs / SSE"]
     KB --> Ingest["Ingestion + chunks + entities + embeddings"]
     Runs --> ContextForge["ContextForge permission-aware retrieval"]
-    Runs --> Memory["Opt-in user memory service"]
     ContextForge --> RAGAgent["RAG Agent contract graph"]
     ContextForge --> GraphInput["Authorized retrieved context"]
     GraphInput --> Graph["General assistant LangGraph"]
-    Memory --> GraphInput
+    Graph --> MemoryRuntime["retrieve_memory node + MemoryRuntime"]
+    MemoryRuntime --> Memory["Opt-in user memory service"]
+    MemoryRuntime --> Graph
     Graph --> Provider["OpenAI or deterministic provider"]
     RAGAgent --> Events["Verified agent trace + grounding checks"]
     Graph --> Events
@@ -88,11 +89,12 @@ answers, citations, billing/audit, run events, and redacted memory-source snapsh
 that can enter provider context only after the user opts in.
 
 Architecture direction: the current SQLAlchemy-backed memory implementation is a safe V1
-governance/runtime scaffold, not the final LangGraph-native memory runtime. The target
-migration keeps Product DB ownership for consent, provenance, audit, source invalidation,
-and user management while moving active memory storage/search and extraction toward
-LangGraph Store plus a separate `memory_graph`. See the [LangGraph-native memory
-migration note](./docs/product-chat-service/en/19-langgraph-native-memory-migration.md).
+governance scaffold, not the final LangGraph-native memory runtime. Recall orchestration
+has started moving into the `general_assistant` LangGraph through a `retrieve_memory`
+node and `MemoryRuntime` adapter, while Product DB still owns consent, provenance, audit,
+source invalidation, and user management. The next target is active memory storage/search
+and extraction through LangGraph Store plus a separate `memory_graph`. See the
+[LangGraph-native memory migration note](./docs/product-chat-service/en/19-langgraph-native-memory-migration.md).
 
 Implemented memory routes include:
 
@@ -111,7 +113,7 @@ stale in the same transaction when the source document is deleted. The general a
 `SourceContextBundle` alongside recent Product DB conversation, authorized document
 context, and material source conflicts. Validated stable preferences may be recalled globally; project, personal, and document-derived memories require query relevance. When recent conversation conflicts with stored
 memory, prompt guidance tells the provider to prefer the latest conversation and explain
-the conflict. Replay/regeneration uses the current memory opt-in state and current active memories rather than replaying historical memory content; completed runs keep only redacted memory IDs/categories/provenance/conflict counts for audit.
+the conflict. Replay/regeneration uses the current memory opt-in state and current active memories rather than replaying historical memory content; completed runs keep an internal redacted memory-source audit snapshot, while frontend-visible run events expose only memory counts/categories/provenance types.
 
 ## Document upload support
 

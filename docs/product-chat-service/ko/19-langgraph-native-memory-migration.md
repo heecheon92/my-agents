@@ -1,6 +1,6 @@
 # LangGraph-native memory migration note
 
-상태: migration direction / architecture decision
+상태: migration in progress / architecture decision
 
 날짜: 2026-06-10
 
@@ -32,11 +32,19 @@ LangGraph memory_graph = extraction/update workflow
 LangGraph checkpointer = run-scoped execution/HITL state
 ```
 
+2026-06-10 구현 업데이트: Phase 1과 Phase 2의 recall 부분이 시작되었습니다.
+`general_assistant`에는 graph-owned `retrieve_memory` node와 `MemoryRuntime` boundary가
+들어갔습니다. 초기 adapter는 아직 기존 Product DB memory service를 감쌉니다. LangGraph Store,
+`memory_graph`, run-scoped checkpointer 작업은 이후 phase입니다.
+
 ## 왜 migration이 필요한가
 
 현재 V1은 SQLAlchemy table에 memory record를 저장하고 service layer에서 필터링한 뒤
-`memory_context`를 general assistant graph에 주입합니다. 이는 의도적으로 보수적인 구현입니다.
+`memory_context`를 general assistant graph에 주입하던 구조였습니다. 이는 의도적으로 보수적인 구현입니다.
 Opt-in, confirm/reject suggestion, deletion scrub, transcript/document source invalidation이 명확합니다.
+
+첫 migration slice에서는 Product DB governance를 유지하면서 recall orchestration을 graph 안으로 옮겼습니다.
+이제 graph는 FastAPI가 완성해서 넘긴 memory context를 받는 대신 runtime adapter를 호출합니다.
 
 하지만 이 상태가 최종 구조가 되면 다음 문제가 생깁니다.
 
@@ -76,7 +84,8 @@ explicit consent, provenance, source invalidation, user-facing review API가 필
 - conversation replay/delete는 source row 삭제 전에 transcript-sourced memory를 stale 처리합니다.
 - provider prompt는 memory/document snippet을 instruction이 아니라 untrusted context로 취급합니다.
 - 최신 conversation은 conflicting stored memory보다 우선하고, document-grounded claim은 authorized document가 우선합니다.
-- completed run은 redacted memory-source snapshot만 저장합니다.
+- completed/failed run은 내부 audit용 redacted memory-source snapshot을 저장할 수 있지만,
+  frontend-visible run event에는 memory count/category/provenance type만 노출합니다.
 
 ## Target architecture
 
@@ -114,7 +123,8 @@ flowchart TD
 
 - settings, memories, suggestions, lifecycle metadata, source ID, stale/delete state SQLAlchemy model;
 - settings, memory CRUD, suggestion confirm/reject API;
-- service-layer recall/conflict detection;
+- 초기 service-layer recall/conflict detection. 현재는 같은 governance filter를 유지한 채 Phase 2의
+  graph-owned recall node가 대체합니다;
 - redacted run snapshot;
 - document deletion과 transcript replay/delete의 source invalidation.
 
@@ -122,28 +132,27 @@ Known limitation: LangGraph-native runtime memory가 아니라 product-owned run
 
 ### Phase 1 — memory runtime boundary 추가
 
-Persistence를 바꾸기 전에 작은 recall/write interface를 둡니다.
+시작되었습니다. Persistence를 바꾸기 전에 작은 recall interface를 둡니다.
 
 ```python
 class MemoryRuntime(Protocol):
-    async def search(self, *, user_id: str, query: str, limit: int) -> list[MemoryItem]: ...
-    async def put(self, *, user_id: str, item: MemoryItem) -> MemoryItem: ...
-    async def delete(self, *, user_id: str, key: str) -> None: ...
+    def search(self, *, user_id: str, query: str, limit: int) -> list[MemoryItem]: ...
 ```
 
-초기 adapter는 기존 Product DB table을 감싸도 됩니다. 중요한 것은 graph/API code 전반에 direct table/service
-assumption이 퍼지지 않게 하는 것입니다.
+초기 adapter는 기존 Product DB table을 `UserMemoryService`를 통해 감쌉니다. 중요한 것은 graph/API code 전반에
+direct table/service assumption이 퍼지지 않게 하는 것입니다. Write/delete runtime method는 `memory_graph`나
+Store-backed write를 도입할 때 추가합니다.
 
 ### Phase 2 — recall을 graph node로 이동
 
-Response generation 이전에 graph node를 추가합니다.
+시작되었습니다. Response generation 이전에 graph node가 추가되었습니다.
 
 ```text
 classify_request -> retrieve_memory -> respond_general/respond_research
 ```
 
-Node는 state/config에서 `user_id`, latest user text, answer/source metadata를 받고 governance setting을 확인한 뒤
-`MemoryRuntime.search`를 호출해 compact `memory_context`와 `source_conflicts`를 출력합니다.
+Node는 LangGraph runtime context에서 `user_id`와 `MemoryRuntime`을 받고, latest user text는 graph state에서 읽습니다.
+그 뒤 `MemoryRuntime.search`를 호출해 compact `memory_context`와 `source_conflicts`를 출력합니다.
 
 ### Phase 3 — extraction용 `memory_graph` 추가
 

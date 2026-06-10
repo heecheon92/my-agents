@@ -62,11 +62,12 @@ flowchart TD
     API --> Runs["Conversation runs / SSE"]
     KB --> Ingest["Ingestion + chunks + entities + embeddings"]
     Runs --> ContextForge["ContextForge permission-aware retrieval"]
-    Runs --> Memory["Opt-in user memory service"]
     ContextForge --> RAGAgent["RAG Agent contract graph"]
     ContextForge --> GraphInput["Authorized retrieved context"]
     GraphInput --> Graph["General assistant LangGraph"]
-    Memory --> GraphInput
+    Graph --> MemoryRuntime["retrieve_memory node + MemoryRuntime"]
+    MemoryRuntime --> Memory["Opt-in user memory service"]
+    MemoryRuntime --> Graph
     Graph --> Provider["OpenAI or deterministic provider"]
     RAGAgent --> Events["Verified agent trace + grounding checks"]
     Graph --> Events
@@ -87,10 +88,11 @@ Product DB는 계속 visible conversation, final assistant answer, citation, bil
 run event, redacted memory-source snapshot의 source of truth입니다. Memory는 사용자가 opt in한 뒤에만 provider context에
 들어갈 수 있는 별도 source channel입니다.
 
-Architecture direction: 현재 SQLAlchemy 기반 memory 구현은 안전한 V1 governance/runtime scaffold이며
-최종 LangGraph-native memory runtime은 아닙니다. 장기 목표는 Product DB가 consent, provenance,
-audit, source invalidation, user management를 계속 소유하고, active memory storage/search와
-extraction은 LangGraph Store와 별도 `memory_graph`로 이동하는 것입니다. 자세한 내용은
+Architecture direction: 현재 SQLAlchemy 기반 memory 구현은 안전한 V1 governance scaffold이며
+최종 LangGraph-native memory runtime은 아닙니다. Recall orchestration은 `retrieve_memory` node와
+`MemoryRuntime` adapter를 통해 `general_assistant` LangGraph 안으로 이동하기 시작했습니다. 다만 Product DB는
+consent, provenance, audit, source invalidation, user management를 계속 소유합니다. 다음 목표는 active memory
+storage/search와 extraction을 LangGraph Store 및 별도 `memory_graph`로 이동하는 것입니다. 자세한 내용은
 [LangGraph-native memory migration note](./docs/product-chat-service/ko/19-langgraph-native-memory-migration.md)를 봅니다.
 
 구현된 memory route는 다음과 같습니다.
@@ -109,7 +111,7 @@ suggest-confirm path는 deterministic category/sensitivity guard를 거치며, s
 같은 transaction에서 stale로 표시되어 provider context에서 제외됩니다. General assistant는 `SourceContextBundle`을 통해
 recent Product DB conversation, authorized document context, relevance-minimized stored memory, material source conflict를
 분리해서 받습니다. 검증된 stable preference는 global하게 recall될 수 있지만, project/personal/document-derived memory는 query relevance가 필요합니다. 최신 conversation과 stored memory가 충돌하면 provider prompt는 최신
-conversation을 우선하고 conflict를 설명하도록 지시합니다. Replay/regeneration은 historical memory content를 재사용하지 않고 현재 memory opt-in 상태와 현재 active memory를 사용합니다. Completed run에는 audit용 redacted memory ID/category/provenance/conflict count만 저장합니다.
+conversation을 우선하고 conflict를 설명하도록 지시합니다. Replay/regeneration은 historical memory content를 재사용하지 않고 현재 memory opt-in 상태와 현재 active memory를 사용합니다. Completed run은 내부 audit용 redacted memory-source snapshot을 저장하지만, frontend-visible run event에는 memory count/category/provenance type만 노출합니다.
 
 ## 문서 업로드 지원
 
