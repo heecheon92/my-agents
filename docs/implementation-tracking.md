@@ -1,6 +1,6 @@
 # Implementation tracking
 
-Last updated: 2026-06-07
+Last updated: 2026-06-10
 Status owner: repo-tracked source of truth for cross-machine agent handoff
 
 This file exists because `.omx/` is local runtime state and is not shared across machines. When working with an agent on any machine, start here before re-discovering project status from the codebase.
@@ -49,6 +49,7 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 - OpenAI-backed response generation uses `langchain-openai` / `ChatOpenAI` by default.
 - Deterministic mode remains available for tests and offline smoke checks.
 - Hosted web search can be attached at the response-provider boundary for research/general current-info requests in OpenAI mode.
+- Opt-in long-term memory V1 is implemented as a Product DB-backed governance/runtime scaffold: settings, memory CRUD, suggest-confirm lifecycle, policy gates, source provenance, source staleness, relevance-minimized context injection, conflict guidance, and redacted run snapshots. The LangGraph-native migration target is documented in `docs/product-chat-service/en/19-langgraph-native-memory-migration.md`.
 
 ### Auth/session foundation
 
@@ -124,7 +125,25 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 
 ## Latest verification evidence
 
-Last full local verification run: 2026-05-30
+Memory architecture merge and documentation direction on 2026-06-10:
+
+```text
+uv run pytest -q
+345 passed, 1 skipped, 9 warnings
+
+uv run ruff format --check .
+passed
+
+uv run ruff check . --no-cache
+All checks passed
+
+git diff --check
+passed
+```
+
+Docs-only memory migration note update on 2026-06-10: `docs/product-chat-service/en/19-langgraph-native-memory-migration.md` and Korean counterpart were added to clarify that current SQLAlchemy memory is a safe V1 governance/runtime scaffold, while the target runtime is LangGraph Store + separate `memory_graph`; checkpointers are reserved for run-scoped HITL/resume state.
+
+Previous full local verification run: 2026-05-30
 
 ```text
 uv run pytest -q
@@ -252,7 +271,8 @@ Earlier hosted smoke status on 2026-06-03:
 - Current production graph is still one assistant/router path.
 - Most route labels are capability metadata and response paths, not separate production specialist agents.
 - Tool workflows beyond hosted web search are not implemented as production graph capabilities yet.
-- No human-in-the-loop interrupts/checkpointed product workflow yet.
+- Memory runtime is not yet LangGraph-native. Current active memory storage/search is SQLAlchemy/service-layer owned; target migration is LangGraph Store-backed recall plus a separate `memory_graph`, with Product DB retained for governance/audit.
+- No human-in-the-loop interrupts/checkpointed product workflow yet; when added, checkpointer state should be run-scoped execution state rather than conversation history or long-term memory.
 
 ### Deployment/ops
 

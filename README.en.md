@@ -40,6 +40,7 @@ More detail lives in the docs instead of this README:
 | Hybrid retrieval reference | [`docs/product-chat-service/en/12-retrieval-agent-hybrid-reference.md`](./docs/product-chat-service/en/12-retrieval-agent-hybrid-reference.md) |
 | Container deployment path | [`docs/product-chat-service/en/13-generic-container-deployment-path.md`](./docs/product-chat-service/en/13-generic-container-deployment-path.md) |
 | Team upload staging | [`docs/product-chat-service/en/18-team-upload-staging-flow.md`](./docs/product-chat-service/en/18-team-upload-staging-flow.md) |
+| LangGraph-native memory migration | [`docs/product-chat-service/en/19-langgraph-native-memory-migration.md`](./docs/product-chat-service/en/19-langgraph-native-memory-migration.md) |
 | Script commands | [`scripts/README.md`](./scripts/README.md) |
 | Layout-aware RAG idea | [`docs/idea/layout-aware-ingestion-rag-agent.md`](./docs/idea/layout-aware-ingestion-rag-agent.md) |
 
@@ -85,6 +86,13 @@ Long-term memory is disabled by default and is scoped to the authenticated user.
 Product DB remains the source of truth for visible conversations, final assistant
 answers, citations, billing/audit, run events, and redacted memory-source snapshots. Memory is a separate source channel
 that can enter provider context only after the user opts in.
+
+Architecture direction: the current SQLAlchemy-backed memory implementation is a safe V1
+governance/runtime scaffold, not the final LangGraph-native memory runtime. The target
+migration keeps Product DB ownership for consent, provenance, audit, source invalidation,
+and user management while moving active memory storage/search and extraction toward
+LangGraph Store plus a separate `memory_graph`. See the [LangGraph-native memory
+migration note](./docs/product-chat-service/en/19-langgraph-native-memory-migration.md).
 
 Implemented memory routes include:
 

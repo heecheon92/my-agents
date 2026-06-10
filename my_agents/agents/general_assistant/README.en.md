@@ -97,7 +97,9 @@ Current channels are:
 
 The memory service lives outside this agent folder under `my_agents/memory/` and `my_agents/api/memories.py`. Public memory writes do not accept client-asserted provenance IDs; service-owned paths must provide provenance when they create document-derived memories. The agent receives only serialized active memory context and conflict metadata, with memory/document snippets encoded as untrusted JSON prompt data; it does not query or mutate memory tables directly. Replay/regeneration uses current active memory context rather than historical memory content, while completed runs retain a redacted memory-source snapshot for audit.
 
-This is also the guardrail for future LangGraph checkpoint work: the current full-message graph should not be checkpointer-enabled as-is because Product DB transcript data would become duplicated in checkpoint state.
+That service-layer injection is the current safe V1 shape, not the final LangGraph-native memory target. The migration direction is to add a graph-owned `retrieve_memory` node, a separate `memory_graph` extraction/suggest-confirm workflow, and LangGraph Store-backed active memory search while preserving Product DB governance for opt-in, provenance, source invalidation, and delete/deactivate. See [`docs/product-chat-service/en/19-langgraph-native-memory-migration.md`](../../../docs/product-chat-service/en/19-langgraph-native-memory-migration.md).
+
+This is also the guardrail for future LangGraph checkpoint work: the current full-message graph should not be checkpointer-enabled as-is because Product DB transcript data would become duplicated in checkpoint state. Checkpointers should be run-scoped execution/HITL state, not conversation history or long-term memory.
 
 ## Where to add OpenAI hosted tools
 

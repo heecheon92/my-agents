@@ -21,3 +21,4 @@
 - Render 관련 의사결정과 다른 호스팅으로 이동할 때의 rollback 절차는 영어 원문 문서 [Render migration and rollback notes](../en/14-render-migration-and-rollback-notes.md)를 기준으로 유지합니다.
 - 배포 중 실제로 겪은 문제와 해결 기록은 영어 원문 문서 [Deployment troubleshooting log](../en/15-deployment-troubleshooting-log.md)에 기록합니다.
 18. [팀 업로드 임시 저장 흐름](./18-team-upload-staging-flow.md)
+19. [LangGraph-native memory migration](./19-langgraph-native-memory-migration.md)

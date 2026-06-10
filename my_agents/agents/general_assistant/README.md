@@ -97,7 +97,9 @@ sequenceDiagram
 
 Memory service는 이 agent folder 밖의 `my_agents/memory/`와 `my_agents/api/memories.py`에 있습니다. Public memory write는 client가 주장하는 provenance ID를 받지 않으며, service-owned path가 document-derived memory를 만들 때 provenance를 제공해야 합니다. Agent는 untrusted JSON prompt data로 직렬화된 active memory context와 conflict metadata만 받으며, memory table을 직접 조회하거나 수정하지 않습니다. Replay/regeneration은 historical memory content가 아니라 현재 active memory context를 사용하며, completed run에는 audit용 redacted memory-source snapshot을 남깁니다.
 
-이 구조는 향후 LangGraph checkpointer 작업의 guardrail이기도 합니다. 현재 full-message graph를 그대로 checkpointer-enabled로 만들면 Product DB transcript data가 checkpoint state에 중복 저장될 수 있으므로 금지합니다.
+이 service-layer injection은 현재 안전한 V1 구조이며 최종 LangGraph-native memory target은 아닙니다. Migration 방향은 graph-owned `retrieve_memory` node, 별도 `memory_graph` extraction/suggest-confirm workflow, LangGraph Store-backed active memory search를 추가하되 Product DB가 opt-in, provenance, source invalidation, delete/deactivate governance를 계속 소유하는 것입니다. 자세한 내용은 [`docs/product-chat-service/ko/19-langgraph-native-memory-migration.md`](../../../docs/product-chat-service/ko/19-langgraph-native-memory-migration.md)를 봅니다.
+
+이 구조는 향후 LangGraph checkpointer 작업의 guardrail이기도 합니다. 현재 full-message graph를 그대로 checkpointer-enabled로 만들면 Product DB transcript data가 checkpoint state에 중복 저장될 수 있으므로 금지합니다. Checkpointer는 conversation history나 long-term memory가 아니라 run-scoped execution/HITL state로만 사용해야 합니다.
 
 ## OpenAI hosted tools를 추가할 위치
 

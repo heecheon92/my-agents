@@ -65,7 +65,9 @@ Current honest status:
 - [x] Terminal CLI chat.
 - [x] CLI token streaming through LangGraph `graph.stream(...)`.
 - [x] Product chat uses the graph inside conversation runs.
-- [ ] LangGraph checkpointer-backed memory for durable thread state.
+- [x] Opt-in Product DB-backed long-term memory governance scaffold with settings, CRUD, suggest-confirm, provenance, staleness, and redacted run snapshots.
+- [ ] LangGraph Store-backed memory runtime plus a separate `memory_graph` extraction/suggest-confirm workflow; Product DB remains the governance/audit ledger.
+- [ ] Run-scoped LangGraph checkpointer for HITL/resume execution state after graph state is compact; do not use checkpointer as conversation history or long-term memory.
 - [ ] Real tool/function capabilities exposed through the graph.
 - [ ] Production multi-agent orchestration surface.
 - [later] Additional specialized production agents beyond the current general assistant.

@@ -40,6 +40,7 @@
 | Hybrid retrieval reference | [`docs/product-chat-service/ko/12-retrieval-agent-hybrid-reference.md`](./docs/product-chat-service/ko/12-retrieval-agent-hybrid-reference.md) |
 | Container deployment path | [`docs/product-chat-service/ko/13-generic-container-deployment-path.md`](./docs/product-chat-service/ko/13-generic-container-deployment-path.md) |
 | Team upload staging / 팀 업로드 임시 저장 | [`docs/product-chat-service/ko/18-team-upload-staging-flow.md`](./docs/product-chat-service/ko/18-team-upload-staging-flow.md) |
+| LangGraph-native memory migration | [`docs/product-chat-service/ko/19-langgraph-native-memory-migration.md`](./docs/product-chat-service/ko/19-langgraph-native-memory-migration.md) |
 | Script commands / 스크립트 명령 | [`scripts/README.md`](./scripts/README.md) |
 | Layout-aware RAG idea | [`docs/idea/layout-aware-ingestion-rag-agent.md`](./docs/idea/layout-aware-ingestion-rag-agent.md) |
 
@@ -85,6 +86,12 @@ Long-term memory는 기본적으로 꺼져 있으며 authenticated user 단위�
 Product DB는 계속 visible conversation, final assistant answer, citation, billing/audit,
 run event, redacted memory-source snapshot의 source of truth입니다. Memory는 사용자가 opt in한 뒤에만 provider context에
 들어갈 수 있는 별도 source channel입니다.
+
+Architecture direction: 현재 SQLAlchemy 기반 memory 구현은 안전한 V1 governance/runtime scaffold이며
+최종 LangGraph-native memory runtime은 아닙니다. 장기 목표는 Product DB가 consent, provenance,
+audit, source invalidation, user management를 계속 소유하고, active memory storage/search와
+extraction은 LangGraph Store와 별도 `memory_graph`로 이동하는 것입니다. 자세한 내용은
+[LangGraph-native memory migration note](./docs/product-chat-service/ko/19-langgraph-native-memory-migration.md)를 봅니다.
 
 구현된 memory route는 다음과 같습니다.
 

@@ -34,7 +34,7 @@ The graph currently has one production assistant/router path. Route labels and c
 - Keep deterministic mode available for tests and offline smoke checks. The normal local response mode is OpenAI-backed and requires `OPENAI_API_KEY` before chat requests can succeed.
 - Never commit real secrets. Do not read or print `.env` contents unless the user explicitly asks and understands the risk.
 - Keep `.env.example` safe and secret-free.
-- Do not claim live specialized agents, persistent memory, hosted deployment, or frontend functionality unless implemented and tested.
+- Do not claim live specialized agents, hosted deployment, frontend functionality, or memory behavior beyond the implemented opt-in long-term memory surface unless it is implemented and tested.
 
 ## Environment policy
 
@@ -60,7 +60,7 @@ MY_AGENTS_OPENAI_REASONING_EFFORT=low
 MY_AGENTS_OPENAI_VERBOSITY=low
 ```
 
-If adding conversation memory later, prefer LangGraph checkpointers as the app-owned source of truth. OpenAI `previous_response_id` may be stored as one field inside graph state, but should not replace application state.
+For memory architecture, do not treat LangGraph checkpointers as conversation history or long-term memory. Product DB remains the source of truth for visible transcripts/runs/citations/audit and memory governance; LangGraph Store should become the target long-term memory runtime; run-scoped checkpointers are for HITL/resume execution state only. OpenAI `previous_response_id` may be stored as one field inside compact graph/run state, but should not replace application state.
 
 ## Dependency policy
 
@@ -114,11 +114,12 @@ Prefer this sequence:
 
 1. Preserve deterministic classify/router contract.
 2. Keep OpenAI-backed reply behavior as the normal local mode while preserving deterministic tests.
-3. Add LangGraph checkpointer-backed short-term memory.
-4. Store OpenAI `previous_response_id` only after graph thread state exists.
-5. Add real tool/function capabilities one at a time with tests.
-6. Add durable storage only when the behavior requires it.
-7. Keep frontend separate.
+3. Keep current opt-in Product DB memory as a governance scaffold while migrating runtime recall/extraction toward LangGraph-native Store + `memory_graph`.
+4. Add run-scoped LangGraph checkpointer support only for HITL/resume execution state after graph state is compact.
+5. Store OpenAI `previous_response_id` only after graph/run state exists.
+6. Add real tool/function capabilities one at a time with tests.
+7. Add durable storage only when the behavior requires it.
+8. Keep frontend separate.
 
 ## Documentation expectations
 
