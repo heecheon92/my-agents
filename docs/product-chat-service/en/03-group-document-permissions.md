@@ -61,7 +61,7 @@ Recommended invitation routes:
 | `GET` | `/groups/{group_id}/invitations` | owner/admin | list pending/recent invitations for a managed group | may show the invited email entered by the manager, never matched account metadata |
 | `PATCH` | `/groups/{group_id}/invitations/{invitation_id}` | owner/admin | change role on a pending invitation | reject non-pending invites |
 | `POST` | `/groups/{group_id}/invitations/{invitation_id}/resend` | owner/admin | rotate/reissue the invite token | do not expose raw tokens or account state |
-| `DELETE` or `POST` | `/groups/{group_id}/invitations/{invitation_id}/cancel` | owner/admin | cancel a pending invite | cancelled token cannot be accepted |
+| `DELETE` | `/groups/{group_id}/invitations/{invitation_id}` | owner/admin | cancel a pending invite | cancelled token cannot be accepted |
 | `GET` | `/groups/{group_id}/members` | accepted member | list accepted member basics | no pending invite/account-discovery fields |
 | `POST` | `/group-invitations/accept` | authenticated recipient | accept an opaque token | bind token to the authenticated verified email |
 

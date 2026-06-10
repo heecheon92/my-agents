@@ -25,7 +25,7 @@ Group/team은 **초대를 수락한 멤버만 접근할 수 있는 공유 지식
 | `GET` | `/groups/{group_id}/invitations` | owner/admin | 관리 group의 pending/recent invitation 조회 | 관리자가 입력한 이메일은 보일 수 있지만 매칭 계정 정보는 노출하지 않음 |
 | `PATCH` | `/groups/{group_id}/invitations/{invitation_id}` | owner/admin | pending invitation role 변경 | non-pending invitation은 거절 |
 | `POST` | `/groups/{group_id}/invitations/{invitation_id}/resend` | owner/admin | invite token 재발급/재전송 | raw token과 account state를 노출하지 않음 |
-| `DELETE` 또는 `POST` | `/groups/{group_id}/invitations/{invitation_id}/cancel` | owner/admin | pending invitation 취소 | 취소된 token은 수락 불가 |
+| `DELETE` | `/groups/{group_id}/invitations/{invitation_id}` | owner/admin | pending invitation 취소 | 취소된 token은 수락 불가 |
 | `GET` | `/groups/{group_id}/members` | accepted member | accepted member의 기본 role 정보 조회 | pending invite/account discovery field 없음 |
 | `POST` | `/group-invitations/accept` | authenticated recipient | opaque token 수락 | token을 인증된 verified email과 연결 |
 
