@@ -43,6 +43,7 @@ EXPECTED_SERVICE_TABLES = {
     "guest_access_requests",
     "guest_access_codes",
     "groups",
+    "group_invitations",
     "memberships",
     "conversations",
     "messages",
@@ -163,7 +164,9 @@ def test_alembic_offline_sql_generation_covers_initial_schema(monkeypatch) -> No
     assert "20260609_0022" in sql
     assert "20260609_0023" in sql
     assert "20260609_0024" in sql
+    assert "20260610_0025" in sql
     assert "CREATE TABLE guest_access_requests" in sql
+    assert "CREATE TABLE group_invitations" in sql
     assert "CREATE TABLE knowledge_publish_requests" in sql
     assert "CREATE TABLE knowledge_base_publications" in sql
     assert "CREATE TABLE document_parse_artifacts" in sql
@@ -180,6 +183,8 @@ def test_alembic_offline_sql_generation_covers_initial_schema(monkeypatch) -> No
     assert "DROP COLUMN group_id" in sql
     assert "approval_status" in sql
     assert "memory_source_snapshot_json" in sql
+    assert "uq_group_invitations_pending_email" in sql
+    assert "token_hash" in sql
 
 
 def test_parse_artifacts_store_only_derived_parser_outputs(
