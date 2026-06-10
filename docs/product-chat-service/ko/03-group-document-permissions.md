@@ -23,12 +23,20 @@ Group/team은 초대를 수락한 뒤 참여하는 공유 지식 boundary입니�
 3. 수락된 group membership role이 해당 작업을 허용하는지 확인합니다.
 4. Pending invite, outsider, role mismatch는 deny-by-default입니다.
 
-## 현재 제한
+| Method | Path | Actor | Purpose | Privacy rule |
+| --- | --- | --- | --- | --- |
+| `POST` | `/groups/{group_id}/invitations` | owner/admin | 이메일과 role로 pending invitation 생성 | 계정 존재 여부를 드러내지 않는 동일한 응답 shape |
+| `GET` | `/groups/{group_id}/invitations` | owner/admin | 관리 group의 pending/recent invitation 조회 | 관리자가 입력한 이메일은 보일 수 있지만 매칭 계정 정보는 노출하지 않음 |
+| `PATCH` | `/groups/{group_id}/invitations/{invitation_id}` | owner/admin | pending invitation role 변경 | non-pending invitation은 거절 |
+| `POST` | `/groups/{group_id}/invitations/{invitation_id}/resend` | owner/admin | invite token 재발급/재전송 | raw token과 account state를 노출하지 않음 |
+| `DELETE` | `/groups/{group_id}/invitations/{invitation_id}` | owner/admin | pending invitation 취소 | 취소된 token은 수락 불가 |
+| `GET` | `/groups/{group_id}/members` | accepted member | accepted member의 기본 role 정보 조회 | pending invite/account discovery field 없음 |
+| `PATCH` | `/groups/{group_id}/members` | owner/admin | 이미 active 상태인 member role 수정 | non-creating; unknown/non-member user는 거절 |
+| `POST` | `/group-invitations/accept` | authenticated recipient | opaque token 수락 | token을 인증된 verified email과 연결 |
 
-- public user search 또는 opt-in profile discovery는 아직 없습니다.
-- organization/workspace identity management는 v1 group boundary 밖입니다.
-- full audit log와 document-level deny override는 아직 없습니다.
-- frontend 구현은 별도 `my-agents-frontend` repository에 있습니다.
+`POST /groups/{group_id}/members`처럼 `user_id`로 active membership을 직접 만드는 product-facing route는 두지 않습니다.
+`PATCH /groups/{group_id}/members`는 이미 active 상태인 member role만 수정할 수 있고 membership을 만들면 안 됩니다.
+테스트나 seed가 직접 멤버십 setup이 필요하면 HTTP가 아닌 fixture/service helper를 사용합니다.
 
 ## 테스트 근거
 
@@ -36,5 +44,41 @@ Group/team은 초대를 수락한 뒤 참여하는 공유 지식 boundary입니�
 
 ## 변경 이력
 
-- 2026-06-10: 초대 수락 기반 group/team membership boundary, privacy-preserving invitation 의미, 개인 conversation/memory 경계를 반영했습니다.
-- 2026-05-17: 같은 주제의 한국어 문서 위치를 고정했습니다.
+| Actor / scope | Read | Write | Manage permissions | Manage invitations | Ingest | Retrieve/cite |
+| --- | --- | --- | --- | --- | --- | --- |
+| Personal owner | Yes | Yes | Yes | N/A | Yes | Yes |
+| Explicit viewer | Yes | No | No | No | No | Yes |
+| Explicit editor | Yes | Yes | Optional grant | No | Optional grant | Yes |
+| Group owner/admin | Yes | Yes | Yes | Yes | Yes | Yes |
+| Group editor | Yes | Yes | No | No | Yes | Yes |
+| Group viewer | Yes | No | No | No | No | Yes |
+| Pending invitee | No | No | No | No | No | No |
+| Unauthorized user | No | No | No | No | No | No |
+
+## RAG와 privacy에 중요한 이유
+
+Retrieval service는 전역 top-k를 먼저 가져온 뒤 나중에 필터링하지 않습니다. 권한이 있는 candidate set만
+랭킹과 graph expansion에 들어갑니다. Invitation state도 같은 경계를 보호합니다. Pending invite는 retrieval
+권한이 아니며, accepted group role은 승인된 group/document KB 접근만 허용합니다. Conversation과 user memory는
+공유 지식 범위 밖에 유지됩니다.
+
+## 현재 non-goals / 제한
+
+- public user search 또는 discoverable profile directory 없음;
+- organization/workspace identity management 없음;
+- shared conversation transcript 또는 shared memory 없음;
+- document-level deny override와 full audit log는 아직 없음;
+- frontend invitation UI는 hosted OpenAPI의 최종 route/response shape에 맞춰야 함.
+
+## 테스트 증거 방향
+
+- owner/admin만 invitation 생성, 목록, 재전송, 취소, role 변경을 할 수 있어야 합니다.
+- registered/unregistered email 초대 응답은 같은 public-safe shape이어야 합니다.
+- pending invitation은 active membership을 만들지 않아야 합니다.
+- 수락은 인증된 invited email에 묶이며 membership은 최대 하나만 생성되어야 합니다.
+- 잘못된 사용자, 취소/만료/소비된 token, 중복 수락은 안전하게 실패해야 합니다.
+- member list는 email/profile/account-existence field 없이 기본 member/role 정보만 보여야 합니다.
+- owner/admin active-member role patch는 non-creating이어야 하며 missing/non-member user를 거절해야 합니다.
+- public OpenAPI는 `user_id` 직접 membership 생성 route를 노출하지 않아야 합니다.
+- 승인된 group document 읽기와 publish request workflow는 유지되어야 합니다.
+- conversation transcript와 opt-in memory는 사용자별 private scope로 남아야 합니다.

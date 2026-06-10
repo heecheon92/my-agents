@@ -36,18 +36,21 @@ The backend product boundary is a shared-knowledge group/team model:
 
 A pending invitation is not an active membership and does not grant group KB access. Product clients must not directly activate membership by known `user_id`, reveal whether an invited email has an account, or imply a public user directory. The code term remains `group`; user-facing copy may say “team”.
 
-## Membership activation flow
+| Method | Path | Actor | Purpose | Privacy rule |
+| --- | --- | --- | --- | --- |
+| `POST` | `/groups/{group_id}/invitations` | owner/admin | create a pending invitation by email and role | response shape does not reveal account existence |
+| `GET` | `/groups/{group_id}/invitations` | owner/admin | list pending/recent invitations for a managed group | may show the invited email entered by the manager, never matched account metadata |
+| `PATCH` | `/groups/{group_id}/invitations/{invitation_id}` | owner/admin | change role on a pending invitation | reject non-pending invites |
+| `POST` | `/groups/{group_id}/invitations/{invitation_id}/resend` | owner/admin | rotate/reissue the invite token | do not expose raw tokens or account state |
+| `DELETE` | `/groups/{group_id}/invitations/{invitation_id}` | owner/admin | cancel a pending invite | cancelled token cannot be accepted |
+| `GET` | `/groups/{group_id}/members` | accepted member | list accepted member basics | no pending invite/account-discovery fields |
+| `PATCH` | `/groups/{group_id}/members` | owner/admin | update an already-active member role | non-creating; reject unknown or non-member users |
+| `POST` | `/group-invitations/accept` | authenticated recipient | accept an opaque token | bind token to the authenticated verified email |
 
-```mermaid
-flowchart TD
-    Manager[Owner/admin] --> Invite[Create email invitation + role]
-    Invite --> Pending[Pending invitation only]
-    Pending --> Accept[Authenticated invited email accepts token]
-    Accept --> Active[Active membership row]
-    Active --> GroupKB[Shared group knowledge access]
-```
-
-Active member role updates can remain owner/admin-only, but they must operate on already accepted members only. Setup fixtures and backfills may use non-product helpers; public product routes must not recreate direct add-by-`user_id` activation.
+Direct `POST /groups/{group_id}/members` activation by `user_id` is not a
+product-facing route. `PATCH /groups/{group_id}/members` may update roles for
+already-active members only and must not create membership. Tests and seed helpers
+that need direct setup must use non-HTTP fixtures or service helpers.
 
 ## Permission flow
 
@@ -92,17 +95,18 @@ Group/team membership grants access to accepted shared knowledge and publish wor
 
 Invitation and permission tests should cover:
 
-- group owners/admins can create, list, update, resend, and cancel invitations;
-- duplicate pending invitations are rejected without account-existence fields;
-- pending invitations do not create active memberships or grant group KB access;
-- authenticated recipients can accept with the invited email and receive the intended role;
-- wrong-user, cancelled, expired, and already-consumed acceptance fail safely;
-- direct product membership activation by `user_id` is absent from public API/OpenAPI;
-- group viewers can read group documents;
-- group viewers cannot write group documents;
-- outsiders cannot read group documents;
-- document owners can grant explicit read access;
-- non-managers cannot invite members or change active member roles.
+- owners/admins can create, list, resend, cancel, and role-update pending invitations;
+- editors/viewers cannot manage invitations;
+- registered and unregistered email invitations return the same public-safe shape;
+- pending invitations do not create active membership rows;
+- acceptance requires the authenticated invited email and creates at most one membership;
+- wrong-user, cancelled, expired, consumed, and duplicate acceptance fail safely;
+- accepted members can list basic member/role information without email/profile fields;
+- owner/admin active-member role patch is non-creating and rejects missing/non-member users;
+- public OpenAPI does not expose direct create-member-by-`user_id`;
+- accepted group viewers can read approved group documents and outsiders cannot;
+- publish request create/list/approve/reject behavior is preserved;
+- conversation transcripts and opt-in memory remain owner-private.
 
 ## Revision history
 
