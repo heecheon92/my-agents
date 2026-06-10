@@ -240,7 +240,7 @@ def test_publish_request_rejects_invalid_source_or_target_boundaries(monkeypatch
     requester = _client(monkeypatch)
     other = _client(monkeypatch)
     _owner_id = _signup_login(owner, "publish-boundary-owner@example.com")
-    requester_id = _signup_login(requester, "publish-boundary-requester@example.com")
+    _requester_id = _signup_login(requester, "publish-boundary-requester@example.com")
     _other_id = _signup_login(other, "publish-boundary-other@example.com")
     group_id = _create_group(owner, name="Boundary Group")
     _invite_and_accept_member(
@@ -334,7 +334,7 @@ def test_owner_admin_approval_copies_and_ingests_group_document_without_exposing
     requester = _client(monkeypatch)
     viewer = _client(monkeypatch)
     owner_id = _signup_login(owner, "publish-approve-owner@example.com")
-    requester_id = _signup_login(requester, "publish-approve-requester@example.com")
+    _requester_id = _signup_login(requester, "publish-approve-requester@example.com")
     viewer_id = _signup_login(viewer, "publish-approve-viewer@example.com")
     group_id = _create_group(owner, name="Approval Group")
     _invite_and_accept_member(
@@ -437,7 +437,7 @@ def test_owner_approval_copies_office_parse_artifact_to_group_document(monkeypat
     owner = _client(monkeypatch)
     requester = _client(monkeypatch)
     _owner_id = _signup_login(owner, "publish-office-owner@example.com")
-    requester_id = _signup_login(requester, "publish-office-requester@example.com")
+    _requester_id = _signup_login(requester, "publish-office-requester@example.com")
     group_id = _create_group(owner, name="Office Publish Group")
     _invite_and_accept_member(
         owner=owner,
@@ -501,7 +501,7 @@ def test_publish_approval_rolls_back_group_copy_when_ingestion_fails(monkeypatch
     owner = _client(monkeypatch, raise_server_exceptions=False)
     requester = _client(monkeypatch, raise_server_exceptions=False)
     _owner_id = _signup_login(owner, "publish-ingest-fail-owner@example.com")
-    requester_id = _signup_login(requester, "publish-ingest-fail-requester@example.com")
+    _requester_id = _signup_login(requester, "publish-ingest-fail-requester@example.com")
     group_id = _create_group(owner, name="Ingest Failure Group")
     _invite_and_accept_member(
         owner=owner,
@@ -555,7 +555,7 @@ def test_rejected_publish_request_has_zero_retrieval_effect(monkeypatch) -> None
     requester = _client(monkeypatch)
     viewer = _client(monkeypatch)
     owner_id = _signup_login(owner, "publish-reject-owner@example.com")
-    requester_id = _signup_login(requester, "publish-reject-requester@example.com")
+    _requester_id = _signup_login(requester, "publish-reject-requester@example.com")
     viewer_id = _signup_login(viewer, "publish-reject-viewer@example.com")
     group_id = _create_group(owner, name="Reject Group")
     _invite_and_accept_member(

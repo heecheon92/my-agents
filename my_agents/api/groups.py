@@ -12,7 +12,12 @@ from sqlalchemy.orm import Session
 from my_agents.auth.contracts import Principal
 from my_agents.auth.dependencies import get_configured_auth_email_sender, get_current_principal
 from my_agents.auth.email import AuthEmailSender
-from my_agents.groups.models import GroupInvitationModel, GroupModel, MembershipModel, MembershipRole
+from my_agents.groups.models import (
+    GroupInvitationModel,
+    GroupModel,
+    MembershipModel,
+    MembershipRole,
+)
 from my_agents.groups.schemas import (
     GroupCreateRequest,
     GroupInvitationAcceptRequest,
@@ -148,7 +153,9 @@ def list_members(
             actor_user_id=principal.user_id,
         )
     except InvitationNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="group not found") from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="group not found"
+        ) from exc
     return [_member_response(member) for member in members]
 
 
@@ -178,7 +185,9 @@ def create_group_invitation(
     except GroupMembershipPermissionError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="not allowed") from exc
     except InvitationNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="group not found") from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="group not found"
+        ) from exc
     return _invitation_response(invitation)
 
 
@@ -199,7 +208,9 @@ def list_group_invitations(
     except GroupMembershipPermissionError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="not allowed") from exc
     except InvitationNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="group not found") from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="group not found"
+        ) from exc
     return [_invitation_response(invitation) for invitation in invitations]
 
 
@@ -246,10 +257,12 @@ def resend_group_invitation(
     email_sender: Annotated[AuthEmailSender, Depends(get_configured_auth_email_sender)],
 ) -> GroupInvitationResponse:
     try:
-        invitation = GroupInvitationService(db, email_sender=email_sender).resend_pending_invitation(
-            group_id=group_id,
-            invitation_id=invitation_id,
-            actor_user_id=principal.user_id,
+        invitation = (
+            GroupInvitationService(db, email_sender=email_sender).resend_pending_invitation(
+                group_id=group_id,
+                invitation_id=invitation_id,
+                actor_user_id=principal.user_id,
+            )
         )
     except GroupMembershipPermissionError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="not allowed") from exc

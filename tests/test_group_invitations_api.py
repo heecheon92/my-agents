@@ -199,4 +199,4 @@ def test_direct_member_creation_route_is_absent_from_product_api(monkeypatch) ->
     assert response.status_code == 405
     assert _membership_row(group_id, recipient_id) is None
     openapi = owner.get("/openapi.json").json()
-    assert "post" not in openapi["paths"][f"/groups/{{group_id}}/members"]
+    assert "post" not in openapi["paths"]["/groups/{group_id}/members"]
