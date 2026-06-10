@@ -257,12 +257,12 @@ def resend_group_invitation(
     email_sender: Annotated[AuthEmailSender, Depends(get_configured_auth_email_sender)],
 ) -> GroupInvitationResponse:
     try:
-        invitation = (
-            GroupInvitationService(db, email_sender=email_sender).resend_pending_invitation(
-                group_id=group_id,
-                invitation_id=invitation_id,
-                actor_user_id=principal.user_id,
-            )
+        invitation = GroupInvitationService(
+            db, email_sender=email_sender
+        ).resend_pending_invitation(
+            group_id=group_id,
+            invitation_id=invitation_id,
+            actor_user_id=principal.user_id,
         )
     except GroupMembershipPermissionError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="not allowed") from exc
