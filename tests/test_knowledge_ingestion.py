@@ -42,7 +42,7 @@ from my_agents.knowledge.pdf_uploads import PdfUploadError, parse_uploaded_pdf
 from my_agents.knowledge.retrieval import RetrievalService
 from my_agents.persistence.database import get_database_session
 
-from .conftest import load_app, verify_latest_auth_email
+from .conftest import latest_auth_email_token, load_app, verify_latest_auth_email
 
 
 class FakeEmbeddingProvider:
@@ -1521,7 +1521,7 @@ def test_group_knowledge_base_requires_group_membership(monkeypatch) -> None:  #
     member = _client(monkeypatch)
     outsider = _client(monkeypatch)
     _signup_login(owner, "group-kb-owner@example.com")
-    member_id = _signup_login(member, "group-kb-member@example.com")
+    _member_id = _signup_login(member, "group-kb-member@example.com")
     _signup_login(outsider, "group-kb-outsider@example.com")
     group_id = owner.post("/groups", json={"name": "KB Group"}).json()["id"]
     default_group_kbs = [
@@ -1532,13 +1532,14 @@ def test_group_knowledge_base_requires_group_membership(monkeypatch) -> None:  #
     assert len(default_group_kbs) == 1
     assert default_group_kbs[0]["name"] == "KB Group Knowledge"
 
-    assert (
-        owner.post(
-            f"/groups/{group_id}/members",
-            json={"user_id": member_id, "role": "viewer"},
-        ).status_code
-        == 204
+    invitation = owner.post(
+        f"/groups/{group_id}/invitations",
+        json={"email": "group-kb-member@example.com", "role": "viewer"},
     )
+    assert invitation.status_code == 201
+    token = latest_auth_email_token("group-kb-member@example.com", "group_invitation")
+    accepted = member.post("/group-invitations/accept", json={"token": token})
+    assert accepted.status_code == 200
 
     kb = owner.post(
         "/knowledge-bases",

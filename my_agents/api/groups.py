@@ -10,13 +10,31 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from my_agents.auth.contracts import Principal
-from my_agents.auth.dependencies import get_current_principal
-from my_agents.groups.models import GroupModel, MembershipModel, MembershipRole
+from my_agents.auth.dependencies import get_configured_auth_email_sender, get_current_principal
+from my_agents.auth.email import AuthEmailSender
+from my_agents.groups.models import (
+    GroupInvitationModel,
+    GroupModel,
+    MembershipModel,
+    MembershipRole,
+)
 from my_agents.groups.schemas import (
     GroupCreateRequest,
+    GroupInvitationAcceptRequest,
+    GroupInvitationCreateRequest,
+    GroupInvitationResponse,
+    GroupInvitationUpdateRequest,
     GroupResponse,
     MemberPatchRequest,
-    MemberUpsertRequest,
+    MemberResponse,
+)
+from my_agents.groups.service import (
+    GroupInvitationService,
+    GroupMembershipPermissionError,
+    InvalidInvitationTokenError,
+    InvitationNotFoundError,
+    InvitationNotPendingError,
+    PendingInvitationExistsError,
 )
 from my_agents.knowledge.extraction import KnowledgeExtractionService
 from my_agents.knowledge.models import (
@@ -43,6 +61,7 @@ from my_agents.knowledge.schemas import (
 from my_agents.persistence.database import get_database_session
 
 groups_router = APIRouter(prefix="/groups", tags=["groups"])
+group_invitations_router = APIRouter(prefix="/group-invitations", tags=["groups"])
 
 
 @groups_router.post("", response_model=GroupResponse, status_code=status.HTTP_201_CREATED)
@@ -100,34 +119,6 @@ def get_group(
     return GroupResponse(id=group.id, name=group.name, role=MembershipRole(membership.role))
 
 
-@groups_router.post("/{group_id}/members", status_code=status.HTTP_204_NO_CONTENT)
-def add_member(
-    group_id: str,
-    request: MemberUpsertRequest,
-    principal: Annotated[Principal, Depends(get_current_principal)],
-    db: Annotated[Session, Depends(get_database_session)],
-) -> None:
-    _require_group_manager(db, group_id, principal.user_id)
-    existing = db.scalar(
-        select(MembershipModel).where(
-            MembershipModel.group_id == group_id,
-            MembershipModel.user_id == request.user_id,
-        )
-    )
-    if existing is None:
-        db.add(
-            MembershipModel(
-                group_id=group_id,
-                user_id=request.user_id,
-                role=request.role.value,
-            )
-        )
-    else:
-        existing.role = request.role.value
-        db.add(existing)
-    db.commit()
-
-
 @groups_router.patch("/{group_id}/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 def update_member(
     group_id: str,
@@ -148,6 +139,192 @@ def update_member(
     membership.role = request.role.value
     db.add(membership)
     db.commit()
+
+
+@groups_router.get("/{group_id}/members", response_model=list[MemberResponse])
+def list_members(
+    group_id: str,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    db: Annotated[Session, Depends(get_database_session)],
+) -> list[MemberResponse]:
+    try:
+        members = GroupInvitationService(db).list_group_members(
+            group_id=group_id,
+            actor_user_id=principal.user_id,
+        )
+    except GroupMembershipPermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="not allowed") from exc
+    except InvitationNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="group not found"
+        ) from exc
+    return [_member_response(member) for member in members]
+
+
+@groups_router.post(
+    "/{group_id}/invitations",
+    response_model=GroupInvitationResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_group_invitation(
+    group_id: str,
+    request: GroupInvitationCreateRequest,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    db: Annotated[Session, Depends(get_database_session)],
+    email_sender: Annotated[AuthEmailSender, Depends(get_configured_auth_email_sender)],
+) -> GroupInvitationResponse:
+    try:
+        invitation = GroupInvitationService(db, email_sender=email_sender).create_invitation(
+            group_id=group_id,
+            invited_email=str(request.email),
+            role=request.role,
+            created_by_user_id=principal.user_id,
+        )
+    except PendingInvitationExistsError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="pending_invitation_exists"
+        ) from exc
+    except GroupMembershipPermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="not allowed") from exc
+    except InvitationNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="group not found"
+        ) from exc
+    return _invitation_response(invitation)
+
+
+@groups_router.get(
+    "/{group_id}/invitations",
+    response_model=list[GroupInvitationResponse],
+)
+def list_group_invitations(
+    group_id: str,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    db: Annotated[Session, Depends(get_database_session)],
+) -> list[GroupInvitationResponse]:
+    try:
+        invitations = GroupInvitationService(db).list_group_invitations(
+            group_id=group_id,
+            actor_user_id=principal.user_id,
+        )
+    except GroupMembershipPermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="not allowed") from exc
+    except InvitationNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="group not found"
+        ) from exc
+    return [_invitation_response(invitation) for invitation in invitations]
+
+
+@groups_router.patch(
+    "/{group_id}/invitations/{invitation_id}",
+    response_model=GroupInvitationResponse,
+)
+def update_group_invitation(
+    group_id: str,
+    invitation_id: str,
+    request: GroupInvitationUpdateRequest,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    db: Annotated[Session, Depends(get_database_session)],
+) -> GroupInvitationResponse:
+    try:
+        invitation = GroupInvitationService(db).update_pending_invitation_role(
+            group_id=group_id,
+            invitation_id=invitation_id,
+            role=request.role,
+            actor_user_id=principal.user_id,
+        )
+    except GroupMembershipPermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="not allowed") from exc
+    except InvitationNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="invitation not found"
+        ) from exc
+    except InvitationNotPendingError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="invitation is not pending"
+        ) from exc
+    return _invitation_response(invitation)
+
+
+@groups_router.post(
+    "/{group_id}/invitations/{invitation_id}/resend",
+    response_model=GroupInvitationResponse,
+)
+def resend_group_invitation(
+    group_id: str,
+    invitation_id: str,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    db: Annotated[Session, Depends(get_database_session)],
+    email_sender: Annotated[AuthEmailSender, Depends(get_configured_auth_email_sender)],
+) -> GroupInvitationResponse:
+    try:
+        invitation = GroupInvitationService(
+            db, email_sender=email_sender
+        ).resend_pending_invitation(
+            group_id=group_id,
+            invitation_id=invitation_id,
+            actor_user_id=principal.user_id,
+        )
+    except GroupMembershipPermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="not allowed") from exc
+    except InvitationNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="invitation not found"
+        ) from exc
+    except InvitationNotPendingError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="invitation is not pending"
+        ) from exc
+    return _invitation_response(invitation)
+
+
+@groups_router.delete(
+    "/{group_id}/invitations/{invitation_id}",
+    response_model=GroupInvitationResponse,
+)
+def cancel_group_invitation(
+    group_id: str,
+    invitation_id: str,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    db: Annotated[Session, Depends(get_database_session)],
+) -> GroupInvitationResponse:
+    try:
+        invitation = GroupInvitationService(db).cancel_pending_invitation(
+            group_id=group_id,
+            invitation_id=invitation_id,
+            actor_user_id=principal.user_id,
+        )
+    except GroupMembershipPermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="not allowed") from exc
+    except InvitationNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="invitation not found"
+        ) from exc
+    except InvitationNotPendingError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="invitation is not pending"
+        ) from exc
+    return _invitation_response(invitation)
+
+
+@group_invitations_router.post("/accept", response_model=MemberResponse)
+def accept_group_invitation(
+    request: GroupInvitationAcceptRequest,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    db: Annotated[Session, Depends(get_database_session)],
+) -> MemberResponse:
+    try:
+        membership = GroupInvitationService(db).accept_invitation(
+            token=request.token,
+            actor_user_id=principal.user_id,
+        )
+    except InvalidInvitationTokenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="invalid or expired invitation",
+        ) from exc
+    return _member_response(membership)
 
 
 @groups_router.post(
@@ -586,4 +763,28 @@ def _publish_request_response(
         published_knowledge_base_id=publish_request.published_knowledge_base_id,
         created_at=publish_request.created_at,
         reviewed_at=publish_request.reviewed_at,
+    )
+
+
+def _member_response(membership: MembershipModel) -> MemberResponse:
+    return MemberResponse(
+        member_id=membership.id,
+        user_id=membership.user_id,
+        role=MembershipRole(membership.role),
+        created_at=membership.created_at,
+    )
+
+
+def _invitation_response(invitation: GroupInvitationModel) -> GroupInvitationResponse:
+    return GroupInvitationResponse(
+        id=invitation.id,
+        group_id=invitation.group_id,
+        invited_email=invitation.invited_email_normalized,
+        role=MembershipRole(invitation.role),
+        status=invitation.status,
+        created_at=invitation.created_at,
+        expires_at=invitation.expires_at,
+        accepted_at=invitation.accepted_at,
+        cancelled_at=invitation.cancelled_at,
+        resent_at=invitation.resent_at,
     )
