@@ -14,7 +14,7 @@ The current backend is a thin but working product slice:
 - LangGraph general assistant path with deterministic route classification and OpenAI-backed response generation by default.
 - Deterministic offline/test mode for credential-free tests and smoke checks.
 - First-party email/password auth, app-owned sessions, CSRF-aware logout, dev outbox, and signup/guest approval gates.
-- Invite-accepted group/team membership, document, knowledge-base, and permission foundations.
+- Invite-only group/team membership boundary, document, knowledge-base, and permission foundations.
 - KB-scoped document upload/creation for PDF, Markdown, plain text, `.xlsx`, and `.pptx`; team-upload staging, ingestion, extraction-run progress, chunks, entities, metadata profiles, embeddings, and pgvector-ready retrieval.
 - ContextForge retrieval service for permission-aware RAG, structured entity retrieval, reranking seams, packed context, citations, and redacted retrieval evidence.
 - Server-owned conversations, run history, SSE assistant text streaming, run replay/cancel paths, persisted citations, and frontend-safe activity events.
@@ -79,7 +79,7 @@ flowchart TD
     Events --> DB
 ```
 
-Groups/teams are invite-accepted shared-knowledge boundaries: managers invite an email address, public responses do not reveal whether an account exists, and active membership starts only after the recipient accepts while authenticated. Team uploads use a hidden personal staging KB that is excluded from RAG retrieval until approval copies the source into a group KB. The service layer owns auth, invite privacy, permissions, source policy, persistence, retrieval boundaries, citations, and events. ContextForge still retrieves authorized context for the general assistant, while `rag_agent` provides the graph-shaped RAG Agent contract for trace stages and grounding checks around that path. Chat runs use one unified `knowledge_base_selection` contract across authorized personal, shared, and team KBs; conversation transcripts and opt-in long-term memory remain owner-private, not group-shared.
+Team/group membership is an invite-accepted shared-knowledge boundary. Product clients should invite by email and accept an opaque invitation token; they must not discover users, branch on account existence, or directly activate membership by known `user_id`. Team uploads use a hidden personal staging KB that is excluded from RAG retrieval until approval copies the source into a group KB. The service layer owns auth, permissions, source policy, persistence, retrieval boundaries, citations, and events. ContextForge still retrieves authorized context for the general assistant, while `rag_agent` provides the graph-shaped RAG Agent contract for trace stages and grounding checks around that path. Chat runs use one unified `knowledge_base_selection` contract across authorized personal, shared, and team KBs; conversation transcripts and opt-in memory remain owner-private.
 
 ## Long-term memory
 
