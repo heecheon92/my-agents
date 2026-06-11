@@ -188,6 +188,25 @@ MY_AGENTS_GUEST_ACCESS_ENABLED=true uv run python -m scripts.ops guest issue \
   --send-email
 ```
 
+위험한 DB rebuild가 필요할 때는 `scripts.ops database wipe`가 dry-run plan을 먼저
+출력합니다. 실제 삭제는 `--execute`, `--confirm-wipe`, 정확한 `--database-name`이 모두
+있어야 하며, remote Postgres는 `--allow-remote-postgres`도 필요합니다. **강력 경고:** 이
+작업은 선택한 database의 app data/schema를 영구 삭제합니다. production/staging에서는 먼저
+snapshot/backup을 만들고 app worker를 중지한 뒤 실행하세요. wipe 후에는 별도 단계로
+`uv run alembic upgrade head`를 실행해야 합니다.
+
+```bash
+# Dry-run only: target과 object count를 확인합니다.
+uv run python -m scripts.ops --env pgvector.production database wipe
+
+# 실제 production wipe 예시: backup/snapshot 후에만 실행하세요.
+uv run python -m scripts.ops --env pgvector.production database wipe \
+  --execute \
+  --confirm-wipe \
+  --database-name my_agents_prod \
+  --allow-remote-postgres
+```
+
 ## 로컬 실행
 
 API 시작:

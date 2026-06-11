@@ -192,6 +192,25 @@ MY_AGENTS_GUEST_ACCESS_ENABLED=true uv run python -m scripts.ops guest issue \
   --lang en
 ```
 
+When a dangerous DB rebuild is intentional, `scripts.ops database wipe` prints a dry-run
+plan first. Actual deletion requires `--execute`, `--confirm-wipe`, and an exact
+`--database-name`; remote Postgres also requires `--allow-remote-postgres`. **Strong
+warning:** this permanently deletes app data/schema in the selected database. For
+production/staging, take a snapshot/backup and stop app workers first. After wiping, run
+`uv run alembic upgrade head` as a separate step.
+
+```bash
+# Dry-run only: confirm target and object count.
+uv run python -m scripts.ops --env pgvector.production database wipe
+
+# Real production wipe example: run only after backup/snapshot.
+uv run python -m scripts.ops --env pgvector.production database wipe \
+  --execute \
+  --confirm-wipe \
+  --database-name my_agents_prod \
+  --allow-remote-postgres
+```
+
 ## Run locally
 
 Start the API:

@@ -146,6 +146,74 @@ def test_interactive_guest_issue_accepts_numbered_operation_choice(
     ]
 
 
+def test_interactive_database_wipe_prints_strong_warning_and_delegates(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:  # noqa: ANN001
+    env_file = _env_file(tmp_path)
+    prompts = iter(["database wipe", "yes", "yes", "my_agents", "no"])
+    delegated: dict[str, list[str]] = {}
+
+    def wipe_main(argv: list[str]) -> int:
+        delegated["argv"] = argv
+        return 0
+
+    monkeypatch.setattr(ops.wipe_database, "main", wipe_main)
+
+    exit_code = ops.main(
+        ["--env-file", str(env_file), "--interactive"],
+        input_fn=lambda prompt: next(prompts),
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "!!! DANGER: DATABASE WIPE" in captured.out
+    assert delegated["argv"] == [
+        "--env-file",
+        str(env_file),
+        "--execute",
+        "--confirm-wipe",
+        "--database-name",
+        "my_agents",
+    ]
+
+
+def test_database_wipe_command_delegates_to_functional_script(monkeypatch) -> None:  # noqa: ANN001
+    delegated: dict[str, list[str]] = {}
+
+    def wipe_main(argv: list[str]) -> int:
+        delegated["argv"] = argv
+        return 0
+
+    monkeypatch.setattr(ops.wipe_database, "main", wipe_main)
+
+    exit_code = ops.main(
+        [
+            "--env",
+            "pgvector.production",
+            "database",
+            "wipe",
+            "--execute",
+            "--confirm-wipe",
+            "--database-name",
+            "my_agents_prod",
+            "--allow-remote-postgres",
+        ]
+    )
+
+    assert exit_code == 0
+    assert delegated["argv"] == [
+        "--env",
+        "pgvector.production",
+        "--execute",
+        "--confirm-wipe",
+        "--database-name",
+        "my_agents_prod",
+        "--allow-remote-postgres",
+    ]
+
+
 def test_interactive_account_approve_can_mark_email_verified(
     tmp_path,
     monkeypatch,
