@@ -16,7 +16,7 @@ The current backend is a thin but working product slice:
 - First-party email/password auth, app-owned sessions, CSRF-aware logout, dev outbox, and signup/guest approval gates.
 - Invite-only group/team membership boundary, document, knowledge-base, and permission foundations.
 - KB-scoped document upload/creation for PDF, Markdown, plain text, `.xlsx`, and `.pptx`; team-upload staging, ingestion, extraction-run progress, chunks, entities, metadata profiles, embeddings, and pgvector-ready retrieval.
-- ContextForge retrieval service for permission-aware RAG, structured entity retrieval, reranking seams, packed context, citations, and redacted retrieval evidence.
+- ContextForge retrieval service for permission-aware RAG, structured entity retrieval, env-tunable reranking top-k, packed context, citations, and redacted retrieval evidence.
 - Server-owned conversations, run history, SSE assistant text streaming, run replay/cancel paths, persisted citations, and frontend-safe activity events.
 - Opt-in per-user long-term memory with review/list/delete APIs, relevance-minimized recall, deterministic write-policy gates, suggest-confirm lifecycle, document-derived provenance/staleness, and conflict-aware provider context.
 
@@ -243,6 +243,12 @@ For hosted/demo deployments, keep async document ingestion out of the web proces
 MY_AGENTS_INGESTION_EXECUTION_MODE=external_worker uv run uvicorn main:app --host 0.0.0.0 --port 8000
 uv run python -m my_agents.ingestion_worker
 ```
+
+The frontend document upload queue reads the safe `/health` runtime hint
+`frontend_config.documents.upload_concurrency`, backed by
+`MY_AGENTS_DOCUMENT_UPLOAD_CONCURRENCY` (default `3`). This controls frontend
+fan-out only; backend worker process count/supervision remains a separate
+deployment choice.
 
 ## Common checks
 

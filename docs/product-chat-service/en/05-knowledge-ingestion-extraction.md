@@ -95,6 +95,7 @@ The async slice is additive and intentionally demo-shaped, with a web/worker spl
 - `POST /documents/{document_id}/ingest/async` requires the same ingest permission as the sync endpoint and returns `202 Accepted`;
 - response body is an `ExtractionRunResponse` with `status=pending`, `stage=queued`, and `progress_percent=0`;
 - execution uses a fresh SQLAlchemy session and updates the same run through `running` stages (`chunking`, `embedding`, optional `indexing`, `entities`) to `completed`; local/default mode does this in-process, while `external_worker` mode leaves the run queued until `python -m my_agents.ingestion_worker` claims it;
+- frontend multi-file upload fan-out is a safe backend runtime hint exposed through `/health` as `frontend_config.documents.upload_concurrency`, backed by `MY_AGENTS_DOCUMENT_UPLOAD_CONCURRENCY` (default `3`);
 - `GET /documents/{document_id}/extraction-runs/{run_id}` requires document read access and returns the latest progress/counts;
 - failures persist `status=failed`, `stage=failed`, and a bounded display-safe `error`;
 - the backend still uses database polling rather than Redis/Celery/durable queue semantics, so production worker supervision and stale-run recovery remain follow-up work.

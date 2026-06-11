@@ -25,7 +25,12 @@ def test_health_returns_status_service_and_version(client: TestClient) -> None:
     response = client.get("/health")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "service": "my-agents", "version": "0.1.0"}
+    assert response.json() == {
+        "status": "ok",
+        "service": "my-agents",
+        "version": "0.1.0",
+        "frontend_config": {"documents": {"upload_concurrency": 3}},
+    }
 
 
 def test_chat_returns_typed_response_with_route_and_handler(client: TestClient) -> None:

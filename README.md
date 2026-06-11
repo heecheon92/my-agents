@@ -16,7 +16,7 @@
 - email/password auth, app-owned session, CSRF-aware logout, dev outbox, signup/guest approval gates.
 - 초대 수락 기반 group/team membership boundary, document, knowledge-base, permission 기반.
 - PDF, Markdown, plain text, `.xlsx`, `.pptx`를 지원하는 KB-scoped document upload/create, team-upload staging, ingestion, extraction-run progress, chunk, entity, metadata profile, embedding, pgvector-ready retrieval.
-- permission-aware RAG, structured entity retrieval, reranking seam, packed context, citation, redacted retrieval evidence를 담당하는 ContextForge retrieval service.
+- permission-aware RAG, structured entity retrieval, env로 조정 가능한 reranking top-k, packed context, citation, redacted retrieval evidence를 담당하는 ContextForge retrieval service.
 - server-owned conversation, run history, SSE assistant text streaming, run replay/cancel, persisted citation, frontend-safe activity event와 compact ko/en agent trace.
 - review/list/delete API, relevance-minimized recall, deterministic write-policy gate, suggest-confirm lifecycle, document-derived provenance/staleness, conflict-aware provider context를 가진 사용자별 opt-in long-term memory.
 
@@ -239,6 +239,12 @@ Hosted/demo 배포에서는 async document ingestion을 web process 밖에서 �
 MY_AGENTS_INGESTION_EXECUTION_MODE=external_worker uv run uvicorn main:app --host 0.0.0.0 --port 8000
 uv run python -m my_agents.ingestion_worker
 ```
+
+Frontend document upload queue는 `/health`의 안전한 runtime hint인
+`frontend_config.documents.upload_concurrency`를 읽습니다. 이 값은
+`MY_AGENTS_DOCUMENT_UPLOAD_CONCURRENCY`(기본값 `3`)로 설정합니다. 이 설정은
+frontend fan-out만 제어하며, backend worker process 수와 supervision은 별도 배포
+선택입니다.
 
 Backend restart 등으로 남은 active conversation run은 polling 또는 다음 prompt 전 cleanup에서 실패/취소
 상태로 정리됩니다. Hosted/demo UX에서는 기본 120초를 사용하며 필요하면

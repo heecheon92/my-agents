@@ -94,6 +94,12 @@ class Settings(BaseSettings):
         default="deterministic",
         validation_alias=AliasChoices("MY_AGENTS_RERANKER_MODE"),
     )
+    reranker_top_k: int = Field(
+        default=40,
+        ge=1,
+        le=200,
+        validation_alias=AliasChoices("MY_AGENTS_RERANKER_TOP_K"),
+    )
     cross_encoder_model: str = Field(
         default="cross-encoder/ms-marco-MiniLM-L-6-v2",
         min_length=1,
@@ -381,6 +387,12 @@ class Settings(BaseSettings):
         ge=1,
         le=20,
         validation_alias=AliasChoices("MY_AGENTS_INGESTION_WORKER_BATCH_SIZE"),
+    )
+    document_upload_concurrency: int = Field(
+        default=3,
+        ge=1,
+        le=20,
+        validation_alias=AliasChoices("MY_AGENTS_DOCUMENT_UPLOAD_CONCURRENCY"),
     )
     debug_knowledge_context_logging: bool = Field(
         default=False,

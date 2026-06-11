@@ -1,5 +1,11 @@
 # ContextForge changelog
 
+## 2026-06-11 — Make reranker top-k runtime configurable
+
+- **Why:** Production deployments need a small, explicit latency/memory knob for the second-stage reranker candidate window without changing authorization or retrieval code.
+- **Behavior / contract impact:** `MY_AGENTS_RERANKER_TOP_K` now controls the authorized candidate count sent to deterministic or cross-encoder reranking. The default remains `40`.
+- **Verification evidence:** Added settings and ContextForge service coverage for the env override.
+
 ## 2026-06-10 — Add thin LangGraph RetrievalGraph wrapper
 
 - **Why:** Future agents should be able to call knowledge-base retrieval as a typed graph/tool capability when they need more evidence, but the product must keep hard authorization and retrieval SQL inside existing service boundaries.

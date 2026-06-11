@@ -104,6 +104,34 @@ def test_context_forge_sends_only_authorized_bounded_candidates_to_reranker() ->
     assert result.evidence.reranker == "capturing"
 
 
+def test_context_forge_uses_reranker_top_k_setting(monkeypatch) -> None:  # noqa: ANN001
+    monkeypatch.setenv("MY_AGENTS_RERANKER_TOP_K", "7")
+
+    reranker = CapturingReranker()
+    service = ContextForgeService(
+        None,  # type: ignore[arg-type]
+        retrieval_service=FakeAuthorizedRetrievalService(),  # type: ignore[arg-type]
+        reranker=reranker,
+    )
+
+    result = service.retrieve(
+        ContextForgeRequest(
+            user_id="user-1",
+            conversation_id="conversation-1",
+            query="Based on my document, answer the memory question",
+            messages=[],
+            selection_context=KnowledgeBaseSelectionContext(
+                mode="all",
+                knowledge_base_ids=(),
+                resolved_count=0,
+            ),
+        )
+    )
+
+    assert result.plan.limits.rerank_limit == 7
+    assert len(reranker.seen_chunk_ids) == 7
+
+
 def test_debug_agent_turn_rich_prints_handoff_when_enabled(capsys) -> None:  # noqa: ANN001
     original_level = context_forge_debug.logger.level
     context_forge_debug.logger.setLevel(logging.DEBUG)
@@ -170,6 +198,7 @@ def test_build_reranker_defaults_to_offline_deterministic(
 
     assert isinstance(build_reranker(settings), DeterministicReranker)
     assert settings.reranker_mode == "deterministic"
+    assert settings.reranker_top_k == 40
     assert settings.cross_encoder_model == "cross-encoder/ms-marco-MiniLM-L-6-v2"
     assert settings.cross_encoder_batch_size == 16
 
@@ -177,6 +206,7 @@ def test_build_reranker_defaults_to_offline_deterministic(
 def test_cross_encoder_settings_accept_overrides(monkeypatch) -> None:  # noqa: ANN001
     monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
     monkeypatch.setenv("MY_AGENTS_RERANKER_MODE", "cross_encoder")
+    monkeypatch.setenv("MY_AGENTS_RERANKER_TOP_K", "24")
     monkeypatch.setenv("MY_AGENTS_CROSS_ENCODER_MODEL", "BAAI/bge-reranker-v2-m3")
     monkeypatch.setenv("MY_AGENTS_CROSS_ENCODER_BATCH_SIZE", "32")
     monkeypatch.setenv("MY_AGENTS_CROSS_ENCODER_DEVICE", "mps")
@@ -184,6 +214,7 @@ def test_cross_encoder_settings_accept_overrides(monkeypatch) -> None:  # noqa: 
     settings = Settings(_env_file=None)
 
     assert settings.reranker_mode == "cross_encoder"
+    assert settings.reranker_top_k == 24
     assert settings.cross_encoder_model == "BAAI/bge-reranker-v2-m3"
     assert settings.cross_encoder_batch_size == 32
     assert settings.cross_encoder_device == "mps"
