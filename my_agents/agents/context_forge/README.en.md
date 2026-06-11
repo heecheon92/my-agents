@@ -81,12 +81,13 @@ The default `MY_AGENTS_RERANKER_MODE=deterministic` keeps fused-score ordering s
 
 ```bash
 MY_AGENTS_RERANKER_MODE=cross_encoder
+MY_AGENTS_RERANKER_TOP_K=40
 MY_AGENTS_CROSS_ENCODER_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2
 MY_AGENTS_CROSS_ENCODER_BATCH_SIZE=16
 # MY_AGENTS_CROSS_ENCODER_DEVICE=mps
 ```
 
-The cross-encoder only scores already-authorized top-k candidates from `CandidateLimits.rerank_limit` as query/document pairs. It does not replace first-stage retrieval, and authorization always completes before reranking.
+The cross-encoder only scores already-authorized top-k candidates from `MY_AGENTS_RERANKER_TOP_K` (`40` by default) as query/document pairs. It does not replace first-stage retrieval, and authorization always completes before reranking.
 
 ## Rich debug trace
 

@@ -43,6 +43,7 @@ EXPECTED_SERVICE_TABLES = {
     "guest_access_requests",
     "guest_access_codes",
     "groups",
+    "group_invitations",
     "memberships",
     "conversations",
     "messages",
@@ -163,7 +164,9 @@ def test_alembic_offline_sql_generation_covers_initial_schema(monkeypatch) -> No
     assert "20260609_0022" in sql
     assert "20260609_0023" in sql
     assert "20260609_0024" in sql
+    assert "20260610_0025" in sql
     assert "CREATE TABLE guest_access_requests" in sql
+    assert "CREATE TABLE group_invitations" in sql
     assert "CREATE TABLE knowledge_publish_requests" in sql
     assert "CREATE TABLE knowledge_base_publications" in sql
     assert "CREATE TABLE document_parse_artifacts" in sql
@@ -180,6 +183,8 @@ def test_alembic_offline_sql_generation_covers_initial_schema(monkeypatch) -> No
     assert "DROP COLUMN group_id" in sql
     assert "approval_status" in sql
     assert "memory_source_snapshot_json" in sql
+    assert "uq_group_invitations_pending_email" in sql
+    assert "token_hash" in sql
 
 
 def test_parse_artifacts_store_only_derived_parser_outputs(
@@ -225,6 +230,52 @@ def test_parse_artifacts_store_only_derived_parser_outputs(
     assert not any(
         fragment in column for column in artifact_columns for fragment in forbidden_fragments
     )
+
+
+def test_legacy_documents_without_knowledge_base_upgrade_to_head(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    database_path = tmp_path / "legacy-documents.db"
+    database_url = f"sqlite+pysqlite:///{database_path}"
+    monkeypatch.setenv("MY_AGENTS_DATABASE_URL", database_url)
+
+    command.upgrade(_alembic_config(), "20260520_0004")
+    document_id = str(uuid.uuid4())
+    owner_user_id = str(uuid.uuid4())
+    now = datetime.now().isoformat(sep=" ")
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            "insert into users (id, email, password_hash, created_at) values (?, ?, ?, ?)",
+            (owner_user_id, "legacy-doc@example.com", "hash", now),
+        )
+        connection.execute(
+            "insert into documents "
+            "(id, title, content, owner_user_id, group_id, knowledge_base_id, created_at) "
+            "values (?, ?, ?, ?, ?, ?, ?)",
+            (document_id, "Legacy doc", "legacy content", owner_user_id, None, None, now),
+        )
+
+    command.upgrade(_alembic_config(), "head")
+
+    with sqlite3.connect(database_path) as connection:
+        document_kb_id = connection.execute(
+            "select knowledge_base_id from documents where id = ?", (document_id,)
+        ).fetchone()[0]
+        migrated_kb = connection.execute(
+            "select scope, owner_user_id from knowledge_bases where id = ?", (document_kb_id,)
+        ).fetchone()
+        user_columns = {row[1] for row in connection.execute("pragma table_info(users)").fetchall()}
+        alembic_version = connection.execute("select version_num from alembic_version").fetchone()[
+            0
+        ]
+
+    assert document_kb_id is not None
+    assert migrated_kb == ("personal", owner_user_id)
+    assert "approval_status" in user_columns
+    assert alembic_version == "20260610_0025"
+
+    _assert_database_matches_model_metadata(database_url)
 
 
 def test_sqlite_json_fallback_reads_chunks_created_before_pgvector_migration(

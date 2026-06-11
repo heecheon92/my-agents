@@ -18,7 +18,7 @@ from my_agents.knowledge.models import (
 from my_agents.knowledge.retrieval import RetrievalService
 from my_agents.persistence.database import get_database_session
 
-from .conftest import verify_latest_auth_email
+from .conftest import latest_auth_email_token, verify_latest_auth_email
 
 
 def _client(
@@ -47,9 +47,22 @@ def _create_group(owner: TestClient, *, name: str = "Publish Group") -> str:
     return response.json()["id"]
 
 
-def _add_member(owner: TestClient, group_id: str, user_id: str, role: str = "viewer") -> None:
-    response = owner.post(f"/groups/{group_id}/members", json={"user_id": user_id, "role": role})
-    assert response.status_code == 204
+def _invite_and_accept_member(
+    *,
+    owner: TestClient,
+    recipient: TestClient,
+    group_id: str,
+    recipient_email: str,
+    role: str = "viewer",
+) -> None:
+    invitation = owner.post(
+        f"/groups/{group_id}/invitations",
+        json={"email": recipient_email, "role": role},
+    )
+    assert invitation.status_code == 201
+    token = latest_auth_email_token(recipient_email, "group_invitation")
+    accepted = recipient.post("/group-invitations/accept", json={"token": token})
+    assert accepted.status_code == 200
 
 
 def _create_personal_kb(client: TestClient, name: str = "Personal KB") -> str:
@@ -180,7 +193,13 @@ def test_member_can_create_pending_publish_request_for_own_personal_document(mon
     _owner_id = _signup_login(owner, "publish-owner@example.com")
     requester_id = _signup_login(requester, "publish-requester@example.com")
     group_id = _create_group(owner)
-    _add_member(owner, group_id, requester_id, "viewer")
+    _invite_and_accept_member(
+        owner=owner,
+        recipient=requester,
+        group_id=group_id,
+        recipient_email="publish-requester@example.com",
+        role="viewer",
+    )
     target_kb_id = _create_group_kb(owner, group_id)
     personal_kb_id = _create_personal_kb(requester)
     source_document_id = _create_document(
@@ -221,10 +240,16 @@ def test_publish_request_rejects_invalid_source_or_target_boundaries(monkeypatch
     requester = _client(monkeypatch)
     other = _client(monkeypatch)
     _owner_id = _signup_login(owner, "publish-boundary-owner@example.com")
-    requester_id = _signup_login(requester, "publish-boundary-requester@example.com")
+    _requester_id = _signup_login(requester, "publish-boundary-requester@example.com")
     _other_id = _signup_login(other, "publish-boundary-other@example.com")
     group_id = _create_group(owner, name="Boundary Group")
-    _add_member(owner, group_id, requester_id, "viewer")
+    _invite_and_accept_member(
+        owner=owner,
+        recipient=requester,
+        group_id=group_id,
+        recipient_email="publish-boundary-requester@example.com",
+        role="viewer",
+    )
     target_group_kb_id = _create_group_kb(owner, group_id, "Boundary Group KB")
     requester_personal_kb_id = _create_personal_kb(requester, "Requester KB")
     other_personal_kb_id = _create_personal_kb(other, "Other KB")
@@ -309,11 +334,23 @@ def test_owner_admin_approval_copies_and_ingests_group_document_without_exposing
     requester = _client(monkeypatch)
     viewer = _client(monkeypatch)
     owner_id = _signup_login(owner, "publish-approve-owner@example.com")
-    requester_id = _signup_login(requester, "publish-approve-requester@example.com")
+    _requester_id = _signup_login(requester, "publish-approve-requester@example.com")
     viewer_id = _signup_login(viewer, "publish-approve-viewer@example.com")
     group_id = _create_group(owner, name="Approval Group")
-    _add_member(owner, group_id, requester_id, "viewer")
-    _add_member(owner, group_id, viewer_id, "viewer")
+    _invite_and_accept_member(
+        owner=owner,
+        recipient=requester,
+        group_id=group_id,
+        recipient_email="publish-approve-requester@example.com",
+        role="viewer",
+    )
+    _invite_and_accept_member(
+        owner=owner,
+        recipient=viewer,
+        group_id=group_id,
+        recipient_email="publish-approve-viewer@example.com",
+        role="viewer",
+    )
     target_kb_id = _create_group_kb(owner, group_id, "Approval KB")
     personal_kb_id = _create_personal_kb(requester, "Approval Personal KB")
     source_document_id = _create_document(
@@ -400,9 +437,15 @@ def test_owner_approval_copies_office_parse_artifact_to_group_document(monkeypat
     owner = _client(monkeypatch)
     requester = _client(monkeypatch)
     _owner_id = _signup_login(owner, "publish-office-owner@example.com")
-    requester_id = _signup_login(requester, "publish-office-requester@example.com")
+    _requester_id = _signup_login(requester, "publish-office-requester@example.com")
     group_id = _create_group(owner, name="Office Publish Group")
-    _add_member(owner, group_id, requester_id, "viewer")
+    _invite_and_accept_member(
+        owner=owner,
+        recipient=requester,
+        group_id=group_id,
+        recipient_email="publish-office-requester@example.com",
+        role="viewer",
+    )
     target_kb_id = _create_group_kb(owner, group_id, "Office Publish KB")
     personal_kb_id = _create_personal_kb(requester, "Office Publish Personal KB")
     source_document_id = _upload_xlsx_document(
@@ -458,9 +501,15 @@ def test_publish_approval_rolls_back_group_copy_when_ingestion_fails(monkeypatch
     owner = _client(monkeypatch, raise_server_exceptions=False)
     requester = _client(monkeypatch, raise_server_exceptions=False)
     _owner_id = _signup_login(owner, "publish-ingest-fail-owner@example.com")
-    requester_id = _signup_login(requester, "publish-ingest-fail-requester@example.com")
+    _requester_id = _signup_login(requester, "publish-ingest-fail-requester@example.com")
     group_id = _create_group(owner, name="Ingest Failure Group")
-    _add_member(owner, group_id, requester_id, "viewer")
+    _invite_and_accept_member(
+        owner=owner,
+        recipient=requester,
+        group_id=group_id,
+        recipient_email="publish-ingest-fail-requester@example.com",
+        role="viewer",
+    )
     target_kb_id = _create_group_kb(owner, group_id, "Ingest Failure KB")
     personal_kb_id = _create_personal_kb(requester, "Ingest Failure Personal KB")
     source_document_id = _create_document(
@@ -506,11 +555,23 @@ def test_rejected_publish_request_has_zero_retrieval_effect(monkeypatch) -> None
     requester = _client(monkeypatch)
     viewer = _client(monkeypatch)
     owner_id = _signup_login(owner, "publish-reject-owner@example.com")
-    requester_id = _signup_login(requester, "publish-reject-requester@example.com")
+    _requester_id = _signup_login(requester, "publish-reject-requester@example.com")
     viewer_id = _signup_login(viewer, "publish-reject-viewer@example.com")
     group_id = _create_group(owner, name="Reject Group")
-    _add_member(owner, group_id, requester_id, "viewer")
-    _add_member(owner, group_id, viewer_id, "viewer")
+    _invite_and_accept_member(
+        owner=owner,
+        recipient=requester,
+        group_id=group_id,
+        recipient_email="publish-reject-requester@example.com",
+        role="viewer",
+    )
+    _invite_and_accept_member(
+        owner=owner,
+        recipient=viewer,
+        group_id=group_id,
+        recipient_email="publish-reject-viewer@example.com",
+        role="viewer",
+    )
     target_kb_id = _create_group_kb(owner, group_id, "Reject KB")
     personal_kb_id = _create_personal_kb(requester, "Reject Personal KB")
     source_document_id = _create_document(
@@ -545,8 +606,20 @@ def test_owner_approval_publishes_entire_personal_kb_as_group_source(monkeypatch
     requester_id = _signup_login(requester, "publish-kb-requester@example.com")
     viewer_id = _signup_login(viewer, "publish-kb-viewer@example.com")
     group_id = _create_group(owner, name="Published Personal KB Group")
-    _add_member(owner, group_id, requester_id, "viewer")
-    _add_member(owner, group_id, viewer_id, "viewer")
+    _invite_and_accept_member(
+        owner=owner,
+        recipient=requester,
+        group_id=group_id,
+        recipient_email="publish-kb-requester@example.com",
+        role="viewer",
+    )
+    _invite_and_accept_member(
+        owner=owner,
+        recipient=viewer,
+        group_id=group_id,
+        recipient_email="publish-kb-viewer@example.com",
+        role="viewer",
+    )
     personal_kb_id = _create_personal_kb(requester, "Requester Public Candidate KB")
     source_document_id = _create_document(
         requester,

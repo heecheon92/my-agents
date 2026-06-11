@@ -11,6 +11,7 @@ repository root with `uv run python -m scripts.<name>`.
 | --- | --- | --- |
 | `scripts.dev_pgvector` | Start and wire a disposable local Docker pgvector/Postgres database. | Local Postgres/pgvector development and migration smoke checks. |
 | `scripts.ops` | Interactive operational dispatcher that collects options and delegates to focused scripts. | Operator-friendly account/guest maintenance. |
+| `scripts.wipe_database` | Dangerously wipe the selected SQLite/Postgres database after explicit confirmations. | Rebuild a local/staging/production database from migrations after a backup/snapshot. |
 | `scripts.approve_account_signup` | Approve a pending account signup and print/send verification or mark email verified. | Manual signup approval and verification bypass. |
 | `scripts.resend_account_verification` | Refresh an expired/missing verification token for an approved unverified account. | Recover signups blocked by expired verification links. |
 | `scripts.reject_account_signup` | Reject a pending account signup. | Manual signup rejection. |
@@ -223,6 +224,7 @@ Current behavior:
 - `account resend-verification` delegates to `scripts.resend_account_verification`.
 - `account reject` delegates to `scripts.reject_account_signup`.
 - `guest issue` delegates to `scripts.issue_guest_access_code`.
+- `database wipe` delegates to `scripts.wipe_database` and prints a strong destructive-operation warning before it does anything.
 - Email content defaults to Korean; use `--lang en` for English.
 
 Commands:
@@ -263,9 +265,71 @@ uv run python -m scripts.ops --env pgvector.production guest issue \
   --email guest@example.com \
   --send-email \
   --lang en
+
+# DANGER: print a dry-run wipe plan for the selected database.
+uv run python -m scripts.ops --env pgvector.production database wipe
+
+# DANGER: execute the wipe only after backup/snapshot and exact database-name confirmation.
+uv run python -m scripts.ops --env pgvector.production database wipe \
+  --execute \
+  --confirm-wipe \
+  --database-name my_agents_prod \
+  --allow-remote-postgres
 ```
 
 `scripts.auth_approval` remains a compatibility alias for the same dispatcher.
+
+## `scripts.wipe_database`
+
+Dangerous database wipe helper for intentionally rebuilding an environment.
+
+> **!!! DANGER: DATABASE WIPE PERMANENTLY DELETES ALL APP DATA AND SCHEMA IN THE SELECTED DATABASE. BACK UP THE DATABASE FIRST, STOP RUNNING APP PROCESSES, AND VERIFY THE ENV FILE AND DATABASE NAME BEFORE EXECUTING.**
+
+Current behavior:
+
+- Dry-run by default: prints the selected target and object count without deleting anything.
+- SQLite file-backed URLs are wiped by deleting the configured database file.
+- Postgres URLs are wiped by dropping and recreating the selected database's `public` schema.
+- `--execute` is required to delete anything.
+- `--confirm-wipe` is required with `--execute`.
+- `--database-name` must exactly match the selected SQLite filename or Postgres database name.
+- Non-local Postgres hosts require `--allow-remote-postgres` in addition to all other confirmations.
+- The script does **not** run migrations after wiping; run `uv run alembic upgrade head` as a separate audited step.
+
+Commands:
+
+```bash
+# Safe default: inspect the selected local pgvector database and print the wipe plan.
+uv run python -m scripts.wipe_database
+
+# Inspect a production target without deleting anything.
+uv run python -m scripts.wipe_database --env pgvector.production --allow-remote-postgres
+
+# Delete a local SQLite file-backed database after exact filename confirmation.
+uv run python -m scripts.wipe_database \
+  --env-file .env \
+  --execute \
+  --confirm-wipe \
+  --database-name local-dev.sqlite3
+
+# Delete a remote Postgres public schema after backup/snapshot and exact DB-name confirmation.
+uv run python -m scripts.wipe_database \
+  --env pgvector.production \
+  --execute \
+  --confirm-wipe \
+  --database-name my_agents_prod \
+  --allow-remote-postgres
+
+# Recreate schema after a wipe.
+MY_AGENTS_DATABASE_URL='<same-url>' uv run alembic upgrade head
+```
+
+Safety notes:
+
+- Take a provider-level snapshot/backup before production or staging wipes.
+- Stop application workers first so they do not keep using dropped tables or recreate SQLite files.
+- Prefer running the dry-run command immediately before the execute command and compare `database_name`.
+- Do not use this as a migration substitute when preserving data matters; use Alembic data migrations instead.
 
 ## `scripts.approve_account_signup`
 

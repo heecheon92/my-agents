@@ -10,6 +10,7 @@ from scripts import (
     issue_guest_access_code,
     reject_account_signup,
     resend_account_verification,
+    wipe_database,
 )
 from scripts.ops_common import add_env_arguments, env_argv
 
@@ -92,6 +93,32 @@ def build_parser() -> argparse.ArgumentParser:
         default="ko",
         help="Language for --send-email content. Defaults to ko; use en for English.",
     )
+    database = subparsers.add_parser("database", help="Database maintenance operations.")
+    database_actions = database.add_subparsers(dest="action", required=True)
+    database_wipe = database_actions.add_parser(
+        "wipe",
+        help="Dangerously wipe the selected database after explicit confirmations.",
+    )
+    database_wipe.add_argument(
+        "--execute",
+        action="store_true",
+        help="Actually wipe the selected database. Without this flag, only print the plan.",
+    )
+    database_wipe.add_argument(
+        "--confirm-wipe",
+        action="store_true",
+        help="Required with --execute to acknowledge destructive data loss.",
+    )
+    database_wipe.add_argument(
+        "--database-name",
+        default=None,
+        help="Required with --execute. Must exactly match the selected database name.",
+    )
+    database_wipe.add_argument(
+        "--allow-remote-postgres",
+        action="store_true",
+        help="Allow a non-local Postgres host to be wiped. Still requires confirmations.",
+    )
     return parser
 
 
@@ -106,7 +133,9 @@ def main(argv: Sequence[str] | None = None, input_fn: Callable[[str], str] = inp
             print("cancelled")
             return 0
     elif args.resource is None:
-        parser.error("the following arguments are required: {account,guest} or --interactive")
+        parser.error(
+            "the following arguments are required: {account,guest,database} or --interactive"
+        )
     return _dispatch(args)
 
 
@@ -138,6 +167,17 @@ def _dispatch(args: argparse.Namespace) -> int:
             delegated.append("--send-email")
         delegated.extend(["--lang", args.lang])
         return issue_guest_access_code.main(delegated)
+    if args.resource == "database" and args.action == "wipe":
+        delegated = [*base_argv]
+        if args.execute:
+            delegated.append("--execute")
+        if args.confirm_wipe:
+            delegated.append("--confirm-wipe")
+        if args.database_name:
+            delegated.extend(["--database-name", args.database_name])
+        if args.allow_remote_postgres:
+            delegated.append("--allow-remote-postgres")
+        return wipe_database.main(delegated)
     raise ValueError(f"unsupported operation: {args.resource} {args.action}")
 
 
@@ -158,16 +198,18 @@ def _interactive_args(
                 "Resend verification for approved unverified account",
             ),
             ("guest issue", "Issue one-time guest access code"),
+            ("database wipe", "DANGER: wipe the selected database"),
         ),
         default="account approve",
     )
     args.resource, args.action = operation.split(" ", 1)
-    args.email = _prompt_required(input_fn, "Email")
+    args.email = None
     args.lang = "ko"
     args.send_email = False
     args.request_id = None
     args.ttl_seconds = None
     if args.resource == "account" and args.action == "approve":
+        args.email = _prompt_required(input_fn, "Email")
         args.mark_verified = _prompt_bool(
             input_fn,
             "Mark email verified now instead of issuing a verification link",
@@ -183,6 +225,7 @@ def _interactive_args(
                     default="ko",
                 )
     elif args.resource == "account" and args.action == "resend-verification":
+        args.email = _prompt_required(input_fn, "Email")
         args.mark_verified = False
         args.send_email = _prompt_bool(input_fn, "Send verification email", default=False)
         if args.send_email:
@@ -193,10 +236,12 @@ def _interactive_args(
                 default="ko",
             )
     elif args.resource == "account" and args.action == "reject":
+        args.email = _prompt_required(input_fn, "Email")
         confirmed = _prompt_bool(input_fn, "Reject this pending account", default=False)
         if not confirmed:
             raise SystemExit("cancelled")
     elif args.resource == "guest" and args.action == "issue":
+        args.email = _prompt_required(input_fn, "Email")
         args.request_id = _prompt_optional(input_fn, "Guest request id")
         ttl_seconds = _prompt_optional(input_fn, "Guest code TTL seconds")
         args.ttl_seconds = int(ttl_seconds) if ttl_seconds else None
@@ -207,6 +252,28 @@ def _interactive_args(
                 "Email language",
                 choices=(("ko", "Korean"), ("en", "English")),
                 default="ko",
+            )
+    elif args.resource == "database" and args.action == "wipe":
+        print(f"\n{wipe_database.WIPE_WARNING}")
+        args.execute = _prompt_bool(
+            input_fn,
+            "Execute the wipe now instead of showing a dry-run plan",
+            default=False,
+        )
+        args.confirm_wipe = False
+        args.database_name = None
+        args.allow_remote_postgres = False
+        if args.execute:
+            args.confirm_wipe = _prompt_bool(
+                input_fn,
+                "I understand this permanently deletes the selected database",
+                default=False,
+            )
+            args.database_name = _prompt_required(input_fn, "Exact database name")
+            args.allow_remote_postgres = _prompt_bool(
+                input_fn,
+                "Allow wiping a non-local Postgres host if the env points to one",
+                default=False,
             )
     return args
 

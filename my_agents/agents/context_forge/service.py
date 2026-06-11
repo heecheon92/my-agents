@@ -7,7 +7,11 @@ from time import perf_counter
 from sqlalchemy.orm import Session
 
 from my_agents.agents.context_forge.candidates import CandidateScouts
-from my_agents.agents.context_forge.contracts import ContextForgeRequest, ContextForgeResult
+from my_agents.agents.context_forge.contracts import (
+    CandidateLimits,
+    ContextForgeRequest,
+    ContextForgeResult,
+)
 from my_agents.agents.context_forge.debug import debug_agent_turn
 from my_agents.agents.context_forge.fusion import fuse_candidates
 from my_agents.agents.context_forge.observability import build_retrieval_evidence
@@ -29,11 +33,14 @@ class ContextForgeService:
         retrieval_service: RetrievalService | None = None,
         reranker: Reranker | None = None,
     ) -> None:
+        settings = get_settings()
         self._retrieval_service = retrieval_service or RetrievalService(db)
-        self._planner = QueryCartographer()
+        self._planner = QueryCartographer(
+            candidate_limits=CandidateLimits(rerank_limit=settings.reranker_top_k),
+        )
         self._source_warden = SourceWarden()
         self._scouts = CandidateScouts(self._retrieval_service)
-        self._reranker = reranker or build_reranker(get_settings())
+        self._reranker = reranker or build_reranker(settings)
         self._curator = ContextCurator()
 
     def retrieve(self, request: ContextForgeRequest) -> ContextForgeResult:

@@ -80,12 +80,13 @@ Structured entity는 document, chunk, extraction run, page, offset, confidence, 
 
 ```bash
 MY_AGENTS_RERANKER_MODE=cross_encoder
+MY_AGENTS_RERANKER_TOP_K=40
 MY_AGENTS_CROSS_ENCODER_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2
 MY_AGENTS_CROSS_ENCODER_BATCH_SIZE=16
 # MY_AGENTS_CROSS_ENCODER_DEVICE=mps
 ```
 
-Cross-encoder는 이미 승인된 top-k 후보(`CandidateLimits.rerank_limit`)만 query/document pair로 점수화합니다. 후보 검색 전체를 cross-encoder로 대체하지 않으며, 권한 필터링은 항상 reranking 전에 끝납니다.
+Cross-encoder는 `MY_AGENTS_RERANKER_TOP_K`가 정하는 이미 승인된 top-k 후보(기본 `40`)만 query/document pair로 점수화합니다. 후보 검색 전체를 cross-encoder로 대체하지 않으며, 권한 필터링은 항상 reranking 전에 끝납니다.
 
 ## Rich debug trace
 

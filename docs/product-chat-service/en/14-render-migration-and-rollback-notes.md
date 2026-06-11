@@ -131,6 +131,7 @@ When moving to Hostinger, Fly.io, Railway, ECS, a VPS, or another host:
 
 6. **Resource-heavy options**
    - `MY_AGENTS_RERANKER_MODE=cross_encoder` loads ML dependencies and can be memory-heavy.
+   - Lower `MY_AGENTS_RERANKER_TOP_K` from the default `40` if cross-encoder scoring is useful but the candidate window is too expensive.
    - On small hosts, switch to `MY_AGENTS_RERANKER_MODE=deterministic` if startup or memory is unstable.
 
 7. **Document ingestion**

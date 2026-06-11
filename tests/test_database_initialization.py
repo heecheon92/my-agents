@@ -21,6 +21,7 @@ def test_import_all_models_registers_current_service_tables() -> None:
         "users",
         "sessions",
         "groups",
+        "group_invitations",
         "memberships",
         "conversations",
         "messages",

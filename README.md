@@ -14,9 +14,9 @@
 - deterministic route classification과 기본 OpenAI-backed response generation을 사용하는 LangGraph general assistant path.
 - credential 없이 test/smoke check를 실행할 수 있는 deterministic offline/test mode.
 - email/password auth, app-owned session, CSRF-aware logout, dev outbox, signup/guest approval gates.
-- group, document, knowledge-base, permission 기반.
+- 초대 수락 기반 group/team membership boundary, document, knowledge-base, permission 기반.
 - PDF, Markdown, plain text, `.xlsx`, `.pptx`를 지원하는 KB-scoped document upload/create, team-upload staging, ingestion, extraction-run progress, chunk, entity, metadata profile, embedding, pgvector-ready retrieval.
-- permission-aware RAG, structured entity retrieval, reranking seam, packed context, citation, redacted retrieval evidence를 담당하는 ContextForge retrieval service.
+- permission-aware RAG, structured entity retrieval, env로 조정 가능한 reranking top-k, packed context, citation, redacted retrieval evidence를 담당하는 ContextForge retrieval service.
 - server-owned conversation, run history, SSE assistant text streaming, run replay/cancel, persisted citation, frontend-safe activity event와 compact ko/en agent trace.
 - review/list/delete API, relevance-minimized recall, deterministic write-policy gate, suggest-confirm lifecycle, document-derived provenance/staleness, conflict-aware provider context를 가진 사용자별 opt-in long-term memory.
 
@@ -79,7 +79,7 @@ flowchart TD
     Events --> DB
 ```
 
-팀 업로드는 RAG retrieval에서 제외되는 숨겨진 개인 임시 KB를 사용하고, 승인 후 소스를 팀 KB로 복사한 뒤에만 검색됩니다. Service layer가 auth, permission, source policy, persistence, retrieval boundary, citation, event를 소유합니다. ContextForge는 여전히 general assistant에 전달할 authorized context를 검색하고, `rag_agent`는 그 경로를 감싸는 graph-shaped RAG Agent contract로 trace stage와 grounding check를 제공합니다. Chat run은 권한이 있는 개인·공유·팀 KB를 하나의 `knowledge_base_selection` contract로 선택하며, conversation transcript는 사용자 소유 비공개 범위로 유지됩니다.
+Team/group membership은 초대를 수락한 뒤 참여하는 공유 지식 boundary입니다. Product client는 이메일로 초대하고 opaque invitation token을 수락하게 해야 하며, user discovery, account-existence 분기, 알려진 `user_id`로 직접 membership을 활성화하는 흐름을 제공하면 안 됩니다. 팀 업로드는 RAG retrieval에서 제외되는 숨겨진 개인 임시 KB를 사용하고, 승인 후 소스를 팀 KB로 복사한 뒤에만 검색됩니다. Service layer가 auth, permission, source policy, persistence, retrieval boundary, citation, event를 소유합니다. ContextForge는 여전히 general assistant에 전달할 authorized context를 검색하고, `rag_agent`는 그 경로를 감싸는 graph-shaped RAG Agent contract로 trace stage와 grounding check를 제공합니다. Chat run은 권한이 있는 개인·공유·팀 KB를 하나의 `knowledge_base_selection` contract로 선택하며, conversation transcript와 opt-in memory는 사용자 소유 비공개 범위로 유지됩니다.
 
 ## Long-term memory
 
@@ -188,6 +188,25 @@ MY_AGENTS_GUEST_ACCESS_ENABLED=true uv run python -m scripts.ops guest issue \
   --send-email
 ```
 
+위험한 DB rebuild가 필요할 때는 `scripts.ops database wipe`가 dry-run plan을 먼저
+출력합니다. 실제 삭제는 `--execute`, `--confirm-wipe`, 정확한 `--database-name`이 모두
+있어야 하며, remote Postgres는 `--allow-remote-postgres`도 필요합니다. **강력 경고:** 이
+작업은 선택한 database의 app data/schema를 영구 삭제합니다. production/staging에서는 먼저
+snapshot/backup을 만들고 app worker를 중지한 뒤 실행하세요. wipe 후에는 별도 단계로
+`uv run alembic upgrade head`를 실행해야 합니다.
+
+```bash
+# Dry-run only: target과 object count를 확인합니다.
+uv run python -m scripts.ops --env pgvector.production database wipe
+
+# 실제 production wipe 예시: backup/snapshot 후에만 실행하세요.
+uv run python -m scripts.ops --env pgvector.production database wipe \
+  --execute \
+  --confirm-wipe \
+  --database-name my_agents_prod \
+  --allow-remote-postgres
+```
+
 ## 로컬 실행
 
 API 시작:
@@ -220,6 +239,12 @@ Hosted/demo 배포에서는 async document ingestion을 web process 밖에서 �
 MY_AGENTS_INGESTION_EXECUTION_MODE=external_worker uv run uvicorn main:app --host 0.0.0.0 --port 8000
 uv run python -m my_agents.ingestion_worker
 ```
+
+Frontend document upload queue는 `/health`의 안전한 runtime hint인
+`frontend_config.documents.upload_concurrency`를 읽습니다. 이 값은
+`MY_AGENTS_DOCUMENT_UPLOAD_CONCURRENCY`(기본값 `3`)로 설정합니다. 이 설정은
+frontend fan-out만 제어하며, backend worker process 수와 supervision은 별도 배포
+선택입니다.
 
 Backend restart 등으로 남은 active conversation run은 polling 또는 다음 prompt 전 cleanup에서 실패/취소
 상태로 정리됩니다. Hosted/demo UX에서는 기본 120초를 사용하며 필요하면
