@@ -161,6 +161,46 @@ def test_system_documents_are_manager_only_but_ambient_in_chat_retrieval(monkeyp
     assert graph.calls[-1]["retrieved_context"][0]["document_id"] == document_id
 
 
+def test_system_kb_project_context_injects_small_smoke_fact(monkeypatch) -> None:  # noqa: ANN001
+    graph = SystemKbSpyGraph()
+    root = _client(monkeypatch, graph)
+    normal = _client(monkeypatch, graph)
+    root_id = _signup_login(root, "system-smoke-root@example.com")
+    _signup_login(normal, "system-smoke-normal@example.com")
+    _set_user_type(root_id, "root")
+
+    created = root.post("/knowledge-bases", json={"name": "System KB", "scope": "system"})
+    system_id = created.json()["id"]
+    document = root.post(
+        f"/knowledge-bases/{system_id}/documents",
+        json={
+            "title": "Project Verification Note",
+            "content": "Blue Otter Lantern is the verification token for this project.",
+        },
+    )
+    document_id = document.json()["id"]
+    ingest = root.post(f"/knowledge-bases/{system_id}/documents/{document_id}/ingest")
+    conversation_id = normal.post("/conversations", json={"title": "System smoke"}).json()["id"]
+
+    run = normal.post(
+        f"/conversations/{conversation_id}/runs",
+        json={"message": "What is the smoke-test phrase?"},
+    )
+
+    assert document.status_code == 201
+    assert ingest.status_code == 200
+    assert run.status_code == 200
+    payload = run.json()
+    assert payload["retrieval_route"] == "retrieval_optional"
+    assert payload["answer_mode"] == "mixed"
+    assert {citation["knowledge_base_id"] for citation in payload["citations"]} == {system_id}
+    assert any("Blue Otter Lantern" in citation["snippet"] for citation in payload["citations"])
+    injected_context = graph.calls[-1]["retrieved_context"][0]
+    assert injected_context["document_id"] == document_id
+    assert injected_context["knowledge_base_id"] == system_id
+    assert "Blue Otter Lantern" in injected_context["snippet"]
+
+
 def test_selected_personal_kb_retrieval_keeps_system_kb_ambient_and_unlisted(monkeypatch) -> None:  # noqa: ANN001
     graph = SystemKbSpyGraph()
     root = _client(monkeypatch, graph)

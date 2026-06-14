@@ -21,6 +21,8 @@ class DocumentSourceContext:
 
     title: str
     snippet: str
+    knowledge_base_id: str | None = None
+    retrieval_source: str | None = None
     source_page: object | None = None
     source_filename: str | None = None
 
@@ -98,9 +100,12 @@ def format_document_context(bundle: SourceContextBundle) -> str:
         payload = {
             "title": item.title,
             "snippet": item.snippet,
+            "knowledge_base_id": item.knowledge_base_id,
+            "retrieval_source": item.retrieval_source,
             "source_filename": item.source_filename,
             "source_page": item.source_page,
         }
+        payload = {key: value for key, value in payload.items() if value is not None}
         lines.append(f"[{index}] untrusted_document_json={_json_prompt_value(payload)}")
     return "\n".join(lines)
 
@@ -170,9 +175,13 @@ def _document_context(item: Mapping[str, Any]) -> DocumentSourceContext:
     title = str(item.get("title") or "Untitled document")
     snippet = str(item.get("snippet") or "").strip()
     filename = item.get("source_filename")
+    knowledge_base_id = item.get("knowledge_base_id")
+    retrieval_source = item.get("source")
     return DocumentSourceContext(
         title=title,
         snippet=snippet,
+        knowledge_base_id=str(knowledge_base_id) if knowledge_base_id else None,
+        retrieval_source=str(retrieval_source) if retrieval_source else None,
         source_page=item.get("source_page"),
         source_filename=str(filename) if filename else None,
     )

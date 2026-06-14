@@ -95,7 +95,7 @@ sequenceDiagram
 | --- | --- | --- |
 | recent conversation | graph state로 전달된 Product DB transcript | Product DB가 visible transcript source of truth입니다 |
 | stored memory | runtime `MemoryRuntime`을 사용하는 graph-owned `retrieve_memory` node | disabled, sensitive, stale, inactive, deleted, stable-preference shape이 아닌 memory, query-irrelevant non-preference memory는 현재 Product DB-backed adapter에서 제외됩니다 |
-| authorized documents | service-layer `retrieved_context` | graph에 들어오기 전에 permission filter를 통과하며, authenticated user를 위한 ambient system/project knowledge를 포함할 수 있습니다 |
+| authorized documents | service-layer `retrieved_context` | graph에 들어오기 전에 permission filter를 통과하며, authenticated user를 위한 ambient system/project knowledge를 포함할 수 있습니다. Provider prompt는 이 channel에 직접 답이 있으면 `general_assistant` 응답에서도 `my-agents`/system-knowledge 질문의 authoritative project context로 우선 사용합니다. |
 | material conflicts | `memory_recall.py`의 graph-owned `source_conflicts` | stored memory와 충돌하면 최신 conversation을 우선하고, document-grounded claim은 authorized document를 우선합니다 |
 
 Memory service는 이 agent folder 밖의 `my_agents/memory/`와 `my_agents/api/memories.py`에 있습니다. Public memory write는 client가 주장하는 provenance ID를 받지 않으며, service-owned path가 document-derived memory를 만들 때 provenance를 제공해야 합니다. Agent graph는 recall orchestration을 소유하지만 persistence/governance는 `MemoryRuntime` 뒤에 유지합니다. Graph state는 untrusted JSON prompt data로 직렬화된 active memory context와 conflict metadata만 받습니다. Replay/regeneration은 historical memory content가 아니라 현재 active memory context를 사용합니다. Completed/failed run에는 내부 audit용 redacted memory-source snapshot을 남길 수 있지만, frontend-visible run event에는 memory count/category/provenance type만 노출합니다.

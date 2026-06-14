@@ -3,6 +3,12 @@
 This changelog records why the production-surface `general_assistant` agent folder needed
 meaningful behavior, graph-state, provider, or documentation changes.
 
+## 2026-06-14 — Prioritize injected system knowledge in provider prompts
+
+- **Why:** A system knowledge-base document could be retrieved and injected into graph state, but the OpenAI provider prompt was not explicit enough that direct system/project facts should be used by normal `general_assistant` answers.
+- **Behavior/contract impact:** Authorized document context now carries knowledge-base and retrieval-source metadata into the provider prompt, and the prompt tells the model to answer from direct authorized context first for `my-agents`, project, and system-knowledge questions.
+- **Verification:** `uv run pytest tests/test_system_knowledge_base_user_type.py::test_system_kb_project_context_injects_small_smoke_fact tests/test_responders.py::test_openai_provider_prioritizes_project_document_context_in_prompt -q` passed.
+
 ## 2026-06-14 — Document ambient system knowledge as retrieval context
 
 - **Why:** System knowledge bases can now be included in authenticated conversation retrieval for public project facts, but that context must not be described as user memory or as graph-owned storage.

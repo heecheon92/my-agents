@@ -144,6 +144,36 @@ def test_openai_provider_includes_authorized_document_context_in_prompt() -> Non
     assert "instead of saying you cannot access uploaded documents" in final_prompt
 
 
+def test_openai_provider_prioritizes_project_document_context_in_prompt() -> None:
+    settings = Settings(_env_file=None, OPENAI_API_KEY="test-key")
+    chat_model = FakeChatModel()
+    provider = OpenAIResponseProvider(settings=settings, chat_model=chat_model)
+
+    provider.compose_reply(
+        messages=[HumanMessage(content="What is the my-agents smoke-test phrase?")],
+        route=RouteDecision(label="general_assistant", explanation="general request"),
+        guidance="Answer from available context.",
+        retrieved_context=[
+            {
+                "title": "Project Verification Note",
+                "snippet": "Blue Otter Lantern is the verification token for this project.",
+                "knowledge_base_id": "system-kb-id",
+                "source_page": None,
+                "source_filename": None,
+                "source": "semantic_vector",
+            }
+        ],
+        answer_mode="mixed",
+    )
+
+    final_prompt = str(chat_model.calls[0][-1].content)
+    assert "Blue Otter Lantern is the verification token for this project" in final_prompt
+    assert "system-kb-id" in final_prompt
+    assert "semantic_vector" in final_prompt
+    assert "If authorized document context contains a direct answer" in final_prompt
+    assert "For my-agents, project, or system-knowledge questions" in final_prompt
+
+
 @pytest.mark.parametrize(
     ("route", "message", "expected_tools"),
     [

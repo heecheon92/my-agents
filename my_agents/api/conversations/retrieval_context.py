@@ -129,6 +129,7 @@ def retrieved_context_for_graph(retrieved_chunks: list[RetrievedChunk]) -> list[
         {
             "document_id": item.document.id,
             "chunk_id": item.chunk.id,
+            "knowledge_base_id": item.document.knowledge_base_id,
             "title": item.document.title,
             "snippet": item.chunk.content[:_RETRIEVED_CONTEXT_SNIPPET_CHARS],
             "source_page": item.chunk.source_page,
