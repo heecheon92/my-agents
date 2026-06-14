@@ -22,7 +22,9 @@
 - System knowledge는 guest를 포함한 authenticated chat retrieval에 공개되는
   project context이며, 관리는 `root`/`system` user type만 할 수 있습니다.
 - `user_type` 변경은 `scripts.set_user_type` operator script로만 수행하며,
-  공개 API에는 role mutation route를 두지 않습니다.
+  공개 API에는 role mutation route를 두지 않습니다. Auth response는 normal user와
+  guest에게 `user_type`, `can_manage_system_knowledge`를 생략하고 root/system manager에게만
+  해당 값을 포함합니다.
 - Nickname은 사람을 알아보기 위한 표시 이름이며, 로그인과 초대의 식별자는 email입니다. 계정이 없는 초대 수신자는 초대 token이 증명한 email을 그대로 사용하고 nickname/password만 정합니다.
 - Long-term memory는 기본적으로 꺼져 있고, 사용자가 실험 기능으로 직접 켤 수 있습니다.
 - 실제 secret은 commit하지 않습니다. `.env`는 local only이고 `.env.example`은 안전한 placeholder입니다.

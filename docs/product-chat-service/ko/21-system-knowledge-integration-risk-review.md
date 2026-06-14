@@ -16,7 +16,9 @@ scope를 만들지 않습니다.
 - **`user_type` 변경은 운영자 script 전용입니다.** Public API request, profile update,
   frontend form이 `user_type`을 받거나 저장하면 안 됩니다.
 - **v1에서는 `root`와 `system`이 동등합니다.** Frontend policy는 raw enum check보다
-  derived capability인 `can_manage_system_knowledge`를 우선 사용해야 합니다.
+  derived capability인 `can_manage_system_knowledge`를 우선 사용해야 합니다. 이
+  capability와 raw type은 모든 사용자에게 `false`/`normal` metadata로 보내지 않고
+  root/system user에게만 보냅니다.
 - **개인/group 경계는 그대로 유지됩니다.** Owner scoping, accepted-member group scoping,
   published personal KB 동작, document permission, guest limit을 약화하면 안 됩니다.
 
@@ -35,8 +37,8 @@ scope를 만들지 않습니다.
      expiry, approval field를 변경하지 않습니다.
    - Signup, guest creation, local demo seed data, test fixture는 test가 명시적으로 `root`
      또는 `system`을 설정하지 않는 한 non-privileged user를 만듭니다.
-   - `/auth/me`는 derived capability인 `can_manage_system_knowledge`를 노출하지만
-     `user_type`을 받는 public route를 추가하지 않습니다.
+   - Auth user response는 derived capability인 `can_manage_system_knowledge`가 `true`일
+     때만 노출하고, `user_type`을 받는 public route를 추가하지 않습니다.
 3. **Filter split and direct document-route scope awareness**
    - Management-visible KB filter와 chat-retrievable KB filter는 이름을 분리합니다.
    - System KB 포함은 KB predicate와 document readability predicate 양쪽에 구현합니다.

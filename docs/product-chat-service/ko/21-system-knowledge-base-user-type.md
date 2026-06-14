@@ -25,7 +25,11 @@ uv run python -m scripts.ops account set-user-type --email owner@example.com --u
 - System KB는 `scope = "system"`, `group_id = null`, `purpose = "standard"`를 사용합니다.
 - `owner_user_id`는 audit용 privileged creator를 기록합니다. 이 값이 public retrieval
   규칙을 의미하지는 않습니다.
-- `/auth/me`는 `user_type`과 `can_manage_system_knowledge`를 노출합니다.
+- Auth user response(`/auth/me`, login/signup envelope, invitation signup)는 normal
+  user와 guest에게 `user_type`, `can_manage_system_knowledge`를 생략합니다.
+- Root/system user에게만 `user_type`과 `can_manage_system_knowledge: true`를 보내
+  UI가 system source management를 표시할 수 있게 하되, 모든 사용자에게 negative role
+  signal을 노출하지는 않습니다.
 - Root/system 사용자는 system KB 생성, 목록/조회, 이름 변경, 삭제, 문서
   생성/upload/edit/ingest를 수행할 수 있습니다.
 - Normal user와 guest는 system KB를 목록/관리할 수 없고, 추측한 system KB/document ID에는

@@ -14,7 +14,9 @@ product scope beyond the consensus plan.
 - **`user_type` mutation is operator-script-only.** Public API requests, profile updates,
   and frontend forms must not accept or persist `user_type`.
 - **`root` and `system` are equivalent in v1.** Frontend policy should prefer the derived
-  `can_manage_system_knowledge` capability over hardcoding raw enum checks.
+  `can_manage_system_knowledge` capability over hardcoding raw enum checks. The
+  capability and raw type should be emitted only for root/system users, not as
+  `false`/`normal` metadata for every user.
 - **Personal and group boundaries remain unchanged.** The feature must not weaken owner
   scoping, accepted-member group scoping, published-personal-KB behavior, document
   permissions, or guest limits.
@@ -34,8 +36,8 @@ Use this before final integration sign-off:
      `account_type`, guest expiry, or approval fields.
    - Signup, guest creation, local demo seed data, and test fixtures create non-privileged
      users unless a test explicitly sets `root` or `system`.
-   - `/auth/me` exposes the derived `can_manage_system_knowledge` capability without adding
-     any public route that accepts `user_type`.
+   - Auth user responses expose the derived `can_manage_system_knowledge` capability
+     only when it is `true`, without adding any public route that accepts `user_type`.
 3. **Filter split and direct document-route scope awareness**
    - Management-visible KB filters and chat-retrievable KB filters are named separately.
    - System KB inclusion is implemented in both KB predicates and document readability

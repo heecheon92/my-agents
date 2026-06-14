@@ -108,6 +108,8 @@ def test_signup_verify_login_me_and_logout_revoke_owned_session(monkeypatch) -> 
     assert signup_payload["user"]["email"] == "user@example.com"
     assert signup_payload["user"]["nickname"] == "Test User"
     assert signup_payload["user"]["email_verified_at"] is None
+    assert "user_type" not in signup_payload["user"]
+    assert "can_manage_system_knowledge" not in signup_payload["user"]
     assert signup_payload["verification_email_sent"] is True
     assert "password" not in signup.text.lower()
     assert "password_hash" not in signup.text.lower()
@@ -125,6 +127,8 @@ def test_signup_verify_login_me_and_logout_revoke_owned_session(monkeypatch) -> 
     assert verified["email"] == "user@example.com"
     assert verified["nickname"] == "Test User"
     assert verified["email_verified_at"] is not None
+    assert "user_type" not in verified
+    assert "can_manage_system_knowledge" not in verified
 
     reused_token = client.post(
         "/auth/verify-email",
@@ -147,6 +151,8 @@ def test_signup_verify_login_me_and_logout_revoke_owned_session(monkeypatch) -> 
     assert login_payload["user"]["email"] == "user@example.com"
     assert login_payload["user"]["nickname"] == "Test User"
     assert login_payload["user"]["email_verified_at"] is not None
+    assert "user_type" not in login_payload["user"]
+    assert "can_manage_system_knowledge" not in login_payload["user"]
     assert login_payload["csrf_token"]
     assert "password" not in str(login_payload).lower()
     assert "password_hash" not in str(login_payload).lower()
@@ -156,6 +162,8 @@ def test_signup_verify_login_me_and_logout_revoke_owned_session(monkeypatch) -> 
     assert me.status_code == 200
     assert me.json()["email"] == "user@example.com"
     assert me.json()["nickname"] == "Test User"
+    assert "user_type" not in me.json()
+    assert "can_manage_system_knowledge" not in me.json()
 
     logout_without_csrf = client.post("/auth/logout")
 
@@ -201,8 +209,8 @@ def test_me_reports_user_type_capability_without_public_mutation(monkeypatch) ->
     )
 
     assert normal_me.status_code == 200
-    assert normal_me.json()["user_type"] == "normal"
-    assert normal_me.json()["can_manage_system_knowledge"] is False
+    assert "user_type" not in normal_me.json()
+    assert "can_manage_system_knowledge" not in normal_me.json()
     assert root_me.status_code == 200
     assert root_me.json()["user_type"] == "root"
     assert root_me.json()["can_manage_system_knowledge"] is True
@@ -581,7 +589,10 @@ def test_guest_auto_approval_emails_code_and_allows_guest_login(monkeypatch) -> 
     assert messages[-1].recipient_email == "guest-auto@example.com"
     assert messages[-1].purpose == "guest_access_code"
     assert login.status_code == 200
-    assert login.json()["user"]["is_guest"] is True
+    guest_payload = login.json()["user"]
+    assert guest_payload["is_guest"] is True
+    assert "user_type" not in guest_payload
+    assert "can_manage_system_knowledge" not in guest_payload
 
 
 def test_guest_account_mutations_are_rejected(monkeypatch) -> None:  # noqa: ANN001

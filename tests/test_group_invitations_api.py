@@ -154,6 +154,8 @@ def test_invited_new_user_signs_up_with_nickname_and_password_only(monkeypatch) 
     assert payload["user"]["nickname"] == "Mom Display"
     assert payload["user"]["email_verified_at"] is not None
     assert payload["user"]["approval_status"] == "approved"
+    assert "user_type" not in payload["user"]
+    assert "can_manage_system_knowledge" not in payload["user"]
     assert payload["member"]["role"] == "editor"
     assert payload["member"]["nickname"] == "Mom Display"
 

@@ -22,7 +22,11 @@ There is no public API route that assigns or changes `user_type`.
 - System KBs use `scope = "system"`, `group_id = null`, and `purpose = "standard"`.
 - `owner_user_id` records the privileged creator for audit; ownership is not the public
   retrieval rule.
-- `/auth/me` exposes `user_type` and `can_manage_system_knowledge`.
+- Auth user responses (`/auth/me`, login/signup envelopes, invitation signup) omit
+  `user_type` and `can_manage_system_knowledge` for normal users and guests.
+- Root/system users receive `user_type` plus `can_manage_system_knowledge: true` so
+  the UI can show system-source management without exposing a negative role signal
+  for everyone else.
 - Root/system users can create, list, read, rename, delete, upload/create documents,
   edit documents, and ingest documents in system KBs.
 - Normal users and guests cannot list or manage system KBs and receive concealed

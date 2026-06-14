@@ -147,8 +147,8 @@ class UserResponse(BaseModel):
     approval_status: AccountApprovalStatus = "approved"
     is_guest: bool = False
     guest_expires_at: datetime | None = None
-    user_type: UserType = UserType.NORMAL
-    can_manage_system_knowledge: bool = False
+    user_type: UserType | None = None
+    can_manage_system_knowledge: bool | None = None
 
 
 class SignupResponse(BaseModel):

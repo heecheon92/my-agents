@@ -86,15 +86,29 @@ def test_user_type_model_principal_and_response_contract() -> None:
             "approval_status": "approved",
             "is_guest": False,
             "guest_expires_at": None,
-            "user_type": "normal",
-            "can_manage_system_knowledge": False,
         }
     )
-    assert response.user_type == "normal"
-    assert response.can_manage_system_knowledge is False
+    assert response.user_type is None
+    assert response.can_manage_system_knowledge is None
+
+    manager_response = UserResponse.model_validate(
+        {
+            "id": "user-2",
+            "email": "manager@example.com",
+            "nickname": "Manager",
+            "email_verified_at": datetime.now(UTC),
+            "approval_status": "approved",
+            "is_guest": False,
+            "guest_expires_at": None,
+            "user_type": "root",
+            "can_manage_system_knowledge": True,
+        }
+    )
+    assert manager_response.user_type == "root"
+    assert manager_response.can_manage_system_knowledge is True
 
 
-def test_current_user_defaults_normal_and_exposes_privileged_capability(monkeypatch) -> None:  # noqa: ANN001
+def test_current_user_omits_normal_type_and_exposes_privileged_capability(monkeypatch) -> None:  # noqa: ANN001
     client = _client(monkeypatch)
     user_id = _signup_login(client, "user-type-me@example.com")
 
@@ -102,8 +116,8 @@ def test_current_user_defaults_normal_and_exposes_privileged_capability(monkeypa
 
     assert normal_me.status_code == 200
     normal_payload = normal_me.json()
-    assert normal_payload["user_type"] == "normal"
-    assert normal_payload["can_manage_system_knowledge"] is False
+    assert "user_type" not in normal_payload
+    assert "can_manage_system_knowledge" not in normal_payload
     assert "password" not in normal_me.text.lower()
     assert "session" not in normal_me.text.lower()
 

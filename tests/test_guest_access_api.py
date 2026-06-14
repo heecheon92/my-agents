@@ -171,12 +171,16 @@ def test_guest_code_redeems_once_and_me_uses_guest_session(monkeypatch) -> None:
     assert first_login.json()["user"]["email"] is None
     assert first_login.json()["user"]["is_guest"] is True
     assert first_login.json()["user"]["guest_expires_at"] is not None
+    assert "user_type" not in first_login.json()["user"]
+    assert "can_manage_system_knowledge" not in first_login.json()["user"]
     assert first_login.json()["csrf_token"]
     assert reused_login.status_code == 400
     assert reused_login.json()["detail"] == "invalid or expired guest code"
     assert me.status_code == 200
     assert me.json()["is_guest"] is True
     assert me.json()["email"] is None
+    assert "user_type" not in me.json()
+    assert "can_manage_system_knowledge" not in me.json()
     request = _first_row(GuestAccessRequestModel)
     assert request.status == "consumed"
 
@@ -339,3 +343,5 @@ def test_normal_auth_remains_unchanged_with_guest_enabled(monkeypatch) -> None: 
     assert me.json()["email"] == "registered-with-guest@example.com"
     assert me.json()["is_guest"] is False
     assert me.json()["guest_expires_at"] is None
+    assert "user_type" not in me.json()
+    assert "can_manage_system_knowledge" not in me.json()

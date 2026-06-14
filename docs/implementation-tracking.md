@@ -86,9 +86,10 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
   identities with normal app session cookies, 24-hour expiry, one conversation,
   five prompts, and three document creates/uploads.
 - `users.user_type` distinguishes `normal`, `root`, and `system` platform privilege
-  from registered/guest `account_type`; `/auth/me` exposes the read-only
-  `can_manage_system_knowledge` capability, and mutation is script-only through
-  `scripts.set_user_type` / `scripts.ops account set-user-type`.
+  from registered/guest `account_type`; auth responses expose read-only `user_type`
+  and `can_manage_system_knowledge` only for root/system managers, and mutation is
+  script-only through `scripts.set_user_type` /
+  `scripts.ops account set-user-type`.
 
 ### Groups, documents, permissions
 

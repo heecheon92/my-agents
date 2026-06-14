@@ -61,7 +61,12 @@ logger = logging.getLogger(__name__)
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-@auth_router.post("/signup", response_model=SignupResponse, status_code=status.HTTP_201_CREATED)
+@auth_router.post(
+    "/signup",
+    response_model=SignupResponse,
+    status_code=status.HTTP_201_CREATED,
+    response_model_exclude_unset=True,
+)
 def signup(
     request: SignupRequest,
     http_request: Request,
@@ -204,7 +209,7 @@ def request_guest_access_code(
     return AcceptedResponse()
 
 
-@auth_router.post("/guest/login", response_model=LoginResponse)
+@auth_router.post("/guest/login", response_model=LoginResponse, response_model_exclude_unset=True)
 def guest_login(
     request: GuestLoginRequest,
     response: Response,
@@ -237,7 +242,11 @@ def guest_login(
     )
 
 
-@auth_router.post("/verify-email", response_model=UserResponse)
+@auth_router.post(
+    "/verify-email",
+    response_model=UserResponse,
+    response_model_exclude_unset=True,
+)
 def verify_email(
     request: VerifyEmailRequest,
     http_request: Request,
@@ -260,7 +269,7 @@ def verify_email(
     return _user_response(user)
 
 
-@auth_router.post("/login", response_model=LoginResponse)
+@auth_router.post("/login", response_model=LoginResponse, response_model_exclude_unset=True)
 def login(
     request: LoginRequest,
     http_request: Request,
@@ -392,7 +401,7 @@ def logout(
     return response
 
 
-@auth_router.get("/me", response_model=UserResponse)
+@auth_router.get("/me", response_model=UserResponse, response_model_exclude_unset=True)
 def me(
     principal: Annotated[Principal, Depends(get_current_principal)],
     db: Annotated[Session, Depends(get_database_session)],
@@ -407,7 +416,11 @@ def me(
     return _user_response(user)
 
 
-@auth_router.patch("/me/nickname", response_model=UserResponse)
+@auth_router.patch(
+    "/me/nickname",
+    response_model=UserResponse,
+    response_model_exclude_unset=True,
+)
 def update_nickname(
     request: AccountNicknameUpdateRequest,
     principal: Annotated[Principal, Depends(get_current_principal)],
@@ -513,19 +526,19 @@ def _user_response(user: UserModel) -> UserResponse:
         user_type = UserType(user.user_type or UserType.NORMAL.value)
     except ValueError:
         user_type = UserType.NORMAL
-    return UserResponse(
-        id=user.id,
-        email=None if is_guest else user.email,
-        nickname=user.nickname,
-        email_verified_at=user.email_verified_at,
-        approval_status="approved" if is_guest else user.approval_status,
-        is_guest=is_guest,
-        guest_expires_at=user.guest_expires_at if is_guest else None,
-        user_type=user_type,
-        can_manage_system_knowledge=(
-            False if is_guest else can_manage_system_knowledge_for_user_type(user_type.value)
-        ),
-    )
+    payload: dict[str, object] = {
+        "id": user.id,
+        "email": None if is_guest else user.email,
+        "nickname": user.nickname,
+        "email_verified_at": user.email_verified_at,
+        "approval_status": "approved" if is_guest else user.approval_status,
+        "is_guest": is_guest,
+        "guest_expires_at": user.guest_expires_at if is_guest else None,
+    }
+    if not is_guest and can_manage_system_knowledge_for_user_type(user_type.value):
+        payload["user_type"] = user_type
+        payload["can_manage_system_knowledge"] = True
+    return UserResponse.model_validate(payload)
 
 
 def _assert_auth_allowed(

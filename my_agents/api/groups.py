@@ -340,6 +340,7 @@ def accept_group_invitation(
     "/signup",
     response_model=GroupInvitationSignupResponse,
     status_code=status.HTTP_201_CREATED,
+    response_model_exclude_unset=True,
 )
 def signup_from_group_invitation(
     request: GroupInvitationSignupRequest,

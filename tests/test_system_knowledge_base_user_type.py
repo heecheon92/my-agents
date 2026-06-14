@@ -82,8 +82,8 @@ def test_auth_me_exposes_read_only_system_knowledge_capability(monkeypatch) -> N
 
     assert normal_id
     assert normal_me.status_code == 200
-    assert normal_me.json()["user_type"] == "normal"
-    assert normal_me.json()["can_manage_system_knowledge"] is False
+    assert "user_type" not in normal_me.json()
+    assert "can_manage_system_knowledge" not in normal_me.json()
     assert root_me.status_code == 200
     assert root_me.json()["user_type"] == "root"
     assert root_me.json()["can_manage_system_knowledge"] is True
