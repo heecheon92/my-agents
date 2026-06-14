@@ -29,21 +29,31 @@ Use this before final integration sign-off:
      unauthorized style as adjacent existing routes.
    - Conversation/run public metadata does not expose ambient system KB names or IDs unless
      the contract deliberately adds a safe field.
-2. **Direct document-route scope awareness**
+2. **Migration and identity defaults**
+   - `users.user_type` is non-null, defaults/backfills to `normal`, and does not mutate
+     `account_type`, guest expiry, or approval fields.
+   - Signup, guest creation, local demo seed data, and test fixtures create non-privileged
+     users unless a test explicitly sets `root` or `system`.
+   - `/auth/me` exposes the derived `can_manage_system_knowledge` capability without adding
+     any public route that accepts `user_type`.
+3. **Filter split and direct document-route scope awareness**
+   - Management-visible KB filters and chat-retrievable KB filters are named separately.
+   - System KB inclusion is implemented in both KB predicates and document readability
+     predicates; changing only one side is incomplete.
    - Nested system document routes are root/system-only.
    - Direct `/documents/{id}` read/edit/delete/ingest behavior recognizes parent KB scope
      and does not treat system documents as ordinary owner-personal documents.
    - Global document lists remain personal/group oriented for normal and guest users.
-3. **Guest promotion refusal**
+4. **Guest promotion refusal**
    - The operator script refuses guest account promotion to `root` or `system` by default.
    - Guest `/auth/me` remains non-privileged while still allowing ambient system retrieval
      in chat.
-4. **Personal/group regression preservation**
+5. **Personal/group regression preservation**
    - Personal KB owner-only create/list/document-write behavior still passes.
    - Group KB visibility and publish-review flows remain membership/invitation scoped.
    - Hidden team-upload-staging KBs remain excluded from ordinary list and retrieval
      surfaces.
-5. **Evidence/source honesty**
+6. **Evidence/source honesty**
    - System KB snippets are labeled as retrieved project knowledge, not memory.
    - General assistant docs and prompts keep memory, document retrieval, and conflicts as
      separate source channels.

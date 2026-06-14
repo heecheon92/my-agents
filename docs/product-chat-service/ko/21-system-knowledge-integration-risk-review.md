@@ -30,20 +30,30 @@ scope를 만들지 않습니다.
      concealed unauthorized style을 사용합니다.
    - Contract가 의도적으로 safe field를 추가하지 않는 한 conversation/run public metadata가
      ambient system KB 이름이나 ID를 노출하지 않습니다.
-2. **Direct document-route scope awareness**
+2. **Migration and identity defaults**
+   - `users.user_type`은 non-null이고 `normal`로 default/backfill되며 `account_type`, guest
+     expiry, approval field를 변경하지 않습니다.
+   - Signup, guest creation, local demo seed data, test fixture는 test가 명시적으로 `root`
+     또는 `system`을 설정하지 않는 한 non-privileged user를 만듭니다.
+   - `/auth/me`는 derived capability인 `can_manage_system_knowledge`를 노출하지만
+     `user_type`을 받는 public route를 추가하지 않습니다.
+3. **Filter split and direct document-route scope awareness**
+   - Management-visible KB filter와 chat-retrievable KB filter는 이름을 분리합니다.
+   - System KB 포함은 KB predicate와 document readability predicate 양쪽에 구현합니다.
+     한쪽만 바꾸는 것은 incomplete입니다.
    - Nested system document route는 root/system 전용입니다.
    - Direct `/documents/{id}` read/edit/delete/ingest 동작은 parent KB scope를 인식하고
      system document를 일반 owner-personal document처럼 취급하지 않습니다.
    - Global document list는 normal/guest 사용자에게 개인/group 중심 동작을 유지합니다.
-3. **Guest promotion refusal**
+4. **Guest promotion refusal**
    - Operator script는 기본적으로 guest account를 `root` 또는 `system`으로 승격하지 않습니다.
    - Guest `/auth/me`는 non-privileged 상태를 유지하면서도 채팅의 ambient system retrieval은
      허용합니다.
-4. **Personal/group regression preservation**
+5. **Personal/group regression preservation**
    - Personal KB owner-only create/list/document-write 동작이 계속 통과합니다.
    - Group KB visibility와 publish-review flow는 membership/invitation scope를 유지합니다.
    - Hidden team-upload-staging KB는 일반 list와 retrieval surface에서 계속 제외됩니다.
-5. **Evidence/source honesty**
+6. **Evidence/source honesty**
    - System KB snippet은 memory가 아니라 retrieved project knowledge로 표시됩니다.
    - General assistant docs와 prompt는 memory, document retrieval, conflict를 분리된 source
      channel로 유지합니다.
