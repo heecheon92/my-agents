@@ -60,8 +60,10 @@ Ingestion also creates a generated document metadata profile with a search-orien
 description, summary, keywords, topics, entities, and a profile embedding. Candidate Scouts
 search those profiles as `document_metadata_profile` candidates. The profile text is optimized
 for vector searchability: likely user terms, aliases, abbreviations, multilingual hints, and
-domain vocabulary. When a profile matches, ContextForge still injects original document chunks
-so the final answer and citations remain grounded in source text rather than generated metadata.
+domain vocabulary. When a profile matches, ContextForge treats it as a document locator and
+expands it into the strongest body/source chunks from that same authorized document. That keeps
+title/header-only profile hits from starving facts buried deeper in the document, while final
+answers and citations remain grounded in source text rather than generated metadata.
 
 ## Structured retrieval
 

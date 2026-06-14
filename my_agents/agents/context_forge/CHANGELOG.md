@@ -1,5 +1,11 @@
 # ContextForge changelog
 
+## 2026-06-14 — Expand metadata-profile hits into body evidence
+
+- **Why:** Generated metadata profiles can correctly identify the right document while the injected candidate is only the title/header chunk, leaving buried source facts such as project creator or stack details unavailable to the assistant.
+- **Behavior / contract impact:** `document_metadata_profile` remains a document-locator source, but matched profiles now expand to the strongest body/source chunks from the same authorized document. Existing semantic, metadata, and graph-expansion source identity is preserved for duplicate chunks, and KB/source authorization is unchanged.
+- **Verification evidence:** Added regression coverage for metadata-profile retrieval injecting body chunks instead of only a heading, plus targeted ContextForge/RAG verification and full backend tests.
+
 ## 2026-06-11 — Make reranker top-k runtime configurable
 
 - **Why:** Production deployments need a small, explicit latency/memory knob for the second-stage reranker candidate window without changing authorization or retrieval code.

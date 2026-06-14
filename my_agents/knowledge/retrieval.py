@@ -107,7 +107,17 @@ class RetrievalService:
             if existing is None or _prefer_retrieved_chunk(item, existing):
                 combined[item.chunk.id] = item
         for item in expanded:
-            combined.setdefault(item.chunk.id, item)
+            existing = combined.get(item.chunk.id)
+            if existing is None:
+                combined[item.chunk.id] = item
+                continue
+            if existing.source == "document_metadata_profile":
+                combined[item.chunk.id] = RetrievedChunk(
+                    chunk=item.chunk,
+                    document=item.document,
+                    score=max(item.score, existing.score),
+                    source=item.source,
+                )
         if not combined and _needs_personal_document_fallback(query):
             return _dedupe_retrieved_chunks(
                 self._recent_authorized_chunks(
@@ -314,11 +324,12 @@ class RetrievalService:
         direct: list[RetrievedChunk],
         knowledge_base_ids: Sequence[str] | None,
     ) -> list[RetrievedChunk]:
-        if not direct:
+        expansion_seeds = [item for item in direct if item.source != "document_metadata_profile"]
+        if not expansion_seeds:
             return []
         entity_ids = {
             mention.entity_id
-            for item in direct
+            for item in expansion_seeds
             for mention in self._db.scalars(
                 select(EntityMentionModel).where(EntityMentionModel.chunk_id == item.chunk.id)
             ).all()
@@ -329,7 +340,7 @@ class RetrievalService:
             user_id, knowledge_base_ids=knowledge_base_ids
         )
         expanded: list[RetrievedChunk] = []
-        direct_chunk_ids = {item.chunk.id for item in direct}
+        direct_chunk_ids = {item.chunk.id for item in expansion_seeds}
         for chunk, document in authorized_rows:
             if chunk.id in direct_chunk_ids:
                 continue
@@ -453,7 +464,7 @@ class RetrievalService:
         knowledge_base_ids: Sequence[str] | None,
         limit: int,
     ) -> list[RetrievedChunk]:
-        """Return representative chunks from documents matched by generated metadata."""
+        """Return source chunks from documents matched by generated metadata."""
         if not _schema_has_document_metadata_profiles(self._db):
             return []
         signal_terms = _metadata_signal_terms(terms)
@@ -485,31 +496,30 @@ class RetrievalService:
                 document_scores[document.id] = (document, rounded)
         if not document_scores:
             return []
-        rows = [
-            (chunk, document, document_scores[document.id][1])
-            for chunk, document in self._authorized_chunk_rows(
-                user_id, knowledge_base_ids=knowledge_base_ids
-            )
-            if document.id in document_scores
-        ]
-        rows.sort(key=lambda row: (-row[2], -row[1].created_at.timestamp(), row[0].ordinal))
-        matches: list[RetrievedChunk] = []
-        seen_document_ids: set[str] = set()
-        for chunk, document, score in rows:
-            if document.id in seen_document_ids:
+        rows_by_document: dict[str, list[DocumentChunkModel]] = {}
+        for chunk, document in self._authorized_chunk_rows(
+            user_id, knowledge_base_ids=knowledge_base_ids
+        ):
+            if document.id not in document_scores:
                 continue
-            matches.append(
-                RetrievedChunk(
-                    chunk=chunk,
+            rows_by_document.setdefault(document.id, []).append(chunk)
+        matches: list[RetrievedChunk] = []
+        ranked_documents = sorted(
+            document_scores.values(),
+            key=lambda item: (-item[1], -item[0].created_at.timestamp(), item[0].id),
+        )
+        for document, score in ranked_documents:
+            matches.extend(
+                _metadata_profile_document_chunks(
                     document=document,
-                    score=round(max(score - (chunk.ordinal * 0.001), 0.01), 6),
-                    source="document_metadata_profile",
+                    chunks=rows_by_document.get(document.id, []),
+                    score=score,
+                    signal_terms=signal_terms,
                 )
             )
-            seen_document_ids.add(document.id)
             if len(matches) >= limit:
                 break
-        return matches
+        return sorted(matches, key=lambda item: (-item.score, item.chunk.ordinal))[:limit]
 
     def _authorized_metadata_profile_rows(
         self, user_id: str, *, knowledge_base_ids: Sequence[str] | None
@@ -751,6 +761,7 @@ _DOCUMENT_METADATA_STOPWORDS = {
     "파일",
     "해당",
 }
+_METADATA_PROFILE_CHUNKS_PER_DOCUMENT = 4
 
 
 def _metadata_signal_terms(terms: set[str]) -> set[str]:
@@ -836,6 +847,62 @@ _DOCUMENT_OVERVIEW_HINTS = (
 def _needs_document_overview(query: str) -> bool:
     normalized = query.casefold()
     return any(hint in normalized for hint in _DOCUMENT_OVERVIEW_HINTS)
+
+
+def _metadata_profile_document_chunks(
+    *,
+    document: DocumentModel,
+    chunks: Sequence[DocumentChunkModel],
+    score: float,
+    signal_terms: set[str],
+) -> list[RetrievedChunk]:
+    """Return answer-bearing body chunks from a document-level metadata match.
+
+    Metadata profiles are document locators. They should earn the source document
+    consideration, but the LLM should still receive source-text chunks rather than
+    only the profile/title/header that matched the query.
+    """
+    if not chunks:
+        return []
+    scored_chunks = [
+        (chunk, _metadata_profile_chunk_body_score(chunk.content, signal_terms)) for chunk in chunks
+    ]
+    ranked_chunks = sorted(scored_chunks, key=lambda item: (-item[1], item[0].ordinal))[
+        :_METADATA_PROFILE_CHUNKS_PER_DOCUMENT
+    ]
+    return [
+        RetrievedChunk(
+            chunk=chunk,
+            document=document,
+            score=round(
+                max(
+                    score + min(chunk_score, 0.35) - (chunk.ordinal * 0.001),
+                    0.01,
+                ),
+                6,
+            ),
+            source="document_metadata_profile",
+        )
+        for chunk, chunk_score in ranked_chunks
+    ]
+
+
+def _metadata_profile_chunk_body_score(content: str, signal_terms: set[str]) -> float:
+    keyword_rank = _normalized_keyword_score(_keyword_score(content, signal_terms), signal_terms)
+    non_heading_text = _non_heading_text(content)
+    body_bonus = min(len(non_heading_text) / 600, 0.25)
+    heading_penalty = 0.25 if _is_heading_only(content) else 0.0
+    return max((0.75 * keyword_rank) + body_bonus - heading_penalty, 0.0)
+
+
+def _non_heading_text(content: str) -> str:
+    lines = [line.strip() for line in content.splitlines()]
+    return "\n".join(line for line in lines if line and not line.startswith("#")).strip()
+
+
+def _is_heading_only(content: str) -> bool:
+    lines = [line.strip() for line in content.splitlines() if line.strip()]
+    return bool(lines) and all(line.startswith("#") for line in lines)
 
 
 def _dedupe_retrieved_chunks(

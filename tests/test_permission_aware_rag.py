@@ -590,6 +590,78 @@ def test_generated_metadata_profile_retrieves_when_body_lacks_search_terms(
     assert retrieval_event["payload"]["document_metadata_profile_count"] >= 1
 
 
+def test_metadata_profile_match_injects_body_chunks_not_only_heading(
+    monkeypatch,
+) -> None:  # noqa: ANN001
+    fake_embeddings = MetadataFocusedEmbeddingProvider()
+    monkeypatch.setattr(extraction_module, "get_embedding_provider", lambda: fake_embeddings)
+    monkeypatch.setattr(retrieval_module, "get_embedding_provider", lambda: fake_embeddings)
+    monkeypatch.setattr(
+        extraction_module,
+        "build_document_metadata_generator",
+        lambda _settings: StaticMetadataGenerator(),
+    )
+    graph = RagSpyGraph()
+    client = _client(monkeypatch, graph)
+    user_id = _signup_login(client, "metadata-profile-body-owner@example.com")
+    kb_id = _create_personal_knowledge_base(client, "Metadata Body KB")
+    document = _create_document(
+        client,
+        json={
+            "title": "Protocol Schedule Notes",
+            "content": (
+                "# Protocol Schedule Notes\n\n"
+                "Visit schedule and dosing table are stored here without disease terms.\n\n"
+                "Participants return every six weeks for safety monitoring and outcome review."
+            ),
+            "knowledge_base_id": kb_id,
+        },
+    )
+    assert document.status_code == 201
+    document_id = document.json()["id"]
+    assert client.post(f"/documents/{document_id}/ingest").status_code == 200
+
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        results = RetrievalService(db).retrieve_scoped(
+            user_id=user_id,
+            query="Find my oncology cancer protocol",
+            limit=5,
+            knowledge_base_ids=[kb_id],
+        )
+    finally:
+        session_generator.close()
+
+    assert results
+    assert any(
+        result.source == "document_metadata_profile"
+        and any(
+            line.strip() and not line.lstrip().startswith("#")
+            for line in result.chunk.content.splitlines()
+        )
+        for result in results
+    )
+    assert any("Visit schedule and dosing table" in result.chunk.content for result in results)
+
+    conversation_id = _create_conversation(client, "Metadata body retrieval")
+    response = client.post(
+        f"/conversations/{conversation_id}/runs",
+        json={
+            "message": "What does my uploaded oncology protocol say?",
+            "knowledge_base_selection": {"mode": "selected", "knowledge_base_ids": [kb_id]},
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["citations"][0]["document_id"] == document_id
+    assert any(
+        "Visit schedule and dosing table" in context["snippet"]
+        for context in graph.calls[-1]["retrieved_context"]
+    )
+
+
 def test_postgres_vector_statement_filters_permissions_before_vector_ordering() -> None:
     statement = _postgres_vector_authorized_statement(
         user_id="user-1",

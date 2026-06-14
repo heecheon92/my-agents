@@ -59,8 +59,9 @@ Ingestion은 검색 친화적인 generated document metadata profile도 생성�
 description, summary, keywords, topics, entities와 profile embedding이 포함됩니다. Candidate Scouts는
 이 profile을 `document_metadata_profile` 후보로 검색합니다. profile text는 vector searchability를 위해
 사용자가 입력할 법한 term, alias, abbreviation, multilingual hint, domain vocabulary 중심으로 생성됩니다.
-profile이 match하더라도 ContextForge는 원문 document chunk를 주입하므로 최종 답변과 citation은 생성 metadata가
-아니라 source text에 grounded됩니다.
+profile이 match하면 ContextForge는 이를 document locator로 취급하고, 같은 권한 확인 완료 문서에서 가장 강한
+body/source chunk로 확장합니다. 그래서 title/header-only profile hit 때문에 문서 깊숙이 있는 fact가 밀려나지
+않고, 최종 답변과 citation은 계속 생성 metadata가 아니라 source text에 grounded됩니다.
 
 ## 구조화 검색
 
