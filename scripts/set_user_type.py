@@ -39,7 +39,7 @@ class UserTypeUpdateError(RuntimeError):
 def set_user_type(
     *,
     settings: Settings,
-    user_type: UserType,
+    user_type: UserType | str,
     email: str | None = None,
     user_id: str | None = None,
     dry_run: bool = False,
@@ -47,6 +47,7 @@ def set_user_type(
     """Set a non-guest user's platform user type, or preview the change."""
     if (email is None) == (user_id is None):
         raise UserTypeUpdateError("submit exactly one of email or user_id")
+    resolved_user_type = UserType(user_type)
 
     reset_database_caches()
     initialize_database(settings)
@@ -55,7 +56,7 @@ def set_user_type(
         user = _lookup_user(db, email=email, user_id=user_id)
         if user is None:
             raise UserTypeUpdateError("user not found")
-        if user.account_type == "guest" and user_type in {UserType.ROOT, UserType.SYSTEM}:
+        if user.account_type == "guest" and resolved_user_type in {UserType.ROOT, UserType.SYSTEM}:
             raise UserTypeUpdateError("guest accounts cannot be promoted to root/system")
 
         before = user.user_type or UserType.NORMAL.value
@@ -64,12 +65,12 @@ def set_user_type(
             user_id=user.id,
             account_type=user.account_type,
             before_user_type=before,
-            after_user_type=user_type.value,
+            after_user_type=resolved_user_type.value,
             dry_run=dry_run,
         )
         if dry_run:
             return result
-        user.user_type = user_type.value
+        user.user_type = resolved_user_type.value
         db.add(user)
         db.commit()
         return result

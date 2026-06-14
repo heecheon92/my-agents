@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from sqlalchemy import select
-
 from my_agents.auth.models import UserModel
 from my_agents.auth.service import AuthService
 from my_agents.persistence.database import (

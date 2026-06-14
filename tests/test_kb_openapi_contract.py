@@ -11,6 +11,7 @@ REQUIRED_KB_PATHS = {
     "/knowledge-bases/{knowledge_base_id}",
     "/knowledge-bases/{knowledge_base_id}/documents",
     "/knowledge-bases/{knowledge_base_id}/documents/upload",
+    "/knowledge-bases/{knowledge_base_id}/documents/{document_id}",
     "/knowledge-bases/{knowledge_base_id}/documents/{document_id}/ingest",
     "/knowledge-bases/{knowledge_base_id}/documents/{document_id}/ingest/async",
     "/knowledge-bases/{knowledge_base_id}/documents/{document_id}/extraction-runs",
@@ -36,9 +37,9 @@ def test_openapi_exposes_kb_first_document_and_chat_selection_contract() -> None
     replay_request_schema = schema["components"]["schemas"]["ConversationReplayRequest"]
     run_summary_schema = schema["components"]["schemas"]["AgentRunSummaryResponse"]
     selection_schema = schema["components"]["schemas"]["KnowledgeBaseSelection"]
-    user_response_schema = schema["components"]["schemas"]["UserResponse"]
-    kb_scope_schema = schema["components"]["schemas"]["KnowledgeBaseScope"]
+    kb_create_schema = schema["components"]["schemas"]["KnowledgeBaseCreateRequest"]
     kb_response_schema = schema["components"]["schemas"]["KnowledgeBaseResponse"]
+    kb_scope_schema = schema["components"]["schemas"]["KnowledgeBaseScope"]
     publish_request_schema = schema["components"]["schemas"]["KnowledgePublishRequestResponse"]
     publish_request_create_schema = schema["components"]["schemas"][
         "KnowledgePublishRequestCreateRequest"
@@ -61,13 +62,8 @@ def test_openapi_exposes_kb_first_document_and_chat_selection_contract() -> None
     assert run_summary_schema["properties"]["resolved_knowledge_base_count"]["type"] == "integer"
     assert selection_schema["properties"]["mode"]["enum"] == ["all", "selected"]
     assert selection_schema["properties"]["knowledge_base_ids"]["type"] == "array"
-    assert "user_type" in user_response_schema["properties"]
-    assert "can_manage_system_knowledge" in user_response_schema["properties"]
-    assert user_response_schema["properties"]["can_manage_system_knowledge"]["type"] == "boolean"
-    assert "normal" in str(user_response_schema["properties"]["user_type"])
-    assert "root" in str(user_response_schema["properties"]["user_type"])
-    assert "system" in str(user_response_schema["properties"]["user_type"])
     assert kb_scope_schema["enum"] == ["personal", "group", "system"]
+    assert kb_create_schema["properties"]["scope"]["$ref"] == "#/components/schemas/KnowledgeBaseScope"
     assert kb_response_schema["properties"]["purpose"]["$ref"] == (
         "#/components/schemas/KnowledgeBasePurpose"
     )
@@ -85,6 +81,9 @@ def test_openapi_exposes_kb_first_document_and_chat_selection_contract() -> None
         publish_request_create_schema["properties"]["target_knowledge_base_id"]["anyOf"][0]["type"]
         == "string"
     )
+    assert "patch" in schema["paths"]["/knowledge-bases/{knowledge_base_id}"]
+    assert "delete" in schema["paths"]["/knowledge-bases/{knowledge_base_id}"]
+    assert "patch" in schema["paths"]["/knowledge-bases/{knowledge_base_id}/documents/{document_id}"]
 
     upload_body_ref = schema["paths"]["/documents/upload"]["post"]["requestBody"]["content"][
         "multipart/form-data"
