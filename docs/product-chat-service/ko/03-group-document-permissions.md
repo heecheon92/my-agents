@@ -4,7 +4,7 @@
 
 ## 요약
 
-Group은 초대를 수락한 뒤 참여하는 공유 지식 boundary입니다. Product client는 이메일 초대와 opaque invitation token 수락 흐름을 사용해야 하며, user search, account-existence 노출, 알려진 `user_id`로 직접 membership을 활성화하는 흐름을 제공하면 안 됩니다. Nickname/member-roster extension도 이 경계를 유지합니다. Nickname은 중복 허용 display-only label이고, email은 invitation/login identifier, `user_id`는 role update identifier입니다.
+Group은 초대를 수락한 뒤 참여하는 공유 지식 boundary입니다. Product client는 이메일 초대와 opaque invitation token 수락 흐름을 사용해야 하며, user search, account-existence 노출, 알려진 `user_id`로 직접 membership을 활성화하는 흐름을 제공하면 안 됩니다. Nickname/member-roster extension도 이 경계를 유지합니다. Nickname은 중복 허용 display-only label이고, email은 invitation/login identifier, `user_id`는 role update identifier입니다. 초대받은 email에 아직 계정이 없으면 invitation token이 증명한 email로 계정을 만들며 사용자는 nickname/password만 입력합니다. Nickname은 여전히 로그인 식별자가 아닙니다.
 
 ## 현재 계약
 
@@ -12,7 +12,7 @@ Group은 초대를 수락한 뒤 참여하는 공유 지식 boundary입니다. P
 - Pending invitation은 active membership이 아니며 group KB 접근 권한을 주지 않습니다.
 - Membership table은 수락된 멤버만 나타냅니다.
 - Owner/admin은 초대 생성, 목록, 역할 수정, 재전송, 취소를 관리합니다.
-- 초대받은 사용자는 로그인/가입 후 초대받은 이메일로 token을 수락해야 active member가 됩니다.
+- 초대받은 사용자는 기존 계정이면 로그인 후 token을 수락하고, 계정이 없으면 token-proved email에 대해 표시 이름과 비밀번호만 입력해 가입/수락합니다.
 - Active member role update는 이미 수락된 멤버에게만 적용되며 새 멤버를 만들면 안 됩니다.
 - Conversation transcript, run history, opt-in memory는 그룹에 공유되지 않고 authenticated user 개인 범위로 유지됩니다.
 
@@ -33,6 +33,7 @@ Group은 초대를 수락한 뒤 참여하는 공유 지식 boundary입니다. P
 | `GET` | `/groups/{group_id}/members` | owner/admin | role 관리를 위한 accepted member 기본 정보 조회 | pending invite/account discovery field 없음; 일반 member directory가 아님 |
 | `PATCH` | `/groups/{group_id}/members/{user_id}` | owner/admin | 이미 active 상태인 member role 수정 | non-creating; unknown/non-member user는 거절 |
 | `POST` | `/group-invitations/accept` | authenticated recipient | opaque token 수락 | token을 인증된 verified email과 연결 |
+| `POST` | `/group-invitations/signup` | unauthenticated invited recipient | token-proved email로 verified account 생성 후 membership 수락 | request는 token, nickname, password만 포함; email field 없음; 기존 계정은 로그인해야 함 |
 
 `POST /groups/{group_id}/members`처럼 `user_id`로 active membership을 직접 만드는 product-facing route는 두지 않습니다.
 `PATCH /groups/{group_id}/members/{user_id}`는 이미 active 상태인 member role만 수정할 수 있고 membership을 만들면 안 됩니다.
@@ -44,6 +45,7 @@ Group은 초대를 수락한 뒤 참여하는 공유 지식 boundary입니다. P
 
 ## 변경 이력
 
+- 2026-06-14: 계정이 없는 초대 수신자를 위한 invitation-token signup을 추가하면서 email login과 display-only nickname 의미를 유지했습니다.
 - 2026-06-14: Nickname/member-roster extension을 기존 invite-only privacy boundary에 연결했습니다.
 
 | Actor / scope | Read | Write | Manage permissions | Manage invitations | Ingest | Retrieve/cite |
@@ -78,9 +80,11 @@ Retrieval service는 전역 top-k를 먼저 가져온 뒤 나중에 필터링하
 - registered/unregistered email 초대 응답은 같은 public-safe shape이어야 합니다.
 - pending invitation은 active membership을 만들지 않아야 합니다.
 - 수락은 인증된 invited email에 묶이며 membership은 최대 하나만 생성되어야 합니다.
+- 계정이 없는 초대 수신자는 token, nickname, password만으로 verified account를 만들 수 있어야 합니다.
 - 잘못된 사용자, 취소/만료/소비된 token, 중복 수락은 안전하게 실패해야 합니다.
 - member list는 email/profile/account-existence field 없이 기본 member/role 정보만 보여야 합니다.
 - accepted member response는 display-only `nickname`을 포함하되 duplicate nickname과 user-id role update를 유지해야 합니다.
+- nickname은 login identifier로 사용할 수 없고 email이 sign-in account로 남아야 합니다.
 - owner/admin active-member role patch는 non-creating이어야 하며 missing/non-member user를 거절해야 합니다.
 - public OpenAPI는 `user_id` 직접 membership 생성 route를 노출하지 않아야 합니다.
 - 승인된 group document 읽기와 publish request workflow는 유지되어야 합니다.

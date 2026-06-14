@@ -5,13 +5,15 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from my_agents.auth.contracts import Principal
 from my_agents.auth.dependencies import get_configured_auth_email_sender, get_current_principal
 from my_agents.auth.email import AuthEmailSender
+from my_agents.auth.models import UserModel
+from my_agents.auth.schemas import UserResponse
 from my_agents.groups.models import (
     GroupInvitationModel,
     GroupModel,
@@ -23,6 +25,8 @@ from my_agents.groups.schemas import (
     GroupInvitationAcceptRequest,
     GroupInvitationCreateRequest,
     GroupInvitationResponse,
+    GroupInvitationSignupRequest,
+    GroupInvitationSignupResponse,
     GroupInvitationUpdateRequest,
     GroupResponse,
     MemberPatchRequest,
@@ -33,6 +37,7 @@ from my_agents.groups.service import (
     GroupMemberDisplay,
     GroupMembershipPermissionError,
     InvalidInvitationTokenError,
+    InvitationAccountExistsError,
     InvitationNotFoundError,
     InvitationNotPendingError,
     PendingInvitationExistsError,
@@ -62,6 +67,7 @@ from my_agents.knowledge.schemas import (
     KnowledgePublishRequestSourceResponse,
 )
 from my_agents.persistence.database import get_database_session
+from my_agents.settings import Settings, get_settings
 
 groups_router = APIRouter(prefix="/groups", tags=["groups"])
 group_invitations_router = APIRouter(prefix="/group-invitations", tags=["groups"])
@@ -328,6 +334,48 @@ def accept_group_invitation(
             detail="invalid or expired invitation",
         ) from exc
     return _member_response(membership)
+
+
+@group_invitations_router.post(
+    "/signup",
+    response_model=GroupInvitationSignupResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def signup_from_group_invitation(
+    request: GroupInvitationSignupRequest,
+    response: Response,
+    db: Annotated[Session, Depends(get_database_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> GroupInvitationSignupResponse:
+    """Create a verified account from an invitation token and accept membership."""
+    try:
+        result = GroupInvitationService(db).accept_invitation_with_new_user(
+            token=request.token,
+            nickname=request.nickname,
+            password=request.password,
+        )
+    except InvitationAccountExistsError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="account already exists; sign in with the invited email",
+        ) from exc
+    except InvalidInvitationTokenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="invalid or expired invitation",
+        ) from exc
+    response.set_cookie(
+        key=settings.session_cookie_name,
+        value=result.authenticated.session_token,
+        httponly=True,
+        secure=settings.session_cookie_secure,
+        samesite=settings.session_cookie_samesite,
+    )
+    return GroupInvitationSignupResponse(
+        user=_user_response(result.authenticated.user),
+        member=_member_response(result.member),
+        csrf_token=result.authenticated.csrf_token,
+    )
 
 
 @groups_router.post(
@@ -877,6 +925,19 @@ def _publish_review_excerpt(content: str, *, limit: int = 500) -> str:
     if len(compact) <= limit:
         return compact
     return f"{compact[: limit - 1].rstrip()}…"
+
+
+def _user_response(user: UserModel) -> UserResponse:
+    is_guest = user.account_type == "guest"
+    return UserResponse(
+        id=user.id,
+        email=None if is_guest else user.email,
+        nickname=user.nickname,
+        email_verified_at=user.email_verified_at,
+        approval_status="approved" if is_guest else user.approval_status,
+        is_guest=is_guest,
+        guest_expires_at=user.guest_expires_at if is_guest else None,
+    )
 
 
 def _member_response(member: GroupMemberDisplay) -> MemberResponse:

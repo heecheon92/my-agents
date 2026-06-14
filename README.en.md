@@ -8,7 +8,7 @@ Start with [`docs/implementation-tracking.md`](./docs/implementation-tracking.md
 
 ## What the product provides
 
-- Email/password accounts, sessions, and gated guest access
+- Email/password accounts, invitation-link signup, sessions, and gated guest access
 - Personal knowledge bases, invite-based group knowledge bases, and root/system-managed project knowledge
 - Document upload, ingestion, retrieval, and cited answers
 - Server-owned conversation/run history and streaming responses
@@ -23,7 +23,7 @@ Start with [`docs/implementation-tracking.md`](./docs/implementation-tracking.md
   `root`/`system` user types can manage it.
 - `user_type` changes are operator-script-only via `scripts.set_user_type`; there is no
   public API route for role mutation.
-- Nickname is display metadata; email remains the login and invitation identifier.
+- Nickname is display metadata; email remains the login and invitation identifier. Invitees without an account use the token-proved email and choose only a nickname/password.
 - Long-term memory is disabled by default and can be enabled from experimental settings.
 - Never commit real secrets. `.env` is local-only; `.env.example` contains safe placeholders.
 

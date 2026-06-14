@@ -67,7 +67,7 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
 
 ### Auth/session foundation
 
-- Email/password signup.
+- Email/password signup, plus invitation-token signup for no-account invitees that asks only for nickname/password.
 - Nickname signup/member-roster contract is implemented as display-only and duplicate-allowed; deployment handoff should refresh hosted OpenAPI after migration/API/frontend updates land together.
 - Local/offline auth email sender boundary for verification and reset messages.
 - Hosted Resend HTTP auth email delivery through verified `my-agents.dev`, with SMTP still available for hosts that allow it.
@@ -93,7 +93,7 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
 ### Groups, documents, permissions
 
 - Group creation/list/get.
-- Invite-only group membership lifecycle: owner/admin email invitations, opaque token acceptance, pending invitation management, manager-only accepted-member roster, and non-creating role updates.
+- Invite-only group membership lifecycle: owner/admin email invitations, opaque token acceptance, no-account invite-token signup, pending invitation management, manager-only accepted-member roster, and non-creating role updates.
 - Nickname roster extension keeps member emails out of manager-only rosters and keeps role updates keyed by `user_id`; duplicate nicknames remain display-only.
 - Group knowledge publish-request workflow supports personal-KB publication and single-document copy publication into group KBs, with owner/admin approve/reject and source-preview data for review.
 - Hidden `team_upload_staging` KBs allow group document uploads to stay private until approval copies the source into the target group KB.
@@ -337,7 +337,7 @@ The product surface is now strong enough for a small trusted preview. Before sen
 Suggested smoke path:
 
 1. Signup with required nickname -> approval/verification as configured -> login/session restore.
-2. Create a group, invite a second user by email, accept the invitation, and confirm the manager-only roster shows nickname but not email.
+2. Create a group, invite a second user by email, accept the invitation as an existing account or complete invite-token nickname/password signup for a no-account recipient, and confirm the manager-only roster shows nickname but not email.
 3. Create or upload a small supported personal source, create a publish request, review readable source preview/content, approve into a group KB, and ask a cited group-knowledge question.
 4. Confirm route-addressable frontend group pages work for members, invitations, source spaces, and publish requests; keep per-item publish review in the drawer.
 5. Record any issue in `docs/product-chat-service/en/15-deployment-troubleshooting-log.md` and do not broaden the invite until the smoke path is stable.
@@ -426,6 +426,7 @@ limits.
 | --- | --- | --- |
 | 2026-06-14 | Product status review refreshed roadmap/tracking and marked the current version as controlled-alpha worthy after deploy smoke. | `docs/implementation-tracking.md`; `ROADMAP.md`; local docs consistency review; backend verification recorded above. |
 | 2026-06-14 | Publish-request review became owner-actionable: backend responses expose source labels, filenames, excerpts, and source-document content lookup for confident approve/reject; frontend renders list-scale group management as dedicated routes while keeping per-request review in a drawer. | Backend commit `3812ef3`; frontend commits `5eefc77`, `58212af`, `19f33f0`; `tests/test_publish_requests.py`; `tests/test_kb_openapi_contract.py`; frontend `e2e/group-knowledge-v1.spec.ts`. |
+| 2026-06-14 | Fixed no-account group invitations so token-proved invitees choose nickname/password only, keep email as sign-in identity, and accept membership in one flow. | `my_agents/groups/service.py`; `my_agents/api/groups.py`; `my_agents/auth/email_templates/`; `tests/test_group_invitations_api.py`; `tests/test_auth_email.py`; README pair; group/nickname contract docs. |
 | 2026-06-14 | Implemented and documented the nickname signup and manager-only member roster contract. | `docs/product-chat-service/en/20-nickname-signup-member-roster-contract.md`; `docs/product-chat-service/ko/20-nickname-signup-member-roster-contract.md`; README pair; group-permission docs; implementation tracking. |
 | 2026-06-10 | Added a thin ContextForge LangGraph `RetrievalGraph` wrapper as the conversation-run retrieval entrypoint and future agent tool/subgraph seam. | `my_agents/agents/context_forge/graph.py`; `my_agents/agents/context_forge/__init__.py`; `my_agents/api/conversations/retrieval_context.py`; `tests/test_context_forge_contracts.py`; ContextForge README pair; retrieval architecture docs; targeted ContextForge/RAG tests. |
 | 2026-06-07 | Added real streamed assistant-message replay and newest-first conversation list ordering for the chat sidebar. | `my_agents/api/conversations/endpoints/replay.py`; `my_agents/api/conversations/endpoints/conversations.py`; `tests/test_conversations_api.py`; `tests/test_kb_openapi_contract.py`; streaming frontend contract docs; `uv run ruff check . --no-cache`; `uv run ruff format --check .`; `uv run pytest -q` (306 passed, 2 skipped). |
