@@ -43,7 +43,9 @@ def _client(monkeypatch, graph: ObservabilitySpyGraph | None = None) -> TestClie
 
 def _signup_login(client: TestClient, email: str) -> str:
     password = "correct horse battery staple"
-    signup = client.post("/auth/signup", json={"email": email, "password": password})
+    signup = client.post(
+        "/auth/signup", json={"email": email, "nickname": "Test User", "password": password}
+    )
     assert signup.status_code == 201
     verify_latest_auth_email(client, email)
     login = client.post("/auth/login", json={"email": email, "password": password})

@@ -2,7 +2,7 @@
 
 [English original](../en/20-nickname-signup-member-roster-contract.md) | 한국어
 
-이 문서는 nickname signup/member-roster slice의 승인된 계약을 기록합니다. Backend migration, API schema, frontend schema, hosted OpenAPI handoff가 함께 반영되기 전까지는 planned contract입니다.
+이 문서는 nickname signup/member-roster slice의 승인된 계약을 기록합니다. 이제 backend/frontend에 구현된 contract입니다. 배포 handoff에서는 업데이트된 backend에서 hosted OpenAPI를 refresh해야 합니다.
 
 ## 제품 경계
 
@@ -90,4 +90,4 @@ Frontend targeted check:
 
 ## 변경 이력
 
-- 2026-06-14: Cross-repo implementation handoff를 위한 planned nickname/display-only contract와 verification checklist를 생성했습니다.
+- 2026-06-14: nickname/display-only contract를 구현했고 배포 handoff를 위한 verification checklist를 유지했습니다.

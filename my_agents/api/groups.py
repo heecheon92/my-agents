@@ -30,6 +30,7 @@ from my_agents.groups.schemas import (
 )
 from my_agents.groups.service import (
     GroupInvitationService,
+    GroupMemberDisplay,
     GroupMembershipPermissionError,
     InvalidInvitationTokenError,
     InvitationNotFoundError,
@@ -766,10 +767,12 @@ def _publish_request_response(
     )
 
 
-def _member_response(membership: MembershipModel) -> MemberResponse:
+def _member_response(member: GroupMemberDisplay) -> MemberResponse:
+    membership = member.membership
     return MemberResponse(
         member_id=membership.id,
         user_id=membership.user_id,
+        nickname=member.nickname,
         role=MembershipRole(membership.role),
         created_at=membership.created_at,
     )

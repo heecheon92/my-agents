@@ -18,9 +18,12 @@ def _client(monkeypatch) -> TestClient:  # noqa: ANN001 - pytest monkeypatch fix
     return TestClient(create_app())
 
 
-def _signup_login(client: TestClient, email: str) -> str:
+def _signup_login(client: TestClient, email: str, *, nickname: str = "Test User") -> str:
     password = "correct horse battery staple"
-    signup = client.post("/auth/signup", json={"email": email, "password": password})
+    signup = client.post(
+        "/auth/signup",
+        json={"email": email, "nickname": nickname, "password": password},
+    )
     assert signup.status_code == 201
     verify_latest_auth_email(client, email)
     login = client.post("/auth/login", json={"email": email, "password": password})
@@ -64,8 +67,12 @@ def _membership_row(group_id: str, user_id: str) -> MembershipModel | None:
 def test_owner_invites_and_recipient_accepts_without_token_or_profile_leak(monkeypatch) -> None:  # noqa: ANN001
     owner = _client(monkeypatch)
     recipient = _client(monkeypatch)
-    _signup_login(owner, "invite-owner@example.com")
-    recipient_id = _signup_login(recipient, "invite-recipient@example.com")
+    _signup_login(owner, "invite-owner@example.com", nickname="Invite Owner")
+    recipient_id = _signup_login(
+        recipient,
+        "invite-recipient@example.com",
+        nickname="Invite Recipient",
+    )
     group_id = _create_group(owner)
 
     created = owner.post(
@@ -93,6 +100,7 @@ def test_owner_invites_and_recipient_accepts_without_token_or_profile_leak(monke
     assert accepted.status_code == 200
     accepted_payload = accepted.json()
     assert accepted_payload["user_id"] == recipient_id
+    assert accepted_payload["nickname"] == "Invite Recipient"
     assert accepted_payload["role"] == "viewer"
     assert recipient.get(f"/groups/{group_id}").status_code == 200
     members = recipient.get(f"/groups/{group_id}/members")
@@ -100,6 +108,7 @@ def test_owner_invites_and_recipient_accepts_without_token_or_profile_leak(monke
     manager_members = owner.get(f"/groups/{group_id}/members")
     assert manager_members.status_code == 200
     assert {member["user_id"] for member in manager_members.json()} >= {recipient_id}
+    assert any(member["nickname"] == "Invite Recipient" for member in manager_members.json())
     assert all(
         "email" not in member and "profile" not in member for member in manager_members.json()
     )
@@ -127,8 +136,12 @@ def test_viewer_cannot_list_member_directory(monkeypatch) -> None:  # noqa: ANN0
 def test_owner_can_list_member_basics_for_role_maintenance(monkeypatch) -> None:  # noqa: ANN001
     owner = _client(monkeypatch)
     recipient = _client(monkeypatch)
-    owner_id = _signup_login(owner, "member-list-owner@example.com")
-    recipient_id = _signup_login(recipient, "member-list-recipient@example.com")
+    owner_id = _signup_login(owner, "member-list-owner@example.com", nickname="Roster Owner")
+    recipient_id = _signup_login(
+        recipient,
+        "member-list-recipient@example.com",
+        nickname="Roster Recipient",
+    )
     group_id = _create_group(owner, name="Managed Roster Group")
     invitation = owner.post(
         f"/groups/{group_id}/invitations",
@@ -142,6 +155,10 @@ def test_owner_can_list_member_basics_for_role_maintenance(monkeypatch) -> None:
 
     assert members.status_code == 200
     assert {member["user_id"] for member in members.json()} >= {owner_id, recipient_id}
+    assert {member["nickname"] for member in members.json()} >= {
+        "Roster Owner",
+        "Roster Recipient",
+    }
     assert all("email" not in member and "profile" not in member for member in members.json())
 
 

@@ -15,7 +15,9 @@ def _client(monkeypatch) -> TestClient:  # noqa: ANN001 - pytest monkeypatch fix
 
 def _signup_login(client: TestClient, email: str) -> tuple[str, str]:
     password = "correct horse battery staple"
-    signup = client.post("/auth/signup", json={"email": email, "password": password})
+    signup = client.post(
+        "/auth/signup", json={"email": email, "nickname": "Test User", "password": password}
+    )
     assert signup.status_code == 201
     user_id = signup.json()["user"]["id"]
     verify_latest_auth_email(client, email)

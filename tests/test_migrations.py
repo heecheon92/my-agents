@@ -165,6 +165,7 @@ def test_alembic_offline_sql_generation_covers_initial_schema(monkeypatch) -> No
     assert "20260609_0023" in sql
     assert "20260609_0024" in sql
     assert "20260610_0025" in sql
+    assert "20260614_0026" in sql
     assert "CREATE TABLE guest_access_requests" in sql
     assert "CREATE TABLE group_invitations" in sql
     assert "CREATE TABLE knowledge_publish_requests" in sql
@@ -185,6 +186,7 @@ def test_alembic_offline_sql_generation_covers_initial_schema(monkeypatch) -> No
     assert "memory_source_snapshot_json" in sql
     assert "uq_group_invitations_pending_email" in sql
     assert "token_hash" in sql
+    assert "nickname" in sql
 
 
 def test_parse_artifacts_store_only_derived_parser_outputs(
@@ -266,6 +268,9 @@ def test_legacy_documents_without_knowledge_base_upgrade_to_head(
             "select scope, owner_user_id from knowledge_bases where id = ?", (document_kb_id,)
         ).fetchone()
         user_columns = {row[1] for row in connection.execute("pragma table_info(users)").fetchall()}
+        legacy_nickname = connection.execute(
+            "select nickname from users where id = ?", (owner_user_id,)
+        ).fetchone()[0]
         alembic_version = connection.execute("select version_num from alembic_version").fetchone()[
             0
         ]
@@ -273,7 +278,9 @@ def test_legacy_documents_without_knowledge_base_upgrade_to_head(
     assert document_kb_id is not None
     assert migrated_kb == ("personal", owner_user_id)
     assert "approval_status" in user_columns
-    assert alembic_version == "20260610_0025"
+    assert "nickname" in user_columns
+    assert legacy_nickname == "legacy-doc"
+    assert alembic_version == "20260614_0026"
 
     _assert_database_matches_model_metadata(database_url)
 

@@ -34,6 +34,7 @@ class MemberResponse(BaseModel):
 
     member_id: str
     user_id: str
+    nickname: str
     role: MembershipRole
     created_at: datetime
 

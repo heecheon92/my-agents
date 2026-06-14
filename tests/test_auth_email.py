@@ -163,7 +163,11 @@ def test_signup_uses_configured_smtp_sender_without_local_outbox(monkeypatch) ->
 
     signup = client.post(
         "/auth/signup",
-        json={"email": "smtp-signup@example.com", "password": "correct horse battery staple"},
+        json={
+            "email": "smtp-signup@example.com",
+            "nickname": "Test User",
+            "password": "correct horse battery staple",
+        },
     )
 
     assert signup.status_code == 201
@@ -343,7 +347,11 @@ def test_signup_uses_resend_http_sender_without_local_outbox(monkeypatch) -> Non
 
     signup = client.post(
         "/auth/signup",
-        json={"email": "resend-signup@example.com", "password": "correct horse battery staple"},
+        json={
+            "email": "resend-signup@example.com",
+            "nickname": "Test User",
+            "password": "correct horse battery staple",
+        },
     )
 
     assert signup.status_code == 201
@@ -379,6 +387,7 @@ def test_signup_email_language_uses_request_header(monkeypatch) -> None:  # noqa
         },
         json={
             "email": "resend-signup-language@example.com",
+            "nickname": "Test User",
             "password": "correct horse battery staple",
         },
     )

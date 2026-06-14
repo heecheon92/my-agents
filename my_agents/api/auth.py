@@ -99,6 +99,7 @@ def signup(
     try:
         result = auth_service.signup(
             email=str(request.email),
+            nickname=request.nickname,
             password=request.password,
             email_language=_auth_email_language(http_request),
             auto_approve=settings.account_signup_auto_approval,
@@ -438,6 +439,7 @@ def _user_response(user: UserModel) -> UserResponse:
     return UserResponse(
         id=user.id,
         email=None if is_guest else user.email,
+        nickname=user.nickname,
         email_verified_at=user.email_verified_at,
         approval_status="approved" if is_guest else user.approval_status,
         is_guest=is_guest,

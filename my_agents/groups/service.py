@@ -56,6 +56,14 @@ class GroupMembershipPermissionError(GroupInvitationError):
 
 
 @dataclass(frozen=True)
+class GroupMemberDisplay:
+    """Manager-only active membership with display-only user nickname."""
+
+    membership: MembershipModel
+    nickname: str
+
+
+@dataclass(frozen=True)
 class GroupInvitationDelivery:
     """Invitation plus one-time raw token for private delivery boundaries."""
 
@@ -214,7 +222,7 @@ class GroupInvitationService:
         *,
         token: str,
         actor_user_id: str,
-    ) -> MembershipModel:
+    ) -> GroupMemberDisplay:
         """Accept an invitation token as the authenticated invited user."""
         invitation = self._invitation_for_token(token)
         now = datetime.now(UTC)
@@ -263,23 +271,26 @@ class GroupInvitationService:
             self._db.rollback()
             raise InvalidInvitationTokenError("invalid or expired invitation") from exc
         self._db.refresh(membership)
-        return membership
+        return GroupMemberDisplay(membership=membership, nickname=user.nickname)
 
     def list_group_members(
         self,
         *,
         group_id: str,
         actor_user_id: str,
-    ) -> list[MembershipModel]:
-        """List active member basics for owner/admin role maintenance only."""
+    ) -> list[GroupMemberDisplay]:
+        """List active members with display-only nicknames for manager rosters."""
         self._require_group_manager(group_id=group_id, user_id=actor_user_id)
-        return list(
-            self._db.scalars(
-                select(MembershipModel)
-                .where(MembershipModel.group_id == group_id)
-                .order_by(MembershipModel.created_at.asc(), MembershipModel.id.asc())
-            ).all()
-        )
+        rows = self._db.execute(
+            select(MembershipModel, UserModel.nickname)
+            .join(UserModel, UserModel.id == MembershipModel.user_id)
+            .where(MembershipModel.group_id == group_id)
+            .order_by(MembershipModel.created_at.asc(), MembershipModel.id.asc())
+        ).all()
+        return [
+            GroupMemberDisplay(membership=membership, nickname=nickname)
+            for membership, nickname in rows
+        ]
 
     def _new_pending_invitation(
         self,

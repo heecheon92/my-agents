@@ -143,6 +143,7 @@ class AuthService:
         self,
         *,
         email: str,
+        nickname: str,
         password: str,
         email_language: AuthEmailLanguage = "ko",
         auto_approve: bool = False,
@@ -166,6 +167,7 @@ class AuthService:
         user = UserModel(
             id=str(uuid.uuid4()),
             email=normalized_email,
+            nickname=nickname,
             password_hash=password_hash,
             account_type="registered",
             approval_status="approved" if auto_approve else "pending",
@@ -572,6 +574,7 @@ class AuthService:
         user = UserModel(
             id=str(uuid.uuid4()),
             email=f"guest-{uuid.uuid4().hex}@guest.example.com",
+            nickname="Guest",
             password_hash="guest-login-disabled",
             email_verified_at=None,
             account_type="guest",

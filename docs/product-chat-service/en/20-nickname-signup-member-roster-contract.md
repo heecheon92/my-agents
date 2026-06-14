@@ -19,7 +19,7 @@ topics:
 
 # Nickname signup and member roster contract
 
-This note records the approved contract for the nickname signup/member-roster slice. It is a planned contract until the backend migration, API schemas, frontend schemas, and hosted OpenAPI handoff all land together.
+This note records the approved contract for the nickname signup/member-roster slice. It is now the implemented backend/frontend contract; deployment handoff should refresh hosted OpenAPI from the updated backend before publication.
 
 ## Product boundary
 
@@ -109,4 +109,4 @@ Frontend targeted checks:
 
 ## Revision history
 
-- 2026-06-14: Created the planned nickname/display-only contract and verification checklist for the cross-repo implementation handoff.
+- 2026-06-14: Implemented the nickname/display-only contract and kept the verification checklist for deployment handoff.

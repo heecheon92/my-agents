@@ -18,6 +18,17 @@ class SignupRequest(BaseModel):
 
     email: EmailStr
     password: str = Field(min_length=8, max_length=128)
+    nickname: str = Field(min_length=1, max_length=40)
+
+    @field_validator("nickname", mode="before")
+    @classmethod
+    def nickname_must_not_be_blank(cls, value: str) -> str:
+        if not isinstance(value, str):
+            return value
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("nickname must not be blank")
+        return stripped
 
     @field_validator("password")
     @classmethod
@@ -77,6 +88,7 @@ class UserResponse(BaseModel):
 
     id: str
     email: EmailStr | None
+    nickname: str
     email_verified_at: datetime | None
     approval_status: AccountApprovalStatus = "approved"
     is_guest: bool = False
