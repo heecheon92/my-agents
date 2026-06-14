@@ -46,8 +46,12 @@ class KnowledgeBaseSelectionContext:
 
 
 def is_system_knowledge_manager(principal: Principal) -> bool:
-    """Return whether the current principal can manage system knowledge sources."""
-    return principal.can_manage_system_knowledge
+    """Return whether the current principal can manage system knowledge sources.
+
+    Lane A owns the Principal capability field. Until that branch is integrated,
+    fall closed instead of assuming privilege.
+    """
+    return bool(getattr(principal, "can_manage_system_knowledge", False))
 
 
 def system_knowledge_base_filter():
