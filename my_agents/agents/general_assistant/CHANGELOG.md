@@ -3,6 +3,12 @@
 This changelog records why the production-surface `general_assistant` agent folder needed
 meaningful behavior, graph-state, provider, or documentation changes.
 
+## 2026-06-14 — Document system knowledge as service-owned retrieval context
+
+- **Why:** The system knowledge base plan adds ambient project-fact retrieval and root/system management outside the assistant graph, so the agent docs needed to keep retrieval context distinct from user memory and source-management authorization.
+- **Behavior/contract impact:** `general_assistant` docs now state that `retrieved_context` may include ambient system/project knowledge after service-layer authorization, while `user_type`, system source management, and hard permission filters remain outside the graph.
+- **Verification:** Documentation-only change checked with `git diff --check`; targeted README wording review.
+
 ## 2026-06-10 — Move memory recall into the LangGraph flow
 
 - **Why:** The memory migration plan calls for recall to be graph-owned instead of preassembled by the FastAPI conversation service, while keeping Product DB governance intact until LangGraph Store is introduced.

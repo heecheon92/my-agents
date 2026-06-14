@@ -2,7 +2,7 @@
 
 English | [한국어](./README.md)
 
-`my-agents` is the backend for an AI chat product that answers with personal and group knowledge. The frontend lives in a separate repository; this repo focuses on product API boundaries for auth, permissions, knowledge bases, conversation runs, citations, and memory settings.
+`my-agents` is the backend for an AI chat product that answers with personal, group, and system knowledge. The frontend lives in a separate repository; this repo focuses on product API boundaries for auth, permissions, knowledge bases, conversation runs, citations, and memory settings.
 
 Start with [`docs/implementation-tracking.md`](./docs/implementation-tracking.md) for current status. Use [`ROADMAP.md`](./ROADMAP.md) for larger direction and backlog.
 
@@ -10,6 +10,7 @@ Start with [`docs/implementation-tracking.md`](./docs/implementation-tracking.md
 
 - Email/password accounts, sessions, and gated guest access
 - Personal knowledge bases and invite-based group knowledge bases
+- System/project knowledge bases served as retrieval context for all authenticated chat users
 - Document upload, ingestion, retrieval, and cited answers
 - Server-owned conversation/run history and streaming responses
 - Permission flows for group members and publish requests
@@ -19,6 +20,8 @@ Start with [`docs/implementation-tracking.md`](./docs/implementation-tracking.md
 
 - Personal knowledge and conversation history are user-owned by default.
 - Group knowledge is available only to accepted invited members.
+- System knowledge is retrieval context for public project facts, not user memory. Authenticated users and guests can receive it in chat, but it is not exposed in normal/guest source-management surfaces.
+- System knowledge management is limited to accounts whose `user_type` is `root` or `system`. Changing `user_type` is operator-script-only; public API and profile update payloads must not mutate it.
 - Nickname is display metadata; email remains the login and invitation identifier.
 - Long-term memory is disabled by default and can be enabled from experimental settings.
 - Never commit real secrets. `.env` is local-only; `.env.example` contains safe placeholders.
