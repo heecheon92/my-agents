@@ -17,9 +17,7 @@ class UserType(StrEnum):
     SYSTEM = "system"
 
 
-SYSTEM_KNOWLEDGE_MANAGER_USER_TYPES = frozenset(
-    {UserType.ROOT.value, UserType.SYSTEM.value}
-)
+SYSTEM_KNOWLEDGE_MANAGER_USER_TYPES = frozenset({UserType.ROOT.value, UserType.SYSTEM.value})
 
 
 def can_manage_system_knowledge_for_user_type(user_type: str | None) -> bool:

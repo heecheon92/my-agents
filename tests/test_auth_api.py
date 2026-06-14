@@ -51,6 +51,19 @@ def _signup_verify_and_login(
     return login.json()
 
 
+def _set_user_type(user_id: str, user_type: str) -> None:
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        user = db.get(UserModel, user_id)
+        assert user is not None
+        user.user_type = user_type
+        db.add(user)
+        db.commit()
+    finally:
+        session_generator.close()
+
+
 def test_login_cookie_is_secure_by_default(monkeypatch) -> None:  # noqa: ANN001
     monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
     monkeypatch.delenv("MY_AGENTS_SESSION_COOKIE_SECURE", raising=False)
@@ -153,6 +166,48 @@ def test_signup_verify_login_me_and_logout_revoke_owned_session(monkeypatch) -> 
 
     assert logout.status_code == 204
     assert client.get("/auth/me").status_code == 401
+
+
+def test_me_reports_user_type_capability_without_public_mutation(monkeypatch) -> None:  # noqa: ANN001
+    client = _client(monkeypatch)
+    password = "correct horse battery staple"
+    login_payload = _signup_verify_and_login(
+        client,
+        email="system-manager@example.com",
+        password=password,
+        nickname="System Manager",
+    )
+    user_id = login_payload["user"]["id"]
+
+    normal_me = client.get("/auth/me")
+    _set_user_type(user_id, "root")
+    root_me = client.get("/auth/me")
+    forbidden_signup = client.post(
+        "/auth/signup",
+        json={
+            "email": "role-mutation@example.com",
+            "nickname": "Role Mutation",
+            "password": password,
+            "user_type": "root",
+        },
+    )
+    forbidden_profile = client.patch(
+        "/auth/me/nickname",
+        json={
+            "current_password": password,
+            "nickname": "Still System Manager",
+            "user_type": "normal",
+        },
+    )
+
+    assert normal_me.status_code == 200
+    assert normal_me.json()["user_type"] == "normal"
+    assert normal_me.json()["can_manage_system_knowledge"] is False
+    assert root_me.status_code == 200
+    assert root_me.json()["user_type"] == "root"
+    assert root_me.json()["can_manage_system_knowledge"] is True
+    assert forbidden_signup.status_code == 422
+    assert forbidden_profile.status_code == 422
 
 
 def test_signup_is_enabled_by_default(monkeypatch) -> None:  # noqa: ANN001
