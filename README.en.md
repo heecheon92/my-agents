@@ -2,15 +2,14 @@
 
 English | [한국어](./README.md)
 
-`my-agents` is the backend for an AI chat product that answers with personal, group, and system knowledge. The frontend lives in a separate repository; this repo focuses on product API boundaries for auth, permissions, knowledge bases, conversation runs, citations, and memory settings.
+`my-agents` is the backend for an AI chat product that answers with personal, group, and privileged system knowledge. The frontend lives in a separate repository; this repo focuses on product API boundaries for auth, permissions, knowledge bases, conversation runs, citations, and memory settings.
 
 Start with [`docs/implementation-tracking.md`](./docs/implementation-tracking.md) for current status. Use [`ROADMAP.md`](./ROADMAP.md) for larger direction and backlog.
 
 ## What the product provides
 
 - Email/password accounts, sessions, and gated guest access
-- Personal knowledge bases and invite-based group knowledge bases
-- System/project knowledge bases served as retrieval context for all authenticated chat users
+- Personal knowledge bases, invite-based group knowledge bases, and root/system-managed project knowledge
 - Document upload, ingestion, retrieval, and cited answers
 - Server-owned conversation/run history and streaming responses
 - Permission flows for group members and publish requests
@@ -20,8 +19,10 @@ Start with [`docs/implementation-tracking.md`](./docs/implementation-tracking.md
 
 - Personal knowledge and conversation history are user-owned by default.
 - Group knowledge is available only to accepted invited members.
-- System knowledge is retrieval context for public project facts, not user memory. Authenticated users and guests can receive it in chat, but it is not exposed in normal/guest source-management surfaces.
-- System knowledge management is limited to accounts whose `user_type` is `root` or `system`. Changing `user_type` is operator-script-only; public API and profile update payloads must not mutate it.
+- System knowledge is public to authenticated chat retrieval, including guests; only
+  `root`/`system` user types can manage it.
+- `user_type` changes are operator-script-only via `scripts.set_user_type`; there is no
+  public API route for role mutation.
 - Nickname is display metadata; email remains the login and invitation identifier.
 - Long-term memory is disabled by default and can be enabled from experimental settings.
 - Never commit real secrets. `.env` is local-only; `.env.example` contains safe placeholders.
@@ -33,8 +34,10 @@ flowchart TD
     Frontend["Separate frontend or API client"] --> API["FastAPI app"]
     API --> Auth["Auth/session/CSRF"]
     API --> KB["Knowledge bases + documents"]
+    API --> SystemKB["System KB manager API"]
     API --> Runs["Conversation runs / SSE"]
     KB --> Ingest["Ingestion + chunks + entities + embeddings"]
+    SystemKB --> Ingest
     Runs --> ContextForge["ContextForge permission-aware retrieval"]
     ContextForge --> RAGAgent["RAG Agent contract graph"]
     ContextForge --> GraphInput["Authorized retrieved context"]
@@ -47,6 +50,7 @@ flowchart TD
     Graph --> Events
     Auth --> DB[("SQLAlchemy DB")]
     KB --> DB
+    SystemKB --> DB
     Ingest --> DB
     Runs --> DB
     Memory --> DB
