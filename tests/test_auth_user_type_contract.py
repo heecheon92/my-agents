@@ -133,6 +133,7 @@ def test_user_type_is_not_mutable_through_profile_request_schema() -> None:
 def test_set_user_type_script_dry_run_and_guest_refusal(monkeypatch, tmp_path) -> None:  # noqa: ANN001
     database_path = tmp_path / "set-user-type.sqlite3"
     monkeypatch.setenv("MY_AGENTS_DATABASE_URL", f"sqlite+pysqlite:///{database_path}")
+    monkeypatch.setenv("MY_AGENTS_AUTO_CREATE_TABLES", "true")
     client = _client(monkeypatch)
     registered_user_id = _signup_login(client, "promote-me@example.com")
 
