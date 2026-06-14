@@ -3,11 +3,11 @@
 This changelog records why the production-surface `general_assistant` agent folder needed
 meaningful behavior, graph-state, provider, or documentation changes.
 
-## 2026-06-14 — Document system knowledge as service-owned retrieval context
+## 2026-06-14 — Document ambient system knowledge as retrieval context
 
-- **Why:** The system knowledge base plan adds ambient project-fact retrieval and root/system management outside the assistant graph, so the agent docs needed to keep retrieval context distinct from user memory and source-management authorization.
-- **Behavior/contract impact:** `general_assistant` docs now state that `retrieved_context` may include ambient system/project knowledge after service-layer authorization, while `user_type`, system source management, and hard permission filters remain outside the graph.
-- **Verification:** Documentation-only change checked with `git diff --check`; targeted README wording review.
+- **Why:** System knowledge bases can now be included in authenticated conversation retrieval for public project facts, but that context must not be described as user memory or as graph-owned storage.
+- **Behavior/contract impact:** `general_assistant` documentation now states that service-layer `retrieved_context` may contain ambient system/project knowledge. The agent graph still receives already-authorized document context only, does not manage system KB permissions, and keeps memory context in a separate channel.
+- **Verification:** `uv run pytest -q tests/test_system_knowledge_base_user_type.py tests/test_context_forge_contracts.py tests/test_conversations_api.py` covered system retrieval, source boundaries, and existing run behavior.
 
 ## 2026-06-10 — Move memory recall into the LangGraph flow
 

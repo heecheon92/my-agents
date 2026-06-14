@@ -2,15 +2,14 @@
 
 [English](./README.en.md) | 한국어
 
-`my-agents`는 개인, 그룹, 시스템 지식을 바탕으로 답변하는 AI 채팅 제품의 backend입니다. 프론트엔드는 별도 저장소에서 다루고, 이 저장소는 인증, 권한, 지식 기반, 대화 실행, 출처, memory 설정 같은 product API boundary에 집중합니다.
+`my-agents`는 개인 지식, 그룹 지식, 권한이 있는 사용자가 관리하는 system knowledge를 바탕으로 답변하는 AI 채팅 제품의 backend입니다. 프론트엔드는 별도 저장소에서 다루고, 이 저장소는 인증, 권한, 지식 기반, 대화 실행, 출처, memory 설정 같은 product API boundary에 집중합니다.
 
 현재 상태는 [`docs/implementation-tracking.md`](./docs/implementation-tracking.md)를 먼저 확인하세요. 큰 방향과 backlog는 [`ROADMAP.md`](./ROADMAP.md)에 있습니다.
 
 ## 제품이 제공하는 것
 
 - Email/password 계정, 세션, guest access gate
-- 개인 지식 기반과 초대 기반 group 지식 기반
-- 인증된 모든 채팅 사용자에게 retrieval context로 제공되는 system/project 지식 기반
+- 개인 지식 기반, 초대 기반 group 지식 기반, root/system 사용자가 관리하는 project knowledge
 - 문서 업로드, 수집, 검색, 출처가 있는 답변
 - Server-owned conversation/run history와 streaming response
 - 그룹 멤버와 공개 요청을 관리하기 위한 권한 흐름
@@ -20,8 +19,10 @@
 
 - 개인 지식과 대화 기록은 기본적으로 사용자 소유입니다.
 - 그룹 지식은 초대를 수락한 멤버에게만 열립니다.
-- System 지식은 사용자 memory가 아니라 공개 project facts를 위한 retrieval context입니다. 인증된 사용자와 guest는 채팅에서 이 context를 받을 수 있지만, source management에는 표시되지 않습니다.
-- System knowledge 관리 권한은 `user_type`이 `root` 또는 `system`인 계정에만 있습니다. `user_type` 변경은 운영자 script 전용이며, 공개 API나 profile update payload가 이를 변경해서는 안 됩니다.
+- System knowledge는 guest를 포함한 authenticated chat retrieval에 공개되는
+  project context이며, 관리는 `root`/`system` user type만 할 수 있습니다.
+- `user_type` 변경은 `scripts.set_user_type` operator script로만 수행하며,
+  공개 API에는 role mutation route를 두지 않습니다.
 - Nickname은 사람을 알아보기 위한 표시 이름이며, 로그인과 초대의 식별자는 email입니다.
 - Long-term memory는 기본적으로 꺼져 있고, 사용자가 실험 기능으로 직접 켤 수 있습니다.
 - 실제 secret은 commit하지 않습니다. `.env`는 local only이고 `.env.example`은 안전한 placeholder입니다.
@@ -33,8 +34,10 @@ flowchart TD
     Frontend["Separate frontend or API client"] --> API["FastAPI app"]
     API --> Auth["Auth/session/CSRF"]
     API --> KB["Knowledge bases + documents"]
+    API --> SystemKB["System KB manager API"]
     API --> Runs["Conversation runs / SSE"]
     KB --> Ingest["Ingestion + chunks + entities + embeddings"]
+    SystemKB --> Ingest
     Runs --> ContextForge["ContextForge permission-aware retrieval"]
     ContextForge --> RAGAgent["RAG Agent contract graph"]
     ContextForge --> GraphInput["Authorized retrieved context"]
@@ -47,6 +50,7 @@ flowchart TD
     Graph --> Events
     Auth --> DB[("SQLAlchemy DB")]
     KB --> DB
+    SystemKB --> DB
     Ingest --> DB
     Runs --> DB
     Memory --> DB

@@ -16,6 +16,7 @@ repository root with `uv run python -m scripts.<name>`.
 | `scripts.approve_account_signup` | Approve a pending account signup and print/send verification or mark email verified. | Manual signup approval and verification bypass. |
 | `scripts.resend_account_verification` | Refresh an expired/missing verification token for an approved unverified account. | Recover signups blocked by expired verification links. |
 | `scripts.reject_account_signup` | Reject a pending account signup. | Manual signup rejection. |
+| `scripts.set_user_type` | Set a registered account's platform `user_type` (`normal`, `root`, `system`) with safe dry-run output. | Operator-only system knowledge manager assignment. |
 | `scripts.local_demo_seed` | Seed a file-backed SQLite demo user, knowledge base, document, and extraction run. | Prepare a local demo database before starting the backend. |
 | `scripts.local_demo_smoke` | Smoke-test a running backend over HTTP only. | Verify the local V1 API path after seeding and starting the server. |
 | `scripts.issue_guest_access_code` | Issue a one-time guest access code for print-first operator delivery. | Guest-code workflows. |
@@ -225,6 +226,8 @@ Current behavior:
 - `account approve` delegates to `scripts.approve_account_signup`.
 - `account resend-verification` delegates to `scripts.resend_account_verification`.
 - `account reject` delegates to `scripts.reject_account_signup`.
+- `account set-user-type` delegates to `scripts.set_user_type`. This is the only
+  supported role mutation path for `root`/`system` system-knowledge managers.
 - `guest issue` delegates to `scripts.issue_guest_access_code`.
 - `database migrate` delegates to `scripts.migrate_database`; status-only is the
   default, and `--upgrade --confirm-upgrade --database-name <name>` is required
@@ -260,6 +263,17 @@ uv run python -m scripts.ops account resend-verification \
 # Reject a pending signup.
 uv run python -m scripts.ops account reject \
   --email user@example.com
+
+# Preview a root promotion without writing.
+uv run python -m scripts.ops account set-user-type \
+  --email user@example.com \
+  --user-type root \
+  --dry-run
+
+# Promote a registered user to system-knowledge manager.
+uv run python -m scripts.ops --env pgvector.production account set-user-type \
+  --email user@example.com \
+  --user-type system
 
 # Issue a guest code and print it.
 uv run python -m scripts.ops guest issue \
