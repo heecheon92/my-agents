@@ -11,6 +11,7 @@ repository root with `uv run python -m scripts.<name>`.
 | --- | --- | --- |
 | `scripts.dev_pgvector` | Start and wire a disposable local Docker pgvector/Postgres database. | Local Postgres/pgvector development and migration smoke checks. |
 | `scripts.ops` | Interactive operational dispatcher that collects options and delegates to focused scripts. | Operator-friendly account/guest maintenance. |
+| `scripts.migrate_database` | Check or run Alembic `upgrade head` against the selected env database. | Production/staging migration status and upgrades after backup/snapshot. |
 | `scripts.wipe_database` | Dangerously wipe the selected SQLite/Postgres database after explicit confirmations. | Rebuild a local/staging/production database from migrations after a backup/snapshot. |
 | `scripts.approve_account_signup` | Approve a pending account signup and print/send verification or mark email verified. | Manual signup approval and verification bypass. |
 | `scripts.resend_account_verification` | Refresh an expired/missing verification token for an approved unverified account. | Recover signups blocked by expired verification links. |
@@ -210,7 +211,8 @@ IDs, answer-delta count, citation count, and event count.
 Interactive operational dispatcher. It gathers options and delegates to focused
 script modules such as `scripts.approve_account_signup`,
 `scripts.resend_account_verification`, `scripts.reject_account_signup`, and
-`scripts.issue_guest_access_code`. It loads
+`scripts.issue_guest_access_code`. It also delegates database maintenance to
+focused modules such as `scripts.migrate_database` and `scripts.wipe_database`. It loads
 `.env.pgvector.local` by default; pass `--env pgvector.production` only when
 intentionally operating on production.
 
@@ -224,6 +226,9 @@ Current behavior:
 - `account resend-verification` delegates to `scripts.resend_account_verification`.
 - `account reject` delegates to `scripts.reject_account_signup`.
 - `guest issue` delegates to `scripts.issue_guest_access_code`.
+- `database migrate` delegates to `scripts.migrate_database`; status-only is the
+  default, and `--upgrade --confirm-upgrade --database-name <name>` is required
+  before Alembic applies schema changes.
 - `database wipe` delegates to `scripts.wipe_database` and prints a strong destructive-operation warning before it does anything.
 - Email content defaults to Korean; use `--lang en` for English.
 
@@ -266,6 +271,16 @@ uv run python -m scripts.ops --env pgvector.production guest issue \
   --send-email \
   --lang en
 
+# Check production migration status without applying schema changes.
+uv run python -m scripts.ops --env pgvector.production database migrate
+
+# Apply Alembic upgrade head after a provider snapshot/backup and exact target check.
+uv run python -m scripts.ops --env pgvector.production database migrate \
+  --upgrade \
+  --confirm-upgrade \
+  --database-name my_agents_prod \
+  --allow-remote-postgres
+
 # DANGER: print a dry-run wipe plan for the selected database.
 uv run python -m scripts.ops --env pgvector.production database wipe
 
@@ -278,6 +293,50 @@ uv run python -m scripts.ops --env pgvector.production database wipe \
 ```
 
 `scripts.auth_approval` remains a compatibility alias for the same dispatcher.
+
+## `scripts.migrate_database`
+
+Production-safe Alembic migration helper for the selected operator env file.
+
+Current behavior:
+
+- Reads `MY_AGENTS_DATABASE_URL` from the selected env file and never prints the
+  full URL or password.
+- Prints the selected dialect, database name, redacted target, current revision,
+  and repo head revision.
+- Status-only by default; no schema changes happen unless `--upgrade` is passed.
+- `--upgrade` also requires `--confirm-upgrade` and an exact `--database-name`
+  match. Non-local Postgres targets additionally require `--allow-remote-postgres`.
+- Runs Alembic `upgrade head`, then verifies the database is at all repo heads.
+
+Commands:
+
+```bash
+# Check the default local pgvector env target.
+uv run python -m scripts.migrate_database
+
+# Check production migration status without applying schema changes.
+uv run python -m scripts.migrate_database --env pgvector.production
+
+# Apply production migrations only after a provider snapshot/backup.
+uv run python -m scripts.migrate_database \
+  --env pgvector.production \
+  --upgrade \
+  --confirm-upgrade \
+  --database-name my_agents_prod \
+  --allow-remote-postgres
+```
+
+Safety notes:
+
+- Take a Neon/provider snapshot or equivalent backup before production/staging
+  upgrades.
+- Stop or redeploy app/worker processes as needed so code and schema roll forward
+  together.
+- Confirm the printed `database_name`, `dialect`, and redacted `target` before
+  using `--upgrade`.
+- Use `database migrate` rather than pasting raw production URLs into shell
+  history or chat.
 
 ## `scripts.wipe_database`
 
@@ -294,7 +353,8 @@ Current behavior:
 - `--confirm-wipe` is required with `--execute`.
 - `--database-name` must exactly match the selected SQLite filename or Postgres database name.
 - Non-local Postgres hosts require `--allow-remote-postgres` in addition to all other confirmations.
-- The script does **not** run migrations after wiping; run `uv run alembic upgrade head` as a separate audited step.
+- The script does **not** run migrations after wiping; run `scripts.migrate_database`
+  as a separate audited step.
 
 Commands:
 
@@ -321,7 +381,12 @@ uv run python -m scripts.wipe_database \
   --allow-remote-postgres
 
 # Recreate schema after a wipe.
-MY_AGENTS_DATABASE_URL='<same-url>' uv run alembic upgrade head
+uv run python -m scripts.migrate_database \
+  --env pgvector.production \
+  --upgrade \
+  --confirm-upgrade \
+  --database-name my_agents_prod \
+  --allow-remote-postgres
 ```
 
 Safety notes:

@@ -8,6 +8,7 @@ from collections.abc import Callable, Sequence
 from scripts import (
     approve_account_signup,
     issue_guest_access_code,
+    migrate_database,
     reject_account_signup,
     resend_account_verification,
     wipe_database,
@@ -119,6 +120,30 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Allow a non-local Postgres host to be wiped. Still requires confirmations.",
     )
+    database_migrate = database_actions.add_parser(
+        "migrate",
+        help="Check or run Alembic upgrade head for the selected database.",
+    )
+    database_migrate.add_argument(
+        "--upgrade",
+        action="store_true",
+        help="Actually run Alembic upgrade head. Without this flag, only print status.",
+    )
+    database_migrate.add_argument(
+        "--confirm-upgrade",
+        action="store_true",
+        help="Required with --upgrade to acknowledge production migration risk.",
+    )
+    database_migrate.add_argument(
+        "--database-name",
+        default=None,
+        help="Required with --upgrade. Must exactly match the selected database name.",
+    )
+    database_migrate.add_argument(
+        "--allow-remote-postgres",
+        action="store_true",
+        help="Allow a non-local Postgres host to be upgraded. Still requires confirmations.",
+    )
     return parser
 
 
@@ -178,6 +203,17 @@ def _dispatch(args: argparse.Namespace) -> int:
         if args.allow_remote_postgres:
             delegated.append("--allow-remote-postgres")
         return wipe_database.main(delegated)
+    if args.resource == "database" and args.action == "migrate":
+        delegated = [*base_argv]
+        if args.upgrade:
+            delegated.append("--upgrade")
+        if args.confirm_upgrade:
+            delegated.append("--confirm-upgrade")
+        if args.database_name:
+            delegated.extend(["--database-name", args.database_name])
+        if args.allow_remote_postgres:
+            delegated.append("--allow-remote-postgres")
+        return migrate_database.main(delegated)
     raise ValueError(f"unsupported operation: {args.resource} {args.action}")
 
 
@@ -199,6 +235,7 @@ def _interactive_args(
             ),
             ("guest issue", "Issue one-time guest access code"),
             ("database wipe", "DANGER: wipe the selected database"),
+            ("database migrate", "Check or run Alembic upgrade head"),
         ),
         default="account approve",
     )
@@ -273,6 +310,28 @@ def _interactive_args(
             args.allow_remote_postgres = _prompt_bool(
                 input_fn,
                 "Allow wiping a non-local Postgres host if the env points to one",
+                default=False,
+            )
+    elif args.resource == "database" and args.action == "migrate":
+        print(f"\n{migrate_database.MIGRATION_WARNING}")
+        args.upgrade = _prompt_bool(
+            input_fn,
+            "Run Alembic upgrade head now instead of showing migration status",
+            default=False,
+        )
+        args.confirm_upgrade = False
+        args.database_name = None
+        args.allow_remote_postgres = False
+        if args.upgrade:
+            args.confirm_upgrade = _prompt_bool(
+                input_fn,
+                "I have taken a provider snapshot/backup and verified the env target",
+                default=False,
+            )
+            args.database_name = _prompt_required(input_fn, "Exact database name")
+            args.allow_remote_postgres = _prompt_bool(
+                input_fn,
+                "Allow upgrading a non-local Postgres host if the env points to one",
                 default=False,
             )
     return args

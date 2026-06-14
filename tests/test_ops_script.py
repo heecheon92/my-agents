@@ -214,6 +214,98 @@ def test_database_wipe_command_delegates_to_functional_script(monkeypatch) -> No
     ]
 
 
+def test_interactive_database_migrate_status_delegates_to_functional_script(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:  # noqa: ANN001
+    env_file = _env_file(tmp_path)
+    prompts = iter(["database migrate", "no"])
+    delegated: dict[str, list[str]] = {}
+
+    def migrate_main(argv: list[str]) -> int:
+        delegated["argv"] = argv
+        return 0
+
+    monkeypatch.setattr(ops.migrate_database, "main", migrate_main)
+
+    exit_code = ops.main(
+        ["--env-file", str(env_file), "--interactive"],
+        input_fn=lambda prompt: next(prompts),
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "DATABASE MIGRATION" in captured.out
+    assert delegated["argv"] == ["--env-file", str(env_file)]
+
+
+def test_interactive_database_migrate_upgrade_delegates_with_confirmations(
+    tmp_path,
+    monkeypatch,
+) -> None:  # noqa: ANN001
+    env_file = _env_file(tmp_path)
+    prompts = iter(["6", "yes", "yes", "my_agents_prod", "yes"])
+    delegated: dict[str, list[str]] = {}
+
+    def migrate_main(argv: list[str]) -> int:
+        delegated["argv"] = argv
+        return 0
+
+    monkeypatch.setattr(ops.migrate_database, "main", migrate_main)
+
+    exit_code = ops.main(
+        ["--env-file", str(env_file), "--interactive"],
+        input_fn=lambda prompt: next(prompts),
+    )
+
+    assert exit_code == 0
+    assert delegated["argv"] == [
+        "--env-file",
+        str(env_file),
+        "--upgrade",
+        "--confirm-upgrade",
+        "--database-name",
+        "my_agents_prod",
+        "--allow-remote-postgres",
+    ]
+
+
+def test_database_migrate_command_delegates_to_functional_script(monkeypatch) -> None:  # noqa: ANN001
+    delegated: dict[str, list[str]] = {}
+
+    def migrate_main(argv: list[str]) -> int:
+        delegated["argv"] = argv
+        return 0
+
+    monkeypatch.setattr(ops.migrate_database, "main", migrate_main)
+
+    exit_code = ops.main(
+        [
+            "--env",
+            "pgvector.production",
+            "database",
+            "migrate",
+            "--upgrade",
+            "--confirm-upgrade",
+            "--database-name",
+            "my_agents_prod",
+            "--allow-remote-postgres",
+        ]
+    )
+
+    assert exit_code == 0
+    assert delegated["argv"] == [
+        "--env",
+        "pgvector.production",
+        "--upgrade",
+        "--confirm-upgrade",
+        "--database-name",
+        "my_agents_prod",
+        "--allow-remote-postgres",
+    ]
+
+
 def test_interactive_account_approve_can_mark_email_verified(
     tmp_path,
     monkeypatch,
