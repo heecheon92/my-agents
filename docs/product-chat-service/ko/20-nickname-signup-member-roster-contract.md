@@ -7,10 +7,10 @@
 ## 제품 경계
 
 - `nickname`은 중복을 허용하는 표시 label입니다. 로그인 식별자, lookup key, profile discovery surface, uniqueness constraint가 아닙니다.
-- Email은 signup/login과 invitation identifier로 유지합니다.
+- Email은 일반 signup/login과 계정 없는 초대 수신자의 invitation-token signup에서도 identifier로 유지합니다.
 - `user_id`는 accepted member role maintenance를 위한 정확한 operational identifier로 유지합니다.
 - Group membership은 계속 invitation acceptance 기반입니다. Public user search, account-existence 분기, 알려진 `user_id`로 직접 member activation, active roster의 member email 노출을 추가하면 안 됩니다.
-- Pending invitation은 nickname이나 matched account metadata를 노출하면 안 됩니다. Active membership은 invitation acceptance 뒤에만 시작됩니다.
+- Pending invitation은 nickname이나 matched account metadata를 노출하면 안 됩니다. Active membership은 invitation acceptance 또는 invitation-token signup 뒤에만 시작됩니다.
 
 ## Backend 계약
 
@@ -34,6 +34,29 @@
 - Raw nickname을 log에 남기지 않습니다.
 
 `UserResponse`는 signup, login, `/auth/me`, email verification, guest/session restore가 공유하는 safe serializer를 통해 `nickname`을 포함해야 합니다. 이 response field를 mandatory로 만들기 전에 기존 user와 guest row는 non-empty nickname으로 migration/backfill되어야 합니다.
+
+
+### 계정 없는 초대 수신자의 invitation-token signup
+
+초대받은 email에 아직 계정이 없으면 `POST /group-invitations/signup`이 registered account 생성과 membership 수락을 한 transaction으로 처리합니다. Request는 email field를 받지 않습니다. Opaque invitation token이 이미 email identity를 증명하기 때문입니다.
+
+```json
+{
+  "token": "opaque-invitation-token",
+  "nickname": "Mom Display",
+  "password": "correct horse battery staple"
+}
+```
+
+계약 규칙:
+
+- account email은 browser input이 아니라 pending invitation에서 가져옵니다.
+- token이 해당 주소로 전달되었으므로 account email은 verified로 표시합니다.
+- invitee가 입력한 password를 hash해서 저장합니다.
+- nickname은 trim 후 display metadata로만 저장합니다.
+- browser가 session/CSRF cookie를 설정할 수 있도록 normal session envelope를 반환합니다.
+- 기존 account가 있으면 거절하고 로그인 후 `POST /group-invitations/accept`를 사용하게 합니다.
+- nickname을 login account, invitation lookup, user discovery field로 사용하지 않습니다.
 
 ## Manager-only member roster
 
@@ -65,6 +88,7 @@ Frontend runtime schema는 backend-owned OpenAPI/contract가 새 field를 포함
 - Active member roster는 nickname을 primary human label로 보여주고 `user_id`는 secondary/advanced detail로 유지합니다.
 - Duplicate nickname을 허용하므로 role update는 정확성을 위해 계속 user ID 기반입니다.
 - Invitation UI는 email 기반과 non-enumerating copy를 유지합니다.
+- Signed-out invitation link에서는 token을 보존한 signup으로 이동하고 email field를 숨긴 뒤 nickname/password만 입력받아 backend session envelope로 로그인 상태를 만듭니다.
 
 ## 검증 체크리스트
 
@@ -76,6 +100,8 @@ Backend targeted check:
 - signup/login/me/verify response는 nickname을 일관되게 포함합니다.
 - existing-user migration/backfill은 non-empty nickname을 만듭니다.
 - manager-only member list는 nickname을 포함하면서 email/profile/account-existence data를 계속 제외합니다.
+- invitation-token signup은 token, nickname, password만으로 verified account를 생성합니다.
+- nickname login attempt는 실패해야 하며 email이 login identifier로 남습니다.
 - viewer/non-manager는 member directory를 조회할 수 없습니다.
 - public OpenAPI는 `user_id` 직접 member 생성 route를 계속 노출하지 않습니다.
 
@@ -85,9 +111,10 @@ Frontend targeted check:
 - signup form은 signup mode에서만 nickname을 렌더링하고 제출합니다.
 - OpenAPI가 요구할 때 member schema가 nickname을 요구합니다.
 - roster는 nickname을 보여주고 user ID는 secondary/advanced로 유지합니다.
-- copy는 invitation privacy와 user-id role-update exactness를 유지합니다.
-- e2e signup 및 group-member-management flow가 display-only boundary를 검증합니다.
+- copy는 invitation privacy, token-proved email signup, user-id role-update exactness를 유지합니다.
+- e2e signup, invite-token signup, group-member-management flow가 display-only boundary를 검증합니다.
 
 ## 변경 이력
 
+- 2026-06-14: 계정 없는 초대 수신자가 nickname/password만 입력하는 signup과 email-only sign-in 의미를 추가했습니다.
 - 2026-06-14: nickname/display-only contract를 구현했고 배포 handoff를 위한 verification checklist를 유지했습니다.

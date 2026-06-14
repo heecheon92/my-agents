@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from my_agents.api import create_app
+from my_agents.auth.models import UserModel
 from my_agents.groups.models import GroupInvitationModel, MembershipModel
 from my_agents.persistence.database import get_database_session
 
@@ -35,6 +36,15 @@ def _create_group(owner: TestClient, *, name: str = "Invite Group") -> str:
     response = owner.post("/groups", json={"name": name})
     assert response.status_code == 201
     return response.json()["id"]
+
+
+def _user_by_email(email: str) -> UserModel | None:
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        return db.scalar(select(UserModel).where(UserModel.email == email))
+    finally:
+        session_generator.close()
 
 
 def _invitation_rows(group_id: str) -> list[GroupInvitationModel]:
@@ -112,6 +122,83 @@ def test_owner_invites_and_recipient_accepts_without_token_or_profile_leak(monke
     assert all(
         "email" not in member and "profile" not in member for member in manager_members.json()
     )
+
+
+def test_invited_new_user_signs_up_with_nickname_and_password_only(monkeypatch) -> None:  # noqa: ANN001
+    owner = _client(monkeypatch)
+    invitee = _client(monkeypatch)
+    _signup_login(owner, "nickname-invite-owner@example.com", nickname="Invite Owner")
+    group_id = _create_group(owner, name="Nickname Invite Group")
+
+    created = owner.post(
+        f"/groups/{group_id}/invitations",
+        json={"email": "New-Invitee@Example.com", "role": "editor"},
+    )
+    assert created.status_code == 201
+    token = latest_auth_email_token("new-invitee@example.com", "group_invitation")
+
+    signup = invitee.post(
+        "/group-invitations/signup",
+        json={
+            "token": token,
+            "nickname": "  Mom Display  ",
+            "password": "correct horse battery staple",
+        },
+    )
+
+    assert signup.status_code == 201
+    assert "my_agents_session=" in signup.headers["set-cookie"].lower()
+    payload = signup.json()
+    assert payload["csrf_token"]
+    assert payload["user"]["email"] == "new-invitee@example.com"
+    assert payload["user"]["nickname"] == "Mom Display"
+    assert payload["user"]["email_verified_at"] is not None
+    assert payload["user"]["approval_status"] == "approved"
+    assert payload["member"]["role"] == "editor"
+    assert payload["member"]["nickname"] == "Mom Display"
+
+    user = _user_by_email("new-invitee@example.com")
+    assert user is not None
+    assert _membership_row(group_id, user.id) is not None
+    assert invitee.get(f"/groups/{group_id}").status_code == 200
+
+    nickname_login = _client(monkeypatch).post(
+        "/auth/login",
+        json={"email": "Mom Display", "password": "correct horse battery staple"},
+    )
+    email_login = _client(monkeypatch).post(
+        "/auth/login",
+        json={"email": "new-invitee@example.com", "password": "correct horse battery staple"},
+    )
+
+    assert nickname_login.status_code == 422
+    assert email_login.status_code == 200
+
+
+def test_invitation_signup_does_not_replace_existing_account(monkeypatch) -> None:  # noqa: ANN001
+    owner = _client(monkeypatch)
+    existing = _client(monkeypatch)
+    _signup_login(owner, "existing-invite-owner@example.com")
+    existing_id = _signup_login(existing, "existing-invitee@example.com")
+    group_id = _create_group(owner, name="Existing Invite Group")
+    created = owner.post(
+        f"/groups/{group_id}/invitations",
+        json={"email": "existing-invitee@example.com", "role": "viewer"},
+    )
+    assert created.status_code == 201
+    token = latest_auth_email_token("existing-invitee@example.com", "group_invitation")
+
+    signup = _client(monkeypatch).post(
+        "/group-invitations/signup",
+        json={
+            "token": token,
+            "nickname": "Duplicate",
+            "password": "correct horse battery staple",
+        },
+    )
+
+    assert signup.status_code == 409
+    assert _membership_row(group_id, existing_id) is None
 
 
 def test_viewer_cannot_list_member_directory(monkeypatch) -> None:  # noqa: ANN001

@@ -292,9 +292,12 @@ def test_resend_http_sender_sends_group_invitation_link(monkeypatch) -> None:  #
         "to": ["invitee@example.com"],
         "subject": "You're invited to a my-agents group",
         "text": (
-            "You were invited to join a my-agents group. Accept the invitation after "
-            "signing in with this email address:\n\n"
+            "You were invited to join a my-agents group. Open this link to accept "
+            "the invitation:\n\n"
             "https://demo.example.com/group-invitations/accept?token=invite%20token\n\n"
+            "If you do not have an account yet, the link will ask for a display "
+            "nickname and password only. Future sign-in uses this invited email "
+            "address and password; the nickname is not a sign-in account.\n\n"
             "This invitation expires at 2026-06-10T12:30:00+00:00.\n\n"
             "If you did not expect this invitation, you can ignore this email."
         ),
@@ -331,7 +334,8 @@ def test_group_invitation_email_defaults_to_korean() -> None:
     assert message.token == "invite-token"
     assert message.subject == "my-agents 그룹 초대"
     assert "/group-invitations/accept?token=invite-token" in message.body
-    assert "이 이메일 주소로 로그인한 뒤" in message.body
+    assert "표시 이름과 비밀번호만 입력합니다" in message.body
+    assert "표시 이름은 로그인 계정으로 사용할 수 없습니다" in message.body
 
 
 def test_signup_uses_resend_http_sender_without_local_outbox(monkeypatch) -> None:  # noqa: ANN001

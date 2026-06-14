@@ -8,3 +8,4 @@ These notes are my-agents-specific learning and architecture notes that do not f
 2. [Architecture decision: local filesystem tools vs OpenAI file search](./architecture-decision-local-filesystem-tools-vs-openai-file-search.md)
 3. [Durable plan: public demo deployment pipeline](./durable-plan-public-demo-deployment-pipeline.md)
 4. [Agent capability model: route honesty and tool boundaries](./agent-capability-model-route-honesty-and-tool-boundaries.md)
+5. [Invitation-token signup and display-name boundary](./invitation-token-signup-display-name-boundary.md)

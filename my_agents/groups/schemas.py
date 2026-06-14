@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
+from my_agents.auth.schemas import UserResponse
 from my_agents.groups.models import GroupInvitationStatus, MembershipRole
 
 
@@ -71,3 +72,41 @@ class GroupInvitationAcceptRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     token: str = Field(min_length=1, max_length=512)
+
+
+class GroupInvitationSignupRequest(BaseModel):
+    """Create an invited account from a token-proved email identity."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    token: str = Field(min_length=1, max_length=512)
+    nickname: str = Field(min_length=1, max_length=40)
+    password: str = Field(min_length=8, max_length=128)
+
+    @field_validator("nickname", mode="before")
+    @classmethod
+    def nickname_must_not_be_blank(cls, value: str) -> str:
+        if not isinstance(value, str):
+            return value
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("nickname must not be blank")
+        return stripped
+
+    @field_validator("password")
+    @classmethod
+    def password_must_not_be_blank(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("password must not be blank")
+        return value
+
+
+class GroupInvitationSignupResponse(BaseModel):
+    """Browser login envelope for invitation-token account creation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    user: UserResponse
+    member: MemberResponse
+    csrf_token: str = Field(min_length=1)

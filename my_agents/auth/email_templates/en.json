@@ -13,6 +13,6 @@
   },
   "group_invitation": {
     "subject": "You're invited to a my-agents group",
-    "body": "You were invited to join a my-agents group. Accept the invitation after signing in with this email address:\n\n{link}\n\nThis invitation expires at {expires_at}.\n\nIf you did not expect this invitation, you can ignore this email."
+    "body": "You were invited to join a my-agents group. Open this link to accept the invitation:\n\n{link}\n\nIf you do not have an account yet, the link will ask for a display nickname and password only. Future sign-in uses this invited email address and password; the nickname is not a sign-in account.\n\nThis invitation expires at {expires_at}.\n\nIf you did not expect this invitation, you can ignore this email."
   }
 }
