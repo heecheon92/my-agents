@@ -223,6 +223,11 @@ def test_member_can_create_pending_publish_request_for_own_personal_document(mon
     assert payload["target_knowledge_base_id"] == target_kb_id
     assert payload["source_document_id"] == source_document_id
     assert payload["source_knowledge_base_id"] is None
+    assert payload["source_document_title"] == "Private draft"
+    assert payload["source_document_excerpt"] == "Privately held publication candidate."
+    assert payload["source_document_filename"] is None
+    assert payload["source_knowledge_base_name"] is None
+    assert payload["target_knowledge_base_name"] == "Group KB"
     assert payload["status"] == "pending"
     assert payload["reviewer_user_id"] is None
     assert payload["published_document_id"] is None
@@ -234,7 +239,126 @@ def test_member_can_create_pending_publish_request_for_own_personal_document(mon
 
     owner_list = owner.get(f"/groups/{group_id}/publish-requests")
     assert owner_list.status_code == 200
-    assert [item["id"] for item in owner_list.json()] == [payload["id"]]
+    owner_payload = owner_list.json()[0]
+    assert owner_payload["id"] == payload["id"]
+    assert owner_payload["source_document_title"] == "Private draft"
+    assert owner_payload["source_document_excerpt"] == "Privately held publication candidate."
+    assert owner_payload["target_knowledge_base_name"] == "Group KB"
+
+
+def test_owner_can_view_pending_publish_request_source_content(monkeypatch) -> None:  # noqa: ANN001
+    owner = _client(monkeypatch)
+    requester = _client(monkeypatch)
+    viewer = _client(monkeypatch)
+    _signup_login(owner, "publish-source-owner@example.com")
+    _signup_login(requester, "publish-source-requester@example.com")
+    _signup_login(viewer, "publish-source-viewer@example.com")
+    group_id = _create_group(owner, name="Source Review Group")
+    _invite_and_accept_member(
+        owner=owner,
+        recipient=requester,
+        group_id=group_id,
+        recipient_email="publish-source-requester@example.com",
+        role="viewer",
+    )
+    _invite_and_accept_member(
+        owner=owner,
+        recipient=viewer,
+        group_id=group_id,
+        recipient_email="publish-source-viewer@example.com",
+        role="viewer",
+    )
+    target_kb_id = _create_group_kb(owner, group_id, "Source Review KB")
+    personal_kb_id = _create_personal_kb(requester, "Source Review Personal KB")
+    source_document_id = _create_document(
+        requester,
+        kb_id=personal_kb_id,
+        title="Review me",
+        content="Full extracted content that the owner must inspect before approval.",
+    )
+    request = requester.post(
+        f"/groups/{group_id}/publish-requests",
+        json={"source_document_id": source_document_id, "target_knowledge_base_id": target_kb_id},
+    )
+    assert request.status_code == 201
+    request_id = request.json()["id"]
+
+    viewer_source = viewer.get(f"/groups/{group_id}/publish-requests/{request_id}/source")
+    assert viewer_source.status_code == 403
+
+    owner_source = owner.get(f"/groups/{group_id}/publish-requests/{request_id}/source")
+    assert owner_source.status_code == 200
+    payload = owner_source.json()
+    assert payload["request_id"] == request_id
+    assert payload["source_kind"] == "document"
+    assert payload["source_knowledge_base_id"] is None
+    assert len(payload["documents"]) == 1
+    [document] = payload["documents"]
+    assert document["id"] == source_document_id
+    assert document["title"] == "Review me"
+    assert (
+        document["content"] == "Full extracted content that the owner must inspect before approval."
+    )
+    assert document["source_type"] == "text"
+
+    rejected = owner.post(f"/groups/{group_id}/publish-requests/{request_id}/reject")
+    assert rejected.status_code == 200
+    reviewed_source = owner.get(f"/groups/{group_id}/publish-requests/{request_id}/source")
+    assert reviewed_source.status_code == 409
+
+
+def test_owner_can_view_pending_whole_kb_publish_request_documents(monkeypatch) -> None:  # noqa: ANN001
+    owner = _client(monkeypatch)
+    requester = _client(monkeypatch)
+    _signup_login(owner, "publish-kb-source-owner@example.com")
+    _signup_login(requester, "publish-kb-source-requester@example.com")
+    group_id = _create_group(owner, name="Whole KB Source Review Group")
+    _invite_and_accept_member(
+        owner=owner,
+        recipient=requester,
+        group_id=group_id,
+        recipient_email="publish-kb-source-requester@example.com",
+        role="viewer",
+    )
+    personal_kb_id = _create_personal_kb(requester, "Whole KB For Review")
+    first_document_id = _create_document(
+        requester,
+        kb_id=personal_kb_id,
+        title="First source",
+        content="First full source body.",
+    )
+    second_document_id = _create_document(
+        requester,
+        kb_id=personal_kb_id,
+        title="Second source",
+        content="Second full source body.",
+    )
+
+    request = requester.post(
+        f"/groups/{group_id}/publish-requests",
+        json={"source_knowledge_base_id": personal_kb_id},
+    )
+    assert request.status_code == 201
+    request_id = request.json()["id"]
+
+    owner_source = owner.get(f"/groups/{group_id}/publish-requests/{request_id}/source")
+    assert owner_source.status_code == 200
+    payload = owner_source.json()
+    assert payload["source_kind"] == "knowledge_base"
+    assert payload["source_knowledge_base_id"] == personal_kb_id
+    assert payload["source_knowledge_base_name"] == "Whole KB For Review"
+    assert [document["id"] for document in payload["documents"]] == [
+        first_document_id,
+        second_document_id,
+    ]
+    assert [document["title"] for document in payload["documents"]] == [
+        "First source",
+        "Second source",
+    ]
+    assert [document["content"] for document in payload["documents"]] == [
+        "First full source body.",
+        "Second full source body.",
+    ]
 
 
 def test_publish_request_rejects_invalid_source_or_target_boundaries(monkeypatch) -> None:  # noqa: ANN001
@@ -640,6 +764,9 @@ def test_owner_approval_publishes_entire_personal_kb_as_group_source(monkeypatch
     assert request_payload["source_document_id"] is None
     assert request_payload["target_knowledge_base_id"] is None
     assert request_payload["source_knowledge_base_id"] == personal_kb_id
+    assert request_payload["source_knowledge_base_name"] == "Requester Public Candidate KB"
+    assert request_payload["source_document_title"] is None
+    assert request_payload["target_knowledge_base_name"] is None
     assert request_payload["published_knowledge_base_id"] is None
     assert (
         _retrieval_hits(

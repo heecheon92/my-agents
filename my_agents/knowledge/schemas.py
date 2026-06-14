@@ -54,6 +54,31 @@ class KnowledgePublishRequestCreateRequest(BaseModel):
         return self
 
 
+class KnowledgePublishRequestSourceDocumentResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    title: str
+    content: str
+    source_type: str = "text"
+    source_filename: str | None = None
+    source_content_type: str | None = None
+    source_byte_size: int | None = None
+    source_page_count: int | None = None
+    parser_name: str | None = None
+    created_at: datetime
+
+
+class KnowledgePublishRequestSourceResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    request_id: str
+    source_kind: Literal["document", "knowledge_base"]
+    source_knowledge_base_id: str | None = None
+    source_knowledge_base_name: str | None = None
+    documents: list[KnowledgePublishRequestSourceDocumentResponse] = Field(default_factory=list)
+
+
 class KnowledgePublishRequestResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -63,6 +88,11 @@ class KnowledgePublishRequestResponse(BaseModel):
     target_knowledge_base_id: str | None
     source_document_id: str | None
     source_knowledge_base_id: str | None
+    source_document_title: str | None = None
+    source_document_excerpt: str | None = None
+    source_document_filename: str | None = None
+    source_knowledge_base_name: str | None = None
+    target_knowledge_base_name: str | None = None
     status: KnowledgePublishRequestStatus
     reviewer_user_id: str | None
     published_document_id: str | None

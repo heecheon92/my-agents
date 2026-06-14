@@ -58,6 +58,8 @@ from my_agents.knowledge.models import (
 from my_agents.knowledge.schemas import (
     KnowledgePublishRequestCreateRequest,
     KnowledgePublishRequestResponse,
+    KnowledgePublishRequestSourceDocumentResponse,
+    KnowledgePublishRequestSourceResponse,
 )
 from my_agents.persistence.database import get_database_session
 
@@ -381,7 +383,7 @@ def create_publish_request(
     db.add(publish_request)
     db.commit()
     db.refresh(publish_request)
-    return _publish_request_response(publish_request)
+    return _publish_request_response(db, publish_request)
 
 
 @groups_router.get(
@@ -403,7 +405,24 @@ def list_publish_requests(
             KnowledgePublishRequestModel.requester_user_id == principal.user_id
         )
     publish_requests = db.scalars(statement.order_by(KnowledgePublishRequestModel.created_at)).all()
-    return [_publish_request_response(publish_request) for publish_request in publish_requests]
+    return [_publish_request_response(db, publish_request) for publish_request in publish_requests]
+
+
+@groups_router.get(
+    "/{group_id}/publish-requests/{request_id}/source",
+    response_model=KnowledgePublishRequestSourceResponse,
+)
+def get_publish_request_source(
+    group_id: str,
+    request_id: str,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    db: Annotated[Session, Depends(get_database_session)],
+) -> KnowledgePublishRequestSourceResponse:
+    """Return extracted source content for owner/admin publish review only."""
+    _require_group_manager(db, group_id, principal.user_id)
+    publish_request = _get_publish_request_or_404(db, group_id=group_id, request_id=request_id)
+    _require_pending_publish_request(publish_request)
+    return _publish_request_source_response(db, publish_request)
 
 
 @groups_router.post(
@@ -465,7 +484,7 @@ def approve_publish_request(
     db.add(publish_request)
     db.commit()
     db.refresh(publish_request)
-    return _publish_request_response(publish_request)
+    return _publish_request_response(db, publish_request)
 
 
 @groups_router.post(
@@ -488,7 +507,62 @@ def reject_publish_request(
     db.add(publish_request)
     db.commit()
     db.refresh(publish_request)
-    return _publish_request_response(publish_request)
+    return _publish_request_response(db, publish_request)
+
+
+def _publish_request_source_response(
+    db: Session, publish_request: KnowledgePublishRequestModel
+) -> KnowledgePublishRequestSourceResponse:
+    if publish_request.source_document_id is not None:
+        source_document = _get_owned_personal_source_document(
+            db,
+            document_id=publish_request.source_document_id,
+            requester_user_id=publish_request.requester_user_id,
+        )
+        return KnowledgePublishRequestSourceResponse(
+            request_id=publish_request.id,
+            source_kind="document",
+            documents=[_publish_request_source_document_response(source_document)],
+        )
+
+    source_knowledge_base = _get_owned_personal_source_knowledge_base(
+        db,
+        knowledge_base_id=publish_request.source_knowledge_base_id or "",
+        requester_user_id=publish_request.requester_user_id,
+    )
+    documents = db.scalars(
+        select(DocumentModel)
+        .where(
+            DocumentModel.knowledge_base_id == source_knowledge_base.id,
+            DocumentModel.owner_user_id == publish_request.requester_user_id,
+            DocumentModel.group_id.is_(None),
+        )
+        .order_by(DocumentModel.created_at.asc(), DocumentModel.id.asc())
+    ).all()
+    return KnowledgePublishRequestSourceResponse(
+        request_id=publish_request.id,
+        source_kind="knowledge_base",
+        source_knowledge_base_id=source_knowledge_base.id,
+        source_knowledge_base_name=source_knowledge_base.name,
+        documents=[_publish_request_source_document_response(document) for document in documents],
+    )
+
+
+def _publish_request_source_document_response(
+    document: DocumentModel,
+) -> KnowledgePublishRequestSourceDocumentResponse:
+    return KnowledgePublishRequestSourceDocumentResponse(
+        id=document.id,
+        title=document.title,
+        content=document.content,
+        source_type=document.source_type,
+        source_filename=document.source_filename,
+        source_content_type=document.source_content_type,
+        source_byte_size=document.source_byte_size,
+        source_page_count=document.source_page_count,
+        parser_name=document.parser_name,
+        created_at=document.created_at,
+    )
 
 
 def _get_group_and_membership(
@@ -741,7 +815,7 @@ def _approve_knowledge_base_publish_request(
     db.add(publish_request)
     db.commit()
     db.refresh(publish_request)
-    return _publish_request_response(publish_request)
+    return _publish_request_response(db, publish_request)
 
 
 def _default_group_knowledge_base_name(group_name: str) -> str:
@@ -749,8 +823,24 @@ def _default_group_knowledge_base_name(group_name: str) -> str:
 
 
 def _publish_request_response(
+    db: Session,
     publish_request: KnowledgePublishRequestModel,
 ) -> KnowledgePublishRequestResponse:
+    source_document = (
+        db.get(DocumentModel, publish_request.source_document_id)
+        if publish_request.source_document_id is not None
+        else None
+    )
+    source_knowledge_base = (
+        db.get(KnowledgeBaseModel, publish_request.source_knowledge_base_id)
+        if publish_request.source_knowledge_base_id is not None
+        else None
+    )
+    target_knowledge_base = (
+        db.get(KnowledgeBaseModel, publish_request.target_knowledge_base_id)
+        if publish_request.target_knowledge_base_id is not None
+        else None
+    )
     return KnowledgePublishRequestResponse(
         id=publish_request.id,
         requester_user_id=publish_request.requester_user_id,
@@ -758,6 +848,21 @@ def _publish_request_response(
         target_knowledge_base_id=publish_request.target_knowledge_base_id,
         source_document_id=publish_request.source_document_id,
         source_knowledge_base_id=publish_request.source_knowledge_base_id,
+        source_document_title=source_document.title if source_document is not None else None,
+        source_document_excerpt=(
+            _publish_review_excerpt(source_document.content)
+            if source_document is not None
+            else None
+        ),
+        source_document_filename=(
+            source_document.source_filename if source_document is not None else None
+        ),
+        source_knowledge_base_name=(
+            source_knowledge_base.name if source_knowledge_base is not None else None
+        ),
+        target_knowledge_base_name=(
+            target_knowledge_base.name if target_knowledge_base is not None else None
+        ),
         status=KnowledgePublishRequestStatus(publish_request.status),
         reviewer_user_id=publish_request.reviewer_user_id,
         published_document_id=publish_request.published_document_id,
@@ -765,6 +870,13 @@ def _publish_request_response(
         created_at=publish_request.created_at,
         reviewed_at=publish_request.reviewed_at,
     )
+
+
+def _publish_review_excerpt(content: str, *, limit: int = 500) -> str:
+    compact = " ".join(content.split())
+    if len(compact) <= limit:
+        return compact
+    return f"{compact[: limit - 1].rstrip()}…"
 
 
 def _member_response(member: GroupMemberDisplay) -> MemberResponse:
