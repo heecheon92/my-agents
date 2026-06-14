@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from my_agents.auth.contracts import UserType
 from my_agents.persistence.database import Base
 
 
@@ -28,6 +29,9 @@ class UserModel(Base):
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     rejected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     account_type: Mapped[str] = mapped_column(String(20), default="registered", nullable=False)
+    user_type: Mapped[str] = mapped_column(
+        String(20), default=UserType.NORMAL.value, nullable=False, index=True
+    )
     guest_expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
