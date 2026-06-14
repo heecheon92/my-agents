@@ -17,7 +17,8 @@ from my_agents.auth.guest_limits import assert_guest_access_active, assert_guest
 from my_agents.groups.models import MembershipModel
 from my_agents.knowledge.auth import (
     get_authorized_knowledge_base_or_404,
-    require_personal_knowledge_base_for_document_write,
+    get_manageable_knowledge_base_or_404,
+    require_document_writable_knowledge_base,
 )
 from my_agents.knowledge.extraction import KnowledgeExtractionService
 from my_agents.knowledge.ingestion_worker import execute_claimed_extraction_run
@@ -42,6 +43,7 @@ from my_agents.knowledge.schemas import (
     DocumentPermissionPatchRequest,
     DocumentPermissionResponse,
     DocumentResponse,
+    DocumentUpdateRequest,
     ExtractionRunResponse,
 )
 from my_agents.knowledge.uploads import (
@@ -97,19 +99,21 @@ def create_document_in_knowledge_base(
     principal: Principal,
     db: Session,
     settings: Settings,
+    allow_system_management: bool = False,
 ) -> DocumentResponse:
     assert_guest_can_create_document(db, principal, settings)
-    knowledge_base = require_personal_knowledge_base_for_document_write(
+    knowledge_base = require_document_writable_knowledge_base(
         db,
         knowledge_base_id=knowledge_base_id,
-        user_id=principal.user_id,
+        principal=principal,
+        allow_system_management=allow_system_management,
     )
     document = DocumentModel(
         title=request.title.strip(),
         content=request.content,
         source_type="text",
         owner_user_id=principal.user_id,
-        group_id=None,
+        group_id=knowledge_base.group_id,
         knowledge_base_id=knowledge_base.id,
     )
     db.add(document)
@@ -163,11 +167,15 @@ async def upload_document_in_knowledge_base(
     settings: Settings,
     title: str,
     file: UploadFile,
+    allow_system_management: bool = False,
 ) -> DocumentResponse:
     """Create an uploaded document inside an already path-selected KB."""
     assert_guest_can_create_document(db, principal, settings)
-    knowledge_base = require_personal_knowledge_base_for_document_write(
-        db, knowledge_base_id=knowledge_base_id, user_id=principal.user_id
+    knowledge_base = require_document_writable_knowledge_base(
+        db,
+        knowledge_base_id=knowledge_base_id,
+        principal=principal,
+        allow_system_management=allow_system_management,
     )
     content = await file.read()
     logger.info(
@@ -230,7 +238,7 @@ async def upload_document_in_knowledge_base(
         source_page_count=parsed.page_count,
         parser_name=parsed.parser_name,
         owner_user_id=principal.user_id,
-        group_id=None,
+        group_id=knowledge_base.group_id,
         knowledge_base_id=knowledge_base.id,
     )
     db.add(document)
@@ -274,6 +282,7 @@ def list_documents(
         .join(KnowledgeBaseModel, KnowledgeBaseModel.id == DocumentModel.knowledge_base_id)
         .where(
             KnowledgeBaseModel.purpose == KnowledgeBasePurpose.STANDARD.value,
+            KnowledgeBaseModel.scope != "system",
             or_(
                 DocumentModel.owner_user_id == principal.user_id,
                 DocumentModel.group_id.in_(group_ids),
@@ -294,10 +303,12 @@ def list_documents_in_knowledge_base(
 ) -> list[DocumentResponse]:
     """Return documents in an authorized KB boundary."""
     assert_guest_access_active(db, principal)
-    get_authorized_knowledge_base_or_404(db, knowledge_base_id, principal.user_id)
+    knowledge_base = get_manageable_knowledge_base_or_404(db, knowledge_base_id, principal)
     documents = db.scalars(
         select(DocumentModel).where(DocumentModel.knowledge_base_id == knowledge_base_id)
     ).all()
+    if _is_system_knowledge_base(knowledge_base):
+        return [_document_response(document) for document in documents]
     auth = AuthorizationService(db)
     return [
         _document_response(document)
@@ -314,12 +325,52 @@ def get_document(
 ) -> DocumentResponse:
     assert_guest_access_active(db, principal)
     document = _get_document_or_404(db, document_id)
-    if not AuthorizationService(db).can(
-        user_id=principal.user_id,
-        document=document,
-        operation=DocumentOperation.READ,
-    ):
+    if not _can_read_document(db, principal, document):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="document not found")
+    return _document_response(document)
+
+
+@documents_router.patch("/{document_id}", response_model=DocumentResponse)
+def update_document(
+    document_id: str,
+    request: DocumentUpdateRequest,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    db: Annotated[Session, Depends(get_database_session)],
+) -> DocumentResponse:
+    """Update an authorized document's editable text metadata."""
+    assert_guest_access_active(db, principal)
+    document = _get_document_or_404(db, document_id)
+    if not _can_write_document(db, principal, document):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="document not found")
+    _apply_document_update(document, request)
+    db.add(document)
+    db.commit()
+    db.refresh(document)
+    return _document_response(document)
+
+
+def update_document_in_knowledge_base(
+    *,
+    knowledge_base_id: str,
+    document_id: str,
+    request: DocumentUpdateRequest,
+    principal: Principal,
+    db: Session,
+) -> DocumentResponse:
+    """Update a document after enforcing its KB path boundary."""
+    assert_guest_access_active(db, principal)
+    document = get_document_in_knowledge_base_or_404(
+        db=db,
+        knowledge_base_id=knowledge_base_id,
+        document_id=document_id,
+        principal=principal,
+    )
+    if not _can_write_document(db, principal, document):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="document not found")
+    _apply_document_update(document, request)
+    db.add(document)
+    db.commit()
+    db.refresh(document)
     return _document_response(document)
 
 
@@ -332,16 +383,9 @@ def delete_document(
     """Delete an authorized document and dependent extraction/retrieval artifacts."""
     assert_guest_access_active(db, principal)
     document = _get_document_or_404(db, document_id)
-    if not AuthorizationService(db).can(
-        user_id=principal.user_id,
-        document=document,
-        operation=DocumentOperation.DELETE,
-    ):
+    if not _can_delete_document(db, principal, document):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="document not found")
-    UserMemoryService(db).mark_document_memories_stale(source_document_id=document_id, commit=False)
-    _delete_document_dependencies(db, document_id)
-    db.delete(document)
-    db.commit()
+    delete_document_record(db, document, commit=True)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -394,11 +438,7 @@ def ingest_document(
     """Run deterministic thin extraction over an authorized document."""
     assert_guest_access_active(db, principal)
     document = _get_document_or_404(db, document_id)
-    if not AuthorizationService(db).can(
-        user_id=principal.user_id,
-        document=document,
-        operation=DocumentOperation.INGEST,
-    ):
+    if not _can_ingest_document(db, principal, document):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="not allowed")
     summary = KnowledgeExtractionService(db).ingest_document(document)
     return _extraction_run_response(
@@ -419,13 +459,9 @@ def ingest_document_in_knowledge_base(
         db=db,
         knowledge_base_id=knowledge_base_id,
         document_id=document_id,
-        user_id=principal.user_id,
+        principal=principal,
     )
-    if not AuthorizationService(db).can(
-        user_id=principal.user_id,
-        document=document,
-        operation=DocumentOperation.INGEST,
-    ):
+    if not _can_ingest_document(db, principal, document):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="not allowed")
     summary = KnowledgeExtractionService(db).ingest_document(document)
     return _extraction_run_response(
@@ -451,11 +487,7 @@ def ingest_document_async(
     """Queue an in-process background extraction run for an authorized document."""
     assert_guest_access_active(db, principal)
     document = _get_document_or_404(db, document_id)
-    if not AuthorizationService(db).can(
-        user_id=principal.user_id,
-        document=document,
-        operation=DocumentOperation.INGEST,
-    ):
+    if not _can_ingest_document(db, principal, document):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="not allowed")
 
     run = KnowledgeExtractionService(db).create_extraction_run(document_id=document.id)
@@ -478,13 +510,9 @@ def ingest_document_async_in_knowledge_base(
         db=db,
         knowledge_base_id=knowledge_base_id,
         document_id=document_id,
-        user_id=principal.user_id,
+        principal=principal,
     )
-    if not AuthorizationService(db).can(
-        user_id=principal.user_id,
-        document=document,
-        operation=DocumentOperation.INGEST,
-    ):
+    if not _can_ingest_document(db, principal, document):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="not allowed")
 
     run = KnowledgeExtractionService(db).create_extraction_run(document_id=document.id)
@@ -506,11 +534,7 @@ def get_extraction_run(
     """Return one extraction run for a readable document."""
     assert_guest_access_active(db, principal)
     document = _get_document_or_404(db, document_id)
-    if not AuthorizationService(db).can(
-        user_id=principal.user_id,
-        document=document,
-        operation=DocumentOperation.READ,
-    ):
+    if not _can_read_document(db, principal, document):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="document not found")
     run = db.get(ExtractionRunModel, run_id)
     if run is None or run.document_id != document_id:
@@ -530,13 +554,9 @@ def get_extraction_run_in_knowledge_base(
         db=db,
         knowledge_base_id=knowledge_base_id,
         document_id=document_id,
-        user_id=principal.user_id,
+        principal=principal,
     )
-    if not AuthorizationService(db).can(
-        user_id=principal.user_id,
-        document=document,
-        operation=DocumentOperation.READ,
-    ):
+    if not _can_read_document(db, principal, document):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="document not found")
     run = db.get(ExtractionRunModel, run_id)
     if run is None or run.document_id != document_id:
@@ -556,11 +576,7 @@ def list_extraction_runs(
     """Return extraction runs for a readable document."""
     assert_guest_access_active(db, principal)
     document = _get_document_or_404(db, document_id)
-    if not AuthorizationService(db).can(
-        user_id=principal.user_id,
-        document=document,
-        operation=DocumentOperation.READ,
-    ):
+    if not _can_read_document(db, principal, document):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="document not found")
     runs = db.scalars(
         select(ExtractionRunModel).where(ExtractionRunModel.document_id == document_id)
@@ -580,13 +596,9 @@ def list_extraction_runs_in_knowledge_base(
         db=db,
         knowledge_base_id=knowledge_base_id,
         document_id=document_id,
-        user_id=principal.user_id,
+        principal=principal,
     )
-    if not AuthorizationService(db).can(
-        user_id=principal.user_id,
-        document=document,
-        operation=DocumentOperation.READ,
-    ):
+    if not _can_read_document(db, principal, document):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="document not found")
     runs = db.scalars(
         select(ExtractionRunModel).where(ExtractionRunModel.document_id == document_id)
@@ -624,14 +636,84 @@ def _get_document_or_404(db: Session, document_id: str) -> DocumentModel:
 
 
 def get_document_in_knowledge_base_or_404(
-    *, db: Session, knowledge_base_id: str, document_id: str, user_id: str
+    *, db: Session, knowledge_base_id: str, document_id: str, principal: Principal
 ) -> DocumentModel:
     """Return an authorized document only when it belongs to the path KB."""
-    get_authorized_knowledge_base_or_404(db, knowledge_base_id, user_id)
+    get_manageable_knowledge_base_or_404(db, knowledge_base_id, principal)
     document = _get_document_or_404(db, document_id)
     if document.knowledge_base_id != knowledge_base_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="document not found")
     return document
+
+
+def delete_document_record(db: Session, document: DocumentModel, *, commit: bool = True) -> None:
+    """Delete a document and dependent artifacts, preserving memory-staleness cleanup."""
+    UserMemoryService(db).mark_document_memories_stale(source_document_id=document.id, commit=False)
+    _delete_document_dependencies(db, document.id)
+    db.delete(document)
+    if commit:
+        db.commit()
+    else:
+        db.flush()
+
+
+def _document_knowledge_base(db: Session, document: DocumentModel) -> KnowledgeBaseModel | None:
+    return db.get(KnowledgeBaseModel, document.knowledge_base_id)
+
+
+def _is_system_knowledge_base(knowledge_base: KnowledgeBaseModel | None) -> bool:
+    return knowledge_base is not None and knowledge_base.scope == "system"
+
+
+def _is_system_document(db: Session, document: DocumentModel) -> bool:
+    return _is_system_knowledge_base(_document_knowledge_base(db, document))
+
+
+def _can_read_document(db: Session, principal: Principal, document: DocumentModel) -> bool:
+    if _is_system_document(db, document):
+        return principal.can_manage_system_knowledge
+    return AuthorizationService(db).can(
+        user_id=principal.user_id,
+        document=document,
+        operation=DocumentOperation.READ,
+    )
+
+
+def _can_write_document(db: Session, principal: Principal, document: DocumentModel) -> bool:
+    if _is_system_document(db, document):
+        return principal.can_manage_system_knowledge
+    return AuthorizationService(db).can(
+        user_id=principal.user_id,
+        document=document,
+        operation=DocumentOperation.WRITE,
+    )
+
+
+def _can_ingest_document(db: Session, principal: Principal, document: DocumentModel) -> bool:
+    if _is_system_document(db, document):
+        return principal.can_manage_system_knowledge
+    return AuthorizationService(db).can(
+        user_id=principal.user_id,
+        document=document,
+        operation=DocumentOperation.INGEST,
+    )
+
+
+def _can_delete_document(db: Session, principal: Principal, document: DocumentModel) -> bool:
+    if _is_system_document(db, document):
+        return principal.can_manage_system_knowledge
+    return AuthorizationService(db).can(
+        user_id=principal.user_id,
+        document=document,
+        operation=DocumentOperation.DELETE,
+    )
+
+
+def _apply_document_update(document: DocumentModel, request: DocumentUpdateRequest) -> None:
+    if request.title is not None:
+        document.title = request.title.strip()
+    if request.content is not None:
+        document.content = request.content
 
 
 def _delete_document_dependencies(db: Session, document_id: str) -> None:

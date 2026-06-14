@@ -15,7 +15,7 @@ from argon2.exceptions import VerifyMismatchError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from my_agents.auth.contracts import Principal
+from my_agents.auth.contracts import Principal, UserType
 from my_agents.auth.email import AuthEmailLanguage, AuthEmailSender, get_auth_email_sender
 from my_agents.auth.models import (
     AuthTokenModel,
@@ -174,6 +174,7 @@ class AuthService:
             nickname=nickname,
             password_hash=password_hash,
             account_type="registered",
+            user_type=UserType.NORMAL.value,
             approval_status="approved" if auto_approve else "pending",
             approved_at=datetime.now(UTC) if auto_approve else None,
         )
@@ -337,7 +338,12 @@ class AuthService:
             user.guest_expires_at is None or _as_utc(user.guest_expires_at) <= datetime.now(UTC)
         ):
             raise InvalidSessionError("guest access expired")
-        return Principal(user_id=session.user_id, session_id=session.id, is_guest=is_guest)
+        return Principal(
+            user_id=session.user_id,
+            session_id=session.id,
+            is_guest=is_guest,
+            user_type=user.user_type or UserType.NORMAL.value,
+        )
 
     def logout(self, *, session_token: str | None, csrf_token: str | None) -> None:
         session = self._active_session(session_token)
@@ -613,6 +619,7 @@ class AuthService:
             password_hash="guest-login-disabled",
             email_verified_at=None,
             account_type="guest",
+            user_type=UserType.NORMAL.value,
             guest_expires_at=access_expires_at,
         )
         self._db.add(user)

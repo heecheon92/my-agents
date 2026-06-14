@@ -2,14 +2,14 @@
 
 English | [한국어](./README.md)
 
-`my-agents` is the backend for an AI chat product that answers with personal and group knowledge. The frontend lives in a separate repository; this repo focuses on product API boundaries for auth, permissions, knowledge bases, conversation runs, citations, and memory settings.
+`my-agents` is the backend for an AI chat product that answers with personal, group, and privileged system knowledge. The frontend lives in a separate repository; this repo focuses on product API boundaries for auth, permissions, knowledge bases, conversation runs, citations, and memory settings.
 
 Start with [`docs/implementation-tracking.md`](./docs/implementation-tracking.md) for current status. Use [`ROADMAP.md`](./ROADMAP.md) for larger direction and backlog.
 
 ## What the product provides
 
 - Email/password accounts, invitation-link signup, sessions, and gated guest access
-- Personal knowledge bases and invite-based group knowledge bases
+- Personal knowledge bases, invite-based group knowledge bases, and root/system-managed project knowledge
 - Document upload, ingestion, retrieval, and cited answers
 - Server-owned conversation/run history and streaming responses
 - Permission flows for group members and publish requests
@@ -19,6 +19,10 @@ Start with [`docs/implementation-tracking.md`](./docs/implementation-tracking.md
 
 - Personal knowledge and conversation history are user-owned by default.
 - Group knowledge is available only to accepted invited members.
+- System knowledge is public to authenticated chat retrieval, including guests; only
+  `root`/`system` user types can manage it.
+- `user_type` changes are operator-script-only via `scripts.set_user_type`; there is no
+  public API route for role mutation.
 - Nickname is display metadata; email remains the login and invitation identifier. Invitees without an account use the token-proved email and choose only a nickname/password.
 - Long-term memory is disabled by default and can be enabled from experimental settings.
 - Never commit real secrets. `.env` is local-only; `.env.example` contains safe placeholders.
@@ -30,8 +34,10 @@ flowchart TD
     Frontend["Separate frontend or API client"] --> API["FastAPI app"]
     API --> Auth["Auth/session/CSRF"]
     API --> KB["Knowledge bases + documents"]
+    API --> SystemKB["System KB manager API"]
     API --> Runs["Conversation runs / SSE"]
     KB --> Ingest["Ingestion + chunks + entities + embeddings"]
+    SystemKB --> Ingest
     Runs --> ContextForge["ContextForge permission-aware retrieval"]
     ContextForge --> RAGAgent["RAG Agent contract graph"]
     ContextForge --> GraphInput["Authorized retrieved context"]
@@ -44,6 +50,7 @@ flowchart TD
     Graph --> Events
     Auth --> DB[("SQLAlchemy DB")]
     KB --> DB
+    SystemKB --> DB
     Ingest --> DB
     Runs --> DB
     Memory --> DB

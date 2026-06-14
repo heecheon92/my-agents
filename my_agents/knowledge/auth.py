@@ -8,6 +8,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
+from my_agents.auth.contracts import Principal
 from my_agents.groups.models import MembershipModel, MembershipRole
 from my_agents.knowledge.models import (
     KnowledgeBaseModel,
@@ -26,13 +27,40 @@ class KnowledgeBaseSelectionContext:
     knowledge_base_ids: tuple[str, ...]
     resolved_count: int
     resolved_knowledge_base_ids: tuple[str, ...] = ()
+    ambient_system_knowledge_base_ids: tuple[str, ...] = ()
+    ambient_system_knowledge_base_count: int = 0
 
     @property
     def retrieval_knowledge_base_ids(self) -> tuple[str, ...] | None:
         """Return an explicit retrieval scope, or None for personal-chat all mode."""
         if self.mode == "selected":
-            return self.resolved_knowledge_base_ids or self.knowledge_base_ids
+            return tuple(
+                dict.fromkeys(
+                    (
+                        *(self.resolved_knowledge_base_ids or self.knowledge_base_ids),
+                        *self.ambient_system_knowledge_base_ids,
+                    )
+                )
+            )
         return None
+
+
+def is_system_knowledge_manager(principal: Principal) -> bool:
+    """Return whether the current principal can manage system knowledge sources.
+
+    Lane A owns the Principal capability field. Until that branch is integrated,
+    fall closed instead of assuming privilege.
+    """
+    return bool(getattr(principal, "can_manage_system_knowledge", False))
+
+
+def system_knowledge_base_filter():
+    """Return the SQL predicate for standard public system KBs."""
+    return and_(
+        KnowledgeBaseModel.scope == KnowledgeBaseScope.SYSTEM.value,
+        KnowledgeBaseModel.group_id.is_(None),
+        KnowledgeBaseModel.purpose == KnowledgeBasePurpose.STANDARD.value,
+    )
 
 
 def get_authorized_knowledge_base_or_404(
@@ -55,11 +83,54 @@ def get_authorized_knowledge_base_or_404(
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="knowledge base not found")
 
 
+def get_manageable_knowledge_base_or_404(
+    db: Session, knowledge_base_id: str, principal: Principal
+) -> KnowledgeBaseModel:
+    """Return a KB visible to management routes, concealing unauthorized IDs."""
+    knowledge_base = db.get(KnowledgeBaseModel, knowledge_base_id)
+    if knowledge_base is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="knowledge base not found",
+        )
+    if knowledge_base.scope == KnowledgeBaseScope.SYSTEM.value:
+        if is_system_knowledge_manager(principal) and knowledge_base.purpose == (
+            KnowledgeBasePurpose.STANDARD.value
+        ):
+            return knowledge_base
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="knowledge base not found",
+        )
+    if user_can_select_knowledge_base(db, knowledge_base=knowledge_base, user_id=principal.user_id):
+        return knowledge_base
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="knowledge base not found")
+
+
 def get_retrievable_knowledge_base_or_404(
-    db: Session, knowledge_base_id: str, user_id: str
+    db: Session, knowledge_base_id: str, principal: Principal
 ) -> KnowledgeBaseModel:
     """Return a user-selectable KB only when it participates in retrieval."""
-    knowledge_base = get_authorized_knowledge_base_or_404(db, knowledge_base_id, user_id)
+    knowledge_base = db.get(KnowledgeBaseModel, knowledge_base_id)
+    if knowledge_base is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="knowledge base not found",
+        )
+    if knowledge_base.scope == KnowledgeBaseScope.SYSTEM.value:
+        if is_system_knowledge_manager(principal):
+            return knowledge_base
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="knowledge base not found",
+        )
+    if not user_can_select_knowledge_base(
+        db, knowledge_base=knowledge_base, user_id=principal.user_id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="knowledge base not found",
+        )
     if knowledge_base.purpose != KnowledgeBasePurpose.STANDARD.value:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -125,12 +196,25 @@ def authorized_knowledge_base_filter(user_id: str):
     )
 
 
-def retrievable_knowledge_base_filter(user_id: str):
-    """Return the SQL predicate for KBs that can appear in chat/RAG retrieval."""
+def selectable_knowledge_base_filter(user_id: str):
+    """Return the SQL predicate for KBs visible/selectable by the authenticated user."""
     return and_(
         authorized_knowledge_base_filter(user_id),
         KnowledgeBaseModel.purpose == KnowledgeBasePurpose.STANDARD.value,
     )
+
+
+def management_visible_knowledge_base_filter(principal: Principal):
+    """Return KBs listed in management surfaces for this principal."""
+    visible = [selectable_knowledge_base_filter(principal.user_id)]
+    if is_system_knowledge_manager(principal):
+        visible.append(system_knowledge_base_filter())
+    return or_(*visible)
+
+
+def retrievable_knowledge_base_filter(user_id: str):
+    """Return the SQL predicate for KBs that can appear in chat/RAG retrieval."""
+    return or_(selectable_knowledge_base_filter(user_id), system_knowledge_base_filter())
 
 
 def published_personal_knowledge_base_ids_for_user(user_id: str):
@@ -195,35 +279,72 @@ def require_personal_knowledge_base_for_document_write(
     return knowledge_base
 
 
+def require_document_writable_knowledge_base(
+    db: Session,
+    *,
+    knowledge_base_id: str,
+    principal: Principal,
+    allow_system_management: bool = False,
+) -> KnowledgeBaseModel:
+    """Return a document-writable KB without broadening legacy direct write routes."""
+    knowledge_base = db.get(KnowledgeBaseModel, knowledge_base_id)
+    if knowledge_base is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="knowledge base not found",
+        )
+    if knowledge_base.scope == KnowledgeBaseScope.SYSTEM.value:
+        if allow_system_management and is_system_knowledge_manager(principal):
+            return knowledge_base
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="knowledge base not found",
+        )
+    return require_personal_knowledge_base_for_document_write(
+        db,
+        knowledge_base_id=knowledge_base_id,
+        user_id=principal.user_id,
+    )
+
+
 def resolve_knowledge_base_selection(
-    db: Session, *, user_id: str, mode: str, knowledge_base_ids: list[str]
+    db: Session, *, principal: Principal, mode: str, knowledge_base_ids: list[str]
 ) -> KnowledgeBaseSelectionContext:
     """Validate chat KB selection and return audit-friendly resolved metadata."""
+    ambient_system_ids = resolve_system_ambient_knowledge_base_ids(db)
     if mode == "selected":
         resolved_ids = tuple(dict.fromkeys(knowledge_base_ids))
         for knowledge_base_id in resolved_ids:
-            get_retrievable_knowledge_base_or_404(db, knowledge_base_id, user_id)
+            get_retrievable_knowledge_base_or_404(db, knowledge_base_id, principal)
         return KnowledgeBaseSelectionContext(
             mode=mode,
             knowledge_base_ids=resolved_ids,
             resolved_count=len(resolved_ids),
             resolved_knowledge_base_ids=resolved_ids,
+            ambient_system_knowledge_base_ids=ambient_system_ids,
+            ambient_system_knowledge_base_count=len(ambient_system_ids),
         )
 
-    count = authorized_knowledge_base_count(db, user_id=user_id)
-    return KnowledgeBaseSelectionContext(mode="all", knowledge_base_ids=(), resolved_count=count)
+    count = authorized_knowledge_base_count(db, user_id=principal.user_id)
+    return KnowledgeBaseSelectionContext(
+        mode="all",
+        knowledge_base_ids=(),
+        resolved_count=count,
+        ambient_system_knowledge_base_ids=ambient_system_ids,
+        ambient_system_knowledge_base_count=len(ambient_system_ids),
+    )
 
 
 def resolve_conversation_knowledge_context(
     db: Session,
     *,
-    user_id: str,
+    principal: Principal,
     requested_selection: KnowledgeBaseSelection,
 ) -> KnowledgeBaseSelectionContext:
     """Resolve unified chat source boundaries for authorized standard KBs."""
     return resolve_knowledge_base_selection(
         db,
-        user_id=user_id,
+        principal=principal,
         mode=requested_selection.mode,
         knowledge_base_ids=requested_selection.knowledge_base_ids,
     )
@@ -234,8 +355,19 @@ def authorized_knowledge_base_count(db: Session, *, user_id: str) -> int:
     return (
         db.scalar(
             select(func.count(KnowledgeBaseModel.id)).where(
-                retrievable_knowledge_base_filter(user_id)
+                selectable_knowledge_base_filter(user_id)
             )
         )
         or 0
+    )
+
+
+def resolve_system_ambient_knowledge_base_ids(db: Session) -> tuple[str, ...]:
+    """Return standard system KB IDs used internally as ambient chat context."""
+    return tuple(
+        db.scalars(
+            select(KnowledgeBaseModel.id)
+            .where(system_knowledge_base_filter())
+            .order_by(KnowledgeBaseModel.created_at, KnowledgeBaseModel.id)
+        ).all()
     )

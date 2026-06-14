@@ -11,6 +11,7 @@ from scripts import (
     migrate_database,
     reject_account_signup,
     resend_account_verification,
+    set_user_type,
     wipe_database,
 )
 from scripts.ops_common import add_env_arguments, env_argv
@@ -67,6 +68,24 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("ko", "en"),
         default="ko",
         help="Language for --send-email content. Defaults to ko; use en for English.",
+    )
+    account_user_type = account_actions.add_parser(
+        "set-user-type",
+        help="Set a registered account's platform user_type.",
+    )
+    account_identity = account_user_type.add_mutually_exclusive_group(required=True)
+    account_identity.add_argument("--email", help="Registered account email address.")
+    account_identity.add_argument("--user-id", help="User id.")
+    account_user_type.add_argument(
+        "--user-type",
+        required=True,
+        choices=("normal", "root", "system"),
+        help="Target platform user type.",
+    )
+    account_user_type.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the safe before/after metadata without persisting.",
     )
     guest = subparsers.add_parser("guest", help="Guest access operations.")
     guest_actions = guest.add_subparsers(dest="action", required=True)
@@ -182,6 +201,15 @@ def _dispatch(args: argparse.Namespace) -> int:
             delegated.append("--send-email")
         delegated.extend(["--lang", args.lang])
         return resend_account_verification.main(delegated)
+    if args.resource == "account" and args.action == "set-user-type":
+        delegated = [*base_argv, "--user-type", args.user_type]
+        if args.email:
+            delegated.extend(["--email", args.email])
+        if args.user_id:
+            delegated.extend(["--user-id", args.user_id])
+        if args.dry_run:
+            delegated.append("--dry-run")
+        return set_user_type.main(delegated)
     if args.resource == "guest" and args.action == "issue":
         delegated = [*base_argv, "--email", args.email]
         if args.request_id:
@@ -236,6 +264,7 @@ def _interactive_args(
             ("guest issue", "Issue one-time guest access code"),
             ("database wipe", "DANGER: wipe the selected database"),
             ("database migrate", "Check or run Alembic upgrade head"),
+            ("account set-user-type", "Set platform user_type for a registered account"),
         ),
         default="account approve",
     )
@@ -245,6 +274,9 @@ def _interactive_args(
     args.send_email = False
     args.request_id = None
     args.ttl_seconds = None
+    args.user_id = None
+    args.user_type = "normal"
+    args.dry_run = False
     if args.resource == "account" and args.action == "approve":
         args.email = _prompt_required(input_fn, "Email")
         args.mark_verified = _prompt_bool(
@@ -277,6 +309,24 @@ def _interactive_args(
         confirmed = _prompt_bool(input_fn, "Reject this pending account", default=False)
         if not confirmed:
             raise SystemExit("cancelled")
+    elif args.resource == "account" and args.action == "set-user-type":
+        identifier_kind = _prompt_choice(
+            input_fn,
+            "Identifier",
+            choices=(("email", "Email"), ("user-id", "User id")),
+            default="email",
+        )
+        if identifier_kind == "email":
+            args.email = _prompt_required(input_fn, "Email")
+        else:
+            args.user_id = _prompt_required(input_fn, "User id")
+        args.user_type = _prompt_choice(
+            input_fn,
+            "User type",
+            choices=(("normal", "Normal"), ("root", "Root"), ("system", "System")),
+            default="normal",
+        )
+        args.dry_run = _prompt_bool(input_fn, "Dry run without persisting", default=True)
     elif args.resource == "guest" and args.action == "issue":
         args.email = _prompt_required(input_fn, "Email")
         args.request_id = _prompt_optional(input_fn, "Guest request id")

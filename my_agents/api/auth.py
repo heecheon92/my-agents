@@ -12,7 +12,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from my_agents.auth.abuse import AuthAbuseProtector, AuthRateLimitExceededError
-from my_agents.auth.contracts import Principal
+from my_agents.auth.contracts import (
+    Principal,
+    UserType,
+    can_manage_system_knowledge_for_user_type,
+)
 from my_agents.auth.dependencies import (
     get_auth_abuse_guard,
     get_auth_service,
@@ -505,6 +509,10 @@ def dev_auth_outbox(
 
 def _user_response(user: UserModel) -> UserResponse:
     is_guest = user.account_type == "guest"
+    try:
+        user_type = UserType(user.user_type or UserType.NORMAL.value)
+    except ValueError:
+        user_type = UserType.NORMAL
     return UserResponse(
         id=user.id,
         email=None if is_guest else user.email,
@@ -513,6 +521,10 @@ def _user_response(user: UserModel) -> UserResponse:
         approval_status="approved" if is_guest else user.approval_status,
         is_guest=is_guest,
         guest_expires_at=user.guest_expires_at if is_guest else None,
+        user_type=user_type,
+        can_manage_system_knowledge=(
+            False if is_guest else can_manage_system_knowledge_for_user_type(user_type.value)
+        ),
     )
 
 

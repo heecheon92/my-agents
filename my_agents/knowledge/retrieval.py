@@ -25,6 +25,9 @@ from my_agents.knowledge.models import (
     DocumentModel,
     DocumentPermissionModel,
     EntityMentionModel,
+    KnowledgeBaseModel,
+    KnowledgeBasePurpose,
+    KnowledgeBaseScope,
     StructuredKnowledgeEntityModel,
 )
 
@@ -583,6 +586,9 @@ def _authorized_document_filter(
         and_(DocumentModel.group_id.is_(None), DocumentModel.owner_user_id == user_id),
         DocumentModel.group_id.in_(group_ids),
         DocumentModel.id.in_(explicit_doc_ids),
+        DocumentModel.knowledge_base_id.in_(
+            _system_knowledge_base_ids(require_standard_purpose=require_standard_purpose)
+        ),
     ]
     if include_published_personal_kbs:
         readable_document_predicates.append(
@@ -608,8 +614,6 @@ def _knowledge_base_scope_filter(
     include_published_personal_kbs: bool = True,
     require_standard_purpose: bool = True,
 ):
-    from my_agents.knowledge.models import KnowledgeBaseModel
-
     if include_published_personal_kbs:
         if require_standard_purpose:
             authorized_filter = retrievable_knowledge_base_filter(user_id)
@@ -631,6 +635,15 @@ def _knowledge_base_scope_filter(
                 KnowledgeBaseModel.group_id.in_(group_ids),
                 *([KnowledgeBaseModel.purpose == "standard"] if require_standard_purpose else []),
             ),
+            and_(
+                KnowledgeBaseModel.scope == KnowledgeBaseScope.SYSTEM.value,
+                KnowledgeBaseModel.group_id.is_(None),
+                *(
+                    [KnowledgeBaseModel.purpose == KnowledgeBasePurpose.STANDARD.value]
+                    if require_standard_purpose
+                    else []
+                ),
+            ),
         )
     authorized_kb_ids = select(KnowledgeBaseModel.id).where(authorized_filter)
     if knowledge_base_ids is None:
@@ -642,6 +655,16 @@ def _knowledge_base_scope_filter(
         DocumentModel.knowledge_base_id.in_(unique_ids),
         DocumentModel.knowledge_base_id.in_(authorized_kb_ids),
     )
+
+
+def _system_knowledge_base_ids(*, require_standard_purpose: bool):
+    predicates = [
+        KnowledgeBaseModel.scope == KnowledgeBaseScope.SYSTEM.value,
+        KnowledgeBaseModel.group_id.is_(None),
+    ]
+    if require_standard_purpose:
+        predicates.append(KnowledgeBaseModel.purpose == KnowledgeBasePurpose.STANDARD.value)
+    return select(KnowledgeBaseModel.id).where(and_(*predicates))
 
 
 def _schema_has_knowledge_base_publications(db: Session) -> bool:

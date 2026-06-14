@@ -40,6 +40,7 @@ class KnowledgeBaseScope(StrEnum):
 
     PERSONAL = "personal"
     GROUP = "group"
+    SYSTEM = "system"
 
 
 class KnowledgeBasePurpose(StrEnum):

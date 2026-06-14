@@ -214,6 +214,41 @@ def test_database_wipe_command_delegates_to_functional_script(monkeypatch) -> No
     ]
 
 
+def test_account_set_user_type_command_delegates_to_functional_script(monkeypatch) -> None:  # noqa: ANN001
+    delegated: dict[str, list[str]] = {}
+
+    def set_user_type_main(argv: list[str]) -> int:
+        delegated["argv"] = argv
+        return 0
+
+    monkeypatch.setattr(ops.set_user_type, "main", set_user_type_main)
+
+    exit_code = ops.main(
+        [
+            "--env",
+            "pgvector.production",
+            "account",
+            "set-user-type",
+            "--email",
+            "Root@Example.com",
+            "--user-type",
+            "root",
+            "--dry-run",
+        ]
+    )
+
+    assert exit_code == 0
+    assert delegated["argv"] == [
+        "--env",
+        "pgvector.production",
+        "--user-type",
+        "root",
+        "--email",
+        "Root@Example.com",
+        "--dry-run",
+    ]
+
+
 def test_interactive_database_migrate_status_delegates_to_functional_script(
     tmp_path,
     monkeypatch,
