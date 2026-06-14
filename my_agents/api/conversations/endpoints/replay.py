@@ -258,7 +258,7 @@ def replay_context_for_request(
         replay_warnings=source_warnings_for_replay(db, original_run),
         selection_context=resolve_conversation_knowledge_context(
             db,
-            user_id=principal.user_id,
+            principal=principal,
             requested_selection=requested_selection,
         ),
     )

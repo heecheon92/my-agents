@@ -108,7 +108,7 @@ def stream_conversation_run(
     assert_no_active_run(db, conversation_id)
     selection_context = resolve_conversation_knowledge_context(
         db,
-        user_id=principal.user_id,
+        principal=principal,
         requested_selection=request.knowledge_base_selection,
     )
     return StreamingResponse(
