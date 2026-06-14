@@ -4,27 +4,31 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from my_agents.api.documents import (
     create_document_in_knowledge_base,
+    delete_document_record,
     get_extraction_run_in_knowledge_base,
     ingest_document_async_in_knowledge_base,
     ingest_document_in_knowledge_base,
     list_documents_in_knowledge_base,
     list_extraction_runs_in_knowledge_base,
+    update_document_in_knowledge_base,
     upload_document_in_knowledge_base,
 )
 from my_agents.auth.contracts import Principal
 from my_agents.auth.dependencies import get_current_principal
 from my_agents.groups.models import MembershipModel, MembershipRole
 from my_agents.knowledge.auth import (
-    get_authorized_knowledge_base_or_404,
-    retrievable_knowledge_base_filter,
+    get_manageable_knowledge_base_or_404,
+    is_system_knowledge_manager,
+    management_visible_knowledge_base_filter,
 )
 from my_agents.knowledge.models import (
+    DocumentModel,
     KnowledgeBaseModel,
     KnowledgeBasePublicationModel,
     KnowledgeBasePurpose,
@@ -33,9 +37,11 @@ from my_agents.knowledge.models import (
 from my_agents.knowledge.schemas import (
     DocumentCreateRequest,
     DocumentResponse,
+    DocumentUpdateRequest,
     ExtractionRunResponse,
     KnowledgeBaseCreateRequest,
     KnowledgeBaseResponse,
+    KnowledgeBaseUpdateRequest,
 )
 from my_agents.persistence.database import get_database_session
 from my_agents.settings import Settings, get_settings
@@ -59,6 +65,15 @@ def create_knowledge_base(
         ):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="not allowed")
         group_id = request.group_id
+    elif request.scope == KnowledgeBaseScope.SYSTEM:
+        if request.group_id is not None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="system knowledge bases do not accept group_id",
+            )
+        if not is_system_knowledge_manager(principal):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="not allowed")
+        group_id = None
     else:
         group_id = None
     knowledge_base = KnowledgeBaseModel(
@@ -79,7 +94,7 @@ def list_knowledge_bases(
     db: Annotated[Session, Depends(get_database_session)],
 ) -> list[KnowledgeBaseResponse]:
     knowledge_bases = db.scalars(
-        select(KnowledgeBaseModel).where(retrievable_knowledge_base_filter(principal.user_id))
+        select(KnowledgeBaseModel).where(management_visible_knowledge_base_filter(principal))
     ).all()
     return [_knowledge_base_response(db, kb, user_id=principal.user_id) for kb in knowledge_bases]
 
@@ -129,8 +144,52 @@ def get_knowledge_base(
     principal: Annotated[Principal, Depends(get_current_principal)],
     db: Annotated[Session, Depends(get_database_session)],
 ) -> KnowledgeBaseResponse:
-    knowledge_base = get_authorized_knowledge_base_or_404(db, knowledge_base_id, principal.user_id)
+    knowledge_base = get_manageable_knowledge_base_or_404(db, knowledge_base_id, principal)
     return _knowledge_base_response(db, knowledge_base, user_id=principal.user_id)
+
+
+@knowledge_bases_router.patch("/{knowledge_base_id}", response_model=KnowledgeBaseResponse)
+def update_knowledge_base(
+    knowledge_base_id: str,
+    request: KnowledgeBaseUpdateRequest,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    db: Annotated[Session, Depends(get_database_session)],
+) -> KnowledgeBaseResponse:
+    """Update system KB metadata through the privileged management path."""
+    knowledge_base = get_manageable_knowledge_base_or_404(db, knowledge_base_id, principal)
+    if knowledge_base.scope != KnowledgeBaseScope.SYSTEM.value:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="only system knowledge bases can be updated through this route",
+        )
+    knowledge_base.name = request.name.strip()
+    db.add(knowledge_base)
+    db.commit()
+    db.refresh(knowledge_base)
+    return _knowledge_base_response(db, knowledge_base, user_id=principal.user_id)
+
+
+@knowledge_bases_router.delete("/{knowledge_base_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_knowledge_base(
+    knowledge_base_id: str,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    db: Annotated[Session, Depends(get_database_session)],
+) -> Response:
+    """Delete a system KB and dependent document artifacts."""
+    knowledge_base = get_manageable_knowledge_base_or_404(db, knowledge_base_id, principal)
+    if knowledge_base.scope != KnowledgeBaseScope.SYSTEM.value:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="only system knowledge bases can be deleted through this route",
+        )
+    documents = db.scalars(
+        select(DocumentModel).where(DocumentModel.knowledge_base_id == knowledge_base.id)
+    ).all()
+    for document in documents:
+        delete_document_record(db, document, commit=False)
+    db.delete(knowledge_base)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @knowledge_bases_router.get("/{knowledge_base_id}/documents", response_model=list[DocumentResponse])
@@ -164,6 +223,7 @@ def create_knowledge_base_document(
         principal=principal,
         db=db,
         settings=settings,
+        allow_system_management=True,
     )
 
 
@@ -192,6 +252,27 @@ async def upload_knowledge_base_document(
         settings=settings,
         title=title,
         file=file,
+        allow_system_management=True,
+    )
+
+
+@knowledge_bases_router.patch(
+    "/{knowledge_base_id}/documents/{document_id}",
+    response_model=DocumentResponse,
+)
+def update_knowledge_base_document(
+    knowledge_base_id: str,
+    document_id: str,
+    request: DocumentUpdateRequest,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    db: Annotated[Session, Depends(get_database_session)],
+) -> DocumentResponse:
+    return update_document_in_knowledge_base(
+        knowledge_base_id=knowledge_base_id,
+        document_id=document_id,
+        request=request,
+        principal=principal,
+        db=db,
     )
 
 

@@ -509,7 +509,10 @@ def dev_auth_outbox(
 
 def _user_response(user: UserModel) -> UserResponse:
     is_guest = user.account_type == "guest"
-    user_type = UserType(user.user_type or UserType.NORMAL.value)
+    try:
+        user_type = UserType(user.user_type or UserType.NORMAL.value)
+    except ValueError:
+        user_type = UserType.NORMAL
     return UserResponse(
         id=user.id,
         email=None if is_guest else user.email,
