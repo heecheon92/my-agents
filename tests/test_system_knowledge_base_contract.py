@@ -15,7 +15,7 @@ from my_agents.knowledge.models import KnowledgeBaseModel
 from my_agents.persistence.database import get_database_session
 from my_agents.schemas import RouteDecision
 
-from .conftest import verify_latest_auth_email
+from .conftest import _clear_runtime_caches, verify_latest_auth_email
 
 
 class SystemKnowledgeSpyGraph:
@@ -30,7 +30,11 @@ class SystemKnowledgeSpyGraph:
         }
 
 
-def _client(monkeypatch: pytest.MonkeyPatch, graph: SystemKnowledgeSpyGraph | None = None) -> TestClient:
+def _client(
+    monkeypatch: pytest.MonkeyPatch,
+    graph: SystemKnowledgeSpyGraph | None = None,
+) -> TestClient:
+    _clear_runtime_caches()
     monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
     monkeypatch.setenv("MY_AGENTS_SESSION_COOKIE_SECURE", "false")
     app = create_app()

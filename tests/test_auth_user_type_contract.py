@@ -18,10 +18,11 @@ from my_agents.auth.models import UserModel
 from my_agents.auth.schemas import AccountNicknameUpdateRequest, UserResponse
 from my_agents.persistence.database import get_database_session
 
-from .conftest import verify_latest_auth_email
+from .conftest import _clear_runtime_caches, verify_latest_auth_email
 
 
 def _client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
+    _clear_runtime_caches()
     monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
     monkeypatch.setenv("MY_AGENTS_SESSION_COOKIE_SECURE", "false")
     return TestClient(create_app())
