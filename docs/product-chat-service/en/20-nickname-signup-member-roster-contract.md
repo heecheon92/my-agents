@@ -24,10 +24,10 @@ This note records the approved contract for the nickname signup/member-roster sl
 ## Product boundary
 
 - `nickname` is a duplicate-allowed display label. It is not a login identifier, lookup key, profile-discovery surface, or uniqueness constraint.
-- Email remains the signup/login and invitation identifier.
+- Email remains the signup/login and invitation identifier, including invitation-token signup for no-account recipients.
 - `user_id` remains the exact operational identifier for accepted-member role maintenance.
 - Group membership remains invite accepted: no public user search, no account-existence branching, no direct member activation by known `user_id`, and no member emails in the active roster response.
-- Pending invitations must not expose nicknames or matched account metadata. Active membership starts only after invitation acceptance.
+- Pending invitations must not expose nicknames or matched account metadata. Active membership starts only after invitation acceptance or invitation-token signup.
 
 ## Backend contract
 
@@ -53,6 +53,29 @@ Validation rules:
 - do not log raw nickname values.
 
 `UserResponse` should include `nickname` through the shared safe serializer used by signup, login, `/auth/me`, email verification, and guest/session restore paths. Existing users and guest rows need a non-empty migration/backfill before this response field becomes mandatory.
+
+
+### Invitation-token signup for no-account recipients
+
+When an invited email has no account yet, `POST /group-invitations/signup` creates the registered account and accepts the membership in one transaction. The request intentionally does not accept an email field because the opaque invitation token already proves the email identity:
+
+```json
+{
+  "token": "opaque-invitation-token",
+  "nickname": "Mom Display",
+  "password": "correct horse battery staple"
+}
+```
+
+Contract rules:
+
+- persist the account email from the pending invitation, not from browser input;
+- mark the account email verified because the token was delivered to that address;
+- collect and hash the invitee's chosen password;
+- trim and store nickname as display metadata only;
+- return a normal session envelope so the browser can set session/CSRF cookies;
+- reject existing accounts and require them to sign in before `POST /group-invitations/accept`;
+- do not let nickname act as a login account, invitation lookup, or user discovery field.
 
 ### Manager-only member roster
 
@@ -84,6 +107,7 @@ The frontend should update runtime schemas only after a backend-owned OpenAPI/co
 - The active member roster shows nickname as the primary human label and keeps `user_id` as secondary/advanced detail.
 - Role updates stay user-id based for exactness because duplicate nicknames are allowed.
 - Invitation UI remains email-based and non-enumerating.
+- For signed-out invitation links, the frontend should route to signup with the invitation token, hide the email field, collect nickname/password only, and then sign in the new user from the backend session envelope.
 
 ## Verification checklist
 
@@ -95,6 +119,8 @@ Backend targeted checks:
 - signup/login/me/verify responses include nickname consistently;
 - existing-user migration/backfill creates non-empty nicknames;
 - manager-only member list includes nickname and still omits email/profile/account-existence data;
+- invitation-token signup creates a verified account from token, nickname, and password only;
+- nickname login attempts fail because email remains the login identifier;
 - viewers/non-managers cannot list member directories;
 - public OpenAPI still omits direct create-member-by-`user_id`.
 
@@ -104,9 +130,10 @@ Frontend targeted checks:
 - signup form renders and submits nickname only in signup mode;
 - member schema requires nickname once OpenAPI does;
 - roster displays nickname while user ID remains secondary/advanced;
-- copy keeps invitation privacy and user-id role-update exactness;
-- e2e signup and group-member-management flows cover the display-only boundary.
+- copy keeps invitation privacy, token-proved email signup, and user-id role-update exactness;
+- e2e signup, invite-token signup, and group-member-management flows cover the display-only boundary.
 
 ## Revision history
 
+- 2026-06-14: Added no-account invitation signup with nickname/password only and explicit email-only sign-in semantics.
 - 2026-06-14: Implemented the nickname/display-only contract and kept the verification checklist for deployment handoff.

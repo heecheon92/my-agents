@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import secrets
+import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -17,7 +18,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from my_agents.auth.email import AuthEmailLanguage, AuthEmailSender, get_auth_email_sender
-from my_agents.auth.models import UserModel
+from my_agents.auth.models import SessionModel, UserModel
+from my_agents.auth.service import AuthenticatedSession, build_password_hasher
 from my_agents.diagnostics import deploy_log, safe_email_context
 from my_agents.groups.models import (
     GroupInvitationModel,
@@ -51,6 +53,10 @@ class InvalidInvitationTokenError(GroupInvitationError):
     """Raised when an invitation token cannot be accepted safely."""
 
 
+class InvitationAccountExistsError(GroupInvitationError):
+    """Raised when token signup targets an existing registered account."""
+
+
 class GroupMembershipPermissionError(GroupInvitationError):
     """Raised when the actor is not allowed to manage group invitations."""
 
@@ -61,6 +67,14 @@ class GroupMemberDisplay:
 
     membership: MembershipModel
     nickname: str
+
+
+@dataclass(frozen=True)
+class GroupInvitationSignupResult:
+    """New invited user session plus accepted active membership."""
+
+    authenticated: AuthenticatedSession
+    member: GroupMemberDisplay
 
 
 @dataclass(frozen=True)
@@ -224,19 +238,7 @@ class GroupInvitationService:
         actor_user_id: str,
     ) -> GroupMemberDisplay:
         """Accept an invitation token as the authenticated invited user."""
-        invitation = self._invitation_for_token(token)
-        now = datetime.now(UTC)
-        if (
-            invitation is None
-            or invitation.status != GroupInvitationStatus.PENDING.value
-            or _as_utc(invitation.expires_at) <= now
-        ):
-            if invitation is not None and invitation.status == GroupInvitationStatus.PENDING.value:
-                invitation.status = GroupInvitationStatus.EXPIRED.value
-                self._db.add(invitation)
-                self._db.commit()
-            raise InvalidInvitationTokenError("invalid or expired invitation")
-
+        invitation = self._pending_invitation_for_token(token)
         user = self._db.get(UserModel, actor_user_id)
         if (
             user is None
@@ -246,32 +248,71 @@ class GroupInvitationService:
         ):
             raise InvalidInvitationTokenError("invalid or expired invitation")
 
-        membership = self._db.scalar(
-            select(MembershipModel).where(
-                MembershipModel.group_id == invitation.group_id,
-                MembershipModel.user_id == actor_user_id,
-            )
-        )
-        if membership is None:
-            membership = MembershipModel(
-                group_id=invitation.group_id,
-                user_id=actor_user_id,
-                role=invitation.role,
-            )
-            self._db.add(membership)
-            self._db.flush()
-
-        invitation.status = GroupInvitationStatus.ACCEPTED.value
-        invitation.accepted_by_user_id = actor_user_id
-        invitation.accepted_at = now
-        self._db.add(invitation)
         try:
+            member = self._accept_pending_invitation(invitation=invitation, user=user)
             self._db.commit()
         except IntegrityError as exc:
             self._db.rollback()
             raise InvalidInvitationTokenError("invalid or expired invitation") from exc
-        self._db.refresh(membership)
-        return GroupMemberDisplay(membership=membership, nickname=user.nickname)
+        self._db.refresh(member.membership)
+        return member
+
+    def accept_invitation_with_new_user(
+        self,
+        *,
+        token: str,
+        nickname: str,
+        password: str,
+    ) -> GroupInvitationSignupResult:
+        """Create a verified invited account from token-proved email and accept membership."""
+        invitation = self._pending_invitation_for_token(token)
+        existing_user = self._db.scalar(
+            select(UserModel).where(UserModel.email == invitation.invited_email_normalized)
+        )
+        if existing_user is not None:
+            raise InvitationAccountExistsError("account already exists")
+
+        now = datetime.now(UTC)
+        password_hash = build_password_hasher().hash(password)
+        user = UserModel(
+            id=str(uuid.uuid4()),
+            email=invitation.invited_email_normalized,
+            nickname=nickname,
+            password_hash=password_hash,
+            email_verified_at=now,
+            approval_status="approved",
+            approved_at=now,
+            account_type="registered",
+        )
+        session_token = secrets.token_urlsafe(32)
+        csrf_token = secrets.token_urlsafe(32)
+        session = SessionModel(
+            id=str(uuid.uuid4()),
+            user_id=user.id,
+            token_hash=_digest_secret(session_token),
+            csrf_token_hash=_digest_secret(csrf_token),
+        )
+        try:
+            self._db.add(user)
+            self._db.flush()
+            member = self._accept_pending_invitation(invitation=invitation, user=user)
+            self._db.add(session)
+            self._db.commit()
+        except IntegrityError as exc:
+            self._db.rollback()
+            raise InvalidInvitationTokenError("invalid or expired invitation") from exc
+        self._db.refresh(user)
+        self._db.refresh(session)
+        self._db.refresh(member.membership)
+        return GroupInvitationSignupResult(
+            authenticated=AuthenticatedSession(
+                user=user,
+                session=session,
+                session_token=session_token,
+                csrf_token=csrf_token,
+            ),
+            member=member,
+        )
 
     def list_group_members(
         self,
@@ -291,6 +332,48 @@ class GroupInvitationService:
             GroupMemberDisplay(membership=membership, nickname=nickname)
             for membership, nickname in rows
         ]
+
+    def _accept_pending_invitation(
+        self,
+        *,
+        invitation: GroupInvitationModel,
+        user: UserModel,
+    ) -> GroupMemberDisplay:
+        membership = self._db.scalar(
+            select(MembershipModel).where(
+                MembershipModel.group_id == invitation.group_id,
+                MembershipModel.user_id == user.id,
+            )
+        )
+        if membership is None:
+            membership = MembershipModel(
+                group_id=invitation.group_id,
+                user_id=user.id,
+                role=invitation.role,
+            )
+            self._db.add(membership)
+            self._db.flush()
+
+        invitation.status = GroupInvitationStatus.ACCEPTED.value
+        invitation.accepted_by_user_id = user.id
+        invitation.accepted_at = datetime.now(UTC)
+        self._db.add(invitation)
+        return GroupMemberDisplay(membership=membership, nickname=user.nickname)
+
+    def _pending_invitation_for_token(self, token: str) -> GroupInvitationModel:
+        invitation = self._invitation_for_token(token)
+        now = datetime.now(UTC)
+        if (
+            invitation is None
+            or invitation.status != GroupInvitationStatus.PENDING.value
+            or _as_utc(invitation.expires_at) <= now
+        ):
+            if invitation is not None and invitation.status == GroupInvitationStatus.PENDING.value:
+                invitation.status = GroupInvitationStatus.EXPIRED.value
+                self._db.add(invitation)
+                self._db.commit()
+            raise InvalidInvitationTokenError("invalid or expired invitation")
+        return invitation
 
     def _new_pending_invitation(
         self,
@@ -396,7 +479,11 @@ def normalize_invitation_email(email: str) -> str:
 
 def digest_invitation_token(token: str) -> str:
     """Return the digest stored for opaque invitation tokens."""
-    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+    return _digest_secret(token)
+
+
+def _digest_secret(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 def _new_invitation_token() -> str:
