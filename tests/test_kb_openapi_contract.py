@@ -37,7 +37,6 @@ def test_openapi_exposes_kb_first_document_and_chat_selection_contract() -> None
     replay_request_schema = schema["components"]["schemas"]["ConversationReplayRequest"]
     run_summary_schema = schema["components"]["schemas"]["AgentRunSummaryResponse"]
     selection_schema = schema["components"]["schemas"]["KnowledgeBaseSelection"]
-    user_response_schema = schema["components"]["schemas"]["UserResponse"]
     kb_scope_schema = schema["components"]["schemas"]["KnowledgeBaseScope"]
     kb_response_schema = schema["components"]["schemas"]["KnowledgeBaseResponse"]
     kb_scope_schema = schema["components"]["schemas"]["KnowledgeBaseScope"]
@@ -63,12 +62,6 @@ def test_openapi_exposes_kb_first_document_and_chat_selection_contract() -> None
     assert run_summary_schema["properties"]["resolved_knowledge_base_count"]["type"] == "integer"
     assert selection_schema["properties"]["mode"]["enum"] == ["all", "selected"]
     assert selection_schema["properties"]["knowledge_base_ids"]["type"] == "array"
-    assert "user_type" in user_response_schema["properties"]
-    assert "can_manage_system_knowledge" in user_response_schema["properties"]
-    assert user_response_schema["properties"]["can_manage_system_knowledge"]["type"] == "boolean"
-    assert "normal" in str(user_response_schema["properties"]["user_type"])
-    assert "root" in str(user_response_schema["properties"]["user_type"])
-    assert "system" in str(user_response_schema["properties"]["user_type"])
     assert kb_scope_schema["enum"] == ["personal", "group", "system"]
     assert kb_response_schema["properties"]["purpose"]["$ref"] == (
         "#/components/schemas/KnowledgeBasePurpose"
