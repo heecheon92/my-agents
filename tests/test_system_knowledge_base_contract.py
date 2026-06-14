@@ -30,7 +30,10 @@ class SystemKnowledgeSpyGraph:
         }
 
 
-def _client(monkeypatch: pytest.MonkeyPatch, graph: SystemKnowledgeSpyGraph | None = None) -> TestClient:
+def _client(
+    monkeypatch: pytest.MonkeyPatch,
+    graph: SystemKnowledgeSpyGraph | None = None,
+) -> TestClient:
     monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
     monkeypatch.setenv("MY_AGENTS_SESSION_COOKIE_SECURE", "false")
     app = create_app()
@@ -70,9 +73,7 @@ def _system_kb_count() -> int:
     db = next(session_generator)
     try:
         return len(
-            db.scalars(
-                select(KnowledgeBaseModel).where(KnowledgeBaseModel.scope == "system")
-            ).all()
+            db.scalars(select(KnowledgeBaseModel).where(KnowledgeBaseModel.scope == "system")).all()
         )
     finally:
         session_generator.close()
@@ -195,6 +196,7 @@ def test_selected_personal_chat_keeps_ambient_system_knowledge(monkeypatch) -> N
     assert run.status_code == 200
     payload = run.json()
     assert payload["retrieval_route"] in {"retrieval_optional", "retrieval_required"}
-    assert payload["knowledge_base_selection"]["resolved_count"] >= 2
-    assert payload["knowledge_base_selection"].get("system_knowledge_base_count", 0) >= 1
+    assert payload["resolved_knowledge_base_count"] == 1
+    assert payload["ambient_system_knowledge_base_count"] >= 1
+    assert system_kb.json()["id"] not in payload["resolved_knowledge_base_ids"]
     assert "memory" not in str(payload.get("source_snapshot", {})).lower()

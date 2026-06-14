@@ -60,6 +60,9 @@ def knowledge_base_selection_payload(
         ),
         "resolved_knowledge_base_ids": list(selection_context.resolved_knowledge_base_ids),
         "resolved_knowledge_base_count": selection_context.resolved_count,
+        "ambient_system_knowledge_base_count": (
+            selection_context.ambient_system_knowledge_base_count
+        ),
     }
 
 

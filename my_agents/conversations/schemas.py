@@ -114,6 +114,7 @@ class ConversationRunResponse(BaseModel):
     knowledge_base_selection: KnowledgeBaseSelection
     resolved_knowledge_base_ids: list[str] = Field(default_factory=list)
     resolved_knowledge_base_count: int = 0
+    ambient_system_knowledge_base_count: int = 0
     citations: list[CitationResponse] = Field(default_factory=list)
     warnings: list[ConversationRunWarning] = Field(default_factory=list)
     clarification: ConversationClarificationRequest | None = None
@@ -138,6 +139,7 @@ class AgentRunSummaryResponse(BaseModel):
     knowledge_base_selection: KnowledgeBaseSelection
     resolved_knowledge_base_ids: list[str] = Field(default_factory=list)
     resolved_knowledge_base_count: int = 0
+    ambient_system_knowledge_base_count: int = 0
     created_at: datetime
 
 

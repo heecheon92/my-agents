@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi.testclient import TestClient
-from sqlalchemy import select
 
 from my_agents.api import create_app
 from my_agents.api.assistant import get_graph_runner
@@ -98,9 +97,7 @@ def test_system_kb_management_is_manager_only_and_hidden_from_normal_lists(monke
     _signup_login(normal, "system-kb-normal@example.com")
     _set_user_type(root_id, "system")
 
-    normal_create = normal.post(
-        "/knowledge-bases", json={"name": "System KB", "scope": "system"}
-    )
+    normal_create = normal.post("/knowledge-bases", json={"name": "System KB", "scope": "system"})
     created = root.post("/knowledge-bases", json={"name": "System KB", "scope": "system"})
     system_id = created.json()["id"]
     normal_list = normal.get("/knowledge-bases")
@@ -184,9 +181,7 @@ def test_selected_personal_kb_retrieval_keeps_system_kb_ambient_and_unlisted(mon
         ).status_code
         == 200
     )
-    personal_kb = normal.post(
-        "/knowledge-bases", json={"name": "Personal KB", "scope": "personal"}
-    )
+    personal_kb = normal.post("/knowledge-bases", json={"name": "Personal KB", "scope": "personal"})
     personal_id = personal_kb.json()["id"]
     personal_doc = normal.post(
         f"/knowledge-bases/{personal_id}/documents",

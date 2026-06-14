@@ -24,6 +24,7 @@ from .conftest import verify_latest_auth_email
 def _client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
     monkeypatch.setenv("MY_AGENTS_SESSION_COOKIE_SECURE", "false")
+    monkeypatch.setenv("MY_AGENTS_AUTO_CREATE_TABLES", "true")
     return TestClient(create_app())
 
 
