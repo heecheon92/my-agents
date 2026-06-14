@@ -127,7 +127,10 @@ def get_retrievable_knowledge_base_or_404(
     if not user_can_select_knowledge_base(
         db, knowledge_base=knowledge_base, user_id=principal.user_id
     ):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="knowledge base not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="knowledge base not found",
+        )
     if knowledge_base.purpose != KnowledgeBasePurpose.STANDARD.value:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
