@@ -118,7 +118,7 @@ This keeps user expectations clear:
 - temporary files are not reusable as durable sources unless explicitly saved;
 - temporary citations can be labeled as temporary attachments;
 - deletion/expiry rules are different from durable KB retention;
-- group/team visibility cannot accidentally leak through hidden KB writes.
+- group visibility cannot accidentally leak through hidden KB writes.
 
 ## Single-submit UX
 

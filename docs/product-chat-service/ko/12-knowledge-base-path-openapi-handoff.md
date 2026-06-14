@@ -2,7 +2,7 @@
 
 [English original](../en/12-knowledge-base-path-openapi-handoff.md) | 한국어
 
-이 문서는 KB-first 문서 경로, 팀 업로드 임시 저장, 채팅 source selection을 프론트엔드에
+이 문서는 KB-first 문서 경로, 그룹 업로드 임시 저장, 채팅 source selection을 프론트엔드에
 전달하기 위한 backend-to-frontend handoff 요약입니다.
 
 필터된 OpenAPI artifact:
@@ -16,7 +16,7 @@
 
 1. 지식베이스를 생성하거나 선택합니다.
 2. 개인 문서는 해당 KB에 text/PDF/Markdown/plain-text 파일로 추가합니다.
-3. 승인 경계가 필요한 팀 문서는 `POST /knowledge-bases/team-upload-staging`으로
+3. 승인 경계가 필요한 그룹 문서는 `POST /knowledge-bases/team-upload-staging`으로
    업로더 전용 숨김 staging KB를 만든 뒤 그 KB에 원본 문서를 씁니다.
 4. `POST /groups/{group_id}/publish-requests`로 게시 요청을 만들고,
    approve/reject endpoint로 검토를 완료합니다.
@@ -44,7 +44,7 @@
 `/documents`, `/documents/upload` compatibility route도 남아 있지만 standalone/developer 용도이며,
 제품 UI의 기본 경로는 KB-scoped route입니다.
 
-## 팀 업로드 / 게시 요청 규칙
+## 그룹 업로드 / 게시 요청 규칙
 
 - `POST /knowledge-bases/team-upload-staging`은 `purpose=team_upload_staging`인
   숨김 personal KB를 반환합니다.
@@ -90,5 +90,5 @@ run event에도 노출됩니다.
 ## 관련 문서
 
 - [Knowledge Base path OpenAPI handoff (English)](../en/12-knowledge-base-path-openapi-handoff.md)
-- [Team upload staging flow](./18-team-upload-staging-flow.md)
+- [Group upload staging flow](./18-team-upload-staging-flow.md)
 - [V1 contract freeze and evidence map](./11-v1-phase-0-contract-freeze-evidence-map.md)

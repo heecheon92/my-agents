@@ -4,7 +4,7 @@
 
 ## 요약
 
-Group/team은 초대를 수락한 뒤 참여하는 공유 지식 boundary입니다. Product client는 이메일 초대와 opaque invitation token 수락 흐름을 사용해야 하며, user search, account-existence 노출, 알려진 `user_id`로 직접 membership을 활성화하는 흐름을 제공하면 안 됩니다. Nickname/member-roster extension도 이 경계를 유지합니다. Nickname은 중복 허용 display-only label이고, email은 invitation/login identifier, `user_id`는 role update identifier입니다.
+Group은 초대를 수락한 뒤 참여하는 공유 지식 boundary입니다. Product client는 이메일 초대와 opaque invitation token 수락 흐름을 사용해야 하며, user search, account-existence 노출, 알려진 `user_id`로 직접 membership을 활성화하는 흐름을 제공하면 안 됩니다. Nickname/member-roster extension도 이 경계를 유지합니다. Nickname은 중복 허용 display-only label이고, email은 invitation/login identifier, `user_id`는 role update identifier입니다.
 
 ## 현재 계약
 
@@ -14,7 +14,7 @@ Group/team은 초대를 수락한 뒤 참여하는 공유 지식 boundary입니�
 - Owner/admin은 초대 생성, 목록, 역할 수정, 재전송, 취소를 관리합니다.
 - 초대받은 사용자는 로그인/가입 후 초대받은 이메일로 token을 수락해야 active member가 됩니다.
 - Active member role update는 이미 수락된 멤버에게만 적용되며 새 멤버를 만들면 안 됩니다.
-- Conversation transcript, run history, opt-in memory는 팀에 공유되지 않고 authenticated user 개인 범위로 유지됩니다.
+- Conversation transcript, run history, opt-in memory는 그룹에 공유되지 않고 authenticated user 개인 범위로 유지됩니다.
 
 ## Permission 흐름
 

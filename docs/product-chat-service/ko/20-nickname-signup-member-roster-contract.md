@@ -9,7 +9,7 @@
 - `nickname`은 중복을 허용하는 표시 label입니다. 로그인 식별자, lookup key, profile discovery surface, uniqueness constraint가 아닙니다.
 - Email은 signup/login과 invitation identifier로 유지합니다.
 - `user_id`는 accepted member role maintenance를 위한 정확한 operational identifier로 유지합니다.
-- Group/team membership은 계속 invitation acceptance 기반입니다. Public user search, account-existence 분기, 알려진 `user_id`로 직접 member activation, active roster의 member email 노출을 추가하면 안 됩니다.
+- Group membership은 계속 invitation acceptance 기반입니다. Public user search, account-existence 분기, 알려진 `user_id`로 직접 member activation, active roster의 member email 노출을 추가하면 안 됩니다.
 - Pending invitation은 nickname이나 matched account metadata를 노출하면 안 됩니다. Active membership은 invitation acceptance 뒤에만 시작됩니다.
 
 ## Backend 계약

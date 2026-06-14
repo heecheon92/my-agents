@@ -825,7 +825,7 @@
             "description": "Successful Response"
           }
         },
-        "summary": "Ensure Team Upload Staging Knowledge Base",
+        "summary": "Ensure Group Upload Staging Knowledge Base",
         "tags": [
           "knowledge-bases"
         ]

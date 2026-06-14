@@ -430,10 +430,10 @@ Before starting a new workflow on any machine:
 3. Run or inspect the latest relevant tests.
 4. Update this file if your workflow changes completion, priorities, or known gaps.
 5. Keep `.omx/` notes as local-only; do not rely on them for cross-machine continuity.
-### 2026-06-07 — Team upload hidden staging boundary
+### 2026-06-07 — Group upload hidden staging boundary
 
 - Added `KnowledgeBasePurpose` and a `team_upload_staging` purpose for private upload buffers.
-- Added `POST /knowledge-bases/team-upload-staging` to create/reuse a hidden personal staging KB for team document publication.
+- Added `POST /knowledge-bases/team-upload-staging` to create/reuse a hidden personal staging KB for group document publication.
 - Excluded staging KBs from normal KB lists, chat selected/all source resolution, retrieval filters, and whole-KB publish requests.
 - Preserved document-copy publication: staged documents can be copied into a target group KB, and only the approved group copy is ingested/retrieved.
 - Captured the service flow in `docs/product-chat-service/en/18-team-upload-staging-flow.md` and the Korean companion note.

@@ -3,7 +3,7 @@
 Last updated: 2026-06-06
 Owner lane: backend verification / redaction / hosted-smoke evidence
 
-This plan is the evidence checklist for the agentic RAG workflow v1 team delivery. In this codebase, `rag_agent` is the concrete RAG Agent contract inside that broader agentic RAG pattern. It is intentionally backend-owned and does not mutate `.omx/ultragoal` or Codex goal state; the team leader owns that runtime checkpoint.
+This plan is the evidence checklist for the agentic RAG workflow v1 group delivery. In this codebase, `rag_agent` is the concrete RAG Agent contract inside that broader agentic RAG pattern. It is intentionally backend-owned and does not mutate `.omx/ultragoal` or Codex goal state; the group leader owns that runtime checkpoint.
 
 ## Redacted event contract
 

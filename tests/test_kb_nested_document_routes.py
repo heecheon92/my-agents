@@ -506,7 +506,7 @@ def test_stream_all_kb_chat_scope_persists_completion_and_event_metadata(monkeyp
 def test_team_upload_staging_is_hidden_from_retrieval_but_publishable(monkeypatch) -> None:  # noqa: ANN001
     owner = _client(monkeypatch)
     _signup_login(owner, "team-staging-owner@example.com")
-    group_id = owner.post("/groups", json={"name": "Staging Review Team"}).json()["id"]
+    group_id = owner.post("/groups", json={"name": "Staging Review Group"}).json()["id"]
     group_kb_id = _first_group_kb(owner, group_id)
 
     created_staging = owner.post("/knowledge-bases/team-upload-staging")
@@ -573,7 +573,7 @@ def test_team_upload_staging_is_hidden_from_retrieval_but_publishable(monkeypatc
 
     group_conversation_id = owner.post(
         "/conversations",
-        json={"title": "Team RAG"},
+        json={"title": "Group RAG"},
     ).json()["id"]
     group_run = owner.post(
         f"/conversations/{group_conversation_id}/runs",

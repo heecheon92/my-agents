@@ -206,7 +206,7 @@ This requires the retrieval context to include freshness metadata and status in 
 - Should deprecated documents be excluded by default, or included with a lower score and warning?
 - Should historical questions such as “what was the 2024 policy?” bypass active-only filtering?
 - Should family/version metadata live at the document level only, or also at section/chunk level for documents that contain multiple policies?
-- For team KBs, who is allowed to mark a document deprecated or replace an existing source?
+- For group KBs, who is allowed to mark a document deprecated or replace an existing source?
 
 ## Non-goals for the first pass
 

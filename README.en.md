@@ -14,8 +14,8 @@ The current backend is a thin but working product slice:
 - LangGraph general assistant path with deterministic route classification and OpenAI-backed response generation by default.
 - Deterministic offline/test mode for credential-free tests and smoke checks.
 - First-party email/password auth, app-owned sessions, CSRF-aware logout, dev outbox, and signup/guest approval gates.
-- Invite-only group/team membership boundary, document, knowledge-base, and permission foundations.
-- KB-scoped document upload/creation for PDF, Markdown, plain text, `.xlsx`, and `.pptx`; team-upload staging, ingestion, extraction-run progress, chunks, entities, metadata profiles, embeddings, and pgvector-ready retrieval.
+- Invite-only group membership boundary, document, knowledge-base, and permission foundations.
+- KB-scoped document upload/creation for PDF, Markdown, plain text, `.xlsx`, and `.pptx`; group-upload staging, ingestion, extraction-run progress, chunks, entities, metadata profiles, embeddings, and pgvector-ready retrieval.
 - ContextForge retrieval service for permission-aware RAG, structured entity retrieval, env-tunable reranking top-k, packed context, citations, and redacted retrieval evidence.
 - Server-owned conversations, run history, SSE assistant text streaming, run replay/cancel paths, persisted citations, and frontend-safe activity events.
 - Opt-in per-user long-term memory with review/list/delete APIs, relevance-minimized recall, deterministic write-policy gates, suggest-confirm lifecycle, document-derived provenance/staleness, and conflict-aware provider context.
@@ -39,7 +39,7 @@ More detail lives in the docs instead of this README:
 | Public demo readiness | [`docs/product-chat-service/en/12-public-demo-deployment-readiness.md`](./docs/product-chat-service/en/12-public-demo-deployment-readiness.md) |
 | Hybrid retrieval reference | [`docs/product-chat-service/en/12-retrieval-agent-hybrid-reference.md`](./docs/product-chat-service/en/12-retrieval-agent-hybrid-reference.md) |
 | Container deployment path | [`docs/product-chat-service/en/13-generic-container-deployment-path.md`](./docs/product-chat-service/en/13-generic-container-deployment-path.md) |
-| Team upload staging | [`docs/product-chat-service/en/18-team-upload-staging-flow.md`](./docs/product-chat-service/en/18-team-upload-staging-flow.md) |
+| Group upload staging | [`docs/product-chat-service/en/18-team-upload-staging-flow.md`](./docs/product-chat-service/en/18-team-upload-staging-flow.md) |
 | LangGraph-native memory migration | [`docs/product-chat-service/en/19-langgraph-native-memory-migration.md`](./docs/product-chat-service/en/19-langgraph-native-memory-migration.md) |
 | Nickname signup/member roster contract | [`docs/product-chat-service/en/20-nickname-signup-member-roster-contract.md`](./docs/product-chat-service/en/20-nickname-signup-member-roster-contract.md) |
 | Script commands | [`scripts/README.md`](./scripts/README.md) |
@@ -80,7 +80,7 @@ flowchart TD
     Events --> DB
 ```
 
-Team/group membership is an invite-accepted shared-knowledge boundary. Product clients should invite by email and accept an opaque invitation token; they must not discover users, branch on account existence, or directly activate membership by known `user_id`. The nickname contract treats nicknames as duplicate-allowed display labels only: email remains the login/invitation identifier, `user_id` remains the role-maintenance identifier, and manager-only member rosters must not expose member emails. Team uploads use a hidden personal staging KB that is excluded from RAG retrieval until approval copies the source into a group KB. The service layer owns auth, permissions, source policy, persistence, retrieval boundaries, citations, and events. ContextForge still retrieves authorized context for the general assistant, while `rag_agent` provides the graph-shaped RAG Agent contract for trace stages and grounding checks around that path. Chat runs use one unified `knowledge_base_selection` contract across authorized personal, shared, and team KBs; conversation transcripts and opt-in memory remain owner-private.
+Group membership is an invite-accepted shared-knowledge boundary. Product clients should invite by email and accept an opaque invitation token; they must not discover users, branch on account existence, or directly activate membership by known `user_id`. The nickname contract treats nicknames as duplicate-allowed display labels only: email remains the login/invitation identifier, `user_id` remains the role-maintenance identifier, and manager-only member rosters must not expose member emails. Group uploads use a hidden personal staging KB that is excluded from RAG retrieval until approval copies the source into a group KB. The service layer owns auth, permissions, source policy, persistence, retrieval boundaries, citations, and events. ContextForge still retrieves authorized context for the general assistant, while `rag_agent` provides the graph-shaped RAG Agent contract for trace stages and grounding checks around that path. Chat runs use one unified `knowledge_base_selection` contract across authorized personal, shared, and group KBs; conversation transcripts and opt-in memory remain owner-private.
 
 ## Long-term memory
 

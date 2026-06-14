@@ -26,7 +26,7 @@ This note records the approved contract for the nickname signup/member-roster sl
 - `nickname` is a duplicate-allowed display label. It is not a login identifier, lookup key, profile-discovery surface, or uniqueness constraint.
 - Email remains the signup/login and invitation identifier.
 - `user_id` remains the exact operational identifier for accepted-member role maintenance.
-- Group/team membership remains invite accepted: no public user search, no account-existence branching, no direct member activation by known `user_id`, and no member emails in the active roster response.
+- Group membership remains invite accepted: no public user search, no account-existence branching, no direct member activation by known `user_id`, and no member emails in the active roster response.
 - Pending invitations must not expose nicknames or matched account metadata. Active membership starts only after invitation acceptance.
 
 ## Backend contract

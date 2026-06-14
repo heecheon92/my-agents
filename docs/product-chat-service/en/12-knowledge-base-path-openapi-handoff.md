@@ -1,7 +1,7 @@
 # Knowledge Base Path OpenAPI Handoff
 
 This is the backend-to-frontend handoff for the KB-first document,
-team-upload staging, and chat-source path.
+group-upload staging, and chat-source path.
 The filtered OpenAPI artifact is:
 
 - `docs/product-chat-service/en/12-knowledge-base-path-openapi-handoff.json`
@@ -12,7 +12,7 @@ A knowledge base is the user-facing searchable document library. The frontend fl
 
 1. Create or choose a knowledge base.
 2. For personal content, add text/PDF/Markdown/plain-text files to that knowledge base.
-3. For team content that needs approval, call
+3. For group content that needs approval, call
    `POST /knowledge-bases/team-upload-staging` to create or reuse the
    uploader's hidden staging KB, then write the source document into that
    staging KB.
@@ -46,7 +46,7 @@ Compatibility routes `/documents` and `/documents/upload` still exist
 for standalone/developer usage,
 but write calls require an authorized `knowledge_base_id`. They are not the primary product UX.
 
-## Team upload and publish-request rules
+## Group upload and publish-request rules
 
 - `POST /knowledge-bases/team-upload-staging` returns a hidden personal
   KB with `purpose=team_upload_staging`.
@@ -58,7 +58,7 @@ but write calls require an authorized `knowledge_base_id`. They are not the prim
   target the group directly; they must not send
   `target_knowledge_base_id`.
 - `KnowledgePublishRequestResponse` is the canonical UI payload for
-  pending/approved/rejected team publication state.
+  pending/approved/rejected group publication state.
 - Approval copies the source into the target group KB and ingests the
   group copy; retrieval should use the approved group copy, not the
   staging source.

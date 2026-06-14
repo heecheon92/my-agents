@@ -55,7 +55,7 @@ sequenceDiagram
 - `/conversations/{id}/runs` also supports `GET` so a frontend can list completed and failed runs.
 - Runs now include retrieval route, answer mode, permission-aware retrieval context IDs, citations, and redacted events.
 - Failed graph invocations persist a failed run and redacted `run_failed` event before returning a client-safe error.
-- Group membership does not grant transcript access; team knowledge is selected separately through `knowledge_base_selection`.
+- Group membership does not grant transcript access; group knowledge is selected separately through `knowledge_base_selection`.
 - Outsiders receive safe denial.
 
 ## Legacy boundary
@@ -82,13 +82,13 @@ Retrieval routing, citations, streaming, and redacted events now exist as later 
 - run listing returns frontend-safe run summaries without reply or event payloads;
 - failed graph invocation stores `status=failed` and a redacted `run_failed` event;
 - graph invocation receives `principal_id`, `conversation_id`, retrieval route, answer mode, and authorized context;
-- group members cannot read another user's owner-private conversation merely through shared team membership;
+- group members cannot read another user's owner-private conversation merely through shared group membership;
 - outsiders cannot read conversation message transcripts;
 - legacy `/assistant/chat` does not return product run fields.
 
 ## Revision history
 
-- 2026-06-07: Removed deprecated group-conversation scope; conversations are owner-private and team knowledge is selected through the unified source-selection contract.
+- 2026-06-07: Removed deprecated group-conversation scope; conversations are owner-private and group knowledge is selected through the unified source-selection contract.
 - 2026-05-21: Updated run flow for retrieval routing, answer modes, and streaming-era metadata.
 - 2026-05-17: Added run history and redacted failed-run persistence.
 - 2026-05-17: Added authorized conversation transcript listing for frontend display.

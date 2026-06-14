@@ -90,7 +90,7 @@ def test_group_owner_can_invite_member_and_group_viewer_can_read_document(monkey
     _viewer_id, _ = _signup_login(viewer, "viewer@example.com")
     _outsider_id, _ = _signup_login(outsider, "outsider@example.com")
 
-    group = owner.post("/groups", json={"name": "Demo Team"})
+    group = owner.post("/groups", json={"name": "Demo Group"})
     assert group.status_code == 201
     group_id = group.json()["id"]
     assert group.json()["role"] == "owner"
