@@ -16,11 +16,17 @@ from my_agents.agents.general_assistant.responders import ResponseProviderConfig
 from my_agents.agents.rag_agent import DeterministicRagAgentGroundingVerifier
 from my_agents.api.assistant import GraphRunner
 from my_agents.api.conversations.agent_trace import conversation_agent_trace_steps
+from my_agents.api.conversations.graph_invocation import (
+    GraphRunnerExecutionError,
+    graph_context_for_run,
+    invoke_graph_runner_collecting_updates,
+)
 from my_agents.api.conversations.retrieval_context import (
     chunks_used_for_answer,
     clarification_request,
     compose_rag_reply,
     graph_input_for_run,
+    graph_memory_source_snapshot_json,
     insufficient_evidence_reply,
     log_retrieval_context_for_llm,
     prepare_retrieval_context,
@@ -31,6 +37,7 @@ from my_agents.api.conversations.run_events import (
     graph_invoked_payload,
     retrieval_completed_payload,
     sse_event,
+    update_graph_invoked_event_memory_snapshot,
     user_message_stored_payload,
 )
 from my_agents.api.conversations.serializers import (
@@ -199,7 +206,7 @@ def _complete_sync_conversation_run(
         retrieval_context=retrieval_context,
         graph_input=graph_input,
     )
-    append_run_event(
+    graph_event = append_run_event(
         db,
         run.id,
         AgentEventType.GRAPH_INVOKED,
@@ -213,7 +220,28 @@ def _complete_sync_conversation_run(
         ),
     )
     try:
-        result = graph_runner.invoke(graph_input)
+        result = invoke_graph_runner_collecting_updates(
+            graph_runner=graph_runner,
+            graph_input=graph_input,
+            graph_context=graph_context_for_run(db=db, user_id=user_id),
+        )
+    except GraphRunnerExecutionError as exc:
+        memory_source_snapshot = graph_memory_source_snapshot_json(exc.partial_state)
+        update_graph_invoked_event_memory_snapshot(db, graph_event, memory_source_snapshot)
+        original = exc.original_exception
+        status_code = (
+            status.HTTP_503_SERVICE_UNAVAILABLE
+            if isinstance(original, ResponseProviderConfigurationError)
+            else status.HTTP_502_BAD_GATEWAY
+        )
+        persist_failed_run(
+            db=db,
+            run_id=run.id,
+            conversation_id=conversation_id,
+            error_type=type(original).__name__,
+            memory_source_snapshot=memory_source_snapshot,
+        )
+        raise HTTPException(status_code=status_code, detail="conversation run failed") from original
     except ResponseProviderConfigurationError as exc:
         persist_failed_run(
             db=db,
@@ -231,6 +259,8 @@ def _complete_sync_conversation_run(
         )
         raise HTTPException(status_code=502, detail="conversation run failed") from exc
     route = coerce_route(result["route"])
+    memory_source_snapshot = graph_memory_source_snapshot_json(result)
+    update_graph_invoked_event_memory_snapshot(db, graph_event, memory_source_snapshot)
     used_chunks = chunks_used_for_answer(retrieval_context)
     reply = compose_rag_reply(result["reply"], used_chunks, retrieval_context.answer_mode)
     reply, used_chunks, completion_insufficient_evidence = _verified_grounding_or_fallback(
@@ -256,6 +286,7 @@ def _complete_sync_conversation_run(
         warnings=warnings,
         insufficient_evidence=completion_insufficient_evidence,
         retrieval_evidence=retrieval_context.retrieval_evidence,
+        memory_source_snapshot=memory_source_snapshot,
     )
 
 
@@ -306,6 +337,7 @@ def persist_completed_run(
     clarification: ConversationClarificationRequest | None = None,
     insufficient_evidence: bool = False,
     retrieval_evidence: RetrievalEvidence | None = None,
+    memory_source_snapshot: str | None = None,
 ) -> ConversationRunResponse:
     assistant_message = MessageModel(
         conversation_id=conversation_id,
@@ -324,6 +356,7 @@ def persist_completed_run(
     run.answer_mode = answer_mode
     run.document_scope = retrieval_decision.document_scope
     run.retrieval_source_snapshot_json = _retrieval_source_snapshot_json(retrieved_chunks)
+    run.memory_source_snapshot_json = memory_source_snapshot
     run.assistant_message_id = assistant_message.id
     db.flush()
     citations = [
@@ -402,6 +435,7 @@ def fail_active_run(
     run_id: str,
     conversation_id: str,
     error_type: str,
+    memory_source_snapshot: str | None = None,
 ) -> str | None:
     try:
         db.rollback()
@@ -414,6 +448,7 @@ def fail_active_run(
         run_id=run_id,
         conversation_id=conversation_id,
         error_type=error_type,
+        memory_source_snapshot=memory_source_snapshot,
     )
 
 
@@ -428,6 +463,7 @@ def persist_failed_run(
     run_id: str,
     conversation_id: str,
     error_type: str,
+    memory_source_snapshot: str | None = None,
 ) -> str:
     run = db.get(AgentRunModel, run_id, populate_existing=True)
     if run is None or run.conversation_id != conversation_id:
@@ -435,6 +471,8 @@ def persist_failed_run(
     if run.status not in ACTIVE_RUN_STATUSES:
         return run.id
     run.status = RunStatus.FAILED.value
+    if memory_source_snapshot is not None:
+        run.memory_source_snapshot_json = memory_source_snapshot
     append_run_event(
         db,
         run.id,

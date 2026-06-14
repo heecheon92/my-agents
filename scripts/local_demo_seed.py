@@ -119,6 +119,7 @@ def _seed_with_session(
         user = UserModel(
             id=str(uuid.uuid4()),
             email=normalized_email,
+            nickname=normalized_email.split("@", 1)[0][:40] or "Demo User",
             password_hash=hasher.hash(password),
             email_verified_at=now,
         )

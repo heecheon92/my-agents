@@ -8,30 +8,15 @@ from my_agents.schemas import RouteDecision, RouteLabel
 
 _LABEL_KEYWORDS: tuple[tuple[RouteLabel, tuple[str, ...], str], ...] = (
     (
-        "learning_coach",
-        (
-            "learn",
-            "learning",
-            "study",
-            "practice",
-            "tutorial",
-            "course",
-            "skill",
-            "explain step",
-            "step by step",
-            "langgraph study",
-        ),
-        "This request is about study planning, practice, or skill development.",
-    ),
-    (
         "research_helper",
         (
             "research",
             "source",
             "sources",
-            "find",
-            "compare",
-            "summarize",
+            "find source",
+            "find sources",
+            "compare sources",
+            "summarize sources",
             "paper",
             "docs",
             "documentation",
@@ -40,51 +25,16 @@ _LABEL_KEYWORDS: tuple[tuple[RouteLabel, tuple[str, ...], str], ...] = (
         ),
         "This request asks for research, sources, documentation, or evidence gathering.",
     ),
-    (
-        "project_planner",
-        (
-            "plan",
-            "milestone",
-            "roadmap",
-            "task",
-            "tasks",
-            "timeline",
-            "scope",
-            "break down",
-            "next step",
-            "project",
-            "backend milestone",
-        ),
-        "This request is about planning project work, milestones, scope, or next steps.",
-    ),
-    (
-        "career_helper",
-        (
-            "resume",
-            "cv",
-            "career",
-            "recruiter",
-            "headhunter",
-            "interview",
-            "bullet",
-            "professional profile",
-            "case study",
-        ),
-        (
-            "This request is about career materials, professional presentation, "
-            "or recruiter-facing wording."
-        ),
-    ),
 )
 
 _GENERAL_EXPLANATION = (
-    "This request does not match a specific v0 route category, "
+    "This request does not require the source-oriented research route, "
     "so it uses the general assistant route label."
 )
 
 
 def classify_message(message: str, history: Iterable[BaseMessage] | None = None) -> RouteDecision:
-    """Classify a request into a future-agent route label.
+    """Classify a request into a production route label.
 
     The classifier is intentionally local, deterministic, and credential-free. Product route labels
     are based on the current user turn so prior assistant/project-planning text cannot pollute

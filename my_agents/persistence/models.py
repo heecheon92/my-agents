@@ -9,3 +9,4 @@ def import_all_models() -> None:
     import my_agents.conversations.models  # noqa: F401
     import my_agents.groups.models  # noqa: F401
     import my_agents.knowledge.models  # noqa: F401
+    import my_agents.memory.models  # noqa: F401

@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from pathlib import Path
 
 from my_agents.auth.email import AuthEmailLanguage, build_auth_email_sender
 from my_agents.auth.service import AuthService
@@ -21,11 +21,7 @@ from my_agents.persistence.database import (
     reset_database_caches,
 )
 from my_agents.settings import Settings
-
-ENV_FILE_BY_PROFILE = {
-    "pgvector.local": Path(".env.pgvector.local"),
-    "pgvector.production": Path(".env.pgvector.production"),
-}
+from scripts.ops_common import add_env_arguments, resolve_env_file
 
 
 @dataclass(frozen=True)
@@ -69,6 +65,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Issue a one-time guest access code for operator delivery."
     )
+    add_env_arguments(parser)
     parser.add_argument("--email", required=True, help="Requester email address.")
     parser.add_argument(
         "--request-id",
@@ -82,21 +79,6 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Override guest code TTL seconds. Defaults to MY_AGENTS_GUEST_CODE_TTL_SECONDS.",
     )
     parser.add_argument(
-        "--env",
-        choices=tuple(ENV_FILE_BY_PROFILE),
-        default="pgvector.local",
-        help=(
-            "Named env file to load. Defaults to pgvector.local for safety; "
-            "use pgvector.production only when intentionally issuing against production."
-        ),
-    )
-    parser.add_argument(
-        "--env-file",
-        type=Path,
-        default=None,
-        help="Explicit env file path. Overrides --env when provided.",
-    )
-    parser.add_argument(
         "--send-email",
         action="store_true",
         help="Also send the issued code to --email using the selected env's email provider.",
@@ -108,12 +90,6 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Language for --send-email content. Defaults to ko; use en for English.",
     )
     return parser
-
-
-def resolve_env_file(*, profile: str, env_file: Path | None = None) -> Path:
-    """Resolve the env file used for the guest-code issue operation."""
-    selected = env_file or ENV_FILE_BY_PROFILE[profile]
-    return selected.expanduser()
 
 
 def send_guest_access_code_email(
@@ -132,8 +108,8 @@ def send_guest_access_code_email(
     )
 
 
-def main() -> int:
-    args = _build_parser().parse_args()
+def main(argv: Sequence[str] | None = None) -> int:
+    args = _build_parser().parse_args(argv)
     env_file = resolve_env_file(profile=args.env, env_file=args.env_file)
     if not env_file.is_file():
         print(f"error: env file does not exist: {env_file}", file=sys.stderr)

@@ -8,6 +8,10 @@ from langgraph.graph.message import add_messages
 
 from my_agents.agents.capabilities import AgentCapability, get_capability_for_route
 from my_agents.agents.general_assistant.classifier import classify_messages
+from my_agents.agents.general_assistant.memory_recall import (
+    AssistantRuntimeContext,
+    retrieve_memory_context,
+)
 from my_agents.agents.general_assistant.responders import get_response_provider
 from my_agents.knowledge.routing import AnswerMode, DocumentScope, RetrievalRoute
 from my_agents.schemas import RouteDecision
@@ -23,7 +27,12 @@ class AssistantState(TypedDict, total=False):
     capability: AgentCapability
     reply: str
     handled_by: str
+    principal_id: str
+    conversation_id: str
+    retrieved_chunk_ids: list[str]
     retrieved_context: list[dict[str, object]]
+    memory_context: list[dict[str, object]]
+    source_conflicts: list[dict[str, object]]
     retrieval_route: RetrievalRoute
     answer_mode: AnswerMode
     document_scope: DocumentScope
@@ -42,10 +51,7 @@ def select_response_node(state: AssistantState) -> str:
     route = state["route"].label
     return {
         "general_assistant": "respond_general",
-        "learning_coach": "respond_learning",
         "research_helper": "respond_research",
-        "project_planner": "respond_project",
-        "career_helper": "respond_career",
     }[route]
 
 
@@ -54,15 +60,6 @@ def respond_general(state: AssistantState) -> AssistantState:
         "reply": _compose_reply(
             state,
             "I can help organize the request and suggest a practical next step.",
-        )
-    }
-
-
-def respond_learning(state: AssistantState) -> AssistantState:
-    return {
-        "reply": _compose_reply(
-            state,
-            "A useful learning path is to define the concept, build a tiny example, then test it.",
         )
     }
 
@@ -77,26 +74,6 @@ def respond_research(state: AssistantState) -> AssistantState:
     }
 
 
-def respond_project(state: AssistantState) -> AssistantState:
-    return {
-        "reply": _compose_reply(
-            state,
-            "A useful planning pass is to name the goal, split the next milestone, "
-            "and define verification evidence.",
-        )
-    }
-
-
-def respond_career(state: AssistantState) -> AssistantState:
-    return {
-        "reply": _compose_reply(
-            state,
-            "A useful career-material pass is to clarify the audience, the evidence, "
-            "and the outcome you want the wording to prove.",
-        )
-    }
-
-
 def _compose_reply(state: AssistantState, guidance: str) -> str:
     route = state["route"]
     return get_response_provider().compose_reply(
@@ -105,6 +82,8 @@ def _compose_reply(state: AssistantState, guidance: str) -> str:
         capability=state["capability"],
         guidance=guidance,
         retrieved_context=state.get("retrieved_context", []),
+        memory_context=state.get("memory_context", []),
+        source_conflicts=state.get("source_conflicts", []),
         answer_mode=state.get("answer_mode", "general_knowledge"),
         debug_empty_response=state.get("debug_empty_openai_response", False),
     )
@@ -112,33 +91,23 @@ def _compose_reply(state: AssistantState, guidance: str) -> str:
 
 def build_graph():
     """Build and compile the real LangGraph StateGraph."""
-    graph = StateGraph(AssistantState)
+    graph = StateGraph(AssistantState, context_schema=AssistantRuntimeContext)
     graph.add_node("classify_request", classify_request)
+    graph.add_node("retrieve_memory", retrieve_memory_context)
     graph.add_node("respond_general", respond_general)
-    graph.add_node("respond_learning", respond_learning)
     graph.add_node("respond_research", respond_research)
-    graph.add_node("respond_project", respond_project)
-    graph.add_node("respond_career", respond_career)
 
     graph.add_edge(START, "classify_request")
+    graph.add_edge("classify_request", "retrieve_memory")
     graph.add_conditional_edges(
-        "classify_request",
+        "retrieve_memory",
         select_response_node,
         {
             "respond_general": "respond_general",
-            "respond_learning": "respond_learning",
             "respond_research": "respond_research",
-            "respond_project": "respond_project",
-            "respond_career": "respond_career",
         },
     )
-    for node_name in (
-        "respond_general",
-        "respond_learning",
-        "respond_research",
-        "respond_project",
-        "respond_career",
-    ):
+    for node_name in ("respond_general", "respond_research"):
         graph.add_edge(node_name, END)
 
     return graph.compile()

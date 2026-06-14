@@ -15,6 +15,7 @@ from my_agents.api.assistant import get_graph_runner
 from my_agents.api.conversations.endpoints.stream import conversation_run_events
 from my_agents.conversations.models import (
     AgentEventModel,
+    AgentEventType,
     AgentRunModel,
     ConversationModel,
     MessageModel,
@@ -92,9 +93,39 @@ class FailingGraph:
         raise RuntimeError("private provider failure: do not leak raw prompt")
 
 
+class MemoryUpdateThenFailingGraph:
+    """Graph spy that emits memory provenance before a later provider failure."""
+
+    def invoke(self, input: dict, **kwargs: Any) -> dict:  # noqa: A002, ARG002
+        raise AssertionError("sync run should collect update stream state when available")
+
+    def stream(self, input: dict, **kwargs: Any):  # noqa: A002, ARG002
+        yield {
+            "type": "updates",
+            "data": {
+                "retrieve_memory": {
+                    "memory_context": [
+                        {
+                            "id": "memory-internal-1",
+                            "category": "stable_preference",
+                            "provenance_type": "manual",
+                            "source_conversation_id": "conversation-internal-1",
+                            "source_message_id": "message-internal-1",
+                            "source_run_id": "run-internal-1",
+                            "source_document_id": "document-internal-1",
+                            "content": "User prefers concise answers",
+                        }
+                    ],
+                    "source_conflicts": [],
+                }
+            },
+        }
+        raise RuntimeError("provider failed after memory recall")
+
+
 def _client(
     monkeypatch,  # noqa: ANN001
-    graph: SpyGraph | StreamingSpyGraph | FailingGraph | None = None,
+    graph: SpyGraph | StreamingSpyGraph | FailingGraph | MemoryUpdateThenFailingGraph | None = None,
     *,
     raise_server_exceptions: bool = True,
 ) -> TestClient:
@@ -108,7 +139,9 @@ def _client(
 
 def _signup_login(client: TestClient, email: str) -> str:
     password = "correct horse battery staple"
-    signup = client.post("/auth/signup", json={"email": email, "password": password})
+    signup = client.post(
+        "/auth/signup", json={"email": email, "nickname": "Test User", "password": password}
+    )
     assert signup.status_code == 201
     verify_latest_auth_email(client, email)
     login = client.post("/auth/login", json={"email": email, "password": password})
@@ -1820,3 +1853,156 @@ def _parse_sse(body: str) -> list[dict[str, Any]]:
                 data = line.removeprefix("data: ")
         events.append({"event": event_name, "data": json.loads(data)})
     return events
+
+
+def test_conversation_run_injects_enabled_user_memory_and_conflicts(monkeypatch) -> None:  # noqa: ANN001
+    client = _client(monkeypatch)
+    _signup_login(client, "memory-context@example.com")
+    assert client.patch("/memories/settings", json={"enabled": True}).status_code == 200
+    created_memory = client.post(
+        "/memories",
+        json={"content": "User prefers concise answers", "category": "stable_preference"},
+    )
+    assert created_memory.status_code == 201
+    conversation_id = client.post("/conversations", json={"title": "Memory Context"}).json()["id"]
+
+    response = client.post(
+        f"/conversations/{conversation_id}/runs",
+        json={"message": "Actually I no longer prefer concise answers"},
+    )
+
+    assert response.status_code == 200
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        run = db.scalar(
+            select(AgentRunModel)
+            .where(AgentRunModel.conversation_id == conversation_id)
+            .order_by(AgentRunModel.created_at.desc())
+        )
+        assert run is not None
+        assert run.memory_source_snapshot_json is not None
+        memory_snapshot = json.loads(run.memory_source_snapshot_json)
+        assert memory_snapshot["memory_count"] == 1
+        assert memory_snapshot["conflict_count"] == 1
+        assert memory_snapshot["memories"][0]["id"] == created_memory.json()["id"]
+        assert "User prefers concise answers" not in run.memory_source_snapshot_json
+        graph_event = db.scalar(
+            select(AgentEventModel)
+            .where(
+                AgentEventModel.run_id == run.id,
+                AgentEventModel.event_type == AgentEventType.GRAPH_INVOKED.value,
+            )
+            .order_by(AgentEventModel.sequence.desc())
+        )
+        assert graph_event is not None
+        event_payload = json.loads(graph_event.payload_json)
+        assert event_payload["memory_count"] == 1
+        assert event_payload["memory_categories"] == ["stable_preference"]
+        assert event_payload["memory_provenance_types"] == ["explicit_user"]
+        assert "memory_source_snapshot" not in event_payload
+        assert created_memory.json()["id"] not in graph_event.payload_json
+        assert "User prefers concise answers" not in graph_event.payload_json
+    finally:
+        session_generator.close()
+
+
+def test_failed_conversation_run_preserves_internal_memory_audit_without_public_ids(
+    monkeypatch,
+) -> None:  # noqa: ANN001
+    client = _client(
+        monkeypatch,
+        MemoryUpdateThenFailingGraph(),
+        raise_server_exceptions=False,
+    )
+    _signup_login(client, "memory-failure-audit@example.com")
+    conversation_id = client.post("/conversations", json={"title": "Memory Failure"}).json()["id"]
+
+    response = client.post(
+        f"/conversations/{conversation_id}/runs",
+        json={"message": "Use my memory, then fail"},
+    )
+
+    assert response.status_code == 502
+    failed_run = client.get(f"/conversations/{conversation_id}/runs").json()[0]
+    assert failed_run["status"] == "failed"
+
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        run = db.get(AgentRunModel, failed_run["run_id"])
+        assert run is not None
+        assert run.memory_source_snapshot_json is not None
+        internal_snapshot = json.loads(run.memory_source_snapshot_json)
+        assert internal_snapshot["memory_count"] == 1
+        assert internal_snapshot["memories"][0]["id"] == "memory-internal-1"
+        assert internal_snapshot["memories"][0]["source_message_id"] == "message-internal-1"
+
+        graph_event = db.scalar(
+            select(AgentEventModel)
+            .where(
+                AgentEventModel.run_id == run.id,
+                AgentEventModel.event_type == AgentEventType.GRAPH_INVOKED.value,
+            )
+            .order_by(AgentEventModel.sequence.desc())
+        )
+        assert graph_event is not None
+        event_payload = json.loads(graph_event.payload_json)
+        assert event_payload["memory_count"] == 1
+        assert event_payload["memory_categories"] == ["stable_preference"]
+        assert event_payload["memory_provenance_types"] == ["manual"]
+        assert "memory_source_snapshot" not in event_payload
+        public_payload = json.dumps(event_payload)
+        assert "memory-internal-1" not in public_payload
+        assert "message-internal-1" not in public_payload
+        assert "run-internal-1" not in public_payload
+        assert "document-internal-1" not in public_payload
+        assert "User prefers concise answers" not in public_payload
+    finally:
+        session_generator.close()
+
+
+def test_conversation_run_excludes_disabled_user_memory(monkeypatch) -> None:  # noqa: ANN001
+    client = _client(monkeypatch)
+    _signup_login(client, "memory-disabled-context@example.com")
+    assert client.patch("/memories/settings", json={"enabled": True}).status_code == 200
+    assert (
+        client.post(
+            "/memories",
+            json={"content": "User prefers concise answers", "category": "stable_preference"},
+        ).status_code
+        == 201
+    )
+    assert client.patch("/memories/settings", json={"enabled": False}).status_code == 200
+    conversation_id = client.post("/conversations", json={"title": "No Memory"}).json()["id"]
+
+    response = client.post(
+        f"/conversations/{conversation_id}/runs",
+        json={"message": "Plan my next backend task"},
+    )
+
+    assert response.status_code == 200
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        run = db.scalar(
+            select(AgentRunModel)
+            .where(AgentRunModel.conversation_id == conversation_id)
+            .order_by(AgentRunModel.created_at.desc())
+        )
+        assert run is not None
+        assert run.memory_source_snapshot_json is None
+        graph_event = db.scalar(
+            select(AgentEventModel)
+            .where(
+                AgentEventModel.run_id == run.id,
+                AgentEventModel.event_type == AgentEventType.GRAPH_INVOKED.value,
+            )
+            .order_by(AgentEventModel.sequence.desc())
+        )
+        assert graph_event is not None
+        event_payload = json.loads(graph_event.payload_json)
+        assert "memory_count" not in event_payload
+        assert "memory_source_snapshot" not in event_payload
+    finally:
+        session_generator.close()

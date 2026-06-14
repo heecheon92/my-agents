@@ -43,6 +43,7 @@ EXPECTED_SERVICE_TABLES = {
     "guest_access_requests",
     "guest_access_codes",
     "groups",
+    "group_invitations",
     "memberships",
     "conversations",
     "messages",
@@ -53,6 +54,7 @@ EXPECTED_SERVICE_TABLES = {
     "knowledge_publish_requests",
     "documents",
     "document_permissions",
+    "document_parse_artifacts",
     "extraction_runs",
     "document_chunks",
     "document_metadata_profiles",
@@ -61,6 +63,9 @@ EXPECTED_SERVICE_TABLES = {
     "entity_relationships",
     "structured_knowledge_entities",
     "citations",
+    "user_memory_settings",
+    "user_memories",
+    "memory_suggestions",
 }
 
 
@@ -155,17 +160,129 @@ def test_alembic_offline_sql_generation_covers_initial_schema(monkeypatch) -> No
     assert "20260607_0018" in sql
     assert "20260607_0019" in sql
     assert "20260607_0020" in sql
+    assert "20260609_0021" in sql
+    assert "20260609_0022" in sql
+    assert "20260609_0023" in sql
+    assert "20260609_0024" in sql
+    assert "20260610_0025" in sql
+    assert "20260614_0026" in sql
     assert "CREATE TABLE guest_access_requests" in sql
+    assert "CREATE TABLE group_invitations" in sql
     assert "CREATE TABLE knowledge_publish_requests" in sql
     assert "CREATE TABLE knowledge_base_publications" in sql
+    assert "CREATE TABLE document_parse_artifacts" in sql
+    assert "CREATE TABLE user_memory_settings" in sql
+    assert "CREATE TABLE user_memories" in sql
+    assert "CREATE TABLE memory_suggestions" in sql
     assert "CREATE TABLE structured_knowledge_entities" in sql
     assert "CREATE TABLE document_metadata_profiles" in sql
+    assert "source_location_json" in sql
     assert "embedding_vector" in sql
     assert "progress_percent" in sql
     assert "completed_at" in sql
     assert "purpose" in sql
     assert "DROP COLUMN group_id" in sql
     assert "approval_status" in sql
+    assert "memory_source_snapshot_json" in sql
+    assert "uq_group_invitations_pending_email" in sql
+    assert "token_hash" in sql
+    assert "nickname" in sql
+
+
+def test_parse_artifacts_store_only_derived_parser_outputs(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    database_path = tmp_path / "parse-artifacts.db"
+    monkeypatch.setenv("MY_AGENTS_DATABASE_URL", f"sqlite+pysqlite:///{database_path}")
+
+    command.upgrade(_alembic_config(), "head")
+
+    with sqlite3.connect(database_path) as connection:
+        artifact_columns = {
+            row[1]
+            for row in connection.execute("pragma table_info(document_parse_artifacts)").fetchall()
+        }
+        chunk_columns = {
+            row[1] for row in connection.execute("pragma table_info(document_chunks)").fetchall()
+        }
+        entity_columns = {
+            row[1]
+            for row in connection.execute(
+                "pragma table_info(structured_knowledge_entities)"
+            ).fetchall()
+        }
+
+    assert {
+        "document_id",
+        "source_sha256",
+        "source_filename",
+        "source_content_type",
+        "source_type",
+        "parser_provider",
+        "parser_name",
+        "markdown_content",
+        "elements_json",
+        "warnings_json",
+    }.issubset(artifact_columns)
+    assert "source_location_json" in chunk_columns
+    assert "source_location_json" in entity_columns
+
+    forbidden_fragments = ("blob", "bytes", "object_key", "storage_provider")
+    assert not any(
+        fragment in column for column in artifact_columns for fragment in forbidden_fragments
+    )
+
+
+def test_legacy_documents_without_knowledge_base_upgrade_to_head(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    database_path = tmp_path / "legacy-documents.db"
+    database_url = f"sqlite+pysqlite:///{database_path}"
+    monkeypatch.setenv("MY_AGENTS_DATABASE_URL", database_url)
+
+    command.upgrade(_alembic_config(), "20260520_0004")
+    document_id = str(uuid.uuid4())
+    owner_user_id = str(uuid.uuid4())
+    now = datetime.now().isoformat(sep=" ")
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            "insert into users (id, email, password_hash, created_at) values (?, ?, ?, ?)",
+            (owner_user_id, "legacy-doc@example.com", "hash", now),
+        )
+        connection.execute(
+            "insert into documents "
+            "(id, title, content, owner_user_id, group_id, knowledge_base_id, created_at) "
+            "values (?, ?, ?, ?, ?, ?, ?)",
+            (document_id, "Legacy doc", "legacy content", owner_user_id, None, None, now),
+        )
+
+    command.upgrade(_alembic_config(), "head")
+
+    with sqlite3.connect(database_path) as connection:
+        document_kb_id = connection.execute(
+            "select knowledge_base_id from documents where id = ?", (document_id,)
+        ).fetchone()[0]
+        migrated_kb = connection.execute(
+            "select scope, owner_user_id from knowledge_bases where id = ?", (document_kb_id,)
+        ).fetchone()
+        user_columns = {row[1] for row in connection.execute("pragma table_info(users)").fetchall()}
+        legacy_nickname = connection.execute(
+            "select nickname from users where id = ?", (owner_user_id,)
+        ).fetchone()[0]
+        alembic_version = connection.execute("select version_num from alembic_version").fetchone()[
+            0
+        ]
+
+    assert document_kb_id is not None
+    assert migrated_kb == ("personal", owner_user_id)
+    assert "approval_status" in user_columns
+    assert "nickname" in user_columns
+    assert legacy_nickname == "legacy-doc"
+    assert alembic_version == "20260614_0026"
+
+    _assert_database_matches_model_metadata(database_url)
 
 
 def test_sqlite_json_fallback_reads_chunks_created_before_pgvector_migration(
@@ -184,6 +301,13 @@ def test_sqlite_json_fallback_reads_chunks_created_before_pgvector_migration(
     now = datetime.now().isoformat(sep=" ")
     try:
         with engine.begin() as connection:
+            # This regression test intentionally stops at the pre-pgvector migration
+            # boundary, but it still exercises the current ORM/retrieval models.
+            # Add newer nullable provenance columns as a local compatibility shim so
+            # the test remains focused on legacy embedding_json fallback behavior.
+            connection.exec_driver_sql(
+                "alter table document_chunks add column source_location_json text"
+            )
             knowledge_base_id = str(uuid.uuid4())
             connection.exec_driver_sql(
                 "insert into knowledge_bases "

@@ -88,17 +88,18 @@ def list_knowledge_bases(
     "/team-upload-staging",
     response_model=KnowledgeBaseResponse,
     status_code=status.HTTP_200_OK,
+    summary="Ensure Group Upload Staging Knowledge Base",
 )
 def ensure_team_upload_staging_knowledge_base(
     principal: Annotated[Principal, Depends(get_current_principal)],
     db: Annotated[Session, Depends(get_database_session)],
 ) -> KnowledgeBaseResponse:
-    """Return the user's hidden personal staging KB for team document publication.
+    """Return the user's hidden personal staging KB for group document publication.
 
     Staging KBs are writable by direct ID, but excluded from ordinary KB lists,
     chat source selection, and retrieval. Approved publish requests copy their
     source document into a group KB, and only that group copy is ingested for
-    normal team retrieval.
+    normal group retrieval.
     """
     knowledge_base = db.scalar(
         select(KnowledgeBaseModel).where(
@@ -110,7 +111,7 @@ def ensure_team_upload_staging_knowledge_base(
     )
     if knowledge_base is None:
         knowledge_base = KnowledgeBaseModel(
-            name="Team upload staging",
+            name="Group upload staging",
             scope=KnowledgeBaseScope.PERSONAL.value,
             owner_user_id=principal.user_id,
             group_id=None,
@@ -179,7 +180,9 @@ async def upload_knowledge_base_document(
     title: Annotated[str, Form(min_length=1, max_length=200)],
     file: Annotated[
         UploadFile,
-        File(description="Supported file: text-based PDF, Markdown, or plain text."),
+        File(
+            description=("Supported file: text-based PDF, Markdown, plain text, .xlsx, or .pptx.")
+        ),
     ],
 ) -> DocumentResponse:
     return await upload_document_in_knowledge_base(

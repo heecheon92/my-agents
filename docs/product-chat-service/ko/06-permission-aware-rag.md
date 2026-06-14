@@ -5,6 +5,8 @@
 ## 요약
 
 이 문서는 `product-chat-service/06-permission-aware-rag.md`의 한국어 문서 트랙 항목입니다. 현재는 핵심 목적과 영어 원문 위치를 안내하는 요약본입니다.
+2026-06-10 기준 영어 원문은 ContextForge의 얇은 LangGraph `RetrievalGraph` wrapper가 현재 retrieval entrypoint가 되었고,
+더 깊은 tool-using retrieval graph orchestration은 future-gated 상태임을 설명합니다.
 
 ## 문서 상태
 

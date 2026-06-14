@@ -14,12 +14,14 @@ from my_agents.agents.general_assistant.classifier import classify_messages
 from my_agents.agents.general_assistant.responders import ResponseProviderConfigurationError
 from my_agents.api.assistant import GraphRunner, get_graph_runner
 from my_agents.api.conversations.auth import get_authorized_conversation
+from my_agents.api.conversations.graph_invocation import graph_context_for_run
 from my_agents.api.conversations.graph_streaming import fallback_answer_deltas, stream_graph_items
 from my_agents.api.conversations.retrieval_context import (
     chunks_used_for_answer,
     clarification_request,
     compose_rag_reply,
     graph_input_for_run,
+    graph_memory_source_snapshot_json,
     insufficient_evidence_reply,
     log_retrieval_context_for_llm,
     prepare_retrieval_context,
@@ -30,6 +32,7 @@ from my_agents.api.conversations.run_events import (
     graph_invoked_payload,
     retrieval_completed_payload,
     sse_event,
+    update_graph_invoked_event_memory_snapshot,
     user_message_stored_payload,
 )
 from my_agents.api.conversations.run_lifecycle import (
@@ -399,13 +402,41 @@ def replay_conversation_run_events(
             retrieval_context=retrieval_context,
             graph_input=graph_input,
         )
+        graph_context = graph_context_for_run(db=db, user_id=user_id)
+        memory_snapshot = graph_memory_source_snapshot_json(graph_input)
         stream_route = classify_messages(messages)
         graph_invoked = False
+        graph_event = None
         delta_sequence = 0
         streamed_base_reply_parts: list[str] = []
         result: dict | None = None
         try:
-            for item in stream_graph_items(graph_runner=graph_runner, graph_input=graph_input):
+            for item in stream_graph_items(
+                graph_runner=graph_runner,
+                graph_input=graph_input,
+                graph_context=graph_context,
+            ):
+                if item.kind == "update":
+                    if item.result:
+                        memory_snapshot = (
+                            graph_memory_source_snapshot_json(item.result) or memory_snapshot
+                        )
+                    if memory_snapshot and not graph_invoked:
+                        graph_payload = graph_invoked_payload(
+                            route=stream_route,
+                            messages=messages,
+                            retrieved_chunks=retrieval_context.retrieved_chunks,
+                            retrieval_decision=retrieval_context.decision,
+                            answer_mode=retrieval_context.answer_mode,
+                            selection_context=retrieval_context.knowledge_base_selection,
+                            memory_source_snapshot_json=memory_snapshot,
+                        )
+                        graph_event = append_run_event(
+                            db, run.id, AgentEventType.GRAPH_INVOKED, graph_payload
+                        )
+                        yield sse_event(AgentEventType.GRAPH_INVOKED.value, graph_payload)
+                        graph_invoked = True
+                    continue
                 if not graph_invoked:
                     graph_payload = graph_invoked_payload(
                         route=stream_route,
@@ -414,8 +445,11 @@ def replay_conversation_run_events(
                         retrieval_decision=retrieval_context.decision,
                         answer_mode=retrieval_context.answer_mode,
                         selection_context=retrieval_context.knowledge_base_selection,
+                        memory_source_snapshot_json=memory_snapshot,
                     )
-                    append_run_event(db, run.id, AgentEventType.GRAPH_INVOKED, graph_payload)
+                    graph_event = append_run_event(
+                        db, run.id, AgentEventType.GRAPH_INVOKED, graph_payload
+                    )
                     yield sse_event(AgentEventType.GRAPH_INVOKED.value, graph_payload)
                     graph_invoked = True
                 if item.kind == "delta":
@@ -427,20 +461,34 @@ def replay_conversation_run_events(
                     )
                     continue
                 result = item.result
+                if result:
+                    memory_snapshot = graph_memory_source_snapshot_json(result) or memory_snapshot
         except ResponseProviderConfigurationError as exc:
             yield from _failed_replay_stream_events(
-                db, run.id, conversation_id, type(exc).__name__, 503
+                db,
+                run.id,
+                conversation_id,
+                type(exc).__name__,
+                503,
+                memory_source_snapshot=memory_snapshot,
             )
             return
         except Exception as exc:
             yield from _failed_replay_stream_events(
-                db, run.id, conversation_id, type(exc).__name__, 502
+                db,
+                run.id,
+                conversation_id,
+                type(exc).__name__,
+                502,
+                memory_source_snapshot=memory_snapshot,
             )
             return
 
         if result is None:
             raise RuntimeError("conversation graph stream ended without a final result")
         route = coerce_route(result["route"])
+        memory_snapshot = graph_memory_source_snapshot_json(result) or memory_snapshot
+        update_graph_invoked_event_memory_snapshot(db, graph_event, memory_snapshot)
         base_reply = result.get("reply") or "".join(streamed_base_reply_parts).strip()
         used_chunks = chunks_used_for_answer(retrieval_context)
         reply = compose_rag_reply(base_reply, used_chunks, retrieval_context.answer_mode)
@@ -459,9 +507,11 @@ def replay_conversation_run_events(
                 retrieval_decision=retrieval_context.decision,
                 answer_mode=retrieval_context.answer_mode,
                 selection_context=retrieval_context.knowledge_base_selection,
+                memory_source_snapshot_json=memory_snapshot,
             )
-            append_run_event(db, run.id, AgentEventType.GRAPH_INVOKED, graph_payload)
+            graph_event = append_run_event(db, run.id, AgentEventType.GRAPH_INVOKED, graph_payload)
             yield sse_event(AgentEventType.GRAPH_INVOKED.value, graph_payload)
+            update_graph_invoked_event_memory_snapshot(db, graph_event, memory_snapshot)
         if not streamed_base_reply_parts:
             for delta in fallback_answer_deltas(reply):
                 delta_sequence += 1
@@ -479,6 +529,7 @@ def replay_conversation_run_events(
             warnings=replay_context.replay_warnings,
             insufficient_evidence=completion_insufficient_evidence,
             retrieval_evidence=retrieval_context.retrieval_evidence,
+            memory_source_snapshot=memory_snapshot,
         )
         yield sse_event(
             AgentEventType.ANSWER_COMPOSED.value,
@@ -513,13 +564,20 @@ def replay_conversation_run_events(
 
 
 def _failed_replay_stream_events(
-    db: Session, run_id: str, conversation_id: str, error_type: str, status_code: int
+    db: Session,
+    run_id: str,
+    conversation_id: str,
+    error_type: str,
+    status_code: int,
+    *,
+    memory_source_snapshot: str | None = None,
 ) -> Iterator[str]:
     persisted_run_id = persist_failed_run(
         db=db,
         run_id=run_id,
         conversation_id=conversation_id,
         error_type=error_type,
+        memory_source_snapshot=memory_source_snapshot,
     )
     yield sse_event(
         AgentEventType.RUN_FAILED.value,

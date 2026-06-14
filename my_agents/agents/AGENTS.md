@@ -32,7 +32,7 @@ Each agent README pair should follow this structure, localized for the file lang
 7. **Route/tool/state meaning** — explain route labels, tool policy, state fields, or
    other agent-specific contracts that affect behavior.
 8. **Capability or boundary metadata** — document whether the behavior is production,
-   prototype, deterministic, simulation-only, or provider-backed.
+   deterministic, provider-backed, tool-backed, or service-backed.
 9. **Relationship to service layers** — explain what the agent receives from API/service
    code and what remains outside the agent folder, especially auth, permissions,
    retrieval, ingestion, persistence, and provider secrets.
@@ -63,5 +63,5 @@ why the agent folder changed, not duplicate every diff.
 - Do not put service-layer authorization, database retrieval, ingestion, or provider-secret
   handling directly inside agent graph folders.
 - Agent folders may receive already-authorized context and metadata from service layers.
-- Keep simulation-only agents under `my_agents/simulated_agents/`, not here, unless the
+- Keep simulation-only agents in the separate `~/Git/Playground/langgraph-playground` repo, not here, unless the
   user explicitly promotes them to production-surface agents.

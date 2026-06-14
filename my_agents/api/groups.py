@@ -6,35 +6,65 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from my_agents.auth.contracts import Principal
-from my_agents.auth.dependencies import get_current_principal
-from my_agents.groups.models import GroupModel, MembershipModel, MembershipRole
+from my_agents.auth.dependencies import get_configured_auth_email_sender, get_current_principal
+from my_agents.auth.email import AuthEmailSender
+from my_agents.groups.models import (
+    GroupInvitationModel,
+    GroupModel,
+    MembershipModel,
+    MembershipRole,
+)
 from my_agents.groups.schemas import (
     GroupCreateRequest,
+    GroupInvitationAcceptRequest,
+    GroupInvitationCreateRequest,
+    GroupInvitationResponse,
+    GroupInvitationUpdateRequest,
     GroupResponse,
     MemberPatchRequest,
-    MemberUpsertRequest,
+    MemberResponse,
+)
+from my_agents.groups.service import (
+    GroupInvitationService,
+    GroupMemberDisplay,
+    GroupMembershipPermissionError,
+    InvalidInvitationTokenError,
+    InvitationNotFoundError,
+    InvitationNotPendingError,
+    PendingInvitationExistsError,
 )
 from my_agents.knowledge.extraction import KnowledgeExtractionService
 from my_agents.knowledge.models import (
+    CitationModel,
+    DocumentChunkModel,
+    DocumentMetadataProfileModel,
     DocumentModel,
+    DocumentParseArtifactModel,
+    EntityMentionModel,
+    EntityRelationshipModel,
+    ExtractionRunModel,
     KnowledgeBaseModel,
     KnowledgeBasePublicationModel,
     KnowledgeBasePurpose,
     KnowledgeBaseScope,
     KnowledgePublishRequestModel,
     KnowledgePublishRequestStatus,
+    StructuredKnowledgeEntityModel,
 )
 from my_agents.knowledge.schemas import (
     KnowledgePublishRequestCreateRequest,
     KnowledgePublishRequestResponse,
+    KnowledgePublishRequestSourceDocumentResponse,
+    KnowledgePublishRequestSourceResponse,
 )
 from my_agents.persistence.database import get_database_session
 
 groups_router = APIRouter(prefix="/groups", tags=["groups"])
+group_invitations_router = APIRouter(prefix="/group-invitations", tags=["groups"])
 
 
 @groups_router.post("", response_model=GroupResponse, status_code=status.HTTP_201_CREATED)
@@ -92,34 +122,6 @@ def get_group(
     return GroupResponse(id=group.id, name=group.name, role=MembershipRole(membership.role))
 
 
-@groups_router.post("/{group_id}/members", status_code=status.HTTP_204_NO_CONTENT)
-def add_member(
-    group_id: str,
-    request: MemberUpsertRequest,
-    principal: Annotated[Principal, Depends(get_current_principal)],
-    db: Annotated[Session, Depends(get_database_session)],
-) -> None:
-    _require_group_manager(db, group_id, principal.user_id)
-    existing = db.scalar(
-        select(MembershipModel).where(
-            MembershipModel.group_id == group_id,
-            MembershipModel.user_id == request.user_id,
-        )
-    )
-    if existing is None:
-        db.add(
-            MembershipModel(
-                group_id=group_id,
-                user_id=request.user_id,
-                role=request.role.value,
-            )
-        )
-    else:
-        existing.role = request.role.value
-        db.add(existing)
-    db.commit()
-
-
 @groups_router.patch("/{group_id}/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 def update_member(
     group_id: str,
@@ -140,6 +142,192 @@ def update_member(
     membership.role = request.role.value
     db.add(membership)
     db.commit()
+
+
+@groups_router.get("/{group_id}/members", response_model=list[MemberResponse])
+def list_members(
+    group_id: str,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    db: Annotated[Session, Depends(get_database_session)],
+) -> list[MemberResponse]:
+    try:
+        members = GroupInvitationService(db).list_group_members(
+            group_id=group_id,
+            actor_user_id=principal.user_id,
+        )
+    except GroupMembershipPermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="not allowed") from exc
+    except InvitationNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="group not found"
+        ) from exc
+    return [_member_response(member) for member in members]
+
+
+@groups_router.post(
+    "/{group_id}/invitations",
+    response_model=GroupInvitationResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_group_invitation(
+    group_id: str,
+    request: GroupInvitationCreateRequest,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    db: Annotated[Session, Depends(get_database_session)],
+    email_sender: Annotated[AuthEmailSender, Depends(get_configured_auth_email_sender)],
+) -> GroupInvitationResponse:
+    try:
+        invitation = GroupInvitationService(db, email_sender=email_sender).create_invitation(
+            group_id=group_id,
+            invited_email=str(request.email),
+            role=request.role,
+            created_by_user_id=principal.user_id,
+        )
+    except PendingInvitationExistsError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="pending_invitation_exists"
+        ) from exc
+    except GroupMembershipPermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="not allowed") from exc
+    except InvitationNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="group not found"
+        ) from exc
+    return _invitation_response(invitation)
+
+
+@groups_router.get(
+    "/{group_id}/invitations",
+    response_model=list[GroupInvitationResponse],
+)
+def list_group_invitations(
+    group_id: str,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    db: Annotated[Session, Depends(get_database_session)],
+) -> list[GroupInvitationResponse]:
+    try:
+        invitations = GroupInvitationService(db).list_group_invitations(
+            group_id=group_id,
+            actor_user_id=principal.user_id,
+        )
+    except GroupMembershipPermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="not allowed") from exc
+    except InvitationNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="group not found"
+        ) from exc
+    return [_invitation_response(invitation) for invitation in invitations]
+
+
+@groups_router.patch(
+    "/{group_id}/invitations/{invitation_id}",
+    response_model=GroupInvitationResponse,
+)
+def update_group_invitation(
+    group_id: str,
+    invitation_id: str,
+    request: GroupInvitationUpdateRequest,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    db: Annotated[Session, Depends(get_database_session)],
+) -> GroupInvitationResponse:
+    try:
+        invitation = GroupInvitationService(db).update_pending_invitation_role(
+            group_id=group_id,
+            invitation_id=invitation_id,
+            role=request.role,
+            actor_user_id=principal.user_id,
+        )
+    except GroupMembershipPermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="not allowed") from exc
+    except InvitationNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="invitation not found"
+        ) from exc
+    except InvitationNotPendingError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="invitation is not pending"
+        ) from exc
+    return _invitation_response(invitation)
+
+
+@groups_router.post(
+    "/{group_id}/invitations/{invitation_id}/resend",
+    response_model=GroupInvitationResponse,
+)
+def resend_group_invitation(
+    group_id: str,
+    invitation_id: str,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    db: Annotated[Session, Depends(get_database_session)],
+    email_sender: Annotated[AuthEmailSender, Depends(get_configured_auth_email_sender)],
+) -> GroupInvitationResponse:
+    try:
+        invitation = GroupInvitationService(
+            db, email_sender=email_sender
+        ).resend_pending_invitation(
+            group_id=group_id,
+            invitation_id=invitation_id,
+            actor_user_id=principal.user_id,
+        )
+    except GroupMembershipPermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="not allowed") from exc
+    except InvitationNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="invitation not found"
+        ) from exc
+    except InvitationNotPendingError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="invitation is not pending"
+        ) from exc
+    return _invitation_response(invitation)
+
+
+@groups_router.delete(
+    "/{group_id}/invitations/{invitation_id}",
+    response_model=GroupInvitationResponse,
+)
+def cancel_group_invitation(
+    group_id: str,
+    invitation_id: str,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    db: Annotated[Session, Depends(get_database_session)],
+) -> GroupInvitationResponse:
+    try:
+        invitation = GroupInvitationService(db).cancel_pending_invitation(
+            group_id=group_id,
+            invitation_id=invitation_id,
+            actor_user_id=principal.user_id,
+        )
+    except GroupMembershipPermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="not allowed") from exc
+    except InvitationNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="invitation not found"
+        ) from exc
+    except InvitationNotPendingError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="invitation is not pending"
+        ) from exc
+    return _invitation_response(invitation)
+
+
+@group_invitations_router.post("/accept", response_model=MemberResponse)
+def accept_group_invitation(
+    request: GroupInvitationAcceptRequest,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    db: Annotated[Session, Depends(get_database_session)],
+) -> MemberResponse:
+    try:
+        membership = GroupInvitationService(db).accept_invitation(
+            token=request.token,
+            actor_user_id=principal.user_id,
+        )
+    except InvalidInvitationTokenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="invalid or expired invitation",
+        ) from exc
+    return _member_response(membership)
 
 
 @groups_router.post(
@@ -195,7 +383,7 @@ def create_publish_request(
     db.add(publish_request)
     db.commit()
     db.refresh(publish_request)
-    return _publish_request_response(publish_request)
+    return _publish_request_response(db, publish_request)
 
 
 @groups_router.get(
@@ -217,7 +405,24 @@ def list_publish_requests(
             KnowledgePublishRequestModel.requester_user_id == principal.user_id
         )
     publish_requests = db.scalars(statement.order_by(KnowledgePublishRequestModel.created_at)).all()
-    return [_publish_request_response(publish_request) for publish_request in publish_requests]
+    return [_publish_request_response(db, publish_request) for publish_request in publish_requests]
+
+
+@groups_router.get(
+    "/{group_id}/publish-requests/{request_id}/source",
+    response_model=KnowledgePublishRequestSourceResponse,
+)
+def get_publish_request_source(
+    group_id: str,
+    request_id: str,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    db: Annotated[Session, Depends(get_database_session)],
+) -> KnowledgePublishRequestSourceResponse:
+    """Return extracted source content for owner/admin publish review only."""
+    _require_group_manager(db, group_id, principal.user_id)
+    publish_request = _get_publish_request_or_404(db, group_id=group_id, request_id=request_id)
+    _require_pending_publish_request(publish_request)
+    return _publish_request_source_response(db, publish_request)
 
 
 @groups_router.post(
@@ -259,16 +464,27 @@ def approve_publish_request(
     )
     db.add(published_document)
     db.flush()
+    _copy_parse_artifacts_for_group_document(
+        db,
+        source_document=source_document,
+        published_document=published_document,
+    )
+    published_document_id = published_document.id
+    try:
+        KnowledgeExtractionService(db).ingest_document(published_document)
+    except Exception:
+        db.rollback()
+        _delete_unapproved_group_document_copy(db, document_id=published_document_id)
+        db.commit()
+        raise
     publish_request.status = KnowledgePublishRequestStatus.APPROVED.value
     publish_request.reviewer_user_id = principal.user_id
-    publish_request.published_document_id = published_document.id
+    publish_request.published_document_id = published_document_id
     publish_request.reviewed_at = datetime.now(UTC)
     db.add(publish_request)
     db.commit()
     db.refresh(publish_request)
-    KnowledgeExtractionService(db).ingest_document(published_document)
-    db.refresh(publish_request)
-    return _publish_request_response(publish_request)
+    return _publish_request_response(db, publish_request)
 
 
 @groups_router.post(
@@ -291,7 +507,62 @@ def reject_publish_request(
     db.add(publish_request)
     db.commit()
     db.refresh(publish_request)
-    return _publish_request_response(publish_request)
+    return _publish_request_response(db, publish_request)
+
+
+def _publish_request_source_response(
+    db: Session, publish_request: KnowledgePublishRequestModel
+) -> KnowledgePublishRequestSourceResponse:
+    if publish_request.source_document_id is not None:
+        source_document = _get_owned_personal_source_document(
+            db,
+            document_id=publish_request.source_document_id,
+            requester_user_id=publish_request.requester_user_id,
+        )
+        return KnowledgePublishRequestSourceResponse(
+            request_id=publish_request.id,
+            source_kind="document",
+            documents=[_publish_request_source_document_response(source_document)],
+        )
+
+    source_knowledge_base = _get_owned_personal_source_knowledge_base(
+        db,
+        knowledge_base_id=publish_request.source_knowledge_base_id or "",
+        requester_user_id=publish_request.requester_user_id,
+    )
+    documents = db.scalars(
+        select(DocumentModel)
+        .where(
+            DocumentModel.knowledge_base_id == source_knowledge_base.id,
+            DocumentModel.owner_user_id == publish_request.requester_user_id,
+            DocumentModel.group_id.is_(None),
+        )
+        .order_by(DocumentModel.created_at.asc(), DocumentModel.id.asc())
+    ).all()
+    return KnowledgePublishRequestSourceResponse(
+        request_id=publish_request.id,
+        source_kind="knowledge_base",
+        source_knowledge_base_id=source_knowledge_base.id,
+        source_knowledge_base_name=source_knowledge_base.name,
+        documents=[_publish_request_source_document_response(document) for document in documents],
+    )
+
+
+def _publish_request_source_document_response(
+    document: DocumentModel,
+) -> KnowledgePublishRequestSourceDocumentResponse:
+    return KnowledgePublishRequestSourceDocumentResponse(
+        id=document.id,
+        title=document.title,
+        content=document.content,
+        source_type=document.source_type,
+        source_filename=document.source_filename,
+        source_content_type=document.source_content_type,
+        source_byte_size=document.source_byte_size,
+        source_page_count=document.source_page_count,
+        parser_name=document.parser_name,
+        created_at=document.created_at,
+    )
 
 
 def _get_group_and_membership(
@@ -442,6 +713,65 @@ def _copy_document_for_group_knowledge_base(
     )
 
 
+def _copy_parse_artifacts_for_group_document(
+    db: Session,
+    *,
+    source_document: DocumentModel,
+    published_document: DocumentModel,
+) -> None:
+    artifacts = db.scalars(
+        select(DocumentParseArtifactModel).where(
+            DocumentParseArtifactModel.document_id == source_document.id
+        )
+    ).all()
+    for artifact in artifacts:
+        db.add(
+            DocumentParseArtifactModel(
+                document_id=published_document.id,
+                source_sha256=artifact.source_sha256,
+                source_filename=artifact.source_filename,
+                source_content_type=artifact.source_content_type,
+                source_type=artifact.source_type,
+                parser_provider=artifact.parser_provider,
+                parser_name=artifact.parser_name,
+                parser_version=artifact.parser_version,
+                parser_mode=artifact.parser_mode,
+                markdown_content=artifact.markdown_content,
+                elements_json=artifact.elements_json,
+                warnings_json=artifact.warnings_json,
+            )
+        )
+
+
+def _delete_unapproved_group_document_copy(db: Session, *, document_id: str) -> None:
+    """Remove a group-copy document when publish approval ingestion fails."""
+    db.execute(delete(CitationModel).where(CitationModel.document_id == document_id))
+    db.execute(
+        delete(StructuredKnowledgeEntityModel).where(
+            StructuredKnowledgeEntityModel.document_id == document_id
+        )
+    )
+    db.execute(
+        delete(DocumentMetadataProfileModel).where(
+            DocumentMetadataProfileModel.document_id == document_id
+        )
+    )
+    db.execute(
+        delete(EntityRelationshipModel).where(EntityRelationshipModel.document_id == document_id)
+    )
+    db.execute(delete(EntityMentionModel).where(EntityMentionModel.document_id == document_id))
+    db.execute(delete(DocumentChunkModel).where(DocumentChunkModel.document_id == document_id))
+    db.execute(delete(ExtractionRunModel).where(ExtractionRunModel.document_id == document_id))
+    db.execute(
+        delete(DocumentParseArtifactModel).where(
+            DocumentParseArtifactModel.document_id == document_id
+        )
+    )
+    document = db.get(DocumentModel, document_id)
+    if document is not None:
+        db.delete(document)
+
+
 def _approve_knowledge_base_publish_request(
     db: Session,
     *,
@@ -485,7 +815,7 @@ def _approve_knowledge_base_publish_request(
     db.add(publish_request)
     db.commit()
     db.refresh(publish_request)
-    return _publish_request_response(publish_request)
+    return _publish_request_response(db, publish_request)
 
 
 def _default_group_knowledge_base_name(group_name: str) -> str:
@@ -493,8 +823,24 @@ def _default_group_knowledge_base_name(group_name: str) -> str:
 
 
 def _publish_request_response(
+    db: Session,
     publish_request: KnowledgePublishRequestModel,
 ) -> KnowledgePublishRequestResponse:
+    source_document = (
+        db.get(DocumentModel, publish_request.source_document_id)
+        if publish_request.source_document_id is not None
+        else None
+    )
+    source_knowledge_base = (
+        db.get(KnowledgeBaseModel, publish_request.source_knowledge_base_id)
+        if publish_request.source_knowledge_base_id is not None
+        else None
+    )
+    target_knowledge_base = (
+        db.get(KnowledgeBaseModel, publish_request.target_knowledge_base_id)
+        if publish_request.target_knowledge_base_id is not None
+        else None
+    )
     return KnowledgePublishRequestResponse(
         id=publish_request.id,
         requester_user_id=publish_request.requester_user_id,
@@ -502,10 +848,58 @@ def _publish_request_response(
         target_knowledge_base_id=publish_request.target_knowledge_base_id,
         source_document_id=publish_request.source_document_id,
         source_knowledge_base_id=publish_request.source_knowledge_base_id,
+        source_document_title=source_document.title if source_document is not None else None,
+        source_document_excerpt=(
+            _publish_review_excerpt(source_document.content)
+            if source_document is not None
+            else None
+        ),
+        source_document_filename=(
+            source_document.source_filename if source_document is not None else None
+        ),
+        source_knowledge_base_name=(
+            source_knowledge_base.name if source_knowledge_base is not None else None
+        ),
+        target_knowledge_base_name=(
+            target_knowledge_base.name if target_knowledge_base is not None else None
+        ),
         status=KnowledgePublishRequestStatus(publish_request.status),
         reviewer_user_id=publish_request.reviewer_user_id,
         published_document_id=publish_request.published_document_id,
         published_knowledge_base_id=publish_request.published_knowledge_base_id,
         created_at=publish_request.created_at,
         reviewed_at=publish_request.reviewed_at,
+    )
+
+
+def _publish_review_excerpt(content: str, *, limit: int = 500) -> str:
+    compact = " ".join(content.split())
+    if len(compact) <= limit:
+        return compact
+    return f"{compact[: limit - 1].rstrip()}…"
+
+
+def _member_response(member: GroupMemberDisplay) -> MemberResponse:
+    membership = member.membership
+    return MemberResponse(
+        member_id=membership.id,
+        user_id=membership.user_id,
+        nickname=member.nickname,
+        role=MembershipRole(membership.role),
+        created_at=membership.created_at,
+    )
+
+
+def _invitation_response(invitation: GroupInvitationModel) -> GroupInvitationResponse:
+    return GroupInvitationResponse(
+        id=invitation.id,
+        group_id=invitation.group_id,
+        invited_email=invitation.invited_email_normalized,
+        role=MembershipRole(invitation.role),
+        status=invitation.status,
+        created_at=invitation.created_at,
+        expires_at=invitation.expires_at,
+        accepted_at=invitation.accepted_at,
+        cancelled_at=invitation.cancelled_at,
+        resent_at=invitation.resent_at,
     )

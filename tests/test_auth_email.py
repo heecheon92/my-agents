@@ -163,7 +163,11 @@ def test_signup_uses_configured_smtp_sender_without_local_outbox(monkeypatch) ->
 
     signup = client.post(
         "/auth/signup",
-        json={"email": "smtp-signup@example.com", "password": "correct horse battery staple"},
+        json={
+            "email": "smtp-signup@example.com",
+            "nickname": "Test User",
+            "password": "correct horse battery staple",
+        },
     )
 
     assert signup.status_code == 201
@@ -261,6 +265,42 @@ def test_resend_http_sender_sends_guest_access_code(monkeypatch) -> None:  # noq
     }
 
 
+def test_resend_http_sender_sends_group_invitation_link(monkeypatch) -> None:  # noqa: ANN001
+    FakeResendHttpClient.posts.clear()
+    monkeypatch.setattr(auth_email.httpx, "Client", FakeResendHttpClient)
+    settings = Settings(
+        _env_file=None,
+        MY_AGENTS_RESPONSE_MODE="deterministic",
+        MY_AGENTS_AUTH_EMAIL_MODE="resend_http",
+        MY_AGENTS_AUTH_PUBLIC_APP_BASE_URL="https://demo.example.com",
+        MY_AGENTS_AUTH_FROM_EMAIL="noreply@example.com",
+        MY_AGENTS_RESEND_API_KEY="resend-api-key",
+        MY_AGENTS_RESEND_API_URL="https://api.resend.test/emails",
+    )
+    sender = build_auth_email_sender(settings)
+
+    sender.send_group_invitation(
+        recipient_email="invitee@example.com",
+        token="invite token",
+        expires_at=datetime(2026, 6, 10, 12, 30, tzinfo=UTC),
+        language="en",
+    )
+
+    assert len(FakeResendHttpClient.posts) == 1
+    assert FakeResendHttpClient.posts[0]["json"] == {
+        "from": "noreply@example.com",
+        "to": ["invitee@example.com"],
+        "subject": "You're invited to a my-agents group",
+        "text": (
+            "You were invited to join a my-agents group. Accept the invitation after "
+            "signing in with this email address:\n\n"
+            "https://demo.example.com/group-invitations/accept?token=invite%20token\n\n"
+            "This invitation expires at 2026-06-10T12:30:00+00:00.\n\n"
+            "If you did not expect this invitation, you can ignore this email."
+        ),
+    }
+
+
 def test_guest_access_code_email_defaults_to_korean() -> None:
     sender = auth_email.InMemoryAuthEmailSender()
 
@@ -277,6 +317,23 @@ def test_guest_access_code_email_defaults_to_korean() -> None:
     assert "대화 1개, 프롬프트 5개, 문서 업로드 3개" in message.body
 
 
+def test_group_invitation_email_defaults_to_korean() -> None:
+    sender = auth_email.InMemoryAuthEmailSender()
+
+    sender.send_group_invitation(
+        recipient_email="invitee@example.com",
+        token="invite-token",
+        expires_at=datetime(2026, 6, 10, 12, 30, tzinfo=UTC),
+    )
+
+    message = sender.messages()[0]
+    assert message.purpose == "group_invitation"
+    assert message.token == "invite-token"
+    assert message.subject == "my-agents 그룹 초대"
+    assert "/group-invitations/accept?token=invite-token" in message.body
+    assert "이 이메일 주소로 로그인한 뒤" in message.body
+
+
 def test_signup_uses_resend_http_sender_without_local_outbox(monkeypatch) -> None:  # noqa: ANN001
     FakeResendHttpClient.posts.clear()
     monkeypatch.setattr(auth_email.httpx, "Client", FakeResendHttpClient)
@@ -290,7 +347,11 @@ def test_signup_uses_resend_http_sender_without_local_outbox(monkeypatch) -> Non
 
     signup = client.post(
         "/auth/signup",
-        json={"email": "resend-signup@example.com", "password": "correct horse battery staple"},
+        json={
+            "email": "resend-signup@example.com",
+            "nickname": "Test User",
+            "password": "correct horse battery staple",
+        },
     )
 
     assert signup.status_code == 201
@@ -326,6 +387,7 @@ def test_signup_email_language_uses_request_header(monkeypatch) -> None:  # noqa
         },
         json={
             "email": "resend-signup-language@example.com",
+            "nickname": "Test User",
             "password": "correct horse battery staple",
         },
     )

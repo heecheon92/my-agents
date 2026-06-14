@@ -12,17 +12,11 @@ from langchain_core.messages import AIMessage, AnyMessage, HumanMessage
 
 ALLOWED_ROUTE_LABELS = {
     "general_assistant",
-    "learning_coach",
     "research_helper",
-    "project_planner",
-    "career_helper",
 }
 
 REPRESENTATIVE_PROMPTS = {
-    "learning_coach": "Help me study LangGraph step by step",
     "research_helper": "Find sources about FastAPI testing",
-    "project_planner": "Plan my next backend milestone",
-    "career_helper": "Improve my resume bullet",
     "general_assistant": "Hello, what can you do?",
 }
 
@@ -31,9 +25,6 @@ FORBIDDEN_DELEGATION_PHRASES = (
     "delegating to",
     "routed to agent",
     "handled by agent",
-    "learning coach agent",
-    "research helper agent",
-    "project planner agent",
     "specialized agent executed",
     "specialized agent completed",
     "specialist agent executed",

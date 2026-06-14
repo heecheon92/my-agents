@@ -21,6 +21,7 @@ def test_import_all_models_registers_current_service_tables() -> None:
         "users",
         "sessions",
         "groups",
+        "group_invitations",
         "memberships",
         "conversations",
         "messages",
@@ -35,6 +36,9 @@ def test_import_all_models_registers_current_service_tables() -> None:
         "entity_mentions",
         "entity_relationships",
         "citations",
+        "user_memory_settings",
+        "user_memories",
+        "memory_suggestions",
     }.issubset(Base.metadata.tables)
 
 

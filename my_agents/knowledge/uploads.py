@@ -5,8 +5,14 @@ from __future__ import annotations
 import hashlib
 import logging
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 
+from my_agents.knowledge.office_uploads import (
+    OfficeUploadError,
+    ParsedOfficeDocument,
+    parse_uploaded_office_document,
+)
 from my_agents.knowledge.pdf_uploads import (
     MAX_PDF_UPLOAD_BYTES,
     DoclingExtractionConfig,
@@ -18,8 +24,9 @@ from my_agents.knowledge.pdf_uploads import (
 MAX_TEXT_UPLOAD_BYTES = MAX_PDF_UPLOAD_BYTES
 TEXT_UPLOAD_PARSER_NAME = "utf8_text_v1"
 MARKDOWN_UPLOAD_PARSER_NAME = "utf8_markdown_v1"
-_SUPPORTED_UPLOAD_SUFFIXES = frozenset({".pdf", ".md", ".markdown", ".txt"})
+_SUPPORTED_UPLOAD_SUFFIXES = frozenset({".pdf", ".md", ".markdown", ".txt", ".xlsx", ".pptx"})
 _TEXT_UPLOAD_SUFFIXES = frozenset({".md", ".markdown", ".txt"})
+_OFFICE_UPLOAD_SUFFIXES = frozenset({".xlsx", ".pptx"})
 _GENERIC_UPLOAD_CONTENT_TYPES = frozenset({"", "application/octet-stream"})
 _MARKDOWN_CONTENT_TYPES = frozenset({"text/markdown", "text/x-markdown", "text/plain"})
 _PLAIN_TEXT_CONTENT_TYPES = frozenset({"text/plain"})
@@ -36,6 +43,19 @@ class UnsupportedDocumentUploadError(DocumentUploadError):
 
 
 @dataclass(frozen=True)
+class ParsedUploadParseArtifact:
+    """Derived parser artifact ready for persistence beside the document."""
+
+    parser_provider: str
+    parser_name: str
+    parser_version: str | None
+    parser_mode: str
+    markdown_content: str
+    elements: list[dict[str, Any]] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
 class ParsedDocumentUpload:
     """Text and provenance metadata extracted from a supported upload."""
 
@@ -46,6 +66,7 @@ class ParsedDocumentUpload:
     sha256: str
     page_count: int | None
     parser_name: str
+    parse_artifact: ParsedUploadParseArtifact | None = None
 
 
 def parse_uploaded_document(
@@ -75,6 +96,12 @@ def parse_uploaded_document(
             docling_config=docling_config,
             tesseract_config=tesseract_config,
         )
+    if suffix in _OFFICE_UPLOAD_SUFFIXES:
+        return _parse_office_file(
+            filename=safe_filename,
+            content_type=content_type,
+            content=content,
+        )
     if suffix in _TEXT_UPLOAD_SUFFIXES:
         return _parse_text_file(
             filename=safe_filename,
@@ -82,7 +109,9 @@ def parse_uploaded_document(
             content_type=content_type,
             content=content,
         )
-    raise UnsupportedDocumentUploadError("only .pdf, .md, .markdown, or .txt uploads are supported")
+    raise UnsupportedDocumentUploadError(
+        "only .pdf, .md, .markdown, .txt, .xlsx, or .pptx uploads are supported"
+    )
 
 
 def _parse_pdf(
@@ -127,6 +156,53 @@ def _parse_pdf(
         upload.parser_name,
         upload.page_count,
         len(upload.content),
+    )
+    return upload
+
+
+def _parse_office_file(
+    *,
+    filename: str,
+    content_type: str | None,
+    content: bytes,
+) -> ParsedDocumentUpload:
+    try:
+        parsed = parse_uploaded_office_document(
+            filename=filename,
+            content_type=content_type,
+            content=content,
+        )
+    except OfficeUploadError as exc:
+        logger.warning(
+            "document_upload.office.failed filename=%s content_type=%s bytes=%d error=%s",
+            filename,
+            content_type,
+            len(content),
+            exc,
+        )
+        if _is_office_unsupported_media_error(str(exc)):
+            raise UnsupportedDocumentUploadError(str(exc)) from exc
+        raise DocumentUploadError(str(exc)) from exc
+
+    upload = ParsedDocumentUpload(
+        content=parsed.content,
+        source_type=parsed.source_type,
+        source_content_type=parsed.source_content_type,
+        byte_size=parsed.byte_size,
+        sha256=parsed.sha256,
+        page_count=None,
+        parser_name=parsed.parser_name,
+        parse_artifact=_office_parse_artifact(parsed),
+    )
+    logger.info(
+        "document_upload.office.parsed filename=%s source_type=%s parser=%s chars=%d "
+        "elements=%d warnings=%d",
+        filename,
+        upload.source_type,
+        upload.parser_name,
+        len(upload.content),
+        len(parsed.elements),
+        len(parsed.warnings),
     )
     return upload
 
@@ -180,7 +256,7 @@ def _validate_upload_filename(filename: str | None) -> str:
     suffix = _filename_suffix(stripped)
     if suffix not in _SUPPORTED_UPLOAD_SUFFIXES:
         raise UnsupportedDocumentUploadError(
-            "only .pdf, .md, .markdown, or .txt uploads are supported"
+            "only .pdf, .md, .markdown, .txt, .xlsx, or .pptx uploads are supported"
         )
     return stripped
 
@@ -223,3 +299,21 @@ def _contains_unsafe_control_characters(text: str) -> bool:
 
 def _is_pdf_unsupported_media_error(message: str) -> bool:
     return "only" in message or "not a PDF" in message
+
+
+def _office_parse_artifact(parsed: ParsedOfficeDocument) -> ParsedUploadParseArtifact:
+    return ParsedUploadParseArtifact(
+        parser_provider=parsed.parser_provider,
+        parser_name=parsed.parser_name,
+        parser_version=parsed.parser_version,
+        parser_mode=parsed.parser_mode,
+        markdown_content=parsed.content,
+        elements=parsed.elements,
+        warnings=parsed.warnings,
+    )
+
+
+def _is_office_unsupported_media_error(message: str) -> bool:
+    return (
+        "only .xlsx and .pptx" in message or "must use" in message or message.startswith("only .")
+    )

@@ -181,21 +181,18 @@ This makes the API response predictable.
 
 The classifier is intentionally simple.
 
-It checks keywords and returns one of these route labels:
+It checks source/research keywords and returns one of these route labels:
 
 ```text
 general_assistant
-learning_coach
 research_helper
-project_planner
-career_helper
 ```
 
 Example:
 
 ```text
 "Help me study LangGraph"
-  -> learning_coach
+  -> general_assistant
 ```
 
 ```text
@@ -222,15 +219,9 @@ flowchart TD
     Start([START]) --> Classify["classify_request"]
     Classify --> Route{"route label"}
     Route -->|general_assistant| General["respond_general"]
-    Route -->|learning_coach| Learning["respond_learning"]
     Route -->|research_helper| Research["respond_research"]
-    Route -->|project_planner| Project["respond_project"]
-    Route -->|career_helper| Career["respond_career"]
     General --> End([END])
-    Learning --> End
     Research --> End
-    Project --> End
-    Career --> End
 ```
 
 The graph state is defined around LangGraph/LangChain message conventions:
@@ -260,7 +251,7 @@ After classification:
 ```python
 {
     "messages": [HumanMessage(content="Help me study LangGraph")],
-    "route": RouteDecision(label="learning_coach", ...),
+    "route": RouteDecision(label="general_assistant", ...),
     "handled_by": "personal_assistant_graph",
 }
 ```
@@ -299,8 +290,7 @@ def select_response_node(state: AssistantState) -> str:
     route = state["route"].label
     return {
         "general_assistant": "respond_general",
-        "learning_coach": "respond_learning",
-        ...
+        "research_helper": "respond_research",
     }[route]
 ```
 

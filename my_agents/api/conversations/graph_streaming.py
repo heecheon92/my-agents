@@ -7,8 +7,9 @@ from typing import Any, Literal
 
 from my_agents.agents.general_assistant.classifier import classify_messages
 from my_agents.api.assistant import GraphRunner
+from my_agents.api.conversations.graph_invocation import invoke_graph_runner, stream_graph_runner
 
-GraphStreamItemKind = Literal["delta", "result"]
+GraphStreamItemKind = Literal["delta", "update", "result"]
 
 
 @dataclass(frozen=True)
@@ -24,6 +25,7 @@ def stream_graph_items(
     *,
     graph_runner: GraphRunner,
     graph_input: dict,
+    graph_context: dict[str, object] | None = None,
 ):
     """Yield assistant text deltas plus one final graph result.
 
@@ -33,14 +35,23 @@ def stream_graph_items(
     """
     stream = getattr(graph_runner, "stream", None)
     if not callable(stream):
-        yield GraphStreamItem(kind="result", result=graph_runner.invoke(graph_input))
+        yield GraphStreamItem(
+            kind="result",
+            result=invoke_graph_runner(
+                graph_runner=graph_runner,
+                graph_input=graph_input,
+                graph_context=graph_context,
+            ),
+        )
         return
 
     streamed_parts: list[str] = []
     final_result: dict[str, Any] = {}
     emitted_stream_event = False
-    for event in stream(
-        graph_input,
+    for event in stream_graph_runner(
+        stream=stream,
+        graph_input=graph_input,
+        graph_context=graph_context,
         stream_mode=["messages", "updates"],
         version="v2",
     ):
@@ -54,7 +65,10 @@ def stream_graph_items(
                 yield GraphStreamItem(kind="delta", delta=text)
             continue
         if event_type == "updates" and isinstance(event_data, dict):
-            final_result.update(result_fields_from_update(event_data))
+            fields = result_fields_from_update(event_data)
+            if fields:
+                final_result.update(fields)
+                yield GraphStreamItem(kind="update", result=fields)
 
     if "reply" not in final_result and streamed_parts:
         final_result["reply"] = "".join(streamed_parts).strip()
@@ -64,7 +78,14 @@ def stream_graph_items(
         yield GraphStreamItem(kind="result", result=final_result)
         return
     if not emitted_stream_event:
-        yield GraphStreamItem(kind="result", result=graph_runner.invoke(graph_input))
+        yield GraphStreamItem(
+            kind="result",
+            result=invoke_graph_runner(
+                graph_runner=graph_runner,
+                graph_input=graph_input,
+                graph_context=graph_context,
+            ),
+        )
         return
     raise RuntimeError("graph stream did not yield a reply")
 
@@ -88,6 +109,10 @@ def result_fields_from_update(update: dict[str, Any]) -> dict[str, Any]:
         reply = node_update.get("reply")
         if isinstance(reply, str):
             fields["reply"] = reply
+        for field_name in ("memory_context", "source_conflicts"):
+            value = node_update.get(field_name)
+            if isinstance(value, list):
+                fields[field_name] = value
     return fields
 
 

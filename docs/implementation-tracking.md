@@ -1,6 +1,6 @@
 # Implementation tracking
 
-Last updated: 2026-06-07
+Last updated: 2026-06-14
 Status owner: repo-tracked source of truth for cross-machine agent handoff
 
 This file exists because `.omx/` is local runtime state and is not shared across machines. When working with an agent on any machine, start here before re-discovering project status from the codebase.
@@ -26,10 +26,24 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 
 | Scope | Status | Completion estimate | Notes |
 | --- | --- | ---: | --- |
-| Demo-quality backend v0 | Hosted demo baseline proven | 95-97% | Thin end-to-end backend slice exists and now has a basic hosted path: Render backend, Vercel frontend CI/CD, Neon Postgres, Resend HTTP email from verified `my-agents.dev`, hosted signup/email verification, external-worker ingestion mode, and deployment troubleshooting docs. Remaining demo risk is mostly worker deployment wiring, ingestion smoke evidence, and deploy diagnostic/log-volume tuning. |
-| Production SaaS readiness | Early but hosted | 57-62% | Account lifecycle works in hosted demo mode with provider email, and ingestion can now run outside the web process, but production readiness still needs shared rate limits, durable queue/stale-run recovery, ingestion performance hardening, automated smoke/migration gates, observability cleanup, and production security review. |
-| Full AI agents product vision | Early/mid | 25-35% | Current production graph is one assistant/router path; richer agent/tool workflows are future milestones. |
-| Learning/practice simulated agents | Active learning lab | Ongoing | `my_agents/simulated_agents/` is meaningful practice code, intentionally separate from production API/CLI surfaces. |
+| Demo-quality product preview | Controlled-alpha ready after latest deploy smoke | 96-98% | Backend and separate frontend now cover the core product loop: account signup with nickname, invite-only groups, manager-only member rosters, personal/group KBs, hidden group-upload staging, publish-request review with readable source previews, route-addressable group management, document ingestion, cited chat, and redacted agent trace/events. Remaining preview risk is mostly hosted redeploy/migration evidence after the latest group/nickname/publish changes, ingestion-worker smoke, and small-host reliability. |
+| Production SaaS readiness | Early but hosted | 60-65% | Account lifecycle and group knowledge workflows are good enough for a narrow trusted preview, but production readiness still needs shared rate limits, account deletion/profile management, durable queue/stale-run recovery, ingestion performance hardening, automated smoke/migration gates, observability cleanup, and production security review. |
+| Full AI agents product vision | Early/mid | 35-45% | Current production graph is still one assistant/router path with ContextForge/RAG-agent contract layers around retrieval; richer tool workflows, scoped instructions, and multi-agent production orchestration remain future milestones. |
+| Learning/practice simulated agents | Moved out | Ongoing in separate repo | Simulated-agent practice code now lives in `~/Git/Playground/langgraph-playground`; this repo stays focused on production API/CLI surfaces. |
+
+## Product review verdict — 2026-06-14
+
+It is worth inviting a small number of trusted people to try the product **as a controlled alpha / product preview**, not as a broad public launch. The current version is coherent enough to demonstrate the intended product surface: sign up with a human nickname, create or join invite-only groups, upload small supported documents, request/approve group sharing, ask cited questions, and inspect redacted agent activity.
+
+Recommended framing for testers:
+
+- invite people who can tolerate rough edges and give product feedback;
+- ask them to use small Markdown/plain-text/native-text PDF files first;
+- tell them not to upload sensitive, regulated, or irreplaceable source files yet;
+- keep owner/operator support available for account approval, invite issues, and ingestion failures;
+- run a fresh hosted smoke after each deploy before sending the link.
+
+Do **not** position it as production-ready or broadly self-serve yet. The main blockers are operational rather than product-shape blockers: latest migrations/OpenAPI/frontend deployment smoke, external ingestion-worker evidence, account/profile lifecycle gaps, shared rate limiting, production security review, and durable worker/queue recovery.
 
 ## Implemented and verified baseline
 
@@ -49,10 +63,12 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 - OpenAI-backed response generation uses `langchain-openai` / `ChatOpenAI` by default.
 - Deterministic mode remains available for tests and offline smoke checks.
 - Hosted web search can be attached at the response-provider boundary for research/general current-info requests in OpenAI mode.
+- Opt-in long-term memory V1 is implemented as a Product DB-backed governance/runtime scaffold: settings, memory CRUD, suggest-confirm lifecycle, policy gates, source provenance, source staleness, relevance-minimized context injection, conflict guidance, and redacted run snapshots. The LangGraph-native migration target is documented in `docs/product-chat-service/en/19-langgraph-native-memory-migration.md`.
 
 ### Auth/session foundation
 
 - Email/password signup.
+- Nickname signup/member-roster contract is implemented as display-only and duplicate-allowed; deployment handoff should refresh hosted OpenAPI after migration/API/frontend updates land together.
 - Local/offline auth email sender boundary for verification and reset messages.
 - Hosted Resend HTTP auth email delivery through verified `my-agents.dev`, with SMTP still available for hosts that allow it.
 - Email verification token creation and `POST /auth/verify-email`.
@@ -73,7 +89,10 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 ### Groups, documents, permissions
 
 - Group creation/list/get.
-- Member add/update flows.
+- Invite-only group membership lifecycle: owner/admin email invitations, opaque token acceptance, pending invitation management, manager-only accepted-member roster, and non-creating role updates.
+- Nickname roster extension keeps member emails out of manager-only rosters and keeps role updates keyed by `user_id`; duplicate nicknames remain display-only.
+- Group knowledge publish-request workflow supports personal-KB publication and single-document copy publication into group KBs, with owner/admin approve/reject and source-preview data for review.
+- Hidden `team_upload_staging` KBs allow group document uploads to stay private until approval copies the source into the target group KB.
 - Document create/list/get.
 - Document permission patching.
 - Authorization service for read/write/manage/ingest decisions.
@@ -94,7 +113,7 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 - Text document ingestion remains compatible.
 - Text-based upload path for PDF, Markdown, and plain text with safe metadata persistence; PDFs keep page provenance and FlateDecode text-stream fallback support. Hosted ingestion can run through an external worker so heavy parser/embedding/indexing work no longer has to share the web request process.
 - Deterministic chunks, provider-backed JSON embeddings (deterministic by default, OpenAI opt-in), entity mentions, and co-occurrence relationships.
-- ContextForge now owns the conversation-run retrieval orchestration boundary through `my_agents/agents/context_forge/`, with deterministic query planning, source-boundary handoff, candidate fusion, deterministic default or optional cross-encoder reranking, high-recall context packing, redacted retrieval evidence, and opt-in Rich debug traces for role handoff messages.
+- ContextForge now owns the conversation-run retrieval orchestration boundary through `my_agents/agents/context_forge/`, with a thin LangGraph RetrievalGraph wrapper over deterministic query planning, source-boundary handoff, candidate fusion, deterministic default or optional cross-encoder reranking, high-recall context packing, redacted retrieval evidence, and opt-in Rich debug traces for role handoff messages.
 - `my_agents/agents/rag_agent/` defines the RAG Agent contract layer inside the broader agentic RAG workflow: ContextForge remains the Retrieval Agent while a dedicated deterministic graph form runs planner/verifier code for compact localized trace stages without moving auth, retrieval, ingestion, or provider work into the agent folder.
 - Retrieval candidate gathering includes authorized document title/source-filename metadata matching, so filename-only user references can find the matching uploaded document even when the filename is absent from chunk content.
 - Ingestion stores structured knowledge entities for API endpoints, config keys, shell commands, error codes, and database table references with document/chunk/run/page/offset provenance.
@@ -119,12 +138,49 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 - ContextForge README pair under `my_agents/agents/context_forge/`.
 - RAG Agent workflow README pair under `my_agents/agents/rag_agent/`.
 - Product architecture notes under `docs/product-chat-service/en/`.
-- Personal learning logs and agent-lab notes under `docs/learning/`.
-- Simulated-agent candidate materials exist for future learning/practice ideas.
+- Personal backend learning logs and my-agents-specific project notes under `docs/learning/`.
+- Reusable LangGraph practice conventions, pattern docs, and runnable simulated-agent implementations now live in `~/Git/Playground/langgraph-playground`.
 
 ## Latest verification evidence
 
-Last full local verification run: 2026-05-30
+Product status docs refresh on 2026-06-14:
+
+```text
+uv run pytest -q
+371 passed, 2 skipped, 9 warnings in 38.29s
+
+uv run ruff check . --no-cache
+All checks passed
+
+uv run ruff format --check .
+189 files already formatted
+
+git diff --check
+passed
+```
+
+Memory architecture / ContextForge graph review follow-up on 2026-06-10:
+
+```text
+uv run pytest -q tests/test_graph.py tests/test_conversations_api.py tests/test_context_forge_contracts.py tests/test_context_forge_reranking.py tests/test_context_forge_structured_retrieval.py tests/test_permission_aware_rag.py tests/test_rag_agent_contracts.py
+85 passed, 5 warnings
+
+uv run pytest -q
+349 passed, 1 skipped, 9 warnings
+
+uv run ruff format --check .
+183 files already formatted
+
+uv run ruff check . --no-cache
+All checks passed
+
+git diff --check
+passed
+```
+
+Review follow-up on 2026-06-10: graph-owned memory recall now preserves internal redacted memory-source audit snapshots for failed runs when recall completed before a later provider failure, while frontend-visible run events expose only memory counts/categories/provenance types. Documentation now states that ContextForge `RetrievalGraph` is already a thin runtime wrapper and must not be checkpointer-persisted as raw retrieval state.
+
+Previous full local verification run: 2026-05-30
 
 ```text
 uv run pytest -q
@@ -232,15 +288,16 @@ Earlier hosted smoke status on 2026-06-03:
 - Text-based upload and extraction supports PDFs through the current local parser chain (`pymupdf_text_v1` primary, then `pypdf_text_v2`, Docling Markdown, constrained Tesseract OCR, and deterministic stream fallback), Markdown through `utf8_markdown_v1`, and plain text through `utf8_text_v1`.
 - Original uploaded file bytes are not retained yet; only extracted text plus source metadata are stored, so future parser upgrades cannot reprocess old uploads unless users upload the source file again.
 - Scanned/image-heavy PDFs have only a constrained local OCR fallback; docx, HTML, CSV/JSON structural parsing, durable parse artifacts, and production layout-aware parsing remain future work.
-- Async ingestion progress is available through an additive endpoint (`POST /documents/{id}/ingest/async`) plus direct run polling. Local/default mode still supports in-process threads; hosted mode can set `MY_AGENTS_INGESTION_EXECUTION_MODE=external_worker` and run `python -m my_agents.ingestion_worker`. Durable queue semantics and stale-run recovery remain future work.
+- Async ingestion progress is available through an additive endpoint (`POST /documents/{id}/ingest/async`) plus direct run polling. Local/default mode still supports in-process threads; hosted mode can set `MY_AGENTS_INGESTION_EXECUTION_MODE=external_worker` and run `python -m my_agents.ingestion_worker`. Frontend multi-file upload fan-out is exposed as a safe `/health` hint backed by `MY_AGENTS_DOCUMENT_UPLOAD_CONCURRENCY` (default `3`). Durable queue semantics and stale-run recovery remain future work.
 - Embeddings use a provider boundary: deterministic 32-dimensional lexical-hash vectors by default, or opt-in OpenAI embeddings through `langchain-openai` when `MY_AGENTS_EMBEDDING_MODE=openai`; Postgres chunks also store a pgvector `embedding_vector` through Alembic migration `20260521_0007`.
 - Retrieval ranking is permission-first ContextForge orchestration over pgvector SQL vector search on Postgres, JSON cosine fallback for SQLite/tests, blended lexical score, entity expansion, structured entity retrieval, deterministic fusion/reranking, optional cross-encoder second-stage reranking over bounded authorized candidates, and a narrow personal-document fallback; LLM query rewrite, ANN/vector index tuning, production reranker packaging, and latency evals are still future work.
-- ContextForge is the dedicated retrieval-agent service boundary. The current `rag_agent` graph is a thin contract/verification graph around the RAG path; a deeper ContextForge LangGraph `RetrievalGraph` remains deferred until role-node/tool orchestration adds value beyond the current package-level roles. Hard authorization should remain in `RetrievalService` even then.
+- ContextForge is the dedicated retrieval-agent service boundary. Conversation runs now enter it through a thin LangGraph `RetrievalGraph` wrapper that preserves current service behavior while creating a future agent tool/subgraph seam. The current `rag_agent` graph remains a separate thin contract/verification graph around the RAG path. Hard authorization stays in `RetrievalService`.
 - Entity extraction is deterministic regex/technical-term extraction, not production NLP/LLM extraction. Canonical entity creation is conflict-safe for concurrent async ingestion: names are pre-collected in stable order and inserted with dialect-aware `ON CONFLICT DO NOTHING` to avoid Postgres unique-index lock cycles.
 
 ### Agent/product behavior
 
 - Product conversation runs support SSE progress streaming and incremental `answer_delta` assistant text events.
+- Known near-future gap: streamed run execution is still coupled to the client HTTP/SSE request. If the client disconnects before `run_completed`, the assistant response may never be persisted; durable server-owned/background run execution is required.
 - Completed conversation runs can be refetched with persisted reply, route, and citations.
 - `uv run python -m scripts.local_demo_seed` seeds a verified local demo user, text document, and extraction run for file-backed SQLite demos.
 - `uv run python -m scripts.local_demo_smoke --base-url http://localhost:8000` verifies the seeded V1 API path without the frontend.
@@ -251,7 +308,8 @@ Earlier hosted smoke status on 2026-06-03:
 - Current production graph is still one assistant/router path.
 - Most route labels are capability metadata and response paths, not separate production specialist agents.
 - Tool workflows beyond hosted web search are not implemented as production graph capabilities yet.
-- No human-in-the-loop interrupts/checkpointed product workflow yet.
+- Memory runtime migration is in progress. Recall orchestration now runs inside `general_assistant` through a graph-owned `retrieve_memory` node and `MemoryRuntime` adapter, but the active adapter still wraps SQLAlchemy/Product DB memory service. Target migration remains LangGraph Store-backed active memory search plus a separate `memory_graph`, with Product DB retained for governance/audit.
+- No human-in-the-loop interrupts/checkpointed product workflow yet; when added, checkpointer state should be run-scoped execution state rather than conversation history or long-term memory.
 
 ### Deployment/ops
 
@@ -265,24 +323,24 @@ Earlier hosted smoke status on 2026-06-03:
 
 ## Recommended next workflow
 
-### Current milestone: Agentic RAG workflow v1 integration evidence
+### Current milestone: controlled alpha deploy smoke and tester handoff
 
-Use `docs/product-chat-service/en/17-agentic-rag-v1-verification-plan.md` as the redaction and
-evidence gate for the active agentic RAG v1 delivery. After backend orchestration and frontend trace
-lanes are integrated, run the targeted redaction tests, ContextForge/RAG/conversation tests, full
-pytest, Ruff check, Ruff format check, and `git diff --check`; then run local or hosted smoke and
-record a redacted evidence bundle.
+The product surface is now strong enough for a small trusted preview. Before sending the link, deploy the latest backend and frontend together, run migrations through the nickname/group-invitation/publish-request heads, refresh hosted OpenAPI evidence, and record a redacted smoke run.
+
+Suggested smoke path:
+
+1. Signup with required nickname -> approval/verification as configured -> login/session restore.
+2. Create a group, invite a second user by email, accept the invitation, and confirm the manager-only roster shows nickname but not email.
+3. Create or upload a small supported personal source, create a publish request, review readable source preview/content, approve into a group KB, and ask a cited group-knowledge question.
+4. Confirm route-addressable frontend group pages work for members, invitations, source spaces, and publish requests; keep per-item publish review in the drawer.
+5. Record any issue in `docs/product-chat-service/en/15-deployment-troubleshooting-log.md` and do not broaden the invite until the smoke path is stable.
 
 Stop condition:
 
-- Required run/SSE event types are present and frontend-safe.
-- Run event payloads expose only operational metadata, counts, route/answer-mode labels, selection
-  IDs/counts, and localization-neutral clarification data.
-- No run event payload exposes raw prompt, raw assistant reply, raw retrieved context/document
-  contents, hidden chain-of-thought/scratchpads, cookies, CSRF/session tokens, credentials, API
-  keys, provider payloads, or database URLs.
-- Backend tests/lint/format/diff checks pass after integration, and the smoke evidence is recorded
-  without mutating `.omx/ultragoal` or Codex goal state from a worker lane.
+- Latest backend tests/lint/format/diff checks pass.
+- Latest frontend lint/typecheck/e2e/build passed in the frontend repo before deploy.
+- Hosted smoke passes through auth, group invitation, document publish approval, one cited chat answer, and redacted run events.
+- Tester invitation copy clearly says “alpha/product preview,” warns against sensitive uploads, and sets expectations about small-file ingestion limits.
 
 ### Near implementation milestone: Upstage-backed layout-aware ingestion foundation
 
@@ -359,6 +417,10 @@ limits.
 
 | Date | Milestone | Evidence |
 | --- | --- | --- |
+| 2026-06-14 | Product status review refreshed roadmap/tracking and marked the current version as controlled-alpha worthy after deploy smoke. | `docs/implementation-tracking.md`; `ROADMAP.md`; local docs consistency review; backend verification recorded above. |
+| 2026-06-14 | Publish-request review became owner-actionable: backend responses expose source labels, filenames, excerpts, and source-document content lookup for confident approve/reject; frontend renders list-scale group management as dedicated routes while keeping per-request review in a drawer. | Backend commit `3812ef3`; frontend commits `5eefc77`, `58212af`, `19f33f0`; `tests/test_publish_requests.py`; `tests/test_kb_openapi_contract.py`; frontend `e2e/group-knowledge-v1.spec.ts`. |
+| 2026-06-14 | Implemented and documented the nickname signup and manager-only member roster contract. | `docs/product-chat-service/en/20-nickname-signup-member-roster-contract.md`; `docs/product-chat-service/ko/20-nickname-signup-member-roster-contract.md`; README pair; group-permission docs; implementation tracking. |
+| 2026-06-10 | Added a thin ContextForge LangGraph `RetrievalGraph` wrapper as the conversation-run retrieval entrypoint and future agent tool/subgraph seam. | `my_agents/agents/context_forge/graph.py`; `my_agents/agents/context_forge/__init__.py`; `my_agents/api/conversations/retrieval_context.py`; `tests/test_context_forge_contracts.py`; ContextForge README pair; retrieval architecture docs; targeted ContextForge/RAG tests. |
 | 2026-06-07 | Added real streamed assistant-message replay and newest-first conversation list ordering for the chat sidebar. | `my_agents/api/conversations/endpoints/replay.py`; `my_agents/api/conversations/endpoints/conversations.py`; `tests/test_conversations_api.py`; `tests/test_kb_openapi_contract.py`; streaming frontend contract docs; `uv run ruff check . --no-cache`; `uv run ruff format --check .`; `uv run pytest -q` (306 passed, 2 skipped). |
 | 2026-06-06 | Added RAG Agent contracts for the agentic RAG workflow and compact localized trace payloads for run responses/SSE/events. | `my_agents/agents/rag_agent/`; `my_agents/api/conversations/agent_trace.py`; `my_agents/api/conversations/run_events.py`; `my_agents/api/conversations/run_lifecycle.py`; `my_agents/api/conversations/serializers.py`; `my_agents/api/conversations/endpoints/stream.py`; `my_agents/conversations/schemas.py`; `tests/test_rag_agent_contracts.py`; `tests/test_conversations_api.py`; RAG Agent README pair; local targeted Ruff/pytest evidence. |
 | 2026-05-27 | Added external-worker ingestion mode so hosted async document ingestion no longer needs to run inside the web request process. | `my_agents/knowledge/ingestion_worker.py`; `my_agents/ingestion_worker.py`; `my_agents/api/documents.py`; `my_agents/settings.py`; `.env.example`; `tests/test_knowledge_ingestion.py`; `tests/test_settings.py`; README pair; Render migration/troubleshooting docs. |
@@ -403,10 +465,10 @@ Before starting a new workflow on any machine:
 3. Run or inspect the latest relevant tests.
 4. Update this file if your workflow changes completion, priorities, or known gaps.
 5. Keep `.omx/` notes as local-only; do not rely on them for cross-machine continuity.
-### 2026-06-07 — Team upload hidden staging boundary
+### 2026-06-07 — Group upload hidden staging boundary
 
 - Added `KnowledgeBasePurpose` and a `team_upload_staging` purpose for private upload buffers.
-- Added `POST /knowledge-bases/team-upload-staging` to create/reuse a hidden personal staging KB for team document publication.
+- Added `POST /knowledge-bases/team-upload-staging` to create/reuse a hidden personal staging KB for group document publication.
 - Excluded staging KBs from normal KB lists, chat selected/all source resolution, retrieval filters, and whole-KB publish requests.
 - Preserved document-copy publication: staged documents can be copied into a target group KB, and only the approved group copy is ingested/retrieved.
 - Captured the service flow in `docs/product-chat-service/en/18-team-upload-staging-flow.md` and the Korean companion note.

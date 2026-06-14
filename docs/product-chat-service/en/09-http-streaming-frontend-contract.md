@@ -1,6 +1,6 @@
 ---
 created: 2026-05-19
-updated: 2026-05-21
+updated: 2026-06-09
 status: active
 topics:
   - streaming
@@ -221,6 +221,24 @@ Current limitation: this is cooperative cancellation, not provider-level hard ab
 underlying graph/provider is blocked and emits no stream step, cancellation may not be
 observed until that call returns or yields.
 
+## Client disconnect durability gap
+
+As of 2026-06-09, streamed chat generation is still coupled to the client-held HTTP/SSE
+request. `answer_delta` chunks are transient transport events; the backend persists the
+assistant message only after the graph returns a final result and `persist_completed_run`
+commits the `run_completed` response. If the browser tab is closed, the user navigates
+away, or an intermediary drops the stream before completion, the server can observe the
+stream generator closing and terminalize the run without saving any partial assistant
+message. A user who later revisits the conversation may therefore see their user message
+and a cancelled/failed run, but not the answer that was in progress.
+
+This must be handled in the near future for production UX. The preferred direction is to
+make generation server-owned and durable: create the run, execute it in a background job or
+worker independent of the listening client, persist the final assistant message/citations
+when generation completes, and treat SSE as a resumable listener/progress channel rather
+than the owner of execution. Until that architecture exists, frontend code should not assume
+that leaving a streaming conversation will finish and persist the assistant response.
+
 ## Frontend contract guidance
 
 - Use `/conversations/{conversation_id}/runs/stream` for chat UX that wants live progress
@@ -245,6 +263,8 @@ observed until that call returns or yields.
   the graph provider does not emit token chunks.
 - Cancellation is cooperative and does not hard-abort a blocked provider call yet.
 - Long-running jobs still execute inside the request; background queues remain a later milestone.
+- Client disconnects can currently cancel/terminalize an in-progress streamed run before the
+  assistant response is persisted. Durable server-owned run execution is a near-future requirement.
 - CORS must be configured when a real frontend origin is chosen.
 
 ## Revision history
@@ -253,3 +273,4 @@ observed until that call returns or yields.
 - 2026-05-19: Added `answer_delta` events for incremental assistant text streaming.
 - 2026-05-21: Added early `run_started`, cooperative run cancellation, and active-run rejection for send-immediately steering.
 - 2026-06-07: Added assistant-message replay streaming with success-only transcript pruning and failure-safe old-answer preservation.
+- 2026-06-09: Documented the client-disconnect durability gap and near-future need for server-owned background run execution.

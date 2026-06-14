@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from .conftest import load_app, verify_latest_auth_email
+from .conftest import latest_auth_email_token, load_app, verify_latest_auth_email
 
 
 def _client(monkeypatch) -> TestClient:  # noqa: ANN001 - pytest monkeypatch fixture
@@ -15,7 +15,9 @@ def _client(monkeypatch) -> TestClient:  # noqa: ANN001 - pytest monkeypatch fix
 
 def _signup_login(client: TestClient, email: str) -> tuple[str, str]:
     password = "correct horse battery staple"
-    signup = client.post("/auth/signup", json={"email": email, "password": password})
+    signup = client.post(
+        "/auth/signup", json={"email": email, "nickname": "Test User", "password": password}
+    )
     assert signup.status_code == 201
     user_id = signup.json()["user"]["id"]
     verify_latest_auth_email(client, email)
@@ -28,6 +30,24 @@ def _create_personal_kb(client: TestClient, name: str = "Test KB") -> str:
     response = client.post("/knowledge-bases", json={"name": name, "scope": "personal"})
     assert response.status_code == 201
     return response.json()["id"]
+
+
+def _invite_and_accept(
+    *,
+    owner: TestClient,
+    recipient: TestClient,
+    group_id: str,
+    recipient_email: str,
+    role: str = "viewer",
+) -> None:
+    invitation = owner.post(
+        f"/groups/{group_id}/invitations",
+        json={"email": recipient_email, "role": role},
+    )
+    assert invitation.status_code == 201
+    token = latest_auth_email_token(recipient_email, "group_invitation")
+    accepted = recipient.post("/group-invitations/accept", json={"token": token})
+    assert accepted.status_code == 200
 
 
 def _publish_personal_document(
@@ -62,24 +82,26 @@ def _publish_personal_document(
     return published_document_id
 
 
-def test_group_owner_can_add_member_and_group_viewer_can_read_document(monkeypatch) -> None:  # noqa: ANN001
+def test_group_owner_can_invite_member_and_group_viewer_can_read_document(monkeypatch) -> None:  # noqa: ANN001
     owner = _client(monkeypatch)
     viewer = _client(monkeypatch)
     outsider = _client(monkeypatch)
     _owner_id, _ = _signup_login(owner, "owner@example.com")
-    viewer_id, _ = _signup_login(viewer, "viewer@example.com")
+    _viewer_id, _ = _signup_login(viewer, "viewer@example.com")
     _outsider_id, _ = _signup_login(outsider, "outsider@example.com")
 
-    group = owner.post("/groups", json={"name": "Demo Team"})
+    group = owner.post("/groups", json={"name": "Demo Group"})
     assert group.status_code == 201
     group_id = group.json()["id"]
     assert group.json()["role"] == "owner"
 
-    add_member = owner.post(
-        f"/groups/{group_id}/members",
-        json={"user_id": viewer_id, "role": "viewer"},
+    _invite_and_accept(
+        owner=owner,
+        recipient=viewer,
+        group_id=group_id,
+        recipient_email="viewer@example.com",
+        role="viewer",
     )
-    assert add_member.status_code == 204
     assert viewer.get(f"/groups/{group_id}").status_code == 200
     kb = owner.post(
         "/knowledge-bases",
@@ -149,19 +171,25 @@ def test_document_owner_can_grant_explicit_user_read_permission(monkeypatch) -> 
     assert readable.json()["title"] == "Personal Note"
 
 
-def test_non_manager_cannot_change_group_membership(monkeypatch) -> None:  # noqa: ANN001
+def test_non_manager_cannot_create_group_invitations(monkeypatch) -> None:  # noqa: ANN001
     owner = _client(monkeypatch)
     viewer = _client(monkeypatch)
     other = _client(monkeypatch)
     _owner_id, _ = _signup_login(owner, "manager-owner@example.com")
-    viewer_id, _ = _signup_login(viewer, "manager-viewer@example.com")
-    other_id, _ = _signup_login(other, "manager-other@example.com")
+    _viewer_id, _ = _signup_login(viewer, "manager-viewer@example.com")
+    _other_id, _ = _signup_login(other, "manager-other@example.com")
     group_id = owner.post("/groups", json={"name": "Managed Group"}).json()["id"]
-    owner.post(f"/groups/{group_id}/members", json={"user_id": viewer_id, "role": "viewer"})
+    _invite_and_accept(
+        owner=owner,
+        recipient=viewer,
+        group_id=group_id,
+        recipient_email="manager-viewer@example.com",
+        role="viewer",
+    )
 
     response = viewer.post(
-        f"/groups/{group_id}/members",
-        json={"user_id": other_id, "role": "viewer"},
+        f"/groups/{group_id}/invitations",
+        json={"email": "manager-other@example.com", "role": "viewer"},
     )
 
     assert response.status_code == 403

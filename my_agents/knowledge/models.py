@@ -119,6 +119,31 @@ class DocumentModel(Base):
     )
 
 
+class DocumentParseArtifactModel(Base):
+    """Derived parser output linked to a document without retaining original bytes."""
+
+    __tablename__ = "document_parse_artifacts"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    document_id: Mapped[str] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    source_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    source_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    source_content_type: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    source_type: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    parser_provider: Mapped[str] = mapped_column(String(80), nullable=False)
+    parser_name: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    parser_version: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    parser_mode: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    markdown_content: Mapped[str] = mapped_column(Text, nullable=False)
+    elements_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    warnings_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+
+
 class DocumentMetadataProfileModel(Base):
     """Generated document-level search profile used as a retrieval lane."""
 
@@ -263,6 +288,7 @@ class DocumentChunkModel(Base):
     start_offset: Mapped[int] = mapped_column(Integer, nullable=False)
     end_offset: Mapped[int] = mapped_column(Integer, nullable=False)
     source_page: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source_location_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     embedding_json: Mapped[str] = mapped_column(Text, nullable=False)
 
 
@@ -329,6 +355,7 @@ class StructuredKnowledgeEntityModel(Base):
     label: Mapped[str] = mapped_column(String(240), nullable=False, index=True)
     attributes_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
     source_page: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source_location_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     start_offset: Mapped[int] = mapped_column(Integer, nullable=False)
     end_offset: Mapped[int] = mapped_column(Integer, nullable=False)
     confidence: Mapped[str] = mapped_column(String(40), default="deterministic", nullable=False)

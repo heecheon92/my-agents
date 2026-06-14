@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from threading import Thread
 from typing import Annotated
@@ -25,6 +26,7 @@ from my_agents.knowledge.models import (
     DocumentChunkModel,
     DocumentMetadataProfileModel,
     DocumentModel,
+    DocumentParseArtifactModel,
     DocumentPermissionModel,
     EntityMentionModel,
     EntityRelationshipModel,
@@ -44,9 +46,11 @@ from my_agents.knowledge.schemas import (
 )
 from my_agents.knowledge.uploads import (
     DocumentUploadError,
+    ParsedDocumentUpload,
     UnsupportedDocumentUploadError,
     parse_uploaded_document,
 )
+from my_agents.memory.service import UserMemoryService
 from my_agents.permissions.contracts import DocumentOperation
 from my_agents.permissions.service import AuthorizationService
 from my_agents.persistence.database import get_database_session
@@ -124,7 +128,9 @@ async def upload_document(
     title: Annotated[str, Form(min_length=1, max_length=200)],
     file: Annotated[
         UploadFile,
-        File(description="Supported file: text-based PDF, Markdown, or plain text."),
+        File(
+            description=("Supported file: text-based PDF, Markdown, plain text, .xlsx, or .pptx.")
+        ),
     ],
     knowledge_base_id: Annotated[str, Form(min_length=1)],
     group_id: Annotated[str | None, Form()] = None,
@@ -212,11 +218,12 @@ async def upload_document_in_knowledge_base(
             else status.HTTP_400_BAD_REQUEST
         )
         raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+    source_filename = file.filename.strip() if file.filename else None
     document = DocumentModel(
         title=title.strip(),
         content=parsed.content,
         source_type=parsed.source_type,
-        source_filename=file.filename.strip() if file.filename else None,
+        source_filename=source_filename,
         source_content_type=parsed.source_content_type,
         source_byte_size=parsed.byte_size,
         source_sha256=parsed.sha256,
@@ -227,6 +234,13 @@ async def upload_document_in_knowledge_base(
         knowledge_base_id=knowledge_base.id,
     )
     db.add(document)
+    db.flush()
+    _add_parse_artifact_for_upload(
+        db,
+        document=document,
+        parsed=parsed,
+        source_filename=source_filename,
+    )
     db.commit()
     db.refresh(document)
     logger.info(
@@ -324,6 +338,7 @@ def delete_document(
         operation=DocumentOperation.DELETE,
     ):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="document not found")
+    UserMemoryService(db).mark_document_memories_stale(source_document_id=document_id, commit=False)
     _delete_document_dependencies(db, document_id)
     db.delete(document)
     db.commit()
@@ -623,6 +638,11 @@ def _delete_document_dependencies(db: Session, document_id: str) -> None:
     """Remove rows that hold foreign keys to a document or its chunks/runs."""
     db.execute(delete(CitationModel).where(CitationModel.document_id == document_id))
     db.execute(
+        delete(DocumentParseArtifactModel).where(
+            DocumentParseArtifactModel.document_id == document_id
+        )
+    )
+    db.execute(
         delete(StructuredKnowledgeEntityModel).where(
             StructuredKnowledgeEntityModel.document_id == document_id
         )
@@ -640,6 +660,34 @@ def _delete_document_dependencies(db: Session, document_id: str) -> None:
     db.execute(delete(ExtractionRunModel).where(ExtractionRunModel.document_id == document_id))
     db.execute(
         delete(DocumentPermissionModel).where(DocumentPermissionModel.document_id == document_id)
+    )
+
+
+def _add_parse_artifact_for_upload(
+    db: Session,
+    *,
+    document: DocumentModel,
+    parsed: ParsedDocumentUpload,
+    source_filename: str | None,
+) -> None:
+    artifact = parsed.parse_artifact
+    if artifact is None:
+        return
+    db.add(
+        DocumentParseArtifactModel(
+            document_id=document.id,
+            source_sha256=parsed.sha256,
+            source_filename=source_filename,
+            source_content_type=parsed.source_content_type,
+            source_type=parsed.source_type,
+            parser_provider=artifact.parser_provider,
+            parser_name=artifact.parser_name,
+            parser_version=artifact.parser_version,
+            parser_mode=artifact.parser_mode,
+            markdown_content=artifact.markdown_content,
+            elements_json=json.dumps(artifact.elements, ensure_ascii=False, sort_keys=True),
+            warnings_json=json.dumps(artifact.warnings, ensure_ascii=False, sort_keys=True),
+        )
     )
 
 

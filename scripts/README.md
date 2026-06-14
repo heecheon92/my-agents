@@ -10,10 +10,15 @@ repository root with `uv run python -m scripts.<name>`.
 | Command module | Purpose | Typical use |
 | --- | --- | --- |
 | `scripts.dev_pgvector` | Start and wire a disposable local Docker pgvector/Postgres database. | Local Postgres/pgvector development and migration smoke checks. |
-| `scripts.auth_approval` | Approve pending account signups and issue guest access codes. | Operator-only auth approval for public demos. |
+| `scripts.ops` | Interactive operational dispatcher that collects options and delegates to focused scripts. | Operator-friendly account/guest maintenance. |
+| `scripts.wipe_database` | Dangerously wipe the selected SQLite/Postgres database after explicit confirmations. | Rebuild a local/staging/production database from migrations after a backup/snapshot. |
+| `scripts.approve_account_signup` | Approve a pending account signup and print/send verification or mark email verified. | Manual signup approval and verification bypass. |
+| `scripts.resend_account_verification` | Refresh an expired/missing verification token for an approved unverified account. | Recover signups blocked by expired verification links. |
+| `scripts.reject_account_signup` | Reject a pending account signup. | Manual signup rejection. |
 | `scripts.local_demo_seed` | Seed a file-backed SQLite demo user, knowledge base, document, and extraction run. | Prepare a local demo database before starting the backend. |
 | `scripts.local_demo_smoke` | Smoke-test a running backend over HTTP only. | Verify the local V1 API path after seeding and starting the server. |
-| `scripts.issue_guest_access_code` | Legacy-compatible guest-code issue command. | Existing operator guest-code workflows. |
+| `scripts.issue_guest_access_code` | Issue a one-time guest access code for print-first operator delivery. | Guest-code workflows. |
+| `scripts.auth_approval` | Backward-compatible alias for `scripts.ops`. | Existing auth approval workflows. |
 | `scripts.learning_log` | Create numbered personal learning notes and update the learning index. | Add a new `docs/learning/` note without hand-numbering files. |
 
 ## How scripts are run
@@ -34,11 +39,11 @@ If you are in another directory, either `cd` into the repo first or use
 
 ```bash
 cd /Users/heecheonpark/Git/Portfolio/my-agents
-uv run python -m scripts.auth_approval --env pgvector.production guest issue --email guest@example.com
+uv run python -m scripts.ops --env pgvector.production guest issue --email guest@example.com
 
 # Equivalent from any working directory:
 uv --directory /Users/heecheonpark/Git/Portfolio/my-agents \
-  run python -m scripts.auth_approval \
+  run python -m scripts.ops \
   --env pgvector.production \
   guest issue \
   --email guest@example.com
@@ -200,58 +205,173 @@ uv run python -m scripts.local_demo_smoke \
 A successful run prints `Local V1 API smoke passed` plus the conversation/run
 IDs, answer-delta count, citation count, and event count.
 
-## `scripts.auth_approval`
+## `scripts.ops`
 
-Approves pending account signups and issues guest access codes from one operator
-surface. It loads `.env.pgvector.local` by default; pass `--env pgvector.production`
-only when intentionally operating on production.
+Interactive operational dispatcher. It gathers options and delegates to focused
+script modules such as `scripts.approve_account_signup`,
+`scripts.resend_account_verification`, `scripts.reject_account_signup`, and
+`scripts.issue_guest_access_code`. It loads
+`.env.pgvector.local` by default; pass `--env pgvector.production` only when
+intentionally operating on production.
 
 Current behavior:
 
-- `--interactive` prompts for the operation, email, email-delivery choice, language, and
-  guest-code options instead of requiring every flag upfront.
-- `account approve` marks a pending registered user as approved and prints a verification
-  token/link.
-- `account approve --send-email` additionally sends the localized verification email.
-- `account reject` marks a pending registered user rejected without deleting the audit row.
-- `guest issue` prints a one-time guest code and can also email it with `--send-email`.
+- `--interactive` shows numbered menus for operation, yes/no choices, and language,
+  so operators can choose common paths with minimal typing. Enter `q`, `quit`, or
+  `exit` at any interactive prompt to cancel gracefully. It still prompts for
+  values that cannot be inferred, such as email and optional guest-code fields.
+- `account approve` delegates to `scripts.approve_account_signup`.
+- `account resend-verification` delegates to `scripts.resend_account_verification`.
+- `account reject` delegates to `scripts.reject_account_signup`.
+- `guest issue` delegates to `scripts.issue_guest_access_code`.
+- `database wipe` delegates to `scripts.wipe_database` and prints a strong destructive-operation warning before it does anything.
 - Email content defaults to Korean; use `--lang en` for English.
 
 Commands:
 
 ```bash
-# Prompt for account/guest operation and required values.
-uv run python -m scripts.auth_approval --interactive
+# Show a numbered account/guest operation menu and prompt for required values.
+uv run python -m scripts.ops --interactive
 
 # Approve a pending signup and print the verification token/link.
-uv run python -m scripts.auth_approval account approve \
+uv run python -m scripts.ops account approve \
   --email user@example.com
 
 # Approve and also send the Korean verification email.
-uv run python -m scripts.auth_approval --env pgvector.production account approve \
+uv run python -m scripts.ops --env pgvector.production account approve \
+  --email user@example.com \
+  --send-email
+
+# Approve and mark the user's email verified immediately, without issuing a link.
+uv run python -m scripts.ops --env pgvector.production account approve \
+  --email user@example.com \
+  --mark-verified
+
+# Resend a fresh verification token/link after an old signup verification expired.
+uv run python -m scripts.ops account resend-verification \
   --email user@example.com \
   --send-email
 
 # Reject a pending signup.
-uv run python -m scripts.auth_approval account reject \
+uv run python -m scripts.ops account reject \
   --email user@example.com
 
 # Issue a guest code and print it.
-uv run python -m scripts.auth_approval guest issue \
+uv run python -m scripts.ops guest issue \
   --email guest@example.com
 
 # Issue a guest code and also send English email copy.
-uv run python -m scripts.auth_approval --env pgvector.production guest issue \
+uv run python -m scripts.ops --env pgvector.production guest issue \
   --email guest@example.com \
   --send-email \
   --lang en
+
+# DANGER: print a dry-run wipe plan for the selected database.
+uv run python -m scripts.ops --env pgvector.production database wipe
+
+# DANGER: execute the wipe only after backup/snapshot and exact database-name confirmation.
+uv run python -m scripts.ops --env pgvector.production database wipe \
+  --execute \
+  --confirm-wipe \
+  --database-name my_agents_prod \
+  --allow-remote-postgres
+```
+
+`scripts.auth_approval` remains a compatibility alias for the same dispatcher.
+
+## `scripts.wipe_database`
+
+Dangerous database wipe helper for intentionally rebuilding an environment.
+
+> **!!! DANGER: DATABASE WIPE PERMANENTLY DELETES ALL APP DATA AND SCHEMA IN THE SELECTED DATABASE. BACK UP THE DATABASE FIRST, STOP RUNNING APP PROCESSES, AND VERIFY THE ENV FILE AND DATABASE NAME BEFORE EXECUTING.**
+
+Current behavior:
+
+- Dry-run by default: prints the selected target and object count without deleting anything.
+- SQLite file-backed URLs are wiped by deleting the configured database file.
+- Postgres URLs are wiped by dropping and recreating the selected database's `public` schema.
+- `--execute` is required to delete anything.
+- `--confirm-wipe` is required with `--execute`.
+- `--database-name` must exactly match the selected SQLite filename or Postgres database name.
+- Non-local Postgres hosts require `--allow-remote-postgres` in addition to all other confirmations.
+- The script does **not** run migrations after wiping; run `uv run alembic upgrade head` as a separate audited step.
+
+Commands:
+
+```bash
+# Safe default: inspect the selected local pgvector database and print the wipe plan.
+uv run python -m scripts.wipe_database
+
+# Inspect a production target without deleting anything.
+uv run python -m scripts.wipe_database --env pgvector.production --allow-remote-postgres
+
+# Delete a local SQLite file-backed database after exact filename confirmation.
+uv run python -m scripts.wipe_database \
+  --env-file .env \
+  --execute \
+  --confirm-wipe \
+  --database-name local-dev.sqlite3
+
+# Delete a remote Postgres public schema after backup/snapshot and exact DB-name confirmation.
+uv run python -m scripts.wipe_database \
+  --env pgvector.production \
+  --execute \
+  --confirm-wipe \
+  --database-name my_agents_prod \
+  --allow-remote-postgres
+
+# Recreate schema after a wipe.
+MY_AGENTS_DATABASE_URL='<same-url>' uv run alembic upgrade head
+```
+
+Safety notes:
+
+- Take a provider-level snapshot/backup before production or staging wipes.
+- Stop application workers first so they do not keep using dropped tables or recreate SQLite files.
+- Prefer running the dry-run command immediately before the execute command and compare `database_name`.
+- Do not use this as a migration substitute when preserving data matters; use Alembic data migrations instead.
+
+## `scripts.approve_account_signup`
+
+Focused non-interactive script for account approval. It marks a pending registered user
+approved, then either prints/sends a verification token or directly marks the email
+verified with `--mark-verified`:
+
+```bash
+uv run python -m scripts.approve_account_signup \
+  --email user@example.com \
+  --send-email
+
+uv run python -m scripts.approve_account_signup \
+  --email user@example.com \
+  --mark-verified
+```
+
+## `scripts.resend_account_verification`
+
+Focused non-interactive script for approved accounts whose email verification
+link expired or was lost. It does not approve pending accounts; use
+`scripts.approve_account_signup` first for pending signups.
+
+```bash
+uv run python -m scripts.resend_account_verification \
+  --email user@example.com \
+  --send-email
+```
+
+## `scripts.reject_account_signup`
+
+Focused non-interactive script for account rejection:
+
+```bash
+uv run python -m scripts.reject_account_signup --email user@example.com
 ```
 
 ## `scripts.issue_guest_access_code`
 
-Legacy-compatible guest-only command for print-first operator delivery. Prefer
-`scripts.auth_approval guest issue` for new workflows. The public API records an email
-request but does not return a code to the browser unless guest auto-approval is enabled.
+Focused guest-only command for print-first operator delivery. The public API records an
+email request but does not return a code to the browser unless guest auto-approval is
+enabled. `scripts.ops guest issue` delegates to this script.
 
 Current behavior:
 

@@ -100,6 +100,7 @@ def graph_invoked_payload(
     retrieval_decision: RetrievalRoutingDecision,
     answer_mode: AnswerMode,
     selection_context: KnowledgeBaseSelectionContext,
+    memory_source_snapshot_json: str | None = None,
 ) -> dict:
     payload = {
         "route_label": route.label,
@@ -109,6 +110,7 @@ def graph_invoked_payload(
         "message_count": len(messages),
         "retrieved_chunk_count": len(retrieved_chunks),
     }
+    apply_memory_source_snapshot(payload, memory_source_snapshot_json)
     payload["agent_trace"] = agent_trace_payload(
         [
             graph_agent_trace_step(
@@ -122,6 +124,56 @@ def graph_invoked_payload(
     )
     payload.update(knowledge_base_selection_payload(selection_context))
     return payload
+
+
+def apply_memory_source_snapshot(
+    payload: dict,
+    memory_source_snapshot_json: str | None,
+) -> dict:
+    """Attach public-safe memory-source summary fields to a graph payload in place."""
+    if not memory_source_snapshot_json:
+        return payload
+    memory_snapshot = json.loads(memory_source_snapshot_json)
+    payload["memory_count"] = memory_snapshot.get("memory_count", 0)
+    payload["memory_conflict_count"] = memory_snapshot.get("conflict_count", 0)
+    categories = sorted(
+        {
+            str(memory["category"])
+            for memory in memory_snapshot.get("memories", [])
+            if isinstance(memory, dict) and memory.get("category")
+        }
+    )
+    if categories:
+        payload["memory_categories"] = categories
+    provenance_types = sorted(
+        {
+            str(memory["provenance_type"])
+            for memory in memory_snapshot.get("memories", [])
+            if isinstance(memory, dict) and memory.get("provenance_type")
+        }
+    )
+    if provenance_types:
+        payload["memory_provenance_types"] = provenance_types
+    return payload
+
+
+def update_graph_invoked_event_memory_snapshot(
+    db: Session,
+    event: AgentEventModel | None,
+    memory_source_snapshot_json: str | None,
+    *,
+    commit: bool = True,
+) -> None:
+    """Patch a persisted graph_invoked event once graph-owned recall has completed."""
+    if event is None or not memory_source_snapshot_json:
+        return
+    payload = json.loads(event.payload_json)
+    apply_memory_source_snapshot(payload, memory_source_snapshot_json)
+    event.payload_json = json.dumps(payload, sort_keys=True)
+    if commit:
+        db.commit()
+    else:
+        db.flush()
 
 
 def answer_composed_payload(

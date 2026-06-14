@@ -86,8 +86,11 @@ Generated from `MY_AGENTS_ENV_FILE= MY_AGENTS_RESPONSE_MODE=deterministic my_age
 | `POST` | `/groups` | `GroupCreateRequest` | `201 GroupResponse` | group scope creation |
 | `GET` | `/groups` | none | `200 array[GroupResponse]` | group list for current user |
 | `GET` | `/groups/{group_id}` | none | `200 GroupResponse` | group detail |
-| `POST` | `/groups/{group_id}/members` | `MemberUpsertRequest` | `204` | member add/upsert |
-| `PATCH` | `/groups/{group_id}/members/{user_id}` | `MemberPatchRequest` | `204` | member role update |
+| `POST` | `/groups/{group_id}/invitations` | `GroupInvitationCreateRequest` | `201 GroupInvitationResponse` | email invitation; does not reveal account existence |
+| `GET` | `/groups/{group_id}/invitations` | none | `200 array[GroupInvitationResponse]` | manager-only invitation review |
+| `GET` | `/groups/{group_id}/members` | none | `200 array[MemberResponse]` | manager-only accepted-member roster with display-only nickname; no member email |
+| `PATCH` | `/groups/{group_id}/members/{user_id}` | `MemberPatchRequest` | `204` | non-creating active-member role update by user ID |
+| `POST` | `/group-invitations/accept` | `GroupInvitationAcceptRequest` | `200 MemberResponse` | invited user accepts opaque token |
 | `GET` | `/groups/{group_id}/publish-requests` | none | `200 array[KnowledgePublishRequestResponse]` | group knowledge publish request list |
 | `POST` | `/groups/{group_id}/publish-requests` | `KnowledgePublishRequestCreateRequest` | `201 KnowledgePublishRequestResponse` | request to publish personal knowledge into group scope |
 | `POST` | `/groups/{group_id}/publish-requests/{request_id}/approve` | none | `200 KnowledgePublishRequestResponse` | group admin publish approval |

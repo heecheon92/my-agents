@@ -76,6 +76,10 @@ class AccountRejectedError(AuthError):
     """Raised when a registered user's signup request was rejected."""
 
 
+class AccountMutationNotAllowedError(AuthError):
+    """Raised when a principal cannot use password-backed account mutations."""
+
+
 class InvalidSessionError(AuthError):
     """Raised when a session token is absent, unknown, or revoked."""
 
@@ -118,10 +122,12 @@ class GuestAccessCodeResult:
 
 @dataclass(frozen=True)
 class AccountApprovalResult:
-    """Manual account approval result with printable verification token."""
+    """Manual account approval result with printable verification metadata."""
 
     user: UserModel
-    verification_token: str
+    verification_token: str | None
+    email_marked_verified: bool = False
+    was_email_already_verified: bool = False
 
 
 class AuthService:
@@ -141,6 +147,7 @@ class AuthService:
         self,
         *,
         email: str,
+        nickname: str,
         password: str,
         email_language: AuthEmailLanguage = "ko",
         auto_approve: bool = False,
@@ -164,6 +171,7 @@ class AuthService:
         user = UserModel(
             id=str(uuid.uuid4()),
             email=normalized_email,
+            nickname=nickname,
             password_hash=password_hash,
             account_type="registered",
             approval_status="approved" if auto_approve else "pending",
@@ -288,6 +296,37 @@ class AuthService:
         self._db.add(user)
         self._db.commit()
 
+    def update_nickname(
+        self,
+        *,
+        user_id: str,
+        current_password: str,
+        nickname: str,
+    ) -> UserModel:
+        """Update registered-user display metadata after current-password proof."""
+        user = self._registered_account_for_update(user_id)
+        self._verify_current_password(user, current_password)
+        user.nickname = nickname
+        self._db.add(user)
+        self._db.commit()
+        self._db.refresh(user)
+        return user
+
+    def update_password(
+        self,
+        *,
+        user_id: str,
+        current_password: str,
+        new_password: str,
+    ) -> None:
+        """Replace a registered-user password and revoke all existing sessions."""
+        user = self._registered_account_for_update(user_id)
+        self._verify_current_password(user, current_password)
+        user.password_hash = self._password_hasher.hash(new_password)
+        self._revoke_sessions_for_user(user.id)
+        self._db.add(user)
+        self._db.commit()
+
     def authenticate_session(self, session_token: str | None) -> Principal:
         session = self._active_session(session_token)
         user = self._db.get(UserModel, session.user_id)
@@ -323,8 +362,13 @@ class AuthService:
         self._db.refresh(request)
         return request
 
-    def approve_account_signup(self, *, email: str) -> AccountApprovalResult:
-        """Approve a pending registered account and create a verification token."""
+    def approve_account_signup(
+        self,
+        *,
+        email: str,
+        mark_email_verified: bool = False,
+    ) -> AccountApprovalResult:
+        """Approve a registered account and either issue or bypass email verification."""
         normalized_email = _normalize_email(email)
         user = self._db.scalar(select(UserModel).where(UserModel.email == normalized_email))
         if user is None or user.account_type != "registered":
@@ -335,18 +379,50 @@ class AuthService:
             user.approval_status = "approved"
             user.approved_at = datetime.now(UTC)
             user.rejected_at = None
+        was_email_already_verified = user.email_verified_at is not None
+        token = None
+        if mark_email_verified:
+            if user.email_verified_at is None:
+                user.email_verified_at = datetime.now(UTC)
+        else:
+            token = self._create_token(
+                user_id=user.id,
+                purpose="email_verification",
+                ttl=EMAIL_VERIFICATION_TOKEN_TTL,
+            )
+        self._db.add(user)
+        self._db.commit()
+        self._db.refresh(user)
+        return AccountApprovalResult(
+            user=user,
+            verification_token=token,
+            email_marked_verified=mark_email_verified,
+            was_email_already_verified=was_email_already_verified,
+        )
+
+    def resend_account_verification(self, *, email: str) -> AccountApprovalResult:
+        """Create a fresh email verification token for an approved, unverified account."""
+        normalized_email = _normalize_email(email)
+        user = self._db.scalar(select(UserModel).where(UserModel.email == normalized_email))
+        if user is None or user.account_type != "registered":
+            raise InvalidAuthTokenError("account not found")
+        if user.approval_status == "pending":
+            raise AccountApprovalRequiredError("account approval pending")
+        if user.approval_status == "rejected":
+            raise AccountRejectedError("account approval rejected")
+        if user.approval_status != "approved" or user.email_verified_at is not None:
+            raise InvalidAuthTokenError("account is not eligible for verification resend")
         token = self._create_token(
             user_id=user.id,
             purpose="email_verification",
             ttl=EMAIL_VERIFICATION_TOKEN_TTL,
         )
-        self._db.add(user)
         self._db.commit()
         self._db.refresh(user)
         return AccountApprovalResult(user=user, verification_token=token)
 
     def reject_account_signup(self, *, email: str) -> UserModel:
-        """Reject a pending registered account without deleting the audit row."""
+        """Reject a pending account signup without deleting the audit row."""
         normalized_email = _normalize_email(email)
         user = self._db.scalar(select(UserModel).where(UserModel.email == normalized_email))
         if user is None or user.account_type != "registered":
@@ -533,6 +609,7 @@ class AuthService:
         user = UserModel(
             id=str(uuid.uuid4()),
             email=f"guest-{uuid.uuid4().hex}@guest.example.com",
+            nickname="Guest",
             password_hash="guest-login-disabled",
             email_verified_at=None,
             account_type="guest",
@@ -580,6 +657,22 @@ class AuthService:
         ):
             raise InvalidSessionError("invalid session")
         return session
+
+    def _registered_account_for_update(self, user_id: str) -> UserModel:
+        user = self._db.get(UserModel, user_id)
+        if user is None:
+            raise InvalidSessionError("invalid session")
+        if user.account_type != "registered":
+            raise AccountMutationNotAllowedError("registered account required")
+        return user
+
+    def _verify_current_password(self, user: UserModel, current_password: str) -> None:
+        try:
+            is_valid = self._password_hasher.verify(user.password_hash, current_password)
+        except VerifyMismatchError as exc:
+            raise InvalidCredentialsError("invalid current password") from exc
+        if not is_valid:
+            raise InvalidCredentialsError("invalid current password")
 
     def _create_token(self, *, user_id: str, purpose: AuthTokenPurpose, ttl: timedelta) -> str:
         token = secrets.token_urlsafe(32)

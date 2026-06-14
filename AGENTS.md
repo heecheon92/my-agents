@@ -19,12 +19,12 @@ The current product shape is a FastAPI + LangGraph assistant/router foundation t
 - `my_agents/agents/general_assistant/classifier.py` owns deterministic route classification for the general assistant.
 - `my_agents/agents/general_assistant/responders.py` owns deterministic and OpenAI-backed reply composition for the general assistant.
 - `my_agents/agents/capabilities.py` describes route capability metadata without claiming separate agents executed.
-- `my_agents/simulated_agents/` contains learning-only graph experiments that are not production API/CLI surfaces.
+- Learning-only simulated-agent graph experiments live in the separate `~/Git/Playground/langgraph-playground` repository.
 - `my_agents/settings.py` owns environment-driven runtime configuration.
 - `my_agents/schemas.py` owns Pydantic request/response contracts.
 - `tests/` defines the behavior contract and must stay offline by default.
 
-The graph currently has one production assistant/router path. Route labels and capability metadata describe behavior honestly; they are not proof that separate specialized agents ran. Simulation-only graphs live under `my_agents/simulated_agents/`.
+The graph currently has one production assistant/router path. Route labels and capability metadata describe behavior honestly; they are not proof that separate specialized agents ran. Simulation-only graph practice belongs in `~/Git/Playground/langgraph-playground`, not this backend repo.
 
 ## Hard constraints
 
@@ -34,7 +34,7 @@ The graph currently has one production assistant/router path. Route labels and c
 - Keep deterministic mode available for tests and offline smoke checks. The normal local response mode is OpenAI-backed and requires `OPENAI_API_KEY` before chat requests can succeed.
 - Never commit real secrets. Do not read or print `.env` contents unless the user explicitly asks and understands the risk.
 - Keep `.env.example` safe and secret-free.
-- Do not claim live specialized agents, persistent memory, hosted deployment, or frontend functionality unless implemented and tested.
+- Do not claim live specialized agents, hosted deployment, frontend functionality, or memory behavior beyond the implemented opt-in long-term memory surface unless it is implemented and tested.
 
 ## Environment policy
 
@@ -60,7 +60,7 @@ MY_AGENTS_OPENAI_REASONING_EFFORT=low
 MY_AGENTS_OPENAI_VERBOSITY=low
 ```
 
-If adding conversation memory later, prefer LangGraph checkpointers as the app-owned source of truth. OpenAI `previous_response_id` may be stored as one field inside graph state, but should not replace application state.
+For memory architecture, do not treat LangGraph checkpointers as conversation history or long-term memory. Product DB remains the source of truth for visible transcripts/runs/citations/audit and memory governance; LangGraph Store should become the target long-term memory runtime; run-scoped checkpointers are for HITL/resume execution state only. OpenAI `previous_response_id` may be stored as one field inside compact graph/run state, but should not replace application state.
 
 ## Dependency policy
 
@@ -75,7 +75,7 @@ If adding conversation memory later, prefer LangGraph checkpointers as the app-o
 - Python target is defined in `pyproject.toml`.
 - Use typed Pydantic schemas at API boundaries.
 - Keep route handlers thin; put production-surface agent graph/classifier/responder logic under `my_agents/agents/<agent_name>/`.
-- Put learning-only or simulation-only architectures under `my_agents/simulated_agents/<agent_name>/`; do not import them into production API/CLI surfaces unless explicitly promoted.
+- Put learning-only or simulation-only architectures in `~/Git/Playground/langgraph-playground`; do not add them back to this production backend unless explicitly promoted.
 - Keep graph state explicit and small.
 - Keep responses honest: classify, explain, and disclose current behavior.
 - Prefer small, reversible changes with tests.
@@ -114,11 +114,12 @@ Prefer this sequence:
 
 1. Preserve deterministic classify/router contract.
 2. Keep OpenAI-backed reply behavior as the normal local mode while preserving deterministic tests.
-3. Add LangGraph checkpointer-backed short-term memory.
-4. Store OpenAI `previous_response_id` only after graph thread state exists.
-5. Add real tool/function capabilities one at a time with tests.
-6. Add durable storage only when the behavior requires it.
-7. Keep frontend separate.
+3. Keep current opt-in Product DB memory as a governance scaffold while migrating runtime recall/extraction toward LangGraph-native Store + `memory_graph`.
+4. Add run-scoped LangGraph checkpointer support only for HITL/resume execution state after graph state is compact.
+5. Store OpenAI `previous_response_id` only after graph/run state exists.
+6. Add real tool/function capabilities one at a time with tests.
+7. Add durable storage only when the behavior requires it.
+8. Keep frontend separate.
 
 ## Documentation expectations
 
@@ -138,23 +139,23 @@ Rules for README maintenance:
 Agent-level README convention:
 
 - Every concrete production-surface agent implementation folder under `my_agents/agents/<agent_name>/` should have its own bilingual README pair.
-- Every concrete simulation-only implementation folder under `my_agents/simulated_agents/<agent_name>/` should also have its own bilingual README pair.
+- Concrete simulation-only implementation folders belong in `~/Git/Playground/langgraph-playground` and should keep their own documentation there.
 - `README.md` is Korean.
 - `README.en.md` is English.
 - Agent README files should cross-link to each other near the top, just like the repo-root READMEs.
 - Agent README files should explain the agent purpose, file responsibilities, graph/tool flow, current behavior, planned extension seams, and relevant tests.
 - Update the agent README pair whenever that agent's behavior, graph shape, tool policy, state contract, or extension guidance changes.
 
-Learning documentation that supports the owner's learning path lives under `docs/learning/`. Keep the root numbered sequence for personal learning logs, and use subfolders such as `docs/learning/agent-lab/` for focused learning tracks that came from conversations. Agent-generated project architecture docs that are not primarily learning logs should live outside `docs/learning/` (for the product chat service, use `docs/product-chat-service/en/`).
+Learning documentation that supports the owner's learning path lives under `docs/learning/`. Keep the root numbered sequence for personal learning logs, and use subfolders such as `docs/learning/project-notes/` for focused project notes that came from conversations. Agent-generated project architecture docs that are not primarily learning logs should live outside `docs/learning/` (for the product chat service, use `docs/product-chat-service/en/`).
 
-Simulated-agent idea references live under `docs/learning/agent-lab/simulated-agent-candidate-materials/`. Use that catalog as optional inspiration when suggesting or bootstrapping learning-only simulated agents, especially when the user asks for practice ideas. It is not mandatory or exclusive; agents may propose other ideas when they better fit the user's current goal.
+Reusable simulated-agent pattern references live in `~/Git/Playground/langgraph-playground/docs/agent-patterns/`. Personal my-agents-specific learning notes may remain under `docs/learning/project-notes/`, but runnable simulated-agent practice code belongs in the playground repo.
 
 Rules for learning-oriented work:
 
 - Treat this repo as a study project as well as a codebase.
 - When implementation becomes more abstract, decide whether the explanation is for the owner's learning path or for project architecture. Learning-path material belongs under `docs/learning/`; project architecture docs can live in a project-specific docs folder.
 - Create root numbered personal learning notes when the user wants a conversation lesson preserved as a personal log.
-- Use learning subfolders, such as `docs/learning/agent-lab/`, for focused learning tracks that should not pollute the root numbered sequence.
+- Use learning subfolders, such as `docs/learning/project-notes/`, for focused project notes that should not pollute the root numbered sequence.
 - Every personal learning note except `docs/learning/README.md` should include front matter with immutable `created`, refreshed `updated`, `status`, `topics`, and `related_code`.
 - Every personal learning note should end with a concise `## Revision history` section.
 - For new user-requested personal learning notes, prefer `uv run python scripts/learning_log.py` so numbering, front matter, revision history, and index updates stay consistent.
@@ -182,7 +183,7 @@ Mermaid diagram guidance for Markdown work:
 When behavior changes, update:
 
 - `README.md` and `README.en.md` for user-facing setup and examples.
-- `docs/learning/` when the content supports the owner's learning path; use `docs/learning/agent-lab/` for generated agent-lab learning notes and `docs/product-chat-service/en/` for service architecture docs.
+- `docs/learning/` when the content supports the owner's learning path; use `docs/learning/project-notes/` for focused my-agents project notes and `docs/product-chat-service/en/` for service architecture docs.
 - `.env.example` for safe env knobs.
 - tests for the behavior contract.
 - this `AGENTS.md` if project constraints or architecture conventions change.

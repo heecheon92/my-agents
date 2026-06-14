@@ -92,6 +92,7 @@ class AgentRunModel(Base):
     resolved_knowledge_base_ids_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     resolved_knowledge_base_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     retrieval_source_snapshot_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    memory_source_snapshot_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     assistant_message_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False

@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import json
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from langchain_core.messages import BaseMessage
 from rich import print as rich_print
 from sqlalchemy.orm import Session
 
-from my_agents.agents.context_forge import ContextForgeService
+from my_agents.agents.context_forge import invoke_context_forge_graph
 from my_agents.agents.context_forge.contracts import ContextForgeRequest, RetrievalEvidence
 from my_agents.conversations.schemas import ConversationClarificationRequest
 from my_agents.knowledge.auth import KnowledgeBaseSelectionContext
@@ -19,11 +21,11 @@ from my_agents.knowledge.routing import (
     RetrievalRoutingDecision,
     is_relevant_retrieval_result,
 )
+from my_agents.knowledge.source_locations import parse_source_location_json
 
 logger = logging.getLogger(__name__)
 
 _RETRIEVED_CONTEXT_SNIPPET_CHARS = 1200
-_MAX_CONTEXTFORGE_RETRIES = 1
 _INSUFFICIENT_EVIDENCE_REPLY = (
     "I couldn't find enough relevant authorized document evidence to answer that safely. "
     "Please choose or upload the source document and try again."
@@ -53,33 +55,17 @@ def prepare_retrieval_context(
     messages: list[BaseMessage],
     selection_context: KnowledgeBaseSelectionContext,
 ) -> ConversationRetrievalContext:
-    service = ContextForgeService(db)
-    result = service.retrieve(
-        ContextForgeRequest(
+    graph_result = invoke_context_forge_graph(
+        db=db,
+        request=ContextForgeRequest(
             user_id=user_id,
             conversation_id=conversation_id,
             query=message,
             messages=messages,
             selection_context=selection_context,
-        )
+        ),
     )
-    retrieval_attempt_count = 1
-    if _needs_required_evidence_retry(result):
-        retrieval_attempt_count += 1
-        retry_result = service.retrieve(
-            ContextForgeRequest(
-                user_id=user_id,
-                conversation_id=conversation_id,
-                query=_retry_query_for_required_evidence(message, result.decision.rewritten_query),
-                messages=messages,
-                selection_context=selection_context,
-            )
-        )
-        result = retry_result
-    insufficient_evidence = _requires_document_evidence_without_context(
-        route=result.decision.route,
-        retrieved_chunks=result.retrieved_chunks,
-    )
+    result = graph_result.result
     return ConversationRetrievalContext(
         decision=result.decision,
         answer_mode=result.answer_mode,
@@ -87,8 +73,8 @@ def prepare_retrieval_context(
         retrieval_latency_ms=result.retrieval_latency_ms,
         knowledge_base_selection=selection_context,
         retrieval_evidence=result.evidence,
-        retrieval_attempt_count=retrieval_attempt_count,
-        insufficient_evidence=insufficient_evidence,
+        retrieval_attempt_count=graph_result.retrieval_attempt_count,
+        insufficient_evidence=graph_result.insufficient_evidence,
     )
 
 
@@ -100,12 +86,17 @@ def graph_input_for_run(
     retrieval_context: ConversationRetrievalContext,
 ) -> dict[str, object]:
     used_chunks = chunks_used_for_answer(retrieval_context)
+    retrieved_context = retrieved_context_for_graph(used_chunks)
     return {
         "messages": messages,
         "principal_id": user_id,
         "conversation_id": conversation_id,
         "retrieved_chunk_ids": [item.chunk.id for item in used_chunks],
-        "retrieved_context": retrieved_context_for_graph(used_chunks),
+        "retrieved_context": retrieved_context,
+        # Memory recall is graph-owned. These defaults keep test doubles and legacy
+        # graph runners compatible; the real graph overwrites them in `retrieve_memory`.
+        "memory_context": [],
+        "source_conflicts": [],
         "retrieval_route": retrieval_context.decision.route,
         "answer_mode": retrieval_context.answer_mode,
         "document_scope": retrieval_context.decision.document_scope,
@@ -133,36 +124,6 @@ def chunks_used_for_answer(
     ]
 
 
-def _needs_required_evidence_retry(result) -> bool:  # noqa: ANN001
-    if _MAX_CONTEXTFORGE_RETRIES < 1:
-        return False
-    return _requires_document_evidence_without_context(
-        route=result.decision.route,
-        retrieved_chunks=result.retrieved_chunks,
-    )
-
-
-def _requires_document_evidence_without_context(
-    *,
-    route: str,
-    retrieved_chunks: list[RetrievedChunk],
-) -> bool:
-    if route != "retrieval_required":
-        return False
-    return not any(
-        is_relevant_retrieval_result(route=route, source=item.source, score=item.score)
-        for item in retrieved_chunks
-    )
-
-
-def _retry_query_for_required_evidence(message: str, rewritten_query: str) -> str:
-    retry_terms = "authorized document source citation evidence"
-    base_query = rewritten_query.strip() or message.strip()
-    if retry_terms in base_query.casefold():
-        return base_query
-    return f"{base_query} {retry_terms}".strip()
-
-
 def retrieved_context_for_graph(retrieved_chunks: list[RetrievedChunk]) -> list[dict[str, object]]:
     return [
         {
@@ -171,11 +132,61 @@ def retrieved_context_for_graph(retrieved_chunks: list[RetrievedChunk]) -> list[
             "title": item.document.title,
             "snippet": item.chunk.content[:_RETRIEVED_CONTEXT_SNIPPET_CHARS],
             "source_page": item.chunk.source_page,
+            "source_location_json": parse_source_location_json(item.chunk.source_location_json),
             "source_filename": item.document.source_filename,
             "source": item.source,
         }
         for item in retrieved_chunks
     ]
+
+
+def memory_source_snapshot_json(
+    *,
+    memory_context: list[dict[str, object]],
+    source_conflicts: list[dict[str, object]],
+) -> str | None:
+    """Return a redacted run-audit snapshot for memory-influenced context."""
+    if not memory_context and not source_conflicts:
+        return None
+    snapshot = {
+        "memory_count": len(memory_context),
+        "conflict_count": len(source_conflicts),
+        "memories": [
+            {
+                "id": memory.get("id"),
+                "category": memory.get("category"),
+                "provenance_type": memory.get("provenance_type"),
+                "source_conversation_id": memory.get("source_conversation_id"),
+                "source_message_id": memory.get("source_message_id"),
+                "source_run_id": memory.get("source_run_id"),
+                "source_document_id": memory.get("source_document_id"),
+            }
+            for memory in memory_context
+        ],
+        "conflicts": [
+            {
+                "primary": conflict.get("primary"),
+                "secondary": conflict.get("secondary"),
+                "material": conflict.get("material"),
+            }
+            for conflict in source_conflicts
+        ],
+    }
+    return json.dumps(snapshot, sort_keys=True)
+
+
+def graph_memory_source_snapshot_json(graph_state: Mapping[str, object]) -> str | None:
+    """Return the redacted memory snapshot from graph-owned state, when present."""
+    return memory_source_snapshot_json(
+        memory_context=_mapping_list(graph_state.get("memory_context")),
+        source_conflicts=_mapping_list(graph_state.get("source_conflicts")),
+    )
+
+
+def _mapping_list(value: object) -> list[dict[str, object]]:
+    if not isinstance(value, list):
+        return []
+    return [dict(item) for item in value if isinstance(item, Mapping)]
 
 
 def log_retrieval_context_for_llm(
@@ -224,6 +235,7 @@ def _debug_chunk_payload(item: RetrievedChunk, *, snippet_limit: int) -> dict[st
         "title": item.document.title,
         "source_filename": item.document.source_filename,
         "source_page": item.chunk.source_page,
+        "source_location_json": parse_source_location_json(item.chunk.source_location_json),
         "source": item.source,
         "score": item.score,
         "snippet": item.chunk.content[:snippet_limit],

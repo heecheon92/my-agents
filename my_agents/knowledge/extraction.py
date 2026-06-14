@@ -26,6 +26,7 @@ from my_agents.knowledge.models import (
     DocumentChunkModel,
     DocumentMetadataProfileModel,
     DocumentModel,
+    DocumentParseArtifactModel,
     EntityMentionModel,
     EntityModel,
     EntityRelationshipModel,
@@ -35,6 +36,7 @@ from my_agents.knowledge.models import (
     StructuredKnowledgeEntityType,
 )
 from my_agents.knowledge.pdf_uploads import PDF_PAGE_SEPARATOR
+from my_agents.knowledge.source_locations import source_location_json_for_offsets
 from my_agents.settings import get_settings
 
 _ENTITY_PATTERN = re.compile(
@@ -128,7 +130,13 @@ class KnowledgeExtractionService:
         try:
             self._mark_progress(run, status=ExtractionStatus.RUNNING, stage="chunking", percent=15)
             self._clear_prior_extraction_artifacts(document.id)
-            chunks = list(_chunk_document_text(document))
+            parse_artifact_elements_json = _parse_artifact_elements_json(self._db, document.id)
+            chunks = list(
+                _chunk_document_text(
+                    document,
+                    parse_artifact_elements_json=parse_artifact_elements_json,
+                )
+            )
             logger.info(
                 "knowledge_ingestion.chunked run_id=%s document_id=%s chunk_count=%d",
                 run_id,
@@ -173,9 +181,11 @@ class KnowledgeExtractionService:
             entity_by_name = self._get_or_create_entities(
                 name for names in entity_names_by_chunk for name in names
             )
-            for ordinal, ((content, start, end, source_page), embedding) in enumerate(
-                zip(chunks, embeddings, strict=True)
-            ):
+            chunk_embeddings = zip(chunks, embeddings, strict=True)
+            for ordinal, (
+                (content, start, end, source_page, source_location_json),
+                embedding,
+            ) in enumerate(chunk_embeddings):
                 chunk = DocumentChunkModel(
                     document_id=document.id,
                     extraction_run_id=run.id,
@@ -184,6 +194,7 @@ class KnowledgeExtractionService:
                     start_offset=start,
                     end_offset=end,
                     source_page=source_page,
+                    source_location_json=source_location_json,
                     embedding_json=json.dumps(embedding),
                 )
                 self._db.add(chunk)
@@ -233,6 +244,7 @@ class KnowledgeExtractionService:
                                 sort_keys=True,
                             ),
                             source_page=source_page,
+                            source_location_json=source_location_json,
                             start_offset=start + structured.start,
                             end_offset=start + structured.end,
                             confidence=structured.confidence,
@@ -420,10 +432,39 @@ class KnowledgeExtractionService:
         )
 
 
-def _chunk_document_text(document: DocumentModel) -> list[tuple[str, int, int, int | None]]:
+def _chunk_document_text(
+    document: DocumentModel,
+    *,
+    parse_artifact_elements_json: str | None = None,
+) -> list[tuple[str, int, int, int | None, str | None]]:
     if document.source_type == "pdf":
-        return _chunk_pdf_text(document.content)
-    return [(content, start, end, None) for content, start, end in _chunk_text(document.content)]
+        return [
+            (content, start, end, source_page, None)
+            for content, start, end, source_page in _chunk_pdf_text(document.content)
+        ]
+    return [
+        (
+            content,
+            start,
+            end,
+            None,
+            source_location_json_for_offsets(
+                elements_json=parse_artifact_elements_json,
+                start_offset=start,
+                end_offset=end,
+            ),
+        )
+        for content, start, end in _chunk_text(document.content)
+    ]
+
+
+def _parse_artifact_elements_json(db: Session, document_id: str) -> str | None:
+    artifact = db.scalar(
+        select(DocumentParseArtifactModel)
+        .where(DocumentParseArtifactModel.document_id == document_id)
+        .order_by(DocumentParseArtifactModel.created_at.desc())
+    )
+    return artifact.elements_json if artifact is not None else None
 
 
 def _stores_sql_embedding_vector(db: Session) -> bool:

@@ -36,7 +36,7 @@ flowchart LR
 
 Current honest status:
 
-> The project is a strong **v1-draft backend foundation** with a basic hosted demo path now proven: auth, permissions, server-owned conversations, text/PDF/Markdown ingestion, permission-aware retrieval, citations, events, migrations, pgvector-backed Postgres retrieval with JSON fallback, SSE assistant streaming, Render backend deployment, Vercel frontend CI/CD, Neon Postgres, and Resend HTTP email verification through `my-agents.dev` exist as a thin end-to-end slice. It is not yet a production-ready v1 because broad production ingestion performance, retrieval-quality evals/reranking, durable background queues, stronger deployment-grade auth hardening, deploy diagnostic tuning, and operations remain.
+> The project is a strong **controlled-alpha product preview** after a fresh hosted deploy smoke: auth with required display nicknames, invite-only groups, manager-only rosters, personal/group knowledge bases, hidden group-upload staging, publish-request review, text/PDF/Markdown ingestion, permission-aware retrieval, citations, events, pgvector-backed Postgres retrieval with JSON fallback, SSE assistant streaming, Render backend deployment, Vercel frontend CI/CD, Neon Postgres, and Resend HTTP email through `my-agents.dev` exist as a coherent thin end-to-end slice. It is worth showing to trusted testers with alpha framing, but it is not production-ready because broad production ingestion performance, retrieval-quality evals/reranking, durable background queues, account/profile lifecycle, shared rate limits, stronger deployment-grade auth hardening, automated smoke/migration gates, and production security review remain.
 
 ## 1. Backend foundation
 
@@ -65,7 +65,9 @@ Current honest status:
 - [x] Terminal CLI chat.
 - [x] CLI token streaming through LangGraph `graph.stream(...)`.
 - [x] Product chat uses the graph inside conversation runs.
-- [ ] LangGraph checkpointer-backed memory for durable thread state.
+- [x] Opt-in Product DB-backed long-term memory governance scaffold with settings, CRUD, suggest-confirm, provenance, staleness, and redacted run snapshots.
+- [ ] LangGraph Store-backed memory runtime plus a separate `memory_graph` extraction/suggest-confirm workflow; Product DB remains the governance/audit ledger.
+- [ ] Run-scoped LangGraph checkpointer for HITL/resume execution state after graph state is compact; do not use checkpointer as conversation history or long-term memory.
 - [ ] Real tool/function capabilities exposed through the graph.
 - [ ] Production multi-agent orchestration surface.
 - [later] Additional specialized production agents beyond the current general assistant.
@@ -98,16 +100,18 @@ Current honest status:
 
 - [x] Group creation and listing.
 - [x] Group detail lookup with safe denial.
-- [x] Add group members.
-- [x] Update member roles.
-- [x] Group owner/admin/member/viewer-style foundation.
+- [x] Invite-only group membership lifecycle: owner/admin email invitations, opaque token acceptance, resend/cancel/update pending invitations, and no public user discovery.
+- [x] Manager-only accepted-member roster with display-only duplicate-allowed nicknames and no member emails.
+- [x] Non-creating member role updates for already-active members.
+- [x] Group owner/admin/editor/viewer foundation.
+- [x] Personal-to-group knowledge publish requests: create/list/approve/reject for whole personal KBs and single-document copy into group KBs.
 - [x] Document-level permission model.
 - [x] Deny-by-default authorization service.
 - [x] Safe `403`/`404` denial behavior where appropriate.
 - [x] Permission tests for owner/member/outsider cases.
 - [~] Permission model is intentionally small and should be expanded only when product behavior requires it.
 - [ ] Organization/workspace model beyond simple groups.
-- [ ] Sharing links / invitations.
+- [ ] Public sharing links beyond email invitations.
 - [ ] Audit trail for permission changes.
 - [ ] Rich RBAC/ABAC policy layer.
 
@@ -117,6 +121,7 @@ Current honest status:
 - [x] Patch document permissions.
 - [x] Create/list knowledge bases.
 - [x] Personal and group knowledge-base scope foundation.
+- [x] Hidden `team_upload_staging` KB purpose for private group-upload staging before approval.
 - [x] Link documents to knowledge bases.
 - [x] Text document ingestion endpoint: `POST /documents/{document_id}/ingest`.
 - [x] Extraction-run listing: `GET /documents/{document_id}/extraction-runs`.
@@ -158,7 +163,7 @@ Current honest status:
 - [x] Ingestion-time structured/entity extraction for domain-shaped artifacts, starting with API docs: detect HTTP method/path patterns, OpenAPI-like tables, request/response sections, config keys, commands, error codes, database tables, and other enumerable entities with source page/chunk provenance.
 - [x] Query-time intent routing for enumeration/structured extraction questions such as “list endpoints,” “show env vars,” “what commands are documented,” or “list error codes,” so the RAG agent can retrieve by extracted entity type rather than relying only on semantic similarity to the user wording.
 - [ ] Structured retrieval/answer contracts for extracted entities, e.g. endpoint tables with method, path, summary, source document/page, confidence, and missing/ambiguous-source notes.
-- [ ] RAG source policy for unified `knowledge_base_selection` across authorized personal, published, and team KBs; preserve owner-private transcripts, membership-scoped team knowledge, no source leakage, and no ghost knowledge from deleted documents.
+- [~] RAG source policy for unified `knowledge_base_selection` across authorized personal, published, and group KBs exists for the current product path; owner-private transcripts, membership-scoped group knowledge, hidden staging exclusion, and no source leakage are covered, while deletion/retention edge cases still need production hardening.
 - [~] Hybrid retrieval strategy: vector + keyword/full-text + graph/entity/structured expansion with deterministic fusion is started; tunable weights and production full-text indexes remain guided by [`docs/product-chat-service/en/12-retrieval-agent-hybrid-reference.md`](./docs/product-chat-service/en/12-retrieval-agent-hybrid-reference.md).
 - [~] Cross-encoder reranker stage over top-k authorized candidates after vector/full-text retrieval; the interface and `MY_AGENTS_RERANKER_MODE=cross_encoder` path exist, while production model packaging/latency evals remain follow-up work. Local tests stay offline through the deterministic default and fake-model unit coverage. On small hosted runtimes, switch to deterministic mode if memory/startup latency becomes unstable.
 - [ ] Query expansion stage for synonyms/related concepts while preserving original user intent.
@@ -285,11 +290,12 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
 
 ## 13. Near-term recommended sequence
 
-1. **Hosted demo cleanup and smoke verification**
-   - Promote frontend `develop` to `main` when auth landing route fixes need Vercel production deployment.
-   - Run hosted smoke: signup -> email verification -> login -> create/upload small document -> ingest -> chat with citation.
+1. **Controlled alpha deploy smoke and tester handoff**
+   - Deploy backend and frontend together after the latest nickname, invite-only group, publish-review, and route-addressable Groups changes.
+   - Run hosted smoke: signup with nickname -> email verification/approval as configured -> login -> group invitation/acceptance -> small document upload/ingest -> publish request review/approval -> cited group-knowledge chat.
    - Keep permanent redacted `DEPLOY_DIAG` logs available for hosted smoke/debug; tune noisy call sites only if needed.
    - Record smoke evidence and remaining risks in `docs/product-chat-service/en/15-deployment-troubleshooting-log.md` if anything new is found.
+   - Invite only trusted testers at first, with explicit alpha framing and a warning against sensitive uploads.
 
 2. **Hosted ingestion performance pass**
    - Treat Render free-tier PDF/Markdown ingestion slowness as a resource/process-isolation limitation, not a parser correctness bug.
@@ -347,7 +353,7 @@ The backend can be called v1 when all of the following are true:
 - [x] Document ingestion supports realistic uploaded text-based file types: PDF with page provenance, Markdown, and plain text.
 - [~] Citations include persisted document/chunk/snippet provenance and refresh-safe run detail; richer page/offset/source-preview/confidence metadata remains follow-up work.
 - [x] Agent events are useful to the UI without exposing hidden chain-of-thought or unauthorized data; current events are redacted and covered by event/redaction tests.
-- [x] Tests pass offline by default; latest local verification on 2026-05-30 was `278 passed, 2 skipped`.
+- [x] Tests pass offline by default; latest full local backend verification should be read from `docs/implementation-tracking.md` before release decisions.
 - [ ] Optional Postgres/Neon smoke tests pass against a dedicated test database.
 - [x] Korean and English READMEs remain accurate for the current backend status and setup surface.
 - [x] No real secrets are committed or printed; tracked secret-like matches are safe placeholders only.

@@ -2,30 +2,40 @@
 
 from __future__ import annotations
 
+from io import BytesIO
+
 from fastapi.testclient import TestClient
+from openpyxl import Workbook
 from sqlalchemy import select
 
 from my_agents.api import create_app
 from my_agents.knowledge.models import (
     DocumentModel,
+    DocumentParseArtifactModel,
     KnowledgeBasePublicationModel,
     KnowledgePublishRequestModel,
 )
 from my_agents.knowledge.retrieval import RetrievalService
 from my_agents.persistence.database import get_database_session
 
-from .conftest import verify_latest_auth_email
+from .conftest import latest_auth_email_token, verify_latest_auth_email
 
 
-def _client(monkeypatch) -> TestClient:  # noqa: ANN001 - pytest monkeypatch fixture
+def _client(
+    monkeypatch,  # noqa: ANN001 - pytest monkeypatch fixture
+    *,
+    raise_server_exceptions: bool = True,
+) -> TestClient:
     monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
     monkeypatch.setenv("MY_AGENTS_SESSION_COOKIE_SECURE", "false")
-    return TestClient(create_app())
+    return TestClient(create_app(), raise_server_exceptions=raise_server_exceptions)
 
 
 def _signup_login(client: TestClient, email: str) -> str:
     password = "correct horse battery staple"
-    signup = client.post("/auth/signup", json={"email": email, "password": password})
+    signup = client.post(
+        "/auth/signup", json={"email": email, "nickname": "Test User", "password": password}
+    )
     assert signup.status_code == 201
     verify_latest_auth_email(client, email)
     login = client.post("/auth/login", json={"email": email, "password": password})
@@ -39,9 +49,22 @@ def _create_group(owner: TestClient, *, name: str = "Publish Group") -> str:
     return response.json()["id"]
 
 
-def _add_member(owner: TestClient, group_id: str, user_id: str, role: str = "viewer") -> None:
-    response = owner.post(f"/groups/{group_id}/members", json={"user_id": user_id, "role": role})
-    assert response.status_code == 204
+def _invite_and_accept_member(
+    *,
+    owner: TestClient,
+    recipient: TestClient,
+    group_id: str,
+    recipient_email: str,
+    role: str = "viewer",
+) -> None:
+    invitation = owner.post(
+        f"/groups/{group_id}/invitations",
+        json={"email": recipient_email, "role": role},
+    )
+    assert invitation.status_code == 201
+    token = latest_auth_email_token(recipient_email, "group_invitation")
+    accepted = recipient.post("/group-invitations/accept", json={"token": token})
+    assert accepted.status_code == 200
 
 
 def _create_personal_kb(client: TestClient, name: str = "Personal KB") -> str:
@@ -66,6 +89,33 @@ def _create_document(client: TestClient, *, kb_id: str, title: str, content: str
     )
     assert response.status_code == 201
     return response.json()["id"]
+
+
+def _upload_xlsx_document(client: TestClient, *, kb_id: str, title: str) -> str:
+    response = client.post(
+        f"/knowledge-bases/{kb_id}/documents/upload",
+        data={"title": title},
+        files={
+            "file": (
+                "publish-metrics.xlsx",
+                _xlsx_bytes(),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+    )
+    assert response.status_code == 201
+    return response.json()["id"]
+
+
+def _xlsx_bytes() -> bytes:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Publish Metrics"
+    sheet.append(["Metric", "Value"])
+    sheet.append(["GKPublishOfficeArtifact", "present"])
+    buffer = BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
 
 
 def _ingest(client: TestClient, *, kb_id: str, document_id: str) -> None:
@@ -145,7 +195,13 @@ def test_member_can_create_pending_publish_request_for_own_personal_document(mon
     _owner_id = _signup_login(owner, "publish-owner@example.com")
     requester_id = _signup_login(requester, "publish-requester@example.com")
     group_id = _create_group(owner)
-    _add_member(owner, group_id, requester_id, "viewer")
+    _invite_and_accept_member(
+        owner=owner,
+        recipient=requester,
+        group_id=group_id,
+        recipient_email="publish-requester@example.com",
+        role="viewer",
+    )
     target_kb_id = _create_group_kb(owner, group_id)
     personal_kb_id = _create_personal_kb(requester)
     source_document_id = _create_document(
@@ -167,6 +223,11 @@ def test_member_can_create_pending_publish_request_for_own_personal_document(mon
     assert payload["target_knowledge_base_id"] == target_kb_id
     assert payload["source_document_id"] == source_document_id
     assert payload["source_knowledge_base_id"] is None
+    assert payload["source_document_title"] == "Private draft"
+    assert payload["source_document_excerpt"] == "Privately held publication candidate."
+    assert payload["source_document_filename"] is None
+    assert payload["source_knowledge_base_name"] is None
+    assert payload["target_knowledge_base_name"] == "Group KB"
     assert payload["status"] == "pending"
     assert payload["reviewer_user_id"] is None
     assert payload["published_document_id"] is None
@@ -178,7 +239,126 @@ def test_member_can_create_pending_publish_request_for_own_personal_document(mon
 
     owner_list = owner.get(f"/groups/{group_id}/publish-requests")
     assert owner_list.status_code == 200
-    assert [item["id"] for item in owner_list.json()] == [payload["id"]]
+    owner_payload = owner_list.json()[0]
+    assert owner_payload["id"] == payload["id"]
+    assert owner_payload["source_document_title"] == "Private draft"
+    assert owner_payload["source_document_excerpt"] == "Privately held publication candidate."
+    assert owner_payload["target_knowledge_base_name"] == "Group KB"
+
+
+def test_owner_can_view_pending_publish_request_source_content(monkeypatch) -> None:  # noqa: ANN001
+    owner = _client(monkeypatch)
+    requester = _client(monkeypatch)
+    viewer = _client(monkeypatch)
+    _signup_login(owner, "publish-source-owner@example.com")
+    _signup_login(requester, "publish-source-requester@example.com")
+    _signup_login(viewer, "publish-source-viewer@example.com")
+    group_id = _create_group(owner, name="Source Review Group")
+    _invite_and_accept_member(
+        owner=owner,
+        recipient=requester,
+        group_id=group_id,
+        recipient_email="publish-source-requester@example.com",
+        role="viewer",
+    )
+    _invite_and_accept_member(
+        owner=owner,
+        recipient=viewer,
+        group_id=group_id,
+        recipient_email="publish-source-viewer@example.com",
+        role="viewer",
+    )
+    target_kb_id = _create_group_kb(owner, group_id, "Source Review KB")
+    personal_kb_id = _create_personal_kb(requester, "Source Review Personal KB")
+    source_document_id = _create_document(
+        requester,
+        kb_id=personal_kb_id,
+        title="Review me",
+        content="Full extracted content that the owner must inspect before approval.",
+    )
+    request = requester.post(
+        f"/groups/{group_id}/publish-requests",
+        json={"source_document_id": source_document_id, "target_knowledge_base_id": target_kb_id},
+    )
+    assert request.status_code == 201
+    request_id = request.json()["id"]
+
+    viewer_source = viewer.get(f"/groups/{group_id}/publish-requests/{request_id}/source")
+    assert viewer_source.status_code == 403
+
+    owner_source = owner.get(f"/groups/{group_id}/publish-requests/{request_id}/source")
+    assert owner_source.status_code == 200
+    payload = owner_source.json()
+    assert payload["request_id"] == request_id
+    assert payload["source_kind"] == "document"
+    assert payload["source_knowledge_base_id"] is None
+    assert len(payload["documents"]) == 1
+    [document] = payload["documents"]
+    assert document["id"] == source_document_id
+    assert document["title"] == "Review me"
+    assert (
+        document["content"] == "Full extracted content that the owner must inspect before approval."
+    )
+    assert document["source_type"] == "text"
+
+    rejected = owner.post(f"/groups/{group_id}/publish-requests/{request_id}/reject")
+    assert rejected.status_code == 200
+    reviewed_source = owner.get(f"/groups/{group_id}/publish-requests/{request_id}/source")
+    assert reviewed_source.status_code == 409
+
+
+def test_owner_can_view_pending_whole_kb_publish_request_documents(monkeypatch) -> None:  # noqa: ANN001
+    owner = _client(monkeypatch)
+    requester = _client(monkeypatch)
+    _signup_login(owner, "publish-kb-source-owner@example.com")
+    _signup_login(requester, "publish-kb-source-requester@example.com")
+    group_id = _create_group(owner, name="Whole KB Source Review Group")
+    _invite_and_accept_member(
+        owner=owner,
+        recipient=requester,
+        group_id=group_id,
+        recipient_email="publish-kb-source-requester@example.com",
+        role="viewer",
+    )
+    personal_kb_id = _create_personal_kb(requester, "Whole KB For Review")
+    first_document_id = _create_document(
+        requester,
+        kb_id=personal_kb_id,
+        title="First source",
+        content="First full source body.",
+    )
+    second_document_id = _create_document(
+        requester,
+        kb_id=personal_kb_id,
+        title="Second source",
+        content="Second full source body.",
+    )
+
+    request = requester.post(
+        f"/groups/{group_id}/publish-requests",
+        json={"source_knowledge_base_id": personal_kb_id},
+    )
+    assert request.status_code == 201
+    request_id = request.json()["id"]
+
+    owner_source = owner.get(f"/groups/{group_id}/publish-requests/{request_id}/source")
+    assert owner_source.status_code == 200
+    payload = owner_source.json()
+    assert payload["source_kind"] == "knowledge_base"
+    assert payload["source_knowledge_base_id"] == personal_kb_id
+    assert payload["source_knowledge_base_name"] == "Whole KB For Review"
+    assert [document["id"] for document in payload["documents"]] == [
+        first_document_id,
+        second_document_id,
+    ]
+    assert [document["title"] for document in payload["documents"]] == [
+        "First source",
+        "Second source",
+    ]
+    assert [document["content"] for document in payload["documents"]] == [
+        "First full source body.",
+        "Second full source body.",
+    ]
 
 
 def test_publish_request_rejects_invalid_source_or_target_boundaries(monkeypatch) -> None:  # noqa: ANN001
@@ -186,10 +366,16 @@ def test_publish_request_rejects_invalid_source_or_target_boundaries(monkeypatch
     requester = _client(monkeypatch)
     other = _client(monkeypatch)
     _owner_id = _signup_login(owner, "publish-boundary-owner@example.com")
-    requester_id = _signup_login(requester, "publish-boundary-requester@example.com")
+    _requester_id = _signup_login(requester, "publish-boundary-requester@example.com")
     _other_id = _signup_login(other, "publish-boundary-other@example.com")
     group_id = _create_group(owner, name="Boundary Group")
-    _add_member(owner, group_id, requester_id, "viewer")
+    _invite_and_accept_member(
+        owner=owner,
+        recipient=requester,
+        group_id=group_id,
+        recipient_email="publish-boundary-requester@example.com",
+        role="viewer",
+    )
     target_group_kb_id = _create_group_kb(owner, group_id, "Boundary Group KB")
     requester_personal_kb_id = _create_personal_kb(requester, "Requester KB")
     other_personal_kb_id = _create_personal_kb(other, "Other KB")
@@ -274,11 +460,23 @@ def test_owner_admin_approval_copies_and_ingests_group_document_without_exposing
     requester = _client(monkeypatch)
     viewer = _client(monkeypatch)
     owner_id = _signup_login(owner, "publish-approve-owner@example.com")
-    requester_id = _signup_login(requester, "publish-approve-requester@example.com")
+    _requester_id = _signup_login(requester, "publish-approve-requester@example.com")
     viewer_id = _signup_login(viewer, "publish-approve-viewer@example.com")
     group_id = _create_group(owner, name="Approval Group")
-    _add_member(owner, group_id, requester_id, "viewer")
-    _add_member(owner, group_id, viewer_id, "viewer")
+    _invite_and_accept_member(
+        owner=owner,
+        recipient=requester,
+        group_id=group_id,
+        recipient_email="publish-approve-requester@example.com",
+        role="viewer",
+    )
+    _invite_and_accept_member(
+        owner=owner,
+        recipient=viewer,
+        group_id=group_id,
+        recipient_email="publish-approve-viewer@example.com",
+        role="viewer",
+    )
     target_kb_id = _create_group_kb(owner, group_id, "Approval KB")
     personal_kb_id = _create_personal_kb(requester, "Approval Personal KB")
     source_document_id = _create_document(
@@ -361,16 +559,145 @@ def test_owner_admin_approval_copies_and_ingests_group_document_without_exposing
         session_generator.close()
 
 
+def test_owner_approval_copies_office_parse_artifact_to_group_document(monkeypatch) -> None:  # noqa: ANN001
+    owner = _client(monkeypatch)
+    requester = _client(monkeypatch)
+    _owner_id = _signup_login(owner, "publish-office-owner@example.com")
+    _requester_id = _signup_login(requester, "publish-office-requester@example.com")
+    group_id = _create_group(owner, name="Office Publish Group")
+    _invite_and_accept_member(
+        owner=owner,
+        recipient=requester,
+        group_id=group_id,
+        recipient_email="publish-office-requester@example.com",
+        role="viewer",
+    )
+    target_kb_id = _create_group_kb(owner, group_id, "Office Publish KB")
+    personal_kb_id = _create_personal_kb(requester, "Office Publish Personal KB")
+    source_document_id = _upload_xlsx_document(
+        requester,
+        kb_id=personal_kb_id,
+        title="Publish Metrics Workbook",
+    )
+
+    request = requester.post(
+        f"/groups/{group_id}/publish-requests",
+        json={"source_document_id": source_document_id, "target_knowledge_base_id": target_kb_id},
+    )
+    assert request.status_code == 201
+
+    approved = owner.post(f"/groups/{group_id}/publish-requests/{request.json()['id']}/approve")
+
+    assert approved.status_code == 200
+    published_document_id = approved.json()["published_document_id"]
+    assert published_document_id and published_document_id != source_document_id
+
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        source_artifact = db.scalar(
+            select(DocumentParseArtifactModel).where(
+                DocumentParseArtifactModel.document_id == source_document_id
+            )
+        )
+        copied_artifact = db.scalar(
+            select(DocumentParseArtifactModel).where(
+                DocumentParseArtifactModel.document_id == published_document_id
+            )
+        )
+        assert source_artifact is not None
+        assert copied_artifact is not None
+        assert copied_artifact.id != source_artifact.id
+        assert copied_artifact.markdown_content == source_artifact.markdown_content
+        assert copied_artifact.elements_json == source_artifact.elements_json
+        assert copied_artifact.source_filename == "publish-metrics.xlsx"
+        assert copied_artifact.source_sha256 == source_artifact.source_sha256
+    finally:
+        session_generator.close()
+
+
+def test_publish_approval_rolls_back_group_copy_when_ingestion_fails(monkeypatch) -> None:  # noqa: ANN001
+    def fail_ingestion(self, document):  # noqa: ANN001, ARG001
+        raise RuntimeError("fixture ingestion failure")
+
+    monkeypatch.setattr(
+        "my_agents.api.groups.KnowledgeExtractionService.ingest_document",
+        fail_ingestion,
+    )
+    owner = _client(monkeypatch, raise_server_exceptions=False)
+    requester = _client(monkeypatch, raise_server_exceptions=False)
+    _owner_id = _signup_login(owner, "publish-ingest-fail-owner@example.com")
+    _requester_id = _signup_login(requester, "publish-ingest-fail-requester@example.com")
+    group_id = _create_group(owner, name="Ingest Failure Group")
+    _invite_and_accept_member(
+        owner=owner,
+        recipient=requester,
+        group_id=group_id,
+        recipient_email="publish-ingest-fail-requester@example.com",
+        role="viewer",
+    )
+    target_kb_id = _create_group_kb(owner, group_id, "Ingest Failure KB")
+    personal_kb_id = _create_personal_kb(requester, "Ingest Failure Personal KB")
+    source_document_id = _create_document(
+        requester,
+        kb_id=personal_kb_id,
+        title="Rollback Source",
+        content="Publish rollback should not leave an approved group copy.",
+    )
+    request = requester.post(
+        f"/groups/{group_id}/publish-requests",
+        json={"source_document_id": source_document_id, "target_knowledge_base_id": target_kb_id},
+    )
+    assert request.status_code == 201
+    request_id = request.json()["id"]
+
+    approved = owner.post(f"/groups/{group_id}/publish-requests/{request_id}/approve")
+
+    assert approved.status_code == 500
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        publish_request = db.scalar(
+            select(KnowledgePublishRequestModel).where(
+                KnowledgePublishRequestModel.id == request_id
+            )
+        )
+        leaked_group_copies = db.scalars(
+            select(DocumentModel).where(
+                DocumentModel.knowledge_base_id == target_kb_id,
+                DocumentModel.title == "Rollback Source",
+            )
+        ).all()
+        assert publish_request is not None
+        assert publish_request.status == "pending"
+        assert publish_request.published_document_id is None
+        assert leaked_group_copies == []
+    finally:
+        session_generator.close()
+
+
 def test_rejected_publish_request_has_zero_retrieval_effect(monkeypatch) -> None:  # noqa: ANN001
     owner = _client(monkeypatch)
     requester = _client(monkeypatch)
     viewer = _client(monkeypatch)
     owner_id = _signup_login(owner, "publish-reject-owner@example.com")
-    requester_id = _signup_login(requester, "publish-reject-requester@example.com")
+    _requester_id = _signup_login(requester, "publish-reject-requester@example.com")
     viewer_id = _signup_login(viewer, "publish-reject-viewer@example.com")
     group_id = _create_group(owner, name="Reject Group")
-    _add_member(owner, group_id, requester_id, "viewer")
-    _add_member(owner, group_id, viewer_id, "viewer")
+    _invite_and_accept_member(
+        owner=owner,
+        recipient=requester,
+        group_id=group_id,
+        recipient_email="publish-reject-requester@example.com",
+        role="viewer",
+    )
+    _invite_and_accept_member(
+        owner=owner,
+        recipient=viewer,
+        group_id=group_id,
+        recipient_email="publish-reject-viewer@example.com",
+        role="viewer",
+    )
     target_kb_id = _create_group_kb(owner, group_id, "Reject KB")
     personal_kb_id = _create_personal_kb(requester, "Reject Personal KB")
     source_document_id = _create_document(
@@ -405,8 +732,20 @@ def test_owner_approval_publishes_entire_personal_kb_as_group_source(monkeypatch
     requester_id = _signup_login(requester, "publish-kb-requester@example.com")
     viewer_id = _signup_login(viewer, "publish-kb-viewer@example.com")
     group_id = _create_group(owner, name="Published Personal KB Group")
-    _add_member(owner, group_id, requester_id, "viewer")
-    _add_member(owner, group_id, viewer_id, "viewer")
+    _invite_and_accept_member(
+        owner=owner,
+        recipient=requester,
+        group_id=group_id,
+        recipient_email="publish-kb-requester@example.com",
+        role="viewer",
+    )
+    _invite_and_accept_member(
+        owner=owner,
+        recipient=viewer,
+        group_id=group_id,
+        recipient_email="publish-kb-viewer@example.com",
+        role="viewer",
+    )
     personal_kb_id = _create_personal_kb(requester, "Requester Public Candidate KB")
     source_document_id = _create_document(
         requester,
@@ -425,6 +764,9 @@ def test_owner_approval_publishes_entire_personal_kb_as_group_source(monkeypatch
     assert request_payload["source_document_id"] is None
     assert request_payload["target_knowledge_base_id"] is None
     assert request_payload["source_knowledge_base_id"] == personal_kb_id
+    assert request_payload["source_knowledge_base_name"] == "Requester Public Candidate KB"
+    assert request_payload["source_document_title"] is None
+    assert request_payload["target_knowledge_base_name"] is None
     assert request_payload["published_knowledge_base_id"] is None
     assert (
         _retrieval_hits(

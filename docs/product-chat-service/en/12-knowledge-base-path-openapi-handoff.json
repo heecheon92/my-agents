@@ -465,6 +465,16 @@
           },
           "scope": {
             "$ref": "#/components/schemas/KnowledgeBaseScope"
+          },
+          "purpose": {
+            "$ref": "#/components/schemas/KnowledgeBasePurpose"
+          },
+          "published_group_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Published Group Ids",
+            "type": "array"
           }
         },
         "required": [
@@ -472,7 +482,9 @@
           "name",
           "scope",
           "owner_user_id",
-          "group_id"
+          "group_id",
+          "purpose",
+          "published_group_ids"
         ],
         "title": "KnowledgeBaseResponse",
         "type": "object"
@@ -499,6 +511,231 @@
         },
         "title": "KnowledgeBaseSelection",
         "type": "object"
+      },
+      "KnowledgeBasePurpose": {
+        "enum": [
+          "standard",
+          "team_upload_staging"
+        ],
+        "title": "KnowledgeBasePurpose",
+        "type": "string"
+      },
+      "KnowledgePublishRequestStatus": {
+        "enum": [
+          "pending",
+          "approved",
+          "rejected"
+        ],
+        "title": "KnowledgePublishRequestStatus",
+        "type": "string"
+      },
+      "KnowledgePublishRequestCreateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "source_document_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Document Id"
+          },
+          "target_knowledge_base_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Knowledge Base Id"
+          },
+          "source_knowledge_base_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Knowledge Base Id"
+          }
+        },
+        "title": "KnowledgePublishRequestCreateRequest",
+        "type": "object"
+      },
+      "KnowledgePublishRequestResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "requester_user_id": {
+            "title": "Requester User Id",
+            "type": "string"
+          },
+          "target_group_id": {
+            "title": "Target Group Id",
+            "type": "string"
+          },
+          "target_knowledge_base_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Knowledge Base Id"
+          },
+          "source_document_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Document Id"
+          },
+          "source_knowledge_base_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Knowledge Base Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/KnowledgePublishRequestStatus"
+          },
+          "reviewer_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewer User Id"
+          },
+          "published_document_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published Document Id"
+          },
+          "published_knowledge_base_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published Knowledge Base Id"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "reviewed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed At"
+          }
+        },
+        "required": [
+          "id",
+          "requester_user_id",
+          "target_group_id",
+          "target_knowledge_base_id",
+          "source_document_id",
+          "source_knowledge_base_id",
+          "status",
+          "reviewer_user_id",
+          "published_document_id",
+          "published_knowledge_base_id",
+          "created_at",
+          "reviewed_at"
+        ],
+        "title": "KnowledgePublishRequestResponse",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
       }
     }
   },
@@ -509,264 +746,6 @@
     "ConversationRunResponse, AgentRunSummaryResponse, and run events expose knowledge_base_selection plus resolved_knowledge_base_count."
   ],
   "paths": {
-    "/conversations/{conversation_id}/runs": {
-      "get": {
-        "description": "Return frontend-safe run history for an authorized conversation.",
-        "operationId": "list_runs_conversations__conversation_id__runs_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "conversation_id",
-            "required": true,
-            "schema": {
-              "title": "Conversation Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/AgentRunSummaryResponse"
-                  },
-                  "title": "Response List Runs Conversations  Conversation Id  Runs Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "List Runs",
-        "tags": [
-          "conversations"
-        ]
-      },
-      "post": {
-        "operationId": "run_conversation_conversations__conversation_id__runs_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "conversation_id",
-            "required": true,
-            "schema": {
-              "title": "Conversation Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ConversationRunRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ConversationRunResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Run Conversation",
-        "tags": [
-          "conversations"
-        ]
-      }
-    },
-    "/conversations/{conversation_id}/runs/stream": {
-      "post": {
-        "description": "Stream redacted conversation-run progress as Server-Sent Events.\n\nThe stream keeps progress events compatible, emits incremental `answer_delta` text\nwhile the graph/provider streams, then finishes with `run_completed` containing the\nsame response shape returned by the non-streaming `/runs` endpoint. If graph execution\nfails after streaming starts, the endpoint persists the failed run and emits\n`run_failed` plus `run_error` events instead of leaking raw prompts or provider\nexception text.",
-        "operationId": "stream_conversation_run_conversations__conversation_id__runs_stream_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "conversation_id",
-            "required": true,
-            "schema": {
-              "title": "Conversation Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ConversationRunRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              },
-              "text/event-stream": {
-                "example": "event: answer_delta\ndata: {\"delta\":\"Hello\",\"sequence\":1}\n\nevent: run_completed\ndata: {\"run_id\":\"...\",\"reply\":\"Hello\"}\n\n"
-              }
-            },
-            "description": "Server-Sent Events stream with progress, answer_delta, and run_completed events."
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Stream Conversation Run",
-        "tags": [
-          "conversations"
-        ]
-      }
-    },
-    "/conversations/{conversation_id}/runs/{run_id}": {
-      "get": {
-        "description": "Return a refresh-safe completed run with reply and persisted citations.",
-        "operationId": "get_run_conversations__conversation_id__runs__run_id__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "conversation_id",
-            "required": true,
-            "schema": {
-              "title": "Conversation Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "run_id",
-            "required": true,
-            "schema": {
-              "title": "Run Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ConversationRunResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Get Run",
-        "tags": [
-          "conversations"
-        ]
-      }
-    },
-    "/conversations/{conversation_id}/runs/{run_id}/events": {
-      "get": {
-        "operationId": "list_run_events_conversations__conversation_id__runs__run_id__events_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "conversation_id",
-            "required": true,
-            "schema": {
-              "title": "Conversation Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "run_id",
-            "required": true,
-            "schema": {
-              "title": "Run Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/AgentEventResponse"
-                  },
-                  "title": "Response List Run Events Conversations  Conversation Id  Runs  Run Id  Events Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "List Run Events",
-        "tags": [
-          "conversations"
-        ]
-      }
-    },
     "/knowledge-bases": {
       "get": {
         "operationId": "list_knowledge_bases_knowledge_bases_get",
@@ -826,6 +805,27 @@
           }
         },
         "summary": "Create Knowledge Base",
+        "tags": [
+          "knowledge-bases"
+        ]
+      }
+    },
+    "/knowledge-bases/team-upload-staging": {
+      "post": {
+        "operationId": "ensure_team_upload_staging_knowledge_base_knowledge_bases_team_upload_staging_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeBaseResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Ensure Group Upload Staging Knowledge Base",
         "tags": [
           "knowledge-bases"
         ]
@@ -1235,6 +1235,462 @@
         "summary": "Ingest Knowledge Base Document Async",
         "tags": [
           "knowledge-bases"
+        ]
+      }
+    },
+    "/groups/{group_id}/publish-requests": {
+      "get": {
+        "operationId": "list_publish_requests_groups__group_id__publish_requests_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "title": "Group Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/KnowledgePublishRequestResponse"
+                  },
+                  "title": "Response List Publish Requests Groups  Group Id  Publish Requests Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Publish Requests",
+        "tags": [
+          "groups"
+        ]
+      },
+      "post": {
+        "operationId": "create_publish_request_groups__group_id__publish_requests_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "title": "Group Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KnowledgePublishRequestCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgePublishRequestResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Publish Request",
+        "tags": [
+          "groups"
+        ]
+      }
+    },
+    "/groups/{group_id}/publish-requests/{request_id}/approve": {
+      "post": {
+        "operationId": "approve_publish_request_groups__group_id__publish_requests__request_id___approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "title": "Group Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgePublishRequestResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve Publish Request",
+        "tags": [
+          "groups"
+        ]
+      }
+    },
+    "/groups/{group_id}/publish-requests/{request_id}/reject": {
+      "post": {
+        "operationId": "reject_publish_request_groups__group_id__publish_requests__request_id___reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "title": "Group Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgePublishRequestResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reject Publish Request",
+        "tags": [
+          "groups"
+        ]
+      }
+    },
+    "/conversations/{conversation_id}/runs": {
+      "get": {
+        "description": "Return frontend-safe run history for an authorized conversation.",
+        "operationId": "list_runs_conversations__conversation_id__runs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AgentRunSummaryResponse"
+                  },
+                  "title": "Response List Runs Conversations  Conversation Id  Runs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Runs",
+        "tags": [
+          "conversations"
+        ]
+      },
+      "post": {
+        "operationId": "run_conversation_conversations__conversation_id__runs_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConversationRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationRunResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run Conversation",
+        "tags": [
+          "conversations"
+        ]
+      }
+    },
+    "/conversations/{conversation_id}/runs/stream": {
+      "post": {
+        "description": "Stream redacted conversation-run progress as Server-Sent Events.\n\nThe stream keeps progress events compatible, emits incremental `answer_delta` text\nwhile the graph/provider streams, then finishes with `run_completed` containing the\nsame response shape returned by the non-streaming `/runs` endpoint. If graph execution\nfails after streaming starts, the endpoint persists the failed run and emits\n`run_failed` plus `run_error` events instead of leaking raw prompts or provider\nexception text.",
+        "operationId": "stream_conversation_run_conversations__conversation_id__runs_stream_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConversationRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "text/event-stream": {
+                "example": "event: answer_delta\ndata: {\"delta\":\"Hello\",\"sequence\":1}\n\nevent: run_completed\ndata: {\"run_id\":\"...\",\"reply\":\"Hello\"}\n\n"
+              }
+            },
+            "description": "Server-Sent Events stream with progress, answer_delta, and run_completed events."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stream Conversation Run",
+        "tags": [
+          "conversations"
+        ]
+      }
+    },
+    "/conversations/{conversation_id}/runs/{run_id}": {
+      "get": {
+        "description": "Return a refresh-safe completed run with reply and persisted citations.",
+        "operationId": "get_run_conversations__conversation_id__runs__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationRunResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Run",
+        "tags": [
+          "conversations"
+        ]
+      }
+    },
+    "/conversations/{conversation_id}/runs/{run_id}/events": {
+      "get": {
+        "operationId": "list_run_events_conversations__conversation_id__runs__run_id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AgentEventResponse"
+                  },
+                  "title": "Response List Run Events Conversations  Conversation Id  Runs  Run Id  Events Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Run Events",
+        "tags": [
+          "conversations"
         ]
       }
     }

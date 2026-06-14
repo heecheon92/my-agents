@@ -2,17 +2,23 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import zlib
+from io import BytesIO
 from pathlib import Path
 from time import monotonic, sleep
 
 import pytest
 from fastapi.testclient import TestClient
+from openpyxl import Workbook
+from pptx import Presentation
+from pptx.util import Inches
 from sqlalchemy import select
 
 import my_agents.knowledge.extraction as extraction_module
 import my_agents.knowledge.pdf_uploads as pdf_uploads_module
+from my_agents.api.conversations.retrieval_context import retrieved_context_for_graph
 from my_agents.knowledge.extraction import (
     _chunk_pdf_text,
     _chunk_text,
@@ -24,6 +30,7 @@ from my_agents.knowledge.models import (
     CitationModel,
     DocumentChunkModel,
     DocumentModel,
+    DocumentParseArtifactModel,
     DocumentPermissionModel,
     EntityMentionModel,
     EntityRelationshipModel,
@@ -32,9 +39,10 @@ from my_agents.knowledge.models import (
     StructuredKnowledgeEntityModel,
 )
 from my_agents.knowledge.pdf_uploads import PdfUploadError, parse_uploaded_pdf
+from my_agents.knowledge.retrieval import RetrievalService
 from my_agents.persistence.database import get_database_session
 
-from .conftest import load_app, verify_latest_auth_email
+from .conftest import latest_auth_email_token, load_app, verify_latest_auth_email
 
 
 class FakeEmbeddingProvider:
@@ -86,7 +94,9 @@ def _file_client(monkeypatch, tmp_path) -> TestClient:  # noqa: ANN001 - pytest 
 
 def _signup_login(client: TestClient, email: str) -> str:
     password = "correct horse battery staple"
-    signup = client.post("/auth/signup", json={"email": email, "password": password})
+    signup = client.post(
+        "/auth/signup", json={"email": email, "nickname": "Test User", "password": password}
+    )
     assert signup.status_code == 201
     verify_latest_auth_email(client, email)
     login = client.post("/auth/login", json={"email": email, "password": password})
@@ -195,6 +205,40 @@ def _raw_stream_pdf(stream: str) -> bytes:
         f"4 0 obj << /Length {len(stream)} >> stream\n{stream}\nendstream endobj",
     ]
     return ("%PDF-1.4\n" + "\n".join(objects) + "\n%%EOF\n").encode()
+
+
+def _xlsx_bytes(*, sheet_name: str = "Pipeline") -> bytes:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = sheet_name
+    sheet.append(["Metric", "Value"])
+    sheet.append(["Latency", 120])
+    sheet.append(["Owner", "Agent Platform"])
+    buffer = BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
+
+
+def _provenance_xlsx_bytes() -> bytes:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Provenance"
+    sheet.append(["Signal", "Endpoint"])
+    sheet.append(["OfficeProvenanceAlpha", "GET /office-metrics"])
+    buffer = BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
+
+
+def _pptx_bytes() -> bytes:
+    presentation = Presentation()
+    slide = presentation.slides.add_slide(presentation.slide_layouts[5])
+    slide.shapes.title.text = "Office Slide Plan"
+    textbox = slide.shapes.add_textbox(Inches(1), Inches(1.4), Inches(6), Inches(0.8))
+    textbox.text = "OfficeSlideAlpha depends on PowerPoint provenance."
+    buffer = BytesIO()
+    presentation.save(buffer)
+    return buffer.getvalue()
 
 
 def _database_rows(statement):  # noqa: ANN001 - SQLAlchemy statement type is verbose
@@ -986,6 +1030,7 @@ def test_pdf_upload_persists_metadata_and_ingests_page_provenance(monkeypatch) -
         .order_by(DocumentChunkModel.ordinal)
     )
     assert [chunk.source_page for chunk in chunks] == [1, 2]
+    assert [chunk.source_location_json for chunk in chunks] == [None, None]
     assert "LangGraph" in chunks[0].content
     assert "FastAPI" in chunks[1].content
     assert len(_deterministic_embedding(chunks[0].content)) == 32
@@ -1058,6 +1103,181 @@ def test_text_upload_persists_metadata_and_ingests_for_retrieval(
     assert not run_payload["reply"].startswith("Based on authorized document context:")
 
 
+def test_office_upload_persists_parse_artifact_and_delete_cleans_it_up(monkeypatch) -> None:  # noqa: ANN001
+    client = _client(monkeypatch)
+    _signup_login(client, "office-upload-owner@example.com")
+    kb_id = _create_personal_knowledge_base(client, "Office Upload KB")
+
+    document = _upload_document(
+        client,
+        data={"title": "Metrics Workbook", "knowledge_base_id": kb_id},
+        files={
+            "file": (
+                "metrics.xlsx",
+                _xlsx_bytes(),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+    )
+
+    assert document.status_code == 201
+    payload = document.json()
+    assert payload["source_type"] == "spreadsheet"
+    assert payload["source_filename"] == "metrics.xlsx"
+    assert payload["source_content_type"] == (
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    assert payload["parser_name"] == "openpyxl_markdown_v1"
+    assert payload["source_page_count"] is None
+
+    persisted = _database_rows(select(DocumentModel).where(DocumentModel.id == payload["id"]))
+    assert persisted[0].content.startswith("## Sheet: Pipeline")
+    assert "| Latency | 120 |" in persisted[0].content
+
+    [artifact] = _database_rows(
+        select(DocumentParseArtifactModel).where(
+            DocumentParseArtifactModel.document_id == payload["id"]
+        )
+    )
+    assert artifact.source_sha256 == payload["source_sha256"]
+    assert artifact.source_filename == "metrics.xlsx"
+    assert artifact.source_type == "spreadsheet"
+    assert artifact.parser_provider == "local"
+    assert artifact.parser_name == "openpyxl_markdown_v1"
+    assert artifact.markdown_content == persisted[0].content
+    assert json.loads(artifact.elements_json)[0]["source_location"]["cell_range"] == "A1:B3"
+    assert json.loads(artifact.warnings_json) == []
+
+    deleted = client.delete(f"/documents/{payload['id']}")
+
+    assert deleted.status_code == 204
+    assert (
+        _database_rows(
+            select(DocumentParseArtifactModel).where(
+                DocumentParseArtifactModel.document_id == payload["id"]
+            )
+        )
+        == []
+    )
+
+
+def test_office_ingestion_exposes_source_location_on_chunks_debug_and_citations(
+    monkeypatch,
+) -> None:  # noqa: ANN001
+    client = _client(monkeypatch)
+    user_id = _signup_login(client, "office-provenance-owner@example.com")
+    kb_id = _create_personal_knowledge_base(client, "Office Provenance KB")
+    document = _upload_document(
+        client,
+        data={"title": "Provenance Workbook", "knowledge_base_id": kb_id},
+        files={
+            "file": (
+                "provenance.xlsx",
+                _provenance_xlsx_bytes(),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+    )
+    assert document.status_code == 201
+    document_id = document.json()["id"]
+
+    ingest = client.post(f"/documents/{document_id}/ingest")
+
+    assert ingest.status_code == 200
+    chunks = _database_rows(
+        select(DocumentChunkModel)
+        .where(DocumentChunkModel.document_id == document_id)
+        .order_by(DocumentChunkModel.ordinal)
+    )
+    chunk = next(item for item in chunks if "OfficeProvenanceAlpha" in item.content)
+    source_location = json.loads(chunk.source_location_json)
+    assert source_location == {
+        "cell_range": "A1:B2",
+        "column_end": "B",
+        "column_start": "A",
+        "row_end": 2,
+        "row_start": 1,
+        "sheet_name": "Provenance",
+        "source_type": "spreadsheet",
+    }
+    [structured_entity] = _database_rows(
+        select(StructuredKnowledgeEntityModel).where(
+            StructuredKnowledgeEntityModel.document_id == document_id,
+            StructuredKnowledgeEntityModel.entity_type == "api_endpoint",
+        )
+    )
+    assert json.loads(structured_entity.source_location_json) == source_location
+
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        retrieved = RetrievalService(db).retrieve(
+            user_id=user_id,
+            query="OfficeProvenanceAlpha",
+        )
+        debug_context = retrieved_context_for_graph(retrieved)
+    finally:
+        session_generator.close()
+    assert debug_context[0]["source_location_json"] == source_location
+
+    conversation = client.post("/conversations", json={"title": "Office provenance RAG"})
+    assert conversation.status_code == 201
+    run = client.post(
+        f"/conversations/{conversation.json()['id']}/runs",
+        json={"message": "What mentions OfficeProvenanceAlpha?"},
+    )
+
+    assert run.status_code == 200
+    assert run.json()["citations"]
+    assert run.json()["citations"][0]["source_location_json"] == source_location
+
+
+def test_powerpoint_upload_ingests_slide_source_location_and_cites_it(monkeypatch) -> None:  # noqa: ANN001
+    client = _client(monkeypatch)
+    _signup_login(client, "pptx-provenance-owner@example.com")
+    kb_id = _create_personal_knowledge_base(client, "PowerPoint Provenance KB")
+    document = _upload_document(
+        client,
+        data={"title": "Slide Provenance", "knowledge_base_id": kb_id},
+        files={
+            "file": (
+                "slides.pptx",
+                _pptx_bytes(),
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            )
+        },
+    )
+    assert document.status_code == 201
+    payload = document.json()
+    assert payload["source_type"] == "presentation"
+    assert payload["parser_name"] == "python_pptx_markdown_v1"
+
+    ingest = client.post(f"/documents/{payload['id']}/ingest")
+    assert ingest.status_code == 200
+    chunks = _database_rows(
+        select(DocumentChunkModel)
+        .where(DocumentChunkModel.document_id == payload["id"])
+        .order_by(DocumentChunkModel.ordinal)
+    )
+    slide_chunk = next(item for item in chunks if "OfficeSlideAlpha" in item.content)
+    source_location = json.loads(slide_chunk.source_location_json)
+    assert source_location["source_type"] == "presentation"
+    assert source_location["slide_number"] == 1
+    assert source_location["slide_title"] == "Office Slide Plan"
+    assert source_location["shape_index"] is not None
+
+    conversation = client.post("/conversations", json={"title": "PowerPoint provenance RAG"})
+    assert conversation.status_code == 201
+    run = client.post(
+        f"/conversations/{conversation.json()['id']}/runs",
+        json={"message": "What depends on OfficeSlideAlpha?"},
+    )
+
+    assert run.status_code == 200
+    assert run.json()["citations"]
+    assert run.json()["citations"][0]["source_location_json"] == source_location
+
+
 def test_langgraph_academy_pdf_regression_extracts_real_text_when_available() -> None:
     sample = (
         Path.home() / "Downloads/LangChain_Academy_-_Introduction_to_LangGraph_-_Motivation.pdf"
@@ -1073,7 +1293,7 @@ def test_langgraph_academy_pdf_regression_extracts_real_text_when_available() ->
     chunks = _chunk_pdf_text(parsed.content)
     entities = {name for chunk, *_ in chunks for name in _extract_entity_names(chunk)}
 
-    assert parsed.parser_name == "pypdf_text_v2"
+    assert parsed.parser_name in {"pypdf_text_v2", "pymupdf_text_v1"}
     assert parsed.page_count == 17
     assert "LangChain Academy" in parsed.content
     assert "LangGraph" in parsed.content
@@ -1116,6 +1336,8 @@ def test_pdf_upload_ingest_and_conversation_retrieval_pipeline(monkeypatch) -> N
     assert payload["citations"]
     assert payload["citations"][0]["document_id"] == document.json()["id"]
     assert payload["citations"][0]["source_filename"] == "resume.pdf"
+    assert payload["citations"][0]["source_page"] == 1
+    assert payload["citations"][0]["source_location_json"] is None
     assert resume_phrase in payload["citations"][0]["snippet"]
 
 
@@ -1274,6 +1496,13 @@ def test_upload_rejects_unsupported_or_unsafe_input(monkeypatch) -> None:  # noq
     )
     assert unsupported.status_code == 415
 
+    legacy_office = _upload_document(
+        client,
+        data={"title": "Legacy XLS", "knowledge_base_id": kb_id},
+        files={"file": ("legacy.xls", b"not supported", "application/vnd.ms-excel")},
+    )
+    assert legacy_office.status_code == 415
+
     binary_text = _upload_document(
         client,
         data={"title": "Binary text"},
@@ -1294,7 +1523,7 @@ def test_group_knowledge_base_requires_group_membership(monkeypatch) -> None:  #
     member = _client(monkeypatch)
     outsider = _client(monkeypatch)
     _signup_login(owner, "group-kb-owner@example.com")
-    member_id = _signup_login(member, "group-kb-member@example.com")
+    _member_id = _signup_login(member, "group-kb-member@example.com")
     _signup_login(outsider, "group-kb-outsider@example.com")
     group_id = owner.post("/groups", json={"name": "KB Group"}).json()["id"]
     default_group_kbs = [
@@ -1305,13 +1534,14 @@ def test_group_knowledge_base_requires_group_membership(monkeypatch) -> None:  #
     assert len(default_group_kbs) == 1
     assert default_group_kbs[0]["name"] == "KB Group Knowledge"
 
-    assert (
-        owner.post(
-            f"/groups/{group_id}/members",
-            json={"user_id": member_id, "role": "viewer"},
-        ).status_code
-        == 204
+    invitation = owner.post(
+        f"/groups/{group_id}/invitations",
+        json={"email": "group-kb-member@example.com", "role": "viewer"},
     )
+    assert invitation.status_code == 201
+    token = latest_auth_email_token("group-kb-member@example.com", "group_invitation")
+    accepted = member.post("/group-invitations/accept", json={"token": token})
+    assert accepted.status_code == 200
 
     kb = owner.post(
         "/knowledge-bases",

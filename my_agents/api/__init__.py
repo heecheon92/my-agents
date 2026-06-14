@@ -12,9 +12,10 @@ from my_agents.api.assistant import GraphRunner, assistant_router, get_graph_run
 from my_agents.api.auth import auth_router
 from my_agents.api.conversations import conversations_router
 from my_agents.api.documents import documents_router
-from my_agents.api.groups import groups_router
+from my_agents.api.groups import group_invitations_router, groups_router
 from my_agents.api.health import health_router
 from my_agents.api.knowledge_bases import knowledge_bases_router
+from my_agents.api.memories import memories_router
 from my_agents.diagnostics import deploy_log, safe_database_url_summary, safe_email_domain
 from my_agents.settings import Settings, get_settings
 
@@ -40,8 +41,10 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)
     app.include_router(conversations_router)
     app.include_router(groups_router)
+    app.include_router(group_invitations_router)
     app.include_router(knowledge_bases_router)
     app.include_router(documents_router)
+    app.include_router(memories_router)
     app.include_router(assistant_router)
     return app
 

@@ -1,10 +1,10 @@
-# Team upload staging flow
+# Group upload staging flow
 
-This note records the architectural decision for team document uploads. It is written for both people and AI agents so future work does not accidentally re-introduce duplicate retrieval sources.
+This note records the architectural decision for group document uploads. It is written for both people and AI agents so future work does not accidentally re-introduce duplicate retrieval sources.
 
 ## Decision
 
-Team uploads use a hidden, personal `team_upload_staging` knowledge base as a private source buffer. The staging KB accepts text/file document writes by direct ID, but it is excluded from normal knowledge-base lists, chat source selection, and RAG retrieval. When the publish request is approved, the backend copies the staged document into the target group knowledge base and ingests that group copy. The group copy is the retrievable source of record.
+Group uploads use a hidden, personal `team_upload_staging` knowledge base as a private source buffer. The staging KB accepts text/file document writes by direct ID, but it is excluded from normal knowledge-base lists, chat source selection, and RAG retrieval. When the publish request is approved, the backend copies the staged document into the target group knowledge base and ingests that group copy. The group copy is the retrievable source of record.
 
 ## Why this exists
 
@@ -22,7 +22,7 @@ sequenceDiagram
     participant Ingest as Extraction Service
     participant RAG as Chat/RAG Retrieval
 
-    User->>UI: Choose team destination and upload/create source
+    User->>UI: Choose group destination and upload/create source
     UI->>KB: POST /knowledge-bases/team-upload-staging
     KB-->>UI: Hidden personal KB purpose=team_upload_staging
     UI->>Docs: POST /knowledge-bases/{staging_kb}/documents[/upload]
