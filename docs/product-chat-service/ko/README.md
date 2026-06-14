@@ -25,6 +25,7 @@
 17. [Deployment troubleshooting log](./15-deployment-troubleshooting-log.md)
 18. [Team upload staging flow](./18-team-upload-staging-flow.md)
 19. [LangGraph-native memory migration](./19-langgraph-native-memory-migration.md)
+20. [Nickname signup and member roster contract](./20-nickname-signup-member-roster-contract.md)
 
 ## 문서 상태
 

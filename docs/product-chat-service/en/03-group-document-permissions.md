@@ -34,7 +34,7 @@ The backend product boundary is a shared-knowledge group/team model:
 - deny-by-default document authorization checks;
 - publish requests for moving personal sources into approved group KB retrieval.
 
-A pending invitation is not an active membership and does not grant group KB access. Product clients must not directly activate membership by known `user_id`, reveal whether an invited email has an account, or imply a public user directory. The code term remains `group`; user-facing copy may say “team”.
+A pending invitation is not an active membership and does not grant group KB access. Product clients must not directly activate membership by known `user_id`, reveal whether an invited email has an account, or imply a public user directory. The planned nickname/member-roster extension keeps this boundary: nickname is display-only and duplicate-allowed, while email remains the invitation/login identifier and `user_id` remains the role-update identifier. The code term remains `group`; user-facing copy may say “team”.
 
 | Method | Path | Actor | Purpose | Privacy rule |
 | --- | --- | --- | --- | --- |
@@ -102,6 +102,7 @@ Invitation and permission tests should cover:
 - acceptance requires the authenticated invited email and creates at most one membership;
 - wrong-user, cancelled, expired, consumed, and duplicate acceptance fail safely;
 - owners/admins can list basic member/role information for role maintenance without email/profile fields;
+- when the nickname contract lands, accepted member responses include display-only `nickname` while preserving duplicate nicknames and user-id role updates;
 - owner/admin active-member role patch is non-creating and rejects missing/non-member users;
 - public OpenAPI does not expose direct create-member-by-`user_id`;
 - accepted group viewers can read approved group documents and outsiders cannot;
@@ -110,6 +111,7 @@ Invitation and permission tests should cover:
 
 ## Revision history
 
+- 2026-06-14: Linked the planned nickname/member-roster extension to the existing invite-only privacy boundary.
 - 2026-06-10: Updated the product boundary to invite-accepted group/team membership with privacy-preserving invitation semantics and private conversations/memory.
 - 2026-05-17: Updated after retrieval/citation slices started using this permission boundary.
 - 2026-05-17: Created after implementing groups, memberships, document permissions, and authorization tests.

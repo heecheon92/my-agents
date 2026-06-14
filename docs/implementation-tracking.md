@@ -54,6 +54,7 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 ### Auth/session foundation
 
 - Email/password signup.
+- Planned nickname signup/member-roster contract is documented as display-only and duplicate-allowed; implementation is pending until migration/API/frontend/OpenAPI updates land together.
 - Local/offline auth email sender boundary for verification and reset messages.
 - Hosted Resend HTTP auth email delivery through verified `my-agents.dev`, with SMTP still available for hosts that allow it.
 - Email verification token creation and `POST /auth/verify-email`.
@@ -74,7 +75,7 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 ### Groups, documents, permissions
 
 - Group creation/list/get.
-- Member add/update flows.
+- Invite-accepted member listing and non-creating role update flows. The planned nickname roster extension must keep member emails out of manager-only rosters and keep role updates keyed by `user_id`.
 - Document create/list/get.
 - Document permission patching.
 - Authorization service for read/write/manage/ingest decisions.
@@ -383,6 +384,7 @@ limits.
 
 | Date | Milestone | Evidence |
 | --- | --- | --- |
+| 2026-06-14 | Documented the planned nickname signup and manager-only member roster contract before implementation. | `docs/product-chat-service/en/20-nickname-signup-member-roster-contract.md`; `docs/product-chat-service/ko/20-nickname-signup-member-roster-contract.md`; README pair; group-permission docs; implementation tracking. |
 | 2026-06-10 | Added a thin ContextForge LangGraph `RetrievalGraph` wrapper as the conversation-run retrieval entrypoint and future agent tool/subgraph seam. | `my_agents/agents/context_forge/graph.py`; `my_agents/agents/context_forge/__init__.py`; `my_agents/api/conversations/retrieval_context.py`; `tests/test_context_forge_contracts.py`; ContextForge README pair; retrieval architecture docs; targeted ContextForge/RAG tests. |
 | 2026-06-07 | Added real streamed assistant-message replay and newest-first conversation list ordering for the chat sidebar. | `my_agents/api/conversations/endpoints/replay.py`; `my_agents/api/conversations/endpoints/conversations.py`; `tests/test_conversations_api.py`; `tests/test_kb_openapi_contract.py`; streaming frontend contract docs; `uv run ruff check . --no-cache`; `uv run ruff format --check .`; `uv run pytest -q` (306 passed, 2 skipped). |
 | 2026-06-06 | Added RAG Agent contracts for the agentic RAG workflow and compact localized trace payloads for run responses/SSE/events. | `my_agents/agents/rag_agent/`; `my_agents/api/conversations/agent_trace.py`; `my_agents/api/conversations/run_events.py`; `my_agents/api/conversations/run_lifecycle.py`; `my_agents/api/conversations/serializers.py`; `my_agents/api/conversations/endpoints/stream.py`; `my_agents/conversations/schemas.py`; `tests/test_rag_agent_contracts.py`; `tests/test_conversations_api.py`; RAG Agent README pair; local targeted Ruff/pytest evidence. |

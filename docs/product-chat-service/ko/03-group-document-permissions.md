@@ -4,7 +4,7 @@
 
 ## 요약
 
-Group/team은 초대를 수락한 뒤 참여하는 공유 지식 boundary입니다. Product client는 이메일 초대와 opaque invitation token 수락 흐름을 사용해야 하며, user search, account-existence 노출, 알려진 `user_id`로 직접 membership을 활성화하는 흐름을 제공하면 안 됩니다.
+Group/team은 초대를 수락한 뒤 참여하는 공유 지식 boundary입니다. Product client는 이메일 초대와 opaque invitation token 수락 흐름을 사용해야 하며, user search, account-existence 노출, 알려진 `user_id`로 직접 membership을 활성화하는 흐름을 제공하면 안 됩니다. Planned nickname/member-roster extension도 이 경계를 유지합니다. Nickname은 중복 허용 display-only label이고, email은 invitation/login identifier, `user_id`는 role update identifier입니다.
 
 ## 현재 계약
 
@@ -44,6 +44,8 @@ Group/team은 초대를 수락한 뒤 참여하는 공유 지식 boundary입니�
 
 ## 변경 이력
 
+- 2026-06-14: Planned nickname/member-roster extension을 기존 invite-only privacy boundary에 연결했습니다.
+
 | Actor / scope | Read | Write | Manage permissions | Manage invitations | Ingest | Retrieve/cite |
 | --- | --- | --- | --- | --- | --- | --- |
 | Personal owner | Yes | Yes | Yes | N/A | Yes | Yes |
@@ -78,6 +80,7 @@ Retrieval service는 전역 top-k를 먼저 가져온 뒤 나중에 필터링하
 - 수락은 인증된 invited email에 묶이며 membership은 최대 하나만 생성되어야 합니다.
 - 잘못된 사용자, 취소/만료/소비된 token, 중복 수락은 안전하게 실패해야 합니다.
 - member list는 email/profile/account-existence field 없이 기본 member/role 정보만 보여야 합니다.
+- nickname contract가 반영되면 accepted member response는 display-only `nickname`을 포함하되 duplicate nickname과 user-id role update를 유지해야 합니다.
 - owner/admin active-member role patch는 non-creating이어야 하며 missing/non-member user를 거절해야 합니다.
 - public OpenAPI는 `user_id` 직접 membership 생성 route를 노출하지 않아야 합니다.
 - 승인된 group document 읽기와 publish request workflow는 유지되어야 합니다.

@@ -41,6 +41,7 @@
 | Container deployment path | [`docs/product-chat-service/ko/13-generic-container-deployment-path.md`](./docs/product-chat-service/ko/13-generic-container-deployment-path.md) |
 | Team upload staging / 팀 업로드 임시 저장 | [`docs/product-chat-service/ko/18-team-upload-staging-flow.md`](./docs/product-chat-service/ko/18-team-upload-staging-flow.md) |
 | LangGraph-native memory migration | [`docs/product-chat-service/ko/19-langgraph-native-memory-migration.md`](./docs/product-chat-service/ko/19-langgraph-native-memory-migration.md) |
+| Nickname signup/member roster contract | [`docs/product-chat-service/ko/20-nickname-signup-member-roster-contract.md`](./docs/product-chat-service/ko/20-nickname-signup-member-roster-contract.md) |
 | Script commands / 스크립트 명령 | [`scripts/README.md`](./scripts/README.md) |
 | Layout-aware RAG idea | [`docs/idea/layout-aware-ingestion-rag-agent.md`](./docs/idea/layout-aware-ingestion-rag-agent.md) |
 
@@ -79,7 +80,7 @@ flowchart TD
     Events --> DB
 ```
 
-Team/group membership은 초대를 수락한 뒤 참여하는 공유 지식 boundary입니다. Product client는 이메일로 초대하고 opaque invitation token을 수락하게 해야 하며, user discovery, account-existence 분기, 알려진 `user_id`로 직접 membership을 활성화하는 흐름을 제공하면 안 됩니다. 팀 업로드는 RAG retrieval에서 제외되는 숨겨진 개인 임시 KB를 사용하고, 승인 후 소스를 팀 KB로 복사한 뒤에만 검색됩니다. Service layer가 auth, permission, source policy, persistence, retrieval boundary, citation, event를 소유합니다. ContextForge는 여전히 general assistant에 전달할 authorized context를 검색하고, `rag_agent`는 그 경로를 감싸는 graph-shaped RAG Agent contract로 trace stage와 grounding check를 제공합니다. Chat run은 권한이 있는 개인·공유·팀 KB를 하나의 `knowledge_base_selection` contract로 선택하며, conversation transcript와 opt-in memory는 사용자 소유 비공개 범위로 유지됩니다.
+Team/group membership은 초대를 수락한 뒤 참여하는 공유 지식 boundary입니다. Product client는 이메일로 초대하고 opaque invitation token을 수락하게 해야 하며, user discovery, account-existence 분기, 알려진 `user_id`로 직접 membership을 활성화하는 흐름을 제공하면 안 됩니다. Planned nickname contract에서 nickname은 중복 허용 display label일 뿐이며, email은 login/invitation identifier, `user_id`는 role-maintenance identifier로 유지하고 manager-only member roster는 member email을 노출하지 않아야 합니다. 팀 업로드는 RAG retrieval에서 제외되는 숨겨진 개인 임시 KB를 사용하고, 승인 후 소스를 팀 KB로 복사한 뒤에만 검색됩니다. Service layer가 auth, permission, source policy, persistence, retrieval boundary, citation, event를 소유합니다. ContextForge는 여전히 general assistant에 전달할 authorized context를 검색하고, `rag_agent`는 그 경로를 감싸는 graph-shaped RAG Agent contract로 trace stage와 grounding check를 제공합니다. Chat run은 권한이 있는 개인·공유·팀 KB를 하나의 `knowledge_base_selection` contract로 선택하며, conversation transcript와 opt-in memory는 사용자 소유 비공개 범위로 유지됩니다.
 
 ## Long-term memory
 
