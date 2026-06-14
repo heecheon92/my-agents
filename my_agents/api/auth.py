@@ -22,6 +22,8 @@ from my_agents.auth.email import AuthEmailLanguage, get_local_auth_email_outbox
 from my_agents.auth.models import UserModel
 from my_agents.auth.schemas import (
     AcceptedResponse,
+    AccountNicknameUpdateRequest,
+    AccountPasswordUpdateRequest,
     DevAuthEmailMessageResponse,
     GuestAccessRequest,
     GuestLoginRequest,
@@ -36,6 +38,7 @@ from my_agents.auth.schemas import (
 )
 from my_agents.auth.service import (
     AccountApprovalRequiredError,
+    AccountMutationNotAllowedError,
     AccountRejectedError,
     AuthService,
     DuplicateEmailError,
@@ -398,6 +401,72 @@ def me(
             detail="authentication required",
         )
     return _user_response(user)
+
+
+@auth_router.patch("/me/nickname", response_model=UserResponse)
+def update_nickname(
+    request: AccountNicknameUpdateRequest,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    auth_service: Annotated[AuthService, Depends(get_auth_service)],
+) -> UserResponse:
+    """Update the current registered user's display nickname."""
+    try:
+        user = auth_service.update_nickname(
+            user_id=principal.user_id,
+            current_password=request.current_password,
+            nickname=request.nickname,
+        )
+    except InvalidCredentialsError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="invalid current password",
+        ) from exc
+    except AccountMutationNotAllowedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="registered account required",
+        ) from exc
+    except InvalidSessionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="authentication required",
+        ) from exc
+    return _user_response(user)
+
+
+@auth_router.patch("/me/password", status_code=status.HTTP_204_NO_CONTENT)
+def update_password(
+    request: AccountPasswordUpdateRequest,
+    response: Response,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    auth_service: Annotated[AuthService, Depends(get_auth_service)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Response:
+    """Update the current registered user's password and clear the browser session."""
+    try:
+        auth_service.update_password(
+            user_id=principal.user_id,
+            current_password=request.current_password,
+            new_password=request.new_password,
+        )
+    except InvalidCredentialsError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="invalid current password",
+        ) from exc
+    except AccountMutationNotAllowedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="registered account required",
+        ) from exc
+    except InvalidSessionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="authentication required",
+        ) from exc
+    response.delete_cookie(key=settings.session_cookie_name)
+    response.status_code = status.HTTP_204_NO_CONTENT
+    return response
 
 
 @auth_router.get("/dev/outbox", response_model=list[DevAuthEmailMessageResponse])

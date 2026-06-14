@@ -76,6 +76,10 @@ class AccountRejectedError(AuthError):
     """Raised when a registered user's signup request was rejected."""
 
 
+class AccountMutationNotAllowedError(AuthError):
+    """Raised when a principal cannot use password-backed account mutations."""
+
+
 class InvalidSessionError(AuthError):
     """Raised when a session token is absent, unknown, or revoked."""
 
@@ -287,6 +291,37 @@ class AuthService:
         user = self._db.get(UserModel, auth_token.user_id)
         if user is None:
             raise InvalidAuthTokenError("invalid token")
+        user.password_hash = self._password_hasher.hash(new_password)
+        self._revoke_sessions_for_user(user.id)
+        self._db.add(user)
+        self._db.commit()
+
+    def update_nickname(
+        self,
+        *,
+        user_id: str,
+        current_password: str,
+        nickname: str,
+    ) -> UserModel:
+        """Update registered-user display metadata after current-password proof."""
+        user = self._registered_account_for_update(user_id)
+        self._verify_current_password(user, current_password)
+        user.nickname = nickname
+        self._db.add(user)
+        self._db.commit()
+        self._db.refresh(user)
+        return user
+
+    def update_password(
+        self,
+        *,
+        user_id: str,
+        current_password: str,
+        new_password: str,
+    ) -> None:
+        """Replace a registered-user password and revoke all existing sessions."""
+        user = self._registered_account_for_update(user_id)
+        self._verify_current_password(user, current_password)
         user.password_hash = self._password_hasher.hash(new_password)
         self._revoke_sessions_for_user(user.id)
         self._db.add(user)
@@ -622,6 +657,22 @@ class AuthService:
         ):
             raise InvalidSessionError("invalid session")
         return session
+
+    def _registered_account_for_update(self, user_id: str) -> UserModel:
+        user = self._db.get(UserModel, user_id)
+        if user is None:
+            raise InvalidSessionError("invalid session")
+        if user.account_type != "registered":
+            raise AccountMutationNotAllowedError("registered account required")
+        return user
+
+    def _verify_current_password(self, user: UserModel, current_password: str) -> None:
+        try:
+            is_valid = self._password_hasher.verify(user.password_hash, current_password)
+        except VerifyMismatchError as exc:
+            raise InvalidCredentialsError("invalid current password") from exc
+        if not is_valid:
+            raise InvalidCredentialsError("invalid current password")
 
     def _create_token(self, *, user_id: str, purpose: AuthTokenPurpose, ttl: timedelta) -> str:
         token = secrets.token_urlsafe(32)

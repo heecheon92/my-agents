@@ -33,6 +33,24 @@ def _client_with_auth_attempt_limit(monkeypatch, max_attempts: int = 2) -> TestC
     return _client(monkeypatch)
 
 
+def _signup_verify_and_login(
+    client: TestClient,
+    *,
+    email: str,
+    password: str = "correct horse battery staple",
+    nickname: str = "Test User",
+) -> dict[str, object]:
+    signup = client.post(
+        "/auth/signup",
+        json={"email": email, "nickname": nickname, "password": password},
+    )
+    assert signup.status_code == 201
+    verify_latest_auth_email(client, email)
+    login = client.post("/auth/login", json={"email": email, "password": password})
+    assert login.status_code == 200
+    return login.json()
+
+
 def test_login_cookie_is_secure_by_default(monkeypatch) -> None:  # noqa: ANN001
     monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
     monkeypatch.delenv("MY_AGENTS_SESSION_COOKIE_SECURE", raising=False)
@@ -198,6 +216,90 @@ def test_signup_trims_nickname_and_allows_duplicates(monkeypatch) -> None:  # no
     assert second.status_code == 201
     assert first.json()["user"]["nickname"] == "Shared Name"
     assert second.json()["user"]["nickname"] == "Shared Name"
+
+
+def test_account_nickname_update_requires_current_password_and_updates_me(monkeypatch) -> None:  # noqa: ANN001
+    client = _client(monkeypatch)
+    password = "correct horse battery staple"
+    _signup_verify_and_login(
+        client,
+        email="nickname-settings@example.com",
+        password=password,
+        nickname="Original Name",
+    )
+
+    wrong_password = client.patch(
+        "/auth/me/nickname",
+        json={"current_password": "wrong password", "nickname": "Wrong Name"},
+    )
+    unchanged = client.get("/auth/me")
+    updated = client.patch(
+        "/auth/me/nickname",
+        json={"current_password": password, "nickname": "  Updated Name  "},
+    )
+    me = client.get("/auth/me")
+
+    assert wrong_password.status_code == 401
+    assert wrong_password.json()["detail"] == "invalid current password"
+    assert unchanged.status_code == 200
+    assert unchanged.json()["nickname"] == "Original Name"
+    assert updated.status_code == 200
+    assert updated.json()["nickname"] == "Updated Name"
+    assert "password" not in updated.text.lower()
+    assert "password_hash" not in updated.text.lower()
+    assert me.status_code == 200
+    assert me.json()["nickname"] == "Updated Name"
+
+
+def test_account_nickname_update_validates_blank_and_too_long_values(monkeypatch) -> None:  # noqa: ANN001
+    client = _client(monkeypatch)
+    password = "correct horse battery staple"
+    _signup_verify_and_login(
+        client,
+        email="nickname-validation@example.com",
+        password=password,
+        nickname="Original Name",
+    )
+
+    blank = client.patch(
+        "/auth/me/nickname",
+        json={"current_password": password, "nickname": "   "},
+    )
+    too_long = client.patch(
+        "/auth/me/nickname",
+        json={"current_password": password, "nickname": "x" * 41},
+    )
+    me = client.get("/auth/me")
+
+    assert blank.status_code == 422
+    assert too_long.status_code == 422
+    assert me.status_code == 200
+    assert me.json()["nickname"] == "Original Name"
+
+
+def test_account_nickname_update_allows_duplicate_display_names(monkeypatch) -> None:  # noqa: ANN001
+    client = _client(monkeypatch)
+    password = "correct horse battery staple"
+    _signup_verify_and_login(
+        client,
+        email="nickname-duplicate-one@example.com",
+        password=password,
+        nickname="Shared Name",
+    )
+    _signup_verify_and_login(
+        client,
+        email="nickname-duplicate-two@example.com",
+        password=password,
+        nickname="Initial Second Name",
+    )
+
+    duplicate_update = client.patch(
+        "/auth/me/nickname",
+        json={"current_password": password, "nickname": "Shared Name"},
+    )
+
+    assert duplicate_update.status_code == 200
+    assert duplicate_update.json()["nickname"] == "Shared Name"
 
 
 def test_signup_auto_approval_defaults_to_pending_account(monkeypatch) -> None:  # noqa: ANN001
@@ -425,6 +527,38 @@ def test_guest_auto_approval_emails_code_and_allows_guest_login(monkeypatch) -> 
     assert messages[-1].purpose == "guest_access_code"
     assert login.status_code == 200
     assert login.json()["user"]["is_guest"] is True
+
+
+def test_guest_account_mutations_are_rejected(monkeypatch) -> None:  # noqa: ANN001
+    monkeypatch.setenv("MY_AGENTS_GUEST_ACCESS_ENABLED", "true")
+    monkeypatch.setenv("MY_AGENTS_GUEST_CODE_AUTO_APPROVAL", "true")
+    get_settings.cache_clear()
+    client = _client(monkeypatch)
+    client.post(
+        "/auth/guest/request",
+        json={"email": "guest-settings@example.com", "language": "en"},
+    )
+    code = get_local_auth_email_outbox().messages()[-1].token
+    login = client.post("/auth/guest/login", json={"code": code})
+    assert login.status_code == 200
+
+    nickname = client.patch(
+        "/auth/me/nickname",
+        json={"current_password": "guest-login-disabled", "nickname": "Guest Rename"},
+    )
+    password = client.patch(
+        "/auth/me/password",
+        json={
+            "current_password": "guest-login-disabled",
+            "new_password": "new correct horse battery staple",
+        },
+    )
+
+    assert nickname.status_code == 403
+    assert nickname.json()["detail"] == "registered account required"
+    assert password.status_code == 403
+    assert password.json()["detail"] == "registered account required"
+    assert client.get("/auth/me").status_code == 200
 
 
 def test_guest_auto_approval_email_failure_does_not_persist_code(monkeypatch) -> None:  # noqa: ANN001
@@ -721,6 +855,45 @@ def test_password_reset_uses_local_email_and_revokes_old_session(monkeypatch) ->
         json={"token": reset_token, "new_password": "another valid password"},
     )
     assert reused.status_code == 400
+
+
+def test_account_password_update_requires_current_password_and_revokes_sessions(
+    monkeypatch,
+) -> None:  # noqa: ANN001
+    client = _client(monkeypatch)
+    old_password = "correct horse battery staple"
+    new_password = "new correct horse battery staple"
+    _signup_verify_and_login(client, email="password-settings@example.com", password=old_password)
+
+    wrong_password = client.patch(
+        "/auth/me/password",
+        json={"current_password": "wrong password", "new_password": new_password},
+    )
+    still_authenticated = client.get("/auth/me")
+    changed = client.patch(
+        "/auth/me/password",
+        json={"current_password": old_password, "new_password": new_password},
+    )
+    after_change = client.get("/auth/me")
+    old_login = client.post(
+        "/auth/login",
+        json={"email": "password-settings@example.com", "password": old_password},
+    )
+    new_login = client.post(
+        "/auth/login",
+        json={"email": "password-settings@example.com", "password": new_password},
+    )
+
+    assert wrong_password.status_code == 401
+    assert wrong_password.json()["detail"] == "invalid current password"
+    assert still_authenticated.status_code == 200
+    assert changed.status_code == 204
+    assert "my_agents_session=" in changed.headers["set-cookie"].lower()
+    assert "max-age=0" in changed.headers["set-cookie"].lower()
+    assert changed.text == ""
+    assert after_change.status_code == 401
+    assert old_login.status_code == 401
+    assert new_login.status_code == 200
 
 
 def test_password_reset_request_does_not_enumerate_unknown_accounts(monkeypatch) -> None:  # noqa: ANN001
