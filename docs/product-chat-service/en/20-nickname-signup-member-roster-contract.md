@@ -1,7 +1,7 @@
 ---
 title: Nickname signup and member roster contract
 updated: 2026-06-14
-status: planned
+status: active
 locations:
   - my_agents/auth/schemas.py
   - my_agents/auth/models.py
