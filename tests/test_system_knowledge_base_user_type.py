@@ -10,7 +10,7 @@ from sqlalchemy import select
 from my_agents.api import create_app
 from my_agents.api.assistant import get_graph_runner
 from my_agents.auth.models import UserModel
-from my_agents.knowledge.models import KnowledgeBaseModel
+from my_agents.knowledge.models import DocumentModel, KnowledgeBaseModel
 from my_agents.persistence.database import get_database_session
 from my_agents.schemas import RouteDecision
 
@@ -198,8 +198,9 @@ def test_selected_personal_kb_retrieval_keeps_system_kb_ambient_and_unlisted(mon
         ).status_code
         == 200
     )
+    guess_conversation_id = normal.post("/conversations", json={"title": "Guess"}).json()["id"]
     guessed_system = normal.post(
-        f"/conversations/{normal.post('/conversations', json={'title': 'Guess'}).json()['id']}/runs",
+        f"/conversations/{guess_conversation_id}/runs",
         json={
             "message": "Can I select this?",
             "knowledge_base_selection": {
@@ -254,7 +255,6 @@ def test_system_kb_delete_removes_documents_and_dependent_rows(monkeypatch) -> N
     db = next(session_generator)
     try:
         assert db.get(KnowledgeBaseModel, system_id) is None
-        assert db.get(KnowledgeBaseModel, document.json()["knowledge_base_id"]) is None
-        assert db.scalar(select(KnowledgeBaseModel).where(KnowledgeBaseModel.id == system_id)) is None
+        assert db.get(DocumentModel, document.json()["id"]) is None
     finally:
         session_generator.close()
