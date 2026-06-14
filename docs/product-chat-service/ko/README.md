@@ -26,6 +26,7 @@
 18. [Group upload staging flow](./18-team-upload-staging-flow.md)
 19. [LangGraph-native memory migration](./19-langgraph-native-memory-migration.md)
 20. [Nickname signup and member roster contract](./20-nickname-signup-member-roster-contract.md)
+21. [System knowledge 통합 리스크 리뷰](./21-system-knowledge-integration-risk-review.md)
 
 ## 문서 상태
 
