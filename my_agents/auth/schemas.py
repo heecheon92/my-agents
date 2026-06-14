@@ -7,6 +7,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
+from my_agents.auth.contracts import UserType
+
 AuthEmailLanguage = Literal["ko", "en"]
 AccountApprovalStatus = Literal["approved", "pending", "rejected"]
 
@@ -145,6 +147,8 @@ class UserResponse(BaseModel):
     approval_status: AccountApprovalStatus = "approved"
     is_guest: bool = False
     guest_expires_at: datetime | None = None
+    user_type: UserType = UserType.NORMAL
+    can_manage_system_knowledge: bool = False
 
 
 class SignupResponse(BaseModel):

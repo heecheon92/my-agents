@@ -34,6 +34,12 @@ class KnowledgeBaseResponse(BaseModel):
     published_group_ids: list[str] = Field(default_factory=list)
 
 
+class KnowledgeBaseUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=160)
+
+
 class KnowledgePublishRequestCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -123,6 +129,19 @@ class DocumentCreateRequest(BaseModel):
     content: str = ""
     group_id: str | None = None
     knowledge_base_id: str | None = Field(default=None, min_length=1)
+
+
+class DocumentUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    content: str | None = None
+
+    @model_validator(mode="after")
+    def validate_update_shape(self) -> DocumentUpdateRequest:
+        if self.title is None and self.content is None:
+            raise ValueError("submit title or content")
+        return self
 
 
 class DocumentResponse(BaseModel):
