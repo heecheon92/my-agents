@@ -85,6 +85,10 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
   code; operators issue one-time codes manually for explicit ephemeral guest
   identities with normal app session cookies, 24-hour expiry, one conversation,
   five prompts, and three document creates/uploads.
+- `users.user_type` distinguishes `normal`, `root`, and `system` platform privilege
+  from registered/guest `account_type`; `/auth/me` exposes the read-only
+  `can_manage_system_knowledge` capability, and mutation is script-only through
+  `scripts.set_user_type` / `scripts.ops account set-user-type`.
 
 ### Groups, documents, permissions
 
@@ -122,11 +126,14 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
 - Structured enumeration prompts such as “list API endpoints in this document” can retrieve by extracted entity type instead of relying only on vector/keyword wording overlap.
 - Broad personal-document fallback now retrieves recent authorized chunks for resume/profile/uploaded-document questions when exact term matching returns nothing.
 - Authorized retrieved context plus `answer_mode` is still passed into the general assistant graph/provider prompt; the `rag_agent` contract graph now wraps that path with verified trace stages and grounding checks before citation-backed replies are persisted.
+- System knowledge bases (`scope=system`) are manager-only for CRUD/document
+  operations but ambiently included in authenticated chat retrieval, including guest
+  sessions, without exposing ambient system KB IDs in public selected/resolved metadata.
 
 ### Persistence and migrations
 
 - SQLAlchemy models cover auth, auth lifecycle tokens, sessions, groups, documents, knowledge artifacts, structured knowledge entities, conversations, runs, events, and citations.
-- Alembic migrations cover the initial service schema, auth lifecycle, run detail refresh fields, PDF upload provenance fields, guest access state, retrieval-routing run metadata, pgvector chunk embeddings, async extraction-run progress fields, and structured knowledge entities.
+- Alembic migrations cover the initial service schema, auth lifecycle, run detail refresh fields, PDF upload provenance fields, guest access state, retrieval-routing run metadata, pgvector chunk embeddings, async extraction-run progress fields, structured knowledge entities, and the `users.user_type` privilege column.
 - SQLite in-memory auto-create supports offline tests.
 - Postgres/Neon readiness is documented, with external DB tests skipped unless configured.
 - Hosted Render deployment uses Neon/Postgres and was verified through redacted runtime diagnostics.

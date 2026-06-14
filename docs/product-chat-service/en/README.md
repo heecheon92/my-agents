@@ -25,4 +25,4 @@ They live outside `docs/learning/` because `docs/learning/` is reserved for the 
 18. [Group upload staging flow](./18-team-upload-staging-flow.md)
 19. [LangGraph-native memory migration](./19-langgraph-native-memory-migration.md)
 20. [Nickname signup and member roster contract](./20-nickname-signup-member-roster-contract.md)
-21. [System knowledge integration risk review](./21-system-knowledge-integration-risk-review.md)
+21. [System knowledge base and user type contract](./21-system-knowledge-base-user-type.md)

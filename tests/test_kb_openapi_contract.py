@@ -63,6 +63,10 @@ def test_openapi_exposes_kb_first_document_and_chat_selection_contract() -> None
     assert selection_schema["properties"]["mode"]["enum"] == ["all", "selected"]
     assert selection_schema["properties"]["knowledge_base_ids"]["type"] == "array"
     assert kb_scope_schema["enum"] == ["personal", "group", "system"]
+    assert (
+        kb_create_schema["properties"]["scope"]["$ref"]
+        == "#/components/schemas/KnowledgeBaseScope"
+    )
     assert kb_response_schema["properties"]["purpose"]["$ref"] == (
         "#/components/schemas/KnowledgeBasePurpose"
     )
@@ -82,7 +86,10 @@ def test_openapi_exposes_kb_first_document_and_chat_selection_contract() -> None
     )
     assert "patch" in schema["paths"]["/knowledge-bases/{knowledge_base_id}"]
     assert "delete" in schema["paths"]["/knowledge-bases/{knowledge_base_id}"]
-    assert "patch" in schema["paths"]["/knowledge-bases/{knowledge_base_id}/documents/{document_id}"]
+    assert (
+        "patch"
+        in schema["paths"]["/knowledge-bases/{knowledge_base_id}/documents/{document_id}"]
+    )
 
     upload_body_ref = schema["paths"]["/documents/upload"]["post"]["requestBody"]["content"][
         "multipart/form-data"

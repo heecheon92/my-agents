@@ -26,7 +26,7 @@
 18. [Group upload staging flow](./18-team-upload-staging-flow.md)
 19. [LangGraph-native memory migration](./19-langgraph-native-memory-migration.md)
 20. [Nickname signup and member roster contract](./20-nickname-signup-member-roster-contract.md)
-21. [System knowledge 통합 리스크 리뷰](./21-system-knowledge-integration-risk-review.md)
+21. [System knowledge base와 user type 계약](./21-system-knowledge-base-user-type.md)
 
 ## 문서 상태
 
@@ -40,6 +40,7 @@
 - 영어 원문: [product-chat-service/README.md](../en/README.md)
 - KB-first handoff: [Knowledge-base path OpenAPI handoff](./12-knowledge-base-path-openapi-handoff.md)
 - 그룹 문서 승인 업로드 흐름: [Group upload staging flow](./18-team-upload-staging-flow.md)
+- System knowledge 계약: [System knowledge base와 user type 계약](./21-system-knowledge-base-user-type.md)
 
 ## 배포 / 마이그레이션 참고
 
