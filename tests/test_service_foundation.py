@@ -21,7 +21,24 @@ def test_create_app_still_exposes_health_and_legacy_assistant_routes() -> None:
     response = TestClient(app).get("/health")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "service": "my-agents", "version": "0.1.0"}
+    assert response.json() == {
+        "status": "ok",
+        "service": "my-agents",
+        "version": "0.1.0",
+        "frontend_config": {"documents": {"upload_concurrency": 3}},
+    }
+
+
+def test_health_exposes_env_configured_document_upload_concurrency(
+    monkeypatch,
+) -> None:  # noqa: ANN001
+    monkeypatch.setenv("MY_AGENTS_DOCUMENT_UPLOAD_CONCURRENCY", "5")
+    app = create_app()
+
+    response = TestClient(app).get("/health")
+
+    assert response.status_code == 200
+    assert response.json()["frontend_config"]["documents"]["upload_concurrency"] == 5
 
 
 def test_persistence_config_normalizes_settings() -> None:

@@ -35,6 +35,9 @@ _SOURCE_LOOKUP_HINTS = ("where", "source", "citation", "which document", "근거
 class QueryCartographer:
     """Deterministic retrieval planner with an OpenAI seam reserved for later."""
 
+    def __init__(self, candidate_limits: CandidateLimits | None = None) -> None:
+        self._candidate_limits = candidate_limits or CandidateLimits()
+
     def plan(
         self,
         *,
@@ -70,7 +73,7 @@ class QueryCartographer:
             expansion_terms=(),
             structured_entity_types=structured_entity_types,
             use_hyde=False,
-            limits=CandidateLimits(),
+            limits=self._candidate_limits,
         )
 
 

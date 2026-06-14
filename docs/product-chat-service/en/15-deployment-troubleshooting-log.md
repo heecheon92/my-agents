@@ -254,6 +254,7 @@ No confirmed failure yet in this incident, but runtime config shows:
 
 ```env
 MY_AGENTS_RERANKER_MODE=cross_encoder
+MY_AGENTS_RERANKER_TOP_K=40
 ```
 
 Cross-encoder reranking loads ML dependencies and can be memory-heavy.
@@ -265,6 +266,10 @@ If Render free memory/startup becomes unstable, use:
 ```env
 MY_AGENTS_RERANKER_MODE=deterministic
 ```
+
+If cross-encoder precision is still needed but latency or memory is tight, lower
+`MY_AGENTS_RERANKER_TOP_K` so fewer authorized candidates are scored in the
+second-stage pass.
 
 ### 9. Markdown upload succeeded but async ingestion made the web service unresponsive
 

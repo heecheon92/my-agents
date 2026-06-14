@@ -152,6 +152,8 @@ def list_members(
             group_id=group_id,
             actor_user_id=principal.user_id,
         )
+    except GroupMembershipPermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="not allowed") from exc
     except InvitationNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="group not found"

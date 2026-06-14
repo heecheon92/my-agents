@@ -96,8 +96,52 @@ def test_owner_invites_and_recipient_accepts_without_token_or_profile_leak(monke
     assert accepted_payload["role"] == "viewer"
     assert recipient.get(f"/groups/{group_id}").status_code == 200
     members = recipient.get(f"/groups/{group_id}/members")
+    assert members.status_code == 403
+    manager_members = owner.get(f"/groups/{group_id}/members")
+    assert manager_members.status_code == 200
+    assert {member["user_id"] for member in manager_members.json()} >= {recipient_id}
+    assert all(
+        "email" not in member and "profile" not in member for member in manager_members.json()
+    )
+
+
+def test_viewer_cannot_list_member_directory(monkeypatch) -> None:  # noqa: ANN001
+    owner = _client(monkeypatch)
+    viewer = _client(monkeypatch)
+    _signup_login(owner, "member-directory-owner@example.com")
+    _signup_login(viewer, "member-directory-viewer@example.com")
+    group_id = _create_group(owner, name="Private Roster Group")
+    invitation = owner.post(
+        f"/groups/{group_id}/invitations",
+        json={"email": "member-directory-viewer@example.com", "role": "viewer"},
+    )
+    assert invitation.status_code == 201
+    token = latest_auth_email_token("member-directory-viewer@example.com", "group_invitation")
+    assert viewer.post("/group-invitations/accept", json={"token": token}).status_code == 200
+
+    members = viewer.get(f"/groups/{group_id}/members")
+
+    assert members.status_code == 403
+
+
+def test_owner_can_list_member_basics_for_role_maintenance(monkeypatch) -> None:  # noqa: ANN001
+    owner = _client(monkeypatch)
+    recipient = _client(monkeypatch)
+    owner_id = _signup_login(owner, "member-list-owner@example.com")
+    recipient_id = _signup_login(recipient, "member-list-recipient@example.com")
+    group_id = _create_group(owner, name="Managed Roster Group")
+    invitation = owner.post(
+        f"/groups/{group_id}/invitations",
+        json={"email": "member-list-recipient@example.com", "role": "viewer"},
+    )
+    assert invitation.status_code == 201
+    token = latest_auth_email_token("member-list-recipient@example.com", "group_invitation")
+    assert recipient.post("/group-invitations/accept", json={"token": token}).status_code == 200
+
+    members = owner.get(f"/groups/{group_id}/members")
+
     assert members.status_code == 200
-    assert {member["user_id"] for member in members.json()} >= {recipient_id}
+    assert {member["user_id"] for member in members.json()} >= {owner_id, recipient_id}
     assert all("email" not in member and "profile" not in member for member in members.json())
 
 

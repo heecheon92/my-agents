@@ -271,8 +271,8 @@ class GroupInvitationService:
         group_id: str,
         actor_user_id: str,
     ) -> list[MembershipModel]:
-        """List active member basics for accepted members only."""
-        self._get_group_and_membership(group_id=group_id, user_id=actor_user_id)
+        """List active member basics for owner/admin role maintenance only."""
+        self._require_group_manager(group_id=group_id, user_id=actor_user_id)
         return list(
             self._db.scalars(
                 select(MembershipModel)

@@ -106,6 +106,7 @@ def test_embedding_settings_default_to_deterministic(monkeypatch: pytest.MonkeyP
     assert settings.ingestion_execution_mode == "in_process_thread"
     assert settings.ingestion_worker_poll_interval_seconds == 2.0
     assert settings.ingestion_worker_batch_size == 1
+    assert settings.document_upload_concurrency == 3
     assert settings.active_run_stale_after_seconds == 120
 
 
@@ -116,6 +117,7 @@ def test_ingestion_worker_settings_accept_external_worker_mode(
     monkeypatch.setenv("MY_AGENTS_INGESTION_EXECUTION_MODE", "external_worker")
     monkeypatch.setenv("MY_AGENTS_INGESTION_WORKER_POLL_INTERVAL_SECONDS", "0.5")
     monkeypatch.setenv("MY_AGENTS_INGESTION_WORKER_BATCH_SIZE", "3")
+    monkeypatch.setenv("MY_AGENTS_DOCUMENT_UPLOAD_CONCURRENCY", "4")
     monkeypatch.setenv("MY_AGENTS_ACTIVE_RUN_STALE_AFTER_SECONDS", "45")
 
     settings = Settings(_env_file=None)
@@ -123,6 +125,7 @@ def test_ingestion_worker_settings_accept_external_worker_mode(
     assert settings.ingestion_execution_mode == "external_worker"
     assert settings.ingestion_worker_poll_interval_seconds == 0.5
     assert settings.ingestion_worker_batch_size == 3
+    assert settings.document_upload_concurrency == 4
     assert settings.active_run_stale_after_seconds == 45
 
 

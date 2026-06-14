@@ -30,12 +30,12 @@ Group/team은 초대를 수락한 뒤 참여하는 공유 지식 boundary입니�
 | `PATCH` | `/groups/{group_id}/invitations/{invitation_id}` | owner/admin | pending invitation role 변경 | non-pending invitation은 거절 |
 | `POST` | `/groups/{group_id}/invitations/{invitation_id}/resend` | owner/admin | invite token 재발급/재전송 | raw token과 account state를 노출하지 않음 |
 | `DELETE` | `/groups/{group_id}/invitations/{invitation_id}` | owner/admin | pending invitation 취소 | 취소된 token은 수락 불가 |
-| `GET` | `/groups/{group_id}/members` | accepted member | accepted member의 기본 role 정보 조회 | pending invite/account discovery field 없음 |
-| `PATCH` | `/groups/{group_id}/members` | owner/admin | 이미 active 상태인 member role 수정 | non-creating; unknown/non-member user는 거절 |
+| `GET` | `/groups/{group_id}/members` | owner/admin | role 관리를 위한 accepted member 기본 정보 조회 | pending invite/account discovery field 없음; 일반 member directory가 아님 |
+| `PATCH` | `/groups/{group_id}/members/{user_id}` | owner/admin | 이미 active 상태인 member role 수정 | non-creating; unknown/non-member user는 거절 |
 | `POST` | `/group-invitations/accept` | authenticated recipient | opaque token 수락 | token을 인증된 verified email과 연결 |
 
 `POST /groups/{group_id}/members`처럼 `user_id`로 active membership을 직접 만드는 product-facing route는 두지 않습니다.
-`PATCH /groups/{group_id}/members`는 이미 active 상태인 member role만 수정할 수 있고 membership을 만들면 안 됩니다.
+`PATCH /groups/{group_id}/members/{user_id}`는 이미 active 상태인 member role만 수정할 수 있고 membership을 만들면 안 됩니다.
 테스트나 seed가 직접 멤버십 setup이 필요하면 HTTP가 아닌 fixture/service helper를 사용합니다.
 
 ## 테스트 근거

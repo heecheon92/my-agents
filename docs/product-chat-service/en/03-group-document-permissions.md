@@ -43,12 +43,12 @@ A pending invitation is not an active membership and does not grant group KB acc
 | `PATCH` | `/groups/{group_id}/invitations/{invitation_id}` | owner/admin | change role on a pending invitation | reject non-pending invites |
 | `POST` | `/groups/{group_id}/invitations/{invitation_id}/resend` | owner/admin | rotate/reissue the invite token | do not expose raw tokens or account state |
 | `DELETE` | `/groups/{group_id}/invitations/{invitation_id}` | owner/admin | cancel a pending invite | cancelled token cannot be accepted |
-| `GET` | `/groups/{group_id}/members` | accepted member | list accepted member basics | no pending invite/account-discovery fields |
-| `PATCH` | `/groups/{group_id}/members` | owner/admin | update an already-active member role | non-creating; reject unknown or non-member users |
+| `GET` | `/groups/{group_id}/members` | owner/admin | list accepted member basics for role maintenance | no pending invite/account-discovery fields; not a general member directory |
+| `PATCH` | `/groups/{group_id}/members/{user_id}` | owner/admin | update an already-active member role | non-creating; reject unknown or non-member users |
 | `POST` | `/group-invitations/accept` | authenticated recipient | accept an opaque token | bind token to the authenticated verified email |
 
 Direct `POST /groups/{group_id}/members` activation by `user_id` is not a
-product-facing route. `PATCH /groups/{group_id}/members` may update roles for
+product-facing route. `PATCH /groups/{group_id}/members/{user_id}` may update roles for
 already-active members only and must not create membership. Tests and seed helpers
 that need direct setup must use non-HTTP fixtures or service helpers.
 
@@ -101,7 +101,7 @@ Invitation and permission tests should cover:
 - pending invitations do not create active membership rows;
 - acceptance requires the authenticated invited email and creates at most one membership;
 - wrong-user, cancelled, expired, consumed, and duplicate acceptance fail safely;
-- accepted members can list basic member/role information without email/profile fields;
+- owners/admins can list basic member/role information for role maintenance without email/profile fields;
 - owner/admin active-member role patch is non-creating and rejects missing/non-member users;
 - public OpenAPI does not expose direct create-member-by-`user_id`;
 - accepted group viewers can read approved group documents and outsiders cannot;
