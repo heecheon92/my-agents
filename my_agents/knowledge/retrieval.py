@@ -30,6 +30,7 @@ from my_agents.knowledge.models import (
     KnowledgeBaseScope,
     StructuredKnowledgeEntityModel,
 )
+from my_agents.observability.metrics import track_retrieval_phase
 
 
 @dataclass(frozen=True)
@@ -72,35 +73,40 @@ class RetrievalService:
         knowledge_base_ids: Sequence[str] | None = None,
     ) -> list[RetrievedChunk]:
         terms = _query_terms(query)
-        metadata_matches = self._document_metadata_matches(
-            user_id=user_id,
-            query=query,
-            terms=terms,
-            knowledge_base_ids=knowledge_base_ids,
-            limit=limit,
-        )
-        metadata_profile_matches = self._document_metadata_profile_matches(
-            user_id=user_id,
-            query=query,
-            terms=terms,
-            knowledge_base_ids=knowledge_base_ids,
-            limit=limit,
-        )
-        direct = [
-            *metadata_matches,
-            *self._direct_authorized_matches(
+        with track_retrieval_phase("document_metadata_match"):
+            metadata_matches = self._document_metadata_matches(
                 user_id=user_id,
                 query=query,
                 terms=terms,
                 knowledge_base_ids=knowledge_base_ids,
-            ),
+                limit=limit,
+            )
+        with track_retrieval_phase("document_metadata_profile_match"):
+            metadata_profile_matches = self._document_metadata_profile_matches(
+                user_id=user_id,
+                query=query,
+                terms=terms,
+                knowledge_base_ids=knowledge_base_ids,
+                limit=limit,
+            )
+        with track_retrieval_phase("direct_authorized_match"):
+            direct_matches = self._direct_authorized_matches(
+                user_id=user_id,
+                query=query,
+                terms=terms,
+                knowledge_base_ids=knowledge_base_ids,
+            )
+        direct = [
+            *metadata_matches,
+            *direct_matches,
             *metadata_profile_matches,
         ]
-        expanded = self._expand_authorized_related(
-            user_id=user_id,
-            direct=direct,
-            knowledge_base_ids=knowledge_base_ids,
-        )
+        with track_retrieval_phase("authorized_related_expansion"):
+            expanded = self._expand_authorized_related(
+                user_id=user_id,
+                direct=direct,
+                knowledge_base_ids=knowledge_base_ids,
+            )
         combined: dict[str, RetrievedChunk] = {}
         for item in direct:
             existing = combined.get(item.chunk.id)
@@ -119,38 +125,41 @@ class RetrievalService:
                     source=item.source,
                 )
         if not combined and _needs_personal_document_fallback(query):
-            return _dedupe_retrieved_chunks(
-                self._recent_authorized_chunks(
-                    user_id=user_id, limit=limit, knowledge_base_ids=knowledge_base_ids
-                ),
-                limit=limit,
-            )
+            with track_retrieval_phase("personal_document_fallback"):
+                return _dedupe_retrieved_chunks(
+                    self._recent_authorized_chunks(
+                        user_id=user_id, limit=limit, knowledge_base_ids=knowledge_base_ids
+                    ),
+                    limit=limit,
+                )
         ranked = sorted(combined.values(), key=lambda item: (-item.score, item.chunk.ordinal))
         if _needs_document_overview(query):
-            ranked = self._with_small_document_overview_chunks(
-                ranked,
-                user_id=user_id,
-                knowledge_base_ids=knowledge_base_ids,
-                char_budget=6000,
-            )
+            with track_retrieval_phase("document_overview_supplement"):
+                ranked = self._with_small_document_overview_chunks(
+                    ranked,
+                    user_id=user_id,
+                    knowledge_base_ids=knowledge_base_ids,
+                    char_budget=6000,
+                )
         return _dedupe_retrieved_chunks(ranked, limit=limit)
 
     def authorized_document_count(
         self, *, user_id: str, knowledge_base_ids: Sequence[str] | None = None
     ) -> int:
         """Return how many distinct documents the user can read."""
-        return (
-            self._db.scalar(
-                select(func.count(DocumentModel.id.distinct())).where(
-                    _authorized_document_filter(
-                        user_id,
-                        knowledge_base_ids=knowledge_base_ids,
-                        require_standard_purpose=_schema_has_knowledge_base_purpose(self._db),
+        with track_retrieval_phase("authorized_document_count_sql"):
+            return (
+                self._db.scalar(
+                    select(func.count(DocumentModel.id.distinct())).where(
+                        _authorized_document_filter(
+                            user_id,
+                            knowledge_base_ids=knowledge_base_ids,
+                            require_standard_purpose=_schema_has_knowledge_base_purpose(self._db),
+                        )
                     )
                 )
+                or 0
             )
-            or 0
-        )
 
     def retrieve_structured_entities(
         self,
@@ -188,6 +197,8 @@ class RetrievalService:
             .limit(limit)
         )
         terms = _query_terms(query)
+        with track_retrieval_phase("structured_entity_sql"):
+            rows = self._db.execute(statement).all()
         matches = [
             RetrievedStructuredEntity(
                 entity=entity,
@@ -195,7 +206,7 @@ class RetrievalService:
                 document=document,
                 score=_structured_entity_score(entity, terms),
             )
-            for entity, chunk, document in self._db.execute(statement).all()
+            for entity, chunk, document in rows
         ]
         return sorted(matches, key=lambda item: (-item.score, item.chunk.ordinal))
 
@@ -281,14 +292,15 @@ class RetrievalService:
         if not query_embedding:
             return []
         try:
-            rows = self._db.execute(
-                _postgres_vector_authorized_statement(
-                    user_id=user_id,
-                    query_embedding=query_embedding,
-                    knowledge_base_ids=knowledge_base_ids,
-                    limit=limit,
-                )
-            ).all()
+            with track_retrieval_phase("postgres_vector_sql"):
+                rows = self._db.execute(
+                    _postgres_vector_authorized_statement(
+                        user_id=user_id,
+                        query_embedding=query_embedding,
+                        knowledge_base_ids=knowledge_base_ids,
+                        limit=limit,
+                    )
+                ).all()
         except SQLAlchemyError:
             self._db.rollback()
             return []
@@ -330,9 +342,7 @@ class RetrievalService:
         entity_ids = {
             mention.entity_id
             for item in expansion_seeds
-            for mention in self._db.scalars(
-                select(EntityMentionModel).where(EntityMentionModel.chunk_id == item.chunk.id)
-            ).all()
+            for mention in _entity_mentions_for_chunk(self._db, item.chunk.id)
         }
         if not entity_ids:
             return []
@@ -344,9 +354,7 @@ class RetrievalService:
         for chunk, document in authorized_rows:
             if chunk.id in direct_chunk_ids:
                 continue
-            mentions = self._db.scalars(
-                select(EntityMentionModel).where(EntityMentionModel.chunk_id == chunk.id)
-            ).all()
+            mentions = _entity_mentions_for_chunk(self._db, chunk.id)
             if any(mention.entity_id in entity_ids for mention in mentions):
                 expanded.append(
                     RetrievedChunk(
@@ -536,7 +544,8 @@ class RetrievalService:
             )
             .order_by(desc(DocumentModel.created_at), desc(DocumentMetadataProfileModel.created_at))
         )
-        return list(self._db.execute(statement).all())
+        with track_retrieval_phase("metadata_profile_rows_sql"):
+            return list(self._db.execute(statement).all())
 
     def _authorized_chunk_rows(
         self, user_id: str, *, knowledge_base_ids: Sequence[str] | None
@@ -555,7 +564,8 @@ class RetrievalService:
             )
             .order_by(desc(DocumentModel.created_at), DocumentChunkModel.ordinal)
         )
-        return list(self._db.execute(statement).all())
+        with track_retrieval_phase("authorized_chunk_rows_sql"):
+            return list(self._db.execute(statement).all())
 
 
 def _postgres_vector_authorized_statement(
@@ -578,6 +588,15 @@ def _postgres_vector_authorized_statement(
         .order_by(vector_distance, desc(DocumentModel.created_at), DocumentChunkModel.ordinal)
         .limit(limit)
     )
+
+
+def _entity_mentions_for_chunk(db: Session, chunk_id: str) -> list[EntityMentionModel]:
+    with track_retrieval_phase("entity_mentions_sql"):
+        return list(
+            db.scalars(
+                select(EntityMentionModel).where(EntityMentionModel.chunk_id == chunk_id)
+            ).all()
+        )
 
 
 def _authorized_document_filter(

@@ -398,6 +398,10 @@ class Settings(BaseSettings):
         default=False,
         validation_alias=AliasChoices("MY_AGENTS_DEBUG_KNOWLEDGE_CONTEXT_LOGGING"),
     )
+    metrics_enabled: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("MY_AGENTS_METRICS_ENABLED"),
+    )
 
     @field_validator("openai_model", "openai_embedding_model", "cross_encoder_model")
     @classmethod

@@ -95,6 +95,19 @@ OpenAPI는 실행 중인 서버에서 확인할 수 있습니다.
 http://127.0.0.1:8000/openapi.json
 ```
 
+선택적인 내부 timing metrics는 명시적으로 켰을 때만 Prometheus text 형식으로
+노출됩니다.
+
+```bash
+MY_AGENTS_METRICS_ENABLED=true uv run fastapi dev main.py
+curl http://127.0.0.1:8000/metrics
+```
+
+이 metrics endpoint는 product API가 아니라 유지보수/품질 분석용 surface입니다.
+Request, conversation run, ContextForge retrieval, embedding, reranker, assistant graph
+timing histogram을 기록하며 raw prompt, 문서 본문, user ID, document ID를 metric label로
+사용하지 않습니다.
+
 ## 주요 검사
 
 ```bash

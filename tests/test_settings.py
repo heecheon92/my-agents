@@ -108,6 +108,7 @@ def test_embedding_settings_default_to_deterministic(monkeypatch: pytest.MonkeyP
     assert settings.ingestion_worker_batch_size == 1
     assert settings.document_upload_concurrency == 3
     assert settings.active_run_stale_after_seconds == 120
+    assert settings.metrics_enabled is False
 
 
 def test_ingestion_worker_settings_accept_external_worker_mode(
@@ -494,6 +495,15 @@ def test_debug_knowledge_context_logging_env_flag(monkeypatch: pytest.MonkeyPatc
     settings = Settings(_env_file=None)
 
     assert settings.debug_knowledge_context_logging is True
+
+
+def test_metrics_enabled_env_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
+    monkeypatch.setenv("MY_AGENTS_METRICS_ENABLED", "true")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.metrics_enabled is True
 
 
 def test_resend_http_email_mode_requires_api_key(monkeypatch: pytest.MonkeyPatch) -> None:

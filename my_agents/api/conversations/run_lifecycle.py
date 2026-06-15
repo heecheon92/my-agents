@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime, timedelta
+from time import perf_counter
 
 from fastapi import HTTPException, status
 from langchain_core.messages import BaseMessage
@@ -61,6 +62,7 @@ from my_agents.knowledge.auth import KnowledgeBaseSelectionContext
 from my_agents.knowledge.models import CitationModel
 from my_agents.knowledge.retrieval import RetrievedChunk
 from my_agents.knowledge.routing import AnswerMode, RetrievalRoutingDecision
+from my_agents.observability.metrics import observe_conversation_run
 from my_agents.schemas import RouteDecision
 from my_agents.settings import get_settings
 
@@ -130,14 +132,33 @@ def _complete_sync_conversation_run(
     graph_runner: GraphRunner,
     warnings: list[ConversationRunWarning] | None = None,
 ) -> ConversationRunResponse:
-    retrieval_context = prepare_retrieval_context(
-        db=db,
-        user_id=user_id,
-        conversation_id=conversation_id,
-        message=prompt,
-        messages=messages,
-        selection_context=selection_context,
-    )
+    run_started = perf_counter()
+    retrieval_route = "unknown"
+    answer_mode = "unknown"
+
+    def record_run_metric(outcome: str) -> None:
+        observe_conversation_run(
+            mode="sync",
+            outcome=outcome,
+            retrieval_route=retrieval_route,
+            answer_mode=answer_mode,
+            duration_seconds=perf_counter() - run_started,
+        )
+
+    try:
+        retrieval_context = prepare_retrieval_context(
+            db=db,
+            user_id=user_id,
+            conversation_id=conversation_id,
+            message=prompt,
+            messages=messages,
+            selection_context=selection_context,
+        )
+    except Exception:
+        record_run_metric("failed")
+        raise
+    retrieval_route = retrieval_context.decision.route
+    answer_mode = retrieval_context.answer_mode
     record_run_retrieval_metadata(
         db,
         run.id,
@@ -163,7 +184,7 @@ def _complete_sync_conversation_run(
     if retrieval_context.decision.route == "clarification_required":
         route = classify_messages(messages)
         clarification = clarification_request(retrieval_context.decision)
-        return persist_completed_run(
+        response = persist_completed_run(
             db=db,
             run_id=run.id,
             conversation_id=conversation_id,
@@ -177,9 +198,11 @@ def _complete_sync_conversation_run(
             clarification=clarification,
             retrieval_evidence=retrieval_context.retrieval_evidence,
         )
+        record_run_metric("clarification")
+        return response
     if retrieval_context.insufficient_evidence:
         route = classify_messages(messages)
-        return persist_completed_run(
+        response = persist_completed_run(
             db=db,
             run_id=run.id,
             conversation_id=conversation_id,
@@ -193,6 +216,8 @@ def _complete_sync_conversation_run(
             insufficient_evidence=True,
             retrieval_evidence=retrieval_context.retrieval_evidence,
         )
+        record_run_metric("insufficient_evidence")
+        return response
     graph_input = graph_input_for_run(
         messages=messages,
         user_id=user_id,
@@ -241,6 +266,7 @@ def _complete_sync_conversation_run(
             error_type=type(original).__name__,
             memory_source_snapshot=memory_source_snapshot,
         )
+        record_run_metric("failed")
         raise HTTPException(status_code=status_code, detail="conversation run failed") from original
     except ResponseProviderConfigurationError as exc:
         persist_failed_run(
@@ -249,6 +275,7 @@ def _complete_sync_conversation_run(
             conversation_id=conversation_id,
             error_type=type(exc).__name__,
         )
+        record_run_metric("failed")
         raise HTTPException(status_code=503, detail="conversation run failed") from exc
     except Exception as exc:
         persist_failed_run(
@@ -257,6 +284,7 @@ def _complete_sync_conversation_run(
             conversation_id=conversation_id,
             error_type=type(exc).__name__,
         )
+        record_run_metric("failed")
         raise HTTPException(status_code=502, detail="conversation run failed") from exc
     route = coerce_route(result["route"])
     memory_source_snapshot = graph_memory_source_snapshot_json(result)
@@ -272,8 +300,9 @@ def _complete_sync_conversation_run(
     )
     if is_run_cancelling(db, run.id):
         mark_run_cancelled(db, run.id)
+        record_run_metric("cancelled")
         raise HTTPException(status_code=409, detail="conversation run cancelled")
-    return persist_completed_run(
+    response = persist_completed_run(
         db=db,
         run_id=run.id,
         conversation_id=conversation_id,
@@ -288,6 +317,8 @@ def _complete_sync_conversation_run(
         retrieval_evidence=retrieval_context.retrieval_evidence,
         memory_source_snapshot=memory_source_snapshot,
     )
+    record_run_metric("completed")
+    return response
 
 
 def _verified_grounding_or_fallback(

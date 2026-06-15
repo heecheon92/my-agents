@@ -21,6 +21,11 @@ from my_agents.agents.context_forge.reranking import Reranker, build_reranker
 from my_agents.agents.context_forge.source_policy import SourceWarden
 from my_agents.knowledge.retrieval import RetrievalService
 from my_agents.knowledge.routing import answer_mode_for_route, is_relevant_retrieval_result
+from my_agents.observability.metrics import (
+    observe_context_forge,
+    track_reranker,
+    track_retrieval_phase,
+)
 from my_agents.settings import get_settings
 
 
@@ -44,6 +49,7 @@ class ContextForgeService:
         self._curator = ContextCurator()
 
     def retrieve(self, request: ContextForgeRequest) -> ContextForgeResult:
+        context_forge_started = perf_counter()
         debug_agent_turn(
             sender="ConversationRun",
             receiver="QueryCartographer",
@@ -56,10 +62,11 @@ class ContextForgeService:
             },
         )
         selected_ids = self._source_warden.knowledge_base_ids(request.selection_context)
-        document_count = self._retrieval_service.authorized_document_count(
-            user_id=request.user_id,
-            knowledge_base_ids=selected_ids,
-        )
+        with track_retrieval_phase("authorized_document_count"):
+            document_count = self._retrieval_service.authorized_document_count(
+                user_id=request.user_id,
+                knowledge_base_ids=selected_ids,
+            )
         plan = self._planner.plan(
             message=request.query,
             history=request.messages,
@@ -99,7 +106,7 @@ class ContextForgeService:
                 budget_truncated=False,
                 reranker_name=self._reranker.name,
             )
-            return ContextForgeResult(
+            result = ContextForgeResult(
                 plan=plan,
                 decision=plan.route_decision,
                 answer_mode=answer_mode_for_route(
@@ -110,6 +117,12 @@ class ContextForgeService:
                 retrieval_latency_ms=0.0,
                 evidence=evidence,
             )
+            observe_context_forge(
+                retrieval_route=result.decision.route,
+                answer_mode=result.answer_mode,
+                duration_seconds=perf_counter() - context_forge_started,
+            )
+            return result
 
         started = perf_counter()
         debug_agent_turn(
@@ -123,11 +136,12 @@ class ContextForgeService:
                 "rerank_limit": plan.limits.rerank_limit,
             },
         )
-        raw_chunks = self._scouts.gather(
-            user_id=request.user_id,
-            plan=plan,
-            knowledge_base_ids=selected_ids,
-        )
+        with track_retrieval_phase("candidate_gather"):
+            raw_chunks = self._scouts.gather(
+                user_id=request.user_id,
+                plan=plan,
+                knowledge_base_ids=selected_ids,
+            )
         debug_agent_turn(
             sender="CandidateScouts",
             receiver="CandidateFusion",
@@ -138,7 +152,8 @@ class ContextForgeService:
                 "raw_chunk_ids": [item.chunk.id for item in raw_chunks[: plan.limits.rerank_limit]],
             },
         )
-        candidates = fuse_candidates(raw_chunks)
+        with track_retrieval_phase("candidate_fusion"):
+            candidates = fuse_candidates(raw_chunks)
         debug_agent_turn(
             sender="CandidateFusion",
             receiver="EvidenceJudge",
@@ -152,10 +167,11 @@ class ContextForgeService:
                 ],
             },
         )
-        reranked = self._reranker.rerank(
-            plan=plan,
-            candidates=candidates[: plan.limits.rerank_limit],
-        )
+        with track_reranker(self._reranker.name):
+            reranked = self._reranker.rerank(
+                plan=plan,
+                candidates=candidates[: plan.limits.rerank_limit],
+            )
         debug_agent_turn(
             sender="EvidenceJudge",
             receiver="ContextCurator",
@@ -168,10 +184,11 @@ class ContextForgeService:
                 "top_rerank_scores": [item.rerank_score for item in reranked[:5]],
             },
         )
-        injected_chunks, rejected, budget_truncated = self._curator.pack(
-            plan=plan,
-            candidates=reranked,
-        )
+        with track_retrieval_phase("context_pack"):
+            injected_chunks, rejected, budget_truncated = self._curator.pack(
+                plan=plan,
+                candidates=reranked,
+            )
         debug_agent_turn(
             sender="ContextCurator",
             receiver="ConversationRun",
@@ -199,7 +216,7 @@ class ContextForgeService:
             budget_truncated=budget_truncated,
             reranker_name=self._reranker.name,
         )
-        return ContextForgeResult(
+        result = ContextForgeResult(
             plan=plan,
             decision=plan.route_decision,
             answer_mode=answer_mode_for_route(
@@ -211,3 +228,9 @@ class ContextForgeService:
             evidence=evidence,
             rejected_candidates=rejected,
         )
+        observe_context_forge(
+            retrieval_route=result.decision.route,
+            answer_mode=result.answer_mode,
+            duration_seconds=perf_counter() - context_forge_started,
+        )
+        return result

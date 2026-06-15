@@ -9,6 +9,7 @@ from typing import Protocol
 
 from langchain_openai import OpenAIEmbeddings
 
+from my_agents.observability.metrics import track_embedding_call
 from my_agents.settings import Settings, get_settings
 
 DETERMINISTIC_EMBEDDING_DIMENSIONS = 32
@@ -42,10 +43,20 @@ class DeterministicEmbeddingProvider:
     dimensions = DETERMINISTIC_EMBEDDING_DIMENSIONS
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        return [deterministic_embedding(text, dimensions=self.dimensions) for text in texts]
+        with track_embedding_call(
+            provider=self.provider,
+            model=self.model,
+            operation="documents",
+        ):
+            return [deterministic_embedding(text, dimensions=self.dimensions) for text in texts]
 
     def embed_query(self, text: str) -> list[float]:
-        return deterministic_embedding(text, dimensions=self.dimensions)
+        with track_embedding_call(
+            provider=self.provider,
+            model=self.model,
+            operation="query",
+        ):
+            return deterministic_embedding(text, dimensions=self.dimensions)
 
 
 class OpenAIEmbeddingProvider:
@@ -72,10 +83,20 @@ class OpenAIEmbeddingProvider:
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []
-        return [list(vector) for vector in self._embeddings.embed_documents(texts)]
+        with track_embedding_call(
+            provider=self.provider,
+            model=self.model,
+            operation="documents",
+        ):
+            return [list(vector) for vector in self._embeddings.embed_documents(texts)]
 
     def embed_query(self, text: str) -> list[float]:
-        return list(self._embeddings.embed_query(text))
+        with track_embedding_call(
+            provider=self.provider,
+            model=self.model,
+            operation="query",
+        ):
+            return list(self._embeddings.embed_query(text))
 
 
 def deterministic_embedding(

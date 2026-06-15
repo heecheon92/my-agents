@@ -1,6 +1,6 @@
 ---
 created: 2026-05-17
-updated: 2026-05-21
+updated: 2026-06-16
 status: active
 topics:
   - observability
@@ -12,7 +12,10 @@ related_code:
   - my_agents/conversations/models.py
   - my_agents/conversations/schemas.py
   - my_agents/agent_runtime/evals.py
+  - my_agents/observability/metrics.py
+  - my_agents/api/metrics.py
   - tests/test_agent_observability_evals.py
+  - tests/test_metrics.py
 ---
 
 # Agent observability events and eval fixtures
@@ -61,6 +64,50 @@ flowchart LR
 Citations remain the explicit provenance channel for document snippets. Events explain
 what happened; citations explain which authorized knowledge supported the answer.
 
+## Internal Prometheus timing metrics
+
+The service also has an opt-in Prometheus text endpoint for internal maintenance and
+quality analysis:
+
+```text
+MY_AGENTS_METRICS_ENABLED=true
+GET /metrics
+```
+
+This is not a frontend product API and should not be treated as user-facing agent
+activity. It exists to answer performance questions such as whether the first chat
+turn is slow because of request overhead, conversation-run orchestration, ContextForge
+retrieval, embedding calls, reranking, or assistant graph invocation.
+
+Implemented timing histograms:
+
+- `my_agents_http_request_duration_seconds`
+- `my_agents_conversation_run_duration_seconds`
+- `my_agents_context_forge_duration_seconds`
+- `my_agents_retrieval_phase_duration_seconds`
+- `my_agents_embedding_duration_seconds`
+- `my_agents_reranker_duration_seconds`
+- `my_agents_graph_invocation_duration_seconds`
+
+Allowed labels are deliberately low-cardinality operational labels: route templates,
+status codes, run outcomes, retrieval route, answer mode, provider/model names, and
+fixed internal phase names. Do not add raw prompts, document text, user IDs, document
+IDs, chunk IDs, emails, tokens, secrets, or arbitrary URL paths as metric labels.
+
+These metrics complement run events:
+
+- run events are persisted, frontend-safe, per-run timeline facts;
+- Prometheus metrics are aggregate p50/p95/p99 timing signals for backend operators.
+
+Future observability work should split into two lanes:
+
+1. Add Prometheus + Grafana for common backend operations metrics such as request
+   latency, request volume, error rate, ingestion/worker health, queue or stale-run
+   signals, and resource saturation.
+2. Evaluate Langfuse vs LangSmith for LLM-specific observability: provider latency,
+   token/cost metrics, prompt/version tracking, traces, eval datasets, and
+   retrieval/answer-quality review.
+
 ## Deterministic eval fixtures
 
 `my_agents/agent_runtime/evals.py` provides small deterministic helpers:
@@ -82,12 +129,15 @@ claims testable: grounding, permission safety, redaction, and basic performance 
 - raw private phrases and raw user questions do not appear in event payloads;
 - deterministic eval helpers pass for grounded authorized answers;
 - the permission leakage eval passes when an outsider receives no private context.
+- opt-in `/metrics` exposure records request and embedding timing histograms without exposing raw product data in labels.
 
 `tests/test_conversations_api.py` also verifies that failed graph invocation stores
 `status=failed` plus a redacted `run_failed` event.
 
 ## Revision history
 
+- 2026-06-16: Recorded future Prometheus/Grafana operations metrics and Langfuse/LangSmith LLM observability goals.
+- 2026-06-16: Added opt-in internal Prometheus timing metrics for maintenance and performance-quality analysis.
 - 2026-05-21: Updated after adding retrieval-route and answer-mode event metadata.
 - 2026-05-17: Updated after adding failed-run event persistence.
 - 2026-05-17: Created after adding structured agent run events and deterministic eval fixtures.

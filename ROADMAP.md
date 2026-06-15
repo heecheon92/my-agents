@@ -244,8 +244,18 @@ This is the product-facing equivalent of repo-local `AGENTS.md`: durable Markdow
 - [~] Evals are deterministic fixtures, not a production evaluation platform.
 - [~] Structured application logging policy; permanent redacted deployment diagnostics exist and should be tuned into the broader logging policy.
 - [~] Request IDs / correlation IDs exist in deployment diagnostics but need a durable production logging policy.
-- [ ] Metrics for latency, token usage, retrieval counts, failure rates.
-- [ ] OpenTelemetry or equivalent tracing.
+- [x] Opt-in Prometheus timing metrics for internal maintenance/quality analysis: `/metrics`
+  behind `MY_AGENTS_METRICS_ENABLED` with request, conversation-run, ContextForge,
+  retrieval-phase, embedding, reranker, and graph histograms.
+- [~] Broader production metrics for token usage, retrieval counts, failure rates,
+  dashboards, and alerts remain follow-up work.
+- [ ] Prometheus + Grafana operations stack for common backend metrics: latency,
+  request volume, error rate, worker/ingestion health, queue/stale-run signals, and
+  system/resource saturation.
+- [ ] Langfuse or LangSmith LLM observability for provider latency, token/cost
+  metrics, trace/eval datasets, prompt/version tracking, and retrieval/answer-quality
+  review.
+- [ ] OpenTelemetry or equivalent tracing for per-request waterfalls/distributed tracing.
 - [ ] Cost monitoring and quotas for OpenAI-backed paths.
 - [ ] Production safety review for auth, permissions, logging, and prompts.
 
@@ -285,10 +295,19 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
 - [x] Dedicated streaming endpoint tests.
 - [x] Upload/parser tests for supported PDF, Markdown, and plain-text ingestion.
 - [x] Async ingestion progress/polling tests for both the local in-process runner and external-worker claim/process path.
+- [x] Metrics endpoint/settings tests for opt-in exposure and timing histogram emission.
 - [ ] Load/performance smoke tests for larger fixture data.
 - [ ] Security regression tests for rate limits, CSRF coverage, and auth hardening.
 
 ## 13. Near-term recommended sequence
+
+0. **Internal performance / quality analysis baseline**
+   - Enable `MY_AGENTS_METRICS_ENABLED=true` only in local, staging, or trusted internal runs.
+   - Use `/metrics` to compare request, conversation, ContextForge, retrieval-phase, embedding, reranker, and graph p95 before changing retrieval behavior.
+   - Keep labels redacted and low-cardinality; do not turn metrics into a frontend product API.
+   - Follow up with Prometheus + Grafana for common backend operations metrics.
+   - Evaluate Langfuse vs LangSmith for LLM-specific latency, token/cost, trace, eval, and prompt/version metrics.
+   - Add OpenTelemetry traces only after aggregate latency shows where per-request waterfalls are needed.
 
 1. **Controlled alpha deploy smoke and tester handoff**
    - Deploy backend and frontend together after the latest nickname, invite-only group, publish-review, and route-addressable Groups changes.

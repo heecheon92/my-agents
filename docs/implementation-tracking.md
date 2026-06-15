@@ -1,6 +1,6 @@
 # Implementation tracking
 
-Last updated: 2026-06-14
+Last updated: 2026-06-16
 Status owner: repo-tracked source of truth for cross-machine agent handoff
 
 This file exists because `.omx/` is local runtime state and is not shared across machines. When working with an agent on any machine, start here before re-discovering project status from the codebase.
@@ -54,6 +54,8 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
 - Legacy/dev assistant smoke endpoint: `POST /assistant/chat`
 - Product conversation-run surface under `/conversations`
 - Auth, groups, documents, knowledge bases, and run events are registered routes.
+- Opt-in internal Prometheus timing endpoint: `GET /metrics` is exposed only when
+  `MY_AGENTS_METRICS_ENABLED=true`.
 
 ### Assistant graph
 
@@ -111,6 +113,8 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
 - Assistant-message replay now also supports an SSE stream path, so regeneration can show live progress and answer deltas while preserving the old transcript unless the replay completes successfully.
 - Run summaries and run activity events are persisted and readable.
 - Failure path records a failed run with redacted event metadata.
+- Conversation-run timing histograms cover sync and streaming outcomes for internal
+  performance review when metrics are enabled.
 
 ### Knowledge/RAG prototype
 
@@ -130,6 +134,8 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
 - System knowledge bases (`scope=system`) are manager-only for CRUD/document
   operations but ambiently included in authenticated chat retrieval, including guest
   sessions, without exposing ambient system KB IDs in public selected/resolved metadata.
+- ContextForge, retrieval phases, embedding provider calls, reranker calls, and
+  graph invocation timings are recorded as opt-in internal Prometheus histograms.
 
 ### Persistence and migrations
 
@@ -150,6 +156,28 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
 - Reusable LangGraph practice conventions, pattern docs, and runnable simulated-agent implementations now live in `~/Git/Playground/langgraph-playground`.
 
 ## Latest verification evidence
+
+Internal timing metrics implementation on 2026-06-16:
+
+```text
+uv run pytest -q tests/test_metrics.py tests/test_settings.py
+35 passed, 5 warnings in 3.01s
+
+uv run pytest -q tests/test_metrics.py tests/test_settings.py tests/test_agent_observability_evals.py tests/test_context_forge_contracts.py tests/test_context_forge_reranking.py tests/test_permission_aware_rag.py tests/test_conversations_api.py
+108 passed, 5 warnings in 13.46s
+
+uv run ruff check . --no-cache
+All checks passed!
+
+uv run ruff format --check .
+201 files already formatted
+
+uv run pytest -q
+415 passed, 1 skipped, 9 warnings in 47.00s
+
+git diff --check
+passed
+```
 
 Product status docs refresh on 2026-06-14:
 
@@ -298,7 +326,7 @@ Earlier hosted smoke status on 2026-06-03:
 - Scanned/image-heavy PDFs have only a constrained local OCR fallback; docx, HTML, CSV/JSON structural parsing, durable parse artifacts, and production layout-aware parsing remain future work.
 - Async ingestion progress is available through an additive endpoint (`POST /documents/{id}/ingest/async`) plus direct run polling. Local/default mode still supports in-process threads; hosted mode can set `MY_AGENTS_INGESTION_EXECUTION_MODE=external_worker` and run `python -m my_agents.ingestion_worker`. Frontend multi-file upload fan-out is exposed as a safe `/health` hint backed by `MY_AGENTS_DOCUMENT_UPLOAD_CONCURRENCY` (default `3`). Durable queue semantics and stale-run recovery remain future work.
 - Embeddings use a provider boundary: deterministic 32-dimensional lexical-hash vectors by default, or opt-in OpenAI embeddings through `langchain-openai` when `MY_AGENTS_EMBEDDING_MODE=openai`; Postgres chunks also store a pgvector `embedding_vector` through Alembic migration `20260521_0007`.
-- Retrieval ranking is permission-first ContextForge orchestration over pgvector SQL vector search on Postgres, JSON cosine fallback for SQLite/tests, blended lexical score, entity expansion, structured entity retrieval, deterministic fusion/reranking, optional cross-encoder second-stage reranking over bounded authorized candidates, and a narrow personal-document fallback; LLM query rewrite, ANN/vector index tuning, production reranker packaging, and latency evals are still future work.
+- Retrieval ranking is permission-first ContextForge orchestration over pgvector SQL vector search on Postgres, JSON cosine fallback for SQLite/tests, blended lexical score, entity expansion, structured entity retrieval, deterministic fusion/reranking, optional cross-encoder second-stage reranking over bounded authorized candidates, and a narrow personal-document fallback; aggregate internal timing metrics now exist, while LLM query rewrite, ANN/vector index tuning, production reranker packaging, and retrieval-quality/latency evals are still future work.
 - ContextForge is the dedicated retrieval-agent service boundary. Conversation runs now enter it through a thin LangGraph `RetrievalGraph` wrapper that preserves current service behavior while creating a future agent tool/subgraph seam. The current `rag_agent` graph remains a separate thin contract/verification graph around the RAG path. Hard authorization stays in `RetrievalService`.
 - Entity extraction is deterministic regex/technical-term extraction, not production NLP/LLM extraction. Canonical entity creation is conflict-safe for concurrent async ingestion: names are pre-collected in stable order and inserted with dialect-aware `ON CONFLICT DO NOTHING` to avoid Postgres unique-index lock cycles.
 
@@ -326,7 +354,12 @@ Earlier hosted smoke status on 2026-06-03:
 - Ingestion now has a web/worker split option: the web process can queue extraction runs only, while a separate ingestion worker claims and processes queued runs.
 - Permanent redacted `DEPLOY_DIAG` logs are available for hosted smoke checks and deployment debugging.
 - Hosted preview/public DB migration execution is manually managed; the readiness runbook records the migration evidence requirement and production remains user-gated.
-- No observability backend/export yet.
+- Opt-in Prometheus text metrics now expose aggregate backend timing for internal
+  review. Production dashboards, alerts, OpenTelemetry traces, token/cost metrics,
+  and failure-rate metrics remain future work.
+- Future observability goal: add Prometheus + Grafana for common backend operations
+  metrics, then evaluate Langfuse vs LangSmith for LLM/provider traces, token/cost
+  metrics, prompt/version tracking, and eval/retrieval-quality workflows.
 - Frontend integration lives in the separate frontend repository by design.
 
 ## Recommended next workflow
@@ -425,6 +458,7 @@ limits.
 
 | Date | Milestone | Evidence |
 | --- | --- | --- |
+| 2026-06-16 | Added opt-in Prometheus timing metrics for internal performance and quality analysis without changing the frontend/product surface. | `pyproject.toml`; `my_agents/observability/metrics.py`; `my_agents/api/metrics.py`; `my_agents/api/__init__.py`; ContextForge/retrieval/embedding/graph/run timing hooks; `tests/test_metrics.py`; README pair; observability docs; `ROADMAP.md`. |
 | 2026-06-14 | Product status review refreshed roadmap/tracking and marked the current version as controlled-alpha worthy after deploy smoke. | `docs/implementation-tracking.md`; `ROADMAP.md`; local docs consistency review; backend verification recorded above. |
 | 2026-06-14 | Publish-request review became owner-actionable: backend responses expose source labels, filenames, excerpts, and source-document content lookup for confident approve/reject; frontend renders list-scale group management as dedicated routes while keeping per-request review in a drawer. | Backend commit `3812ef3`; frontend commits `5eefc77`, `58212af`, `19f33f0`; `tests/test_publish_requests.py`; `tests/test_kb_openapi_contract.py`; frontend `e2e/group-knowledge-v1.spec.ts`. |
 | 2026-06-14 | Fixed no-account group invitations so token-proved invitees choose nickname/password only, keep email as sign-in identity, and accept membership in one flow. | `my_agents/groups/service.py`; `my_agents/api/groups.py`; `my_agents/auth/email_templates/`; `tests/test_group_invitations_api.py`; `tests/test_auth_email.py`; README pair; group/nickname contract docs. |

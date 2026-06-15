@@ -95,6 +95,19 @@ OpenAPI is available from the running server at:
 http://127.0.0.1:8000/openapi.json
 ```
 
+Optional internal timing metrics are available through Prometheus text exposition when
+explicitly enabled:
+
+```bash
+MY_AGENTS_METRICS_ENABLED=true uv run fastapi dev main.py
+curl http://127.0.0.1:8000/metrics
+```
+
+The metrics endpoint is a maintenance/quality-analysis surface, not a product API. It
+records request, conversation-run, ContextForge retrieval, embedding, reranker, and
+assistant-graph timing histograms without using raw prompts, document text, user IDs, or
+document IDs as metric labels.
+
 ## Common checks
 
 ```bash

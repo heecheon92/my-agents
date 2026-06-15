@@ -16,7 +16,9 @@ from my_agents.api.groups import group_invitations_router, groups_router
 from my_agents.api.health import health_router
 from my_agents.api.knowledge_bases import knowledge_bases_router
 from my_agents.api.memories import memories_router
+from my_agents.api.metrics import metrics_router
 from my_agents.diagnostics import deploy_log, safe_database_url_summary, safe_email_domain
+from my_agents.observability.metrics import observe_http_request
 from my_agents.settings import Settings, get_settings
 
 
@@ -28,6 +30,8 @@ def create_app() -> FastAPI:
     app = FastAPI(title="my-agents", version="0.1.0")
     _log_runtime_configuration(settings)
     _install_deployment_request_logging(app)
+    if settings.metrics_enabled:
+        _install_metrics_request_timing(app)
     cors_allowed_origins = settings.cors_allowed_origin_list()
     if cors_allowed_origins:
         app.add_middleware(
@@ -46,6 +50,8 @@ def create_app() -> FastAPI:
     app.include_router(documents_router)
     app.include_router(memories_router)
     app.include_router(assistant_router)
+    if settings.metrics_enabled:
+        app.include_router(metrics_router)
     return app
 
 
@@ -88,6 +94,34 @@ def _install_deployment_request_logging(app: FastAPI) -> None:
         return response
 
 
+def _install_metrics_request_timing(app: FastAPI) -> None:
+    """Install opt-in Prometheus request timing middleware."""
+
+    @app.middleware("http")
+    async def prometheus_request_timer(request: Request, call_next):  # noqa: ANN001
+        started = time.perf_counter()
+        status_code: int | str = "error"
+        try:
+            response = await call_next(request)
+            status_code = response.status_code
+            return response
+        finally:
+            observe_http_request(
+                method=request.method,
+                route=_normalized_route_path(request),
+                status_code=status_code,
+                duration_seconds=time.perf_counter() - started,
+            )
+
+
+def _normalized_route_path(request: Request) -> str:
+    route = request.scope.get("route")
+    route_path = getattr(route, "path", None)
+    if isinstance(route_path, str) and route_path:
+        return route_path
+    return "unmatched"
+
+
 def _log_runtime_configuration(settings: Settings) -> None:
     db_summary = safe_database_url_summary(settings.database_url)
     deploy_log(
@@ -104,6 +138,7 @@ def _log_runtime_configuration(settings: Settings) -> None:
         auth_password_hash_time_cost=settings.auth_password_hash_time_cost,
         auth_password_hash_memory_cost_kib=settings.auth_password_hash_memory_cost_kib,
         auth_password_hash_parallelism=settings.auth_password_hash_parallelism,
+        metrics_enabled=settings.metrics_enabled,
         auto_create_tables=settings.should_auto_create_tables(),
         cors_origins=",".join(settings.cors_allowed_origin_list()) or "none",
         smtp_host=settings.auth_smtp_host or "none",

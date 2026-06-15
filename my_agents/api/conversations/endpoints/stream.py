@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from time import perf_counter
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
@@ -60,6 +61,7 @@ from my_agents.knowledge.auth import (
     KnowledgeBaseSelectionContext,
     resolve_conversation_knowledge_context,
 )
+from my_agents.observability.metrics import observe_conversation_run
 from my_agents.persistence.database import get_database_session
 from my_agents.settings import Settings, get_settings
 
@@ -143,6 +145,19 @@ def conversation_run_events(
         message_content_length=message_content_length,
         selection_context=selection_context,
     )
+    run_started = perf_counter()
+    retrieval_route = "unknown"
+    answer_mode = "unknown"
+
+    def record_run_metric(outcome: str) -> None:
+        observe_conversation_run(
+            mode="stream",
+            outcome=outcome,
+            retrieval_route=retrieval_route,
+            answer_mode=answer_mode,
+            duration_seconds=perf_counter() - run_started,
+        )
+
     try:
         yield sse_event(
             AgentEventType.RUN_STARTED.value,
@@ -168,6 +183,8 @@ def conversation_run_events(
             messages=messages,
             selection_context=selection_context,
         )
+        retrieval_route = retrieval_context.decision.route
+        answer_mode = retrieval_context.answer_mode
         record_run_retrieval_metadata(
             db,
             run.id,
@@ -189,6 +206,7 @@ def conversation_run_events(
         yield sse_event(AgentEventType.RETRIEVAL_COMPLETED.value, retrieval_payload)
         if is_run_cancelling(db, run.id):
             yield cancelled_sse_event(db, run.id)
+            record_run_metric("cancelled")
             return
 
         if retrieval_context.decision.route == "clarification_required":
@@ -219,6 +237,7 @@ def conversation_run_events(
                 ),
             )
             yield sse_event("run_completed", response.model_dump(mode="json"))
+            record_run_metric("clarification")
             return
 
         if retrieval_context.insufficient_evidence:
@@ -248,6 +267,7 @@ def conversation_run_events(
                 ),
             )
             yield sse_event("run_completed", response.model_dump(mode="json"))
+            record_run_metric("insufficient_evidence")
             return
 
         graph_input = graph_input_for_run(
@@ -321,6 +341,7 @@ def conversation_run_events(
                     graph_invoked = True
                 if is_run_cancelling(db, run.id):
                     yield cancelled_sse_event(db, run.id)
+                    record_run_metric("cancelled")
                     return
                 if item.kind == "delta":
                     delta_sequence += 1
@@ -346,6 +367,7 @@ def conversation_run_events(
                 {"run_id": run_id, "safe_error_type": type(exc).__name__},
             )
             yield sse_event("run_error", {"run_id": run_id, "status_code": 503})
+            record_run_metric("failed")
             return
         except Exception as exc:
             run_id = persist_failed_run(
@@ -360,6 +382,7 @@ def conversation_run_events(
                 {"run_id": run_id, "safe_error_type": type(exc).__name__},
             )
             yield sse_event("run_error", {"run_id": run_id, "status_code": 502})
+            record_run_metric("failed")
             return
 
         if result is None:
@@ -397,11 +420,13 @@ def conversation_run_events(
             for delta in fallback_answer_deltas(reply):
                 if is_run_cancelling(db, run.id):
                     yield cancelled_sse_event(db, run.id)
+                    record_run_metric("cancelled")
                     return
                 delta_sequence += 1
                 yield sse_event("answer_delta", {"delta": delta, "sequence": delta_sequence})
         if is_run_cancelling(db, run.id):
             yield cancelled_sse_event(db, run.id)
+            record_run_metric("cancelled")
             return
         response = persist_completed_run(
             db=db,
@@ -429,9 +454,11 @@ def conversation_run_events(
             ),
         )
         yield sse_event("run_completed", response.model_dump(mode="json"))
+        record_run_metric("completed")
     except GeneratorExit:
         if is_run_active(db, run.id):
             cancelled_sse_event(db, run.id)
+        record_run_metric("cancelled")
         raise
     except ResponseProviderConfigurationError as exc:
         run_id = fail_active_run(
@@ -446,6 +473,7 @@ def conversation_run_events(
                 {"run_id": run_id, "safe_error_type": type(exc).__name__},
             )
             yield sse_event("run_error", {"run_id": run_id, "status_code": 503})
+        record_run_metric("failed")
         return
     except Exception as exc:
         run_id = fail_active_run(
@@ -460,4 +488,5 @@ def conversation_run_events(
                 {"run_id": run_id, "safe_error_type": type(exc).__name__},
             )
             yield sse_event("run_error", {"run_id": run_id, "status_code": 502})
+        record_run_metric("failed")
         return

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from my_agents.api.assistant import GraphRunner
 from my_agents.memory.runtime import SqlAlchemyMemoryRuntime
+from my_agents.observability.metrics import track_graph_invocation
 
 
 class GraphRunnerExecutionError(RuntimeError):
@@ -46,9 +47,10 @@ def invoke_graph_runner(
 ) -> dict:
     """Invoke a graph runner, passing LangGraph `context` only when supported."""
     invoke = graph_runner.invoke
-    if graph_context is not None and _supports_keyword(invoke, "context"):
-        return invoke(graph_input, context=graph_context)
-    return invoke(graph_input)
+    with track_graph_invocation("invoke"):
+        if graph_context is not None and _supports_keyword(invoke, "context"):
+            return invoke(graph_input, context=graph_context)
+        return invoke(graph_input)
 
 
 def invoke_graph_runner_collecting_updates(
@@ -76,15 +78,16 @@ def invoke_graph_runner_collecting_updates(
     partial_state: dict[str, object] = {}
     emitted_stream_event = False
     try:
-        for event in stream_graph_runner(
-            stream=stream,
-            graph_input=graph_input,
-            graph_context=graph_context,
-            stream_mode="updates",
-            version="v2",
-        ):
-            emitted_stream_event = True
-            _merge_update_event(partial_state, event)
+        with track_graph_invocation("stream_updates"):
+            for event in stream_graph_runner(
+                stream=stream,
+                graph_input=graph_input,
+                graph_context=graph_context,
+                stream_mode="updates",
+                version="v2",
+            ):
+                emitted_stream_event = True
+                _merge_update_event(partial_state, event)
     except Exception as exc:
         raise GraphRunnerExecutionError(exc, partial_state=partial_state) from exc
 
