@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import UTC, datetime
 from threading import Thread
 from typing import Annotated
 
@@ -35,6 +36,8 @@ from my_agents.knowledge.models import (
     ExtractionStatus,
     KnowledgeBaseModel,
     KnowledgeBasePurpose,
+    KnowledgePublishRequestModel,
+    KnowledgePublishRequestStatus,
     StructuredKnowledgeEntityModel,
 )
 from my_agents.knowledge.pdf_uploads import DoclingExtractionConfig, TesseractOcrConfig
@@ -649,12 +652,61 @@ def get_document_in_knowledge_base_or_404(
 def delete_document_record(db: Session, document: DocumentModel, *, commit: bool = True) -> None:
     """Delete a document and dependent artifacts, preserving memory-staleness cleanup."""
     UserMemoryService(db).mark_document_memories_stale(source_document_id=document.id, commit=False)
+    _detach_document_from_publish_requests(db, document)
+    db.flush()
     _delete_document_dependencies(db, document.id)
     db.delete(document)
     if commit:
         db.commit()
     else:
         db.flush()
+
+
+def _detach_document_from_publish_requests(db: Session, document: DocumentModel) -> None:
+    """Preserve publish request audit rows while removing document foreign keys."""
+    source_requests = db.scalars(
+        select(KnowledgePublishRequestModel).where(
+            KnowledgePublishRequestModel.source_document_id == document.id
+        )
+    ).all()
+    now = datetime.now(UTC)
+    for publish_request in source_requests:
+        _ensure_publish_request_source_snapshot(publish_request, document)
+        publish_request.source_document_id = None
+        if publish_request.status == KnowledgePublishRequestStatus.PENDING.value:
+            publish_request.status = KnowledgePublishRequestStatus.WITHDRAWN.value
+            publish_request.reviewed_at = now
+        db.add(publish_request)
+
+    published_copy_requests = db.scalars(
+        select(KnowledgePublishRequestModel).where(
+            KnowledgePublishRequestModel.published_document_id == document.id
+        )
+    ).all()
+    for publish_request in published_copy_requests:
+        publish_request.published_document_id = None
+        db.add(publish_request)
+
+
+def _ensure_publish_request_source_snapshot(
+    publish_request: KnowledgePublishRequestModel,
+    document: DocumentModel,
+) -> None:
+    if publish_request.source_document_title_snapshot is None:
+        publish_request.source_document_title_snapshot = document.title
+    if publish_request.source_document_excerpt_snapshot is None:
+        publish_request.source_document_excerpt_snapshot = _publish_request_excerpt_snapshot(
+            document.content
+        )
+    if publish_request.source_document_filename_snapshot is None:
+        publish_request.source_document_filename_snapshot = document.source_filename
+
+
+def _publish_request_excerpt_snapshot(content: str, *, limit: int = 500) -> str:
+    compact = " ".join(content.split())
+    if len(compact) <= limit:
+        return compact
+    return f"{compact[: limit - 1]}…"
 
 
 def _document_knowledge_base(db: Session, document: DocumentModel) -> KnowledgeBaseModel | None:

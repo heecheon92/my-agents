@@ -74,6 +74,8 @@ erDiagram
 - Whole-KB publish requests require a standard personal KB; only document-copy publish requests may use a staged source document.
 - Group approval copies the source document to the target group KB and ingests the group copy.
 - The staging document may remain as a private audit/source buffer, but it must not be cited by Ask retrieval.
+- Requesters may cancel pending publish requests as `cancelled` and submit a new request later.
+- Deleting the staged source before approval withdraws the pending publish request while preserving its source snapshot. Deleting it after approval does not remove the group copy. Deleting the approved group copy clears `published_document_id` on the historical request instead of crashing on a foreign key.
 
 ## Code map
 

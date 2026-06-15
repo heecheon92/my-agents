@@ -26,6 +26,7 @@
   guest에게 `user_type`, `can_manage_system_knowledge`를 생략하고 root/system manager에게만
   해당 값을 포함합니다.
 - Nickname은 사람을 알아보기 위한 표시 이름이며, 로그인과 초대의 식별자는 email입니다. 계정이 없는 초대 수신자는 초대 token이 증명한 email을 그대로 사용하고 nickname/password만 정합니다.
+- Publish request 작성자는 승인 전 요청을 `cancelled`로 취소할 수 있고, 다시 요청할 수 있습니다. 승인 전에 source document를 삭제하면 요청은 `withdrawn`으로 전환됩니다. 승인 후 source document 삭제는 group copy를 유지하고, group manager가 승인된 group copy를 삭제하면 publish request 이력은 남기되 `published_document_id`를 비웁니다.
 - Long-term memory는 기본적으로 꺼져 있고, 사용자가 실험 기능으로 직접 켤 수 있습니다.
 - 실제 secret은 commit하지 않습니다. `.env`는 local only이고 `.env.example`은 안전한 placeholder입니다.
 

@@ -521,13 +521,16 @@
         "type": "string"
       },
       "KnowledgePublishRequestStatus": {
+        "type": "string",
         "enum": [
           "pending",
           "approved",
-          "rejected"
+          "rejected",
+          "cancelled",
+          "withdrawn"
         ],
         "title": "KnowledgePublishRequestStatus",
-        "type": "string"
+        "description": "Review lifecycle for personal-to-group knowledge publish requests."
       },
       "KnowledgePublishRequestCreateRequest": {
         "additionalProperties": false,
@@ -573,19 +576,18 @@
         "type": "object"
       },
       "KnowledgePublishRequestResponse": {
-        "additionalProperties": false,
         "properties": {
           "id": {
-            "title": "Id",
-            "type": "string"
+            "type": "string",
+            "title": "Id"
           },
           "requester_user_id": {
-            "title": "Requester User Id",
-            "type": "string"
+            "type": "string",
+            "title": "Requester User Id"
           },
           "target_group_id": {
-            "title": "Target Group Id",
-            "type": "string"
+            "type": "string",
+            "title": "Target Group Id"
           },
           "target_knowledge_base_id": {
             "anyOf": [
@@ -619,6 +621,61 @@
               }
             ],
             "title": "Source Knowledge Base Id"
+          },
+          "source_document_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Document Title"
+          },
+          "source_document_excerpt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Document Excerpt"
+          },
+          "source_document_filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Document Filename"
+          },
+          "source_knowledge_base_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Knowledge Base Name"
+          },
+          "target_knowledge_base_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Knowledge Base Name"
           },
           "status": {
             "$ref": "#/components/schemas/KnowledgePublishRequestStatus"
@@ -657,15 +714,15 @@
             "title": "Published Knowledge Base Id"
           },
           "created_at": {
+            "type": "string",
             "format": "date-time",
-            "title": "Created At",
-            "type": "string"
+            "title": "Created At"
           },
           "reviewed_at": {
             "anyOf": [
               {
-                "format": "date-time",
-                "type": "string"
+                "type": "string",
+                "format": "date-time"
               },
               {
                 "type": "null"
@@ -674,6 +731,8 @@
             "title": "Reviewed At"
           }
         },
+        "additionalProperties": false,
+        "type": "object",
         "required": [
           "id",
           "requester_user_id",
@@ -688,8 +747,7 @@
           "created_at",
           "reviewed_at"
         ],
-        "title": "KnowledgePublishRequestResponse",
-        "type": "object"
+        "title": "KnowledgePublishRequestResponse"
       },
       "HTTPValidationError": {
         "properties": {
@@ -736,6 +794,148 @@
         ],
         "title": "ValidationError",
         "type": "object"
+      },
+      "KnowledgePublishRequestSourceResponse": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "title": "Request Id"
+          },
+          "source_kind": {
+            "type": "string",
+            "enum": [
+              "document",
+              "knowledge_base"
+            ],
+            "title": "Source Kind"
+          },
+          "source_knowledge_base_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Knowledge Base Id"
+          },
+          "source_knowledge_base_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Knowledge Base Name"
+          },
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgePublishRequestSourceDocumentResponse"
+            },
+            "type": "array",
+            "title": "Documents"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "request_id",
+          "source_kind"
+        ],
+        "title": "KnowledgePublishRequestSourceResponse"
+      },
+      "KnowledgePublishRequestSourceDocumentResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "source_type": {
+            "type": "string",
+            "title": "Source Type",
+            "default": "text"
+          },
+          "source_filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Filename"
+          },
+          "source_content_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Content Type"
+          },
+          "source_byte_size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Byte Size"
+          },
+          "source_page_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Page Count"
+          },
+          "parser_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parser Name"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "content",
+          "created_at"
+        ],
+        "title": "KnowledgePublishRequestSourceDocumentResponse"
       }
     }
   },
@@ -1334,6 +1534,58 @@
         ]
       }
     },
+    "/groups/{group_id}/publish-requests/{request_id}/source": {
+      "get": {
+        "tags": [
+          "groups"
+        ],
+        "summary": "Get Publish Request Source",
+        "description": "Return extracted source content for owner/admin publish review only.",
+        "operationId": "get_publish_request_source_groups__group_id__publish_requests__request_id__source_get",
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Group Id"
+            }
+          },
+          {
+            "name": "request_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Request Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgePublishRequestSourceResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/groups/{group_id}/publish-requests/{request_id}/approve": {
       "post": {
         "operationId": "approve_publish_request_groups__group_id__publish_requests__request_id___approve_post",
@@ -1434,6 +1686,58 @@
         "tags": [
           "groups"
         ]
+      }
+    },
+    "/groups/{group_id}/publish-requests/{request_id}/cancel": {
+      "post": {
+        "tags": [
+          "groups"
+        ],
+        "summary": "Cancel Publish Request",
+        "description": "Let the requester cancel a pending publish request before manager review.",
+        "operationId": "cancel_publish_request_groups__group_id__publish_requests__request_id__cancel_post",
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Group Id"
+            }
+          },
+          {
+            "name": "request_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Request Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgePublishRequestResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/conversations/{conversation_id}/runs": {

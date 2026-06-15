@@ -393,6 +393,9 @@ def create_publish_request(
     """Request owner/admin review before sharing personal knowledge with a group."""
     _get_group_and_membership(db, group_id, principal.user_id)
     source_document_id: str | None = None
+    source_document_title_snapshot: str | None = None
+    source_document_excerpt_snapshot: str | None = None
+    source_document_filename_snapshot: str | None = None
     target_knowledge_base_id: str | None = None
     source_knowledge_base_id: str | None = None
     if request.source_document_id is not None:
@@ -408,6 +411,9 @@ def create_publish_request(
         )
         source_document_id = source_document.id
         target_knowledge_base_id = target_knowledge_base.id
+        source_document_title_snapshot = source_document.title
+        source_document_excerpt_snapshot = _publish_review_excerpt(source_document.content)
+        source_document_filename_snapshot = source_document.source_filename
     else:
         source_knowledge_base = _get_owned_personal_source_knowledge_base(
             db,
@@ -426,6 +432,9 @@ def create_publish_request(
         target_group_id=group_id,
         target_knowledge_base_id=target_knowledge_base_id,
         source_document_id=source_document_id,
+        source_document_title_snapshot=source_document_title_snapshot,
+        source_document_excerpt_snapshot=source_document_excerpt_snapshot,
+        source_document_filename_snapshot=source_document_filename_snapshot,
         source_knowledge_base_id=source_knowledge_base_id,
         status=KnowledgePublishRequestStatus.PENDING.value,
     )
@@ -552,6 +561,30 @@ def reject_publish_request(
     _require_pending_publish_request(publish_request)
     publish_request.status = KnowledgePublishRequestStatus.REJECTED.value
     publish_request.reviewer_user_id = principal.user_id
+    publish_request.reviewed_at = datetime.now(UTC)
+    db.add(publish_request)
+    db.commit()
+    db.refresh(publish_request)
+    return _publish_request_response(db, publish_request)
+
+
+@groups_router.post(
+    "/{group_id}/publish-requests/{request_id}/cancel",
+    response_model=KnowledgePublishRequestResponse,
+)
+def cancel_publish_request(
+    group_id: str,
+    request_id: str,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    db: Annotated[Session, Depends(get_database_session)],
+) -> KnowledgePublishRequestResponse:
+    """Let the requester cancel a pending publish request before manager review."""
+    _get_group_and_membership(db, group_id, principal.user_id)
+    publish_request = _get_publish_request_or_404(db, group_id=group_id, request_id=request_id)
+    if publish_request.requester_user_id != principal.user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="not allowed")
+    _require_pending_publish_request(publish_request)
+    publish_request.status = KnowledgePublishRequestStatus.CANCELLED.value
     publish_request.reviewed_at = datetime.now(UTC)
     db.add(publish_request)
     db.commit()
@@ -897,14 +930,20 @@ def _publish_request_response(
         target_knowledge_base_id=publish_request.target_knowledge_base_id,
         source_document_id=publish_request.source_document_id,
         source_knowledge_base_id=publish_request.source_knowledge_base_id,
-        source_document_title=source_document.title if source_document is not None else None,
+        source_document_title=(
+            source_document.title
+            if source_document is not None
+            else publish_request.source_document_title_snapshot
+        ),
         source_document_excerpt=(
             _publish_review_excerpt(source_document.content)
             if source_document is not None
-            else None
+            else publish_request.source_document_excerpt_snapshot
         ),
         source_document_filename=(
-            source_document.source_filename if source_document is not None else None
+            source_document.source_filename
+            if source_document is not None
+            else publish_request.source_document_filename_snapshot
         ),
         source_knowledge_base_name=(
             source_knowledge_base.name if source_knowledge_base is not None else None

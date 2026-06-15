@@ -26,6 +26,7 @@ Start with [`docs/implementation-tracking.md`](./docs/implementation-tracking.md
   `can_manage_system_knowledge` for normal users and guests, and only include them
   for root/system managers.
 - Nickname is display metadata; email remains the login and invitation identifier. Invitees without an account use the token-proved email and choose only a nickname/password.
+- Publish request requesters can cancel pending requests as `cancelled` and request again. Deleting a publish request's source document before approval moves the request to `withdrawn`. After approval, source deletion keeps the group copy, and manager deletion of the approved group copy preserves request history while clearing `published_document_id`.
 - Long-term memory is disabled by default and can be enabled from experimental settings.
 - Never commit real secrets. `.env` is local-only; `.env.example` contains safe placeholders.
 

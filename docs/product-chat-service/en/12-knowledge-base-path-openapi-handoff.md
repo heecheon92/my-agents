@@ -18,7 +18,8 @@ A knowledge base is the user-facing searchable document library. The frontend fl
    staging KB.
 4. Submit the staged document with
    `POST /groups/{group_id}/publish-requests` and approve/reject it with
-   the group review endpoints.
+   the group review endpoints. The requester can cancel a pending request
+   with the cancel endpoint before review.
 5. Ingest the approved group copy inside the target group knowledge base.
 6. In chat, choose either All KBs or one or more selected KBs as the assistant retrieval source.
 
@@ -39,8 +40,10 @@ Use the KB-nested and group publish routes for the product UI:
 - `GET /knowledge-bases/{knowledge_base_id}/documents/{document_id}/extraction-runs/{run_id}`
 - `GET /groups/{group_id}/publish-requests`
 - `POST /groups/{group_id}/publish-requests`
+- `GET /groups/{group_id}/publish-requests/{request_id}/source`
 - `POST /groups/{group_id}/publish-requests/{request_id}/approve`
 - `POST /groups/{group_id}/publish-requests/{request_id}/reject`
+- `POST /groups/{group_id}/publish-requests/{request_id}/cancel`
 
 Compatibility routes `/documents` and `/documents/upload` still exist
 for standalone/developer usage,
@@ -58,10 +61,17 @@ but write calls require an authorized `knowledge_base_id`. They are not the prim
   target the group directly; they must not send
   `target_knowledge_base_id`.
 - `KnowledgePublishRequestResponse` is the canonical UI payload for
-  pending/approved/rejected group publication state.
+  pending/approved/rejected/cancelled/withdrawn group publication state.
 - Approval copies the source into the target group KB and ingests the
   group copy; retrieval should use the approved group copy, not the
   staging source.
+- The requester can cancel a pending publish request as cancelled and submit
+  another request later.
+- If a source document is deleted before approval, the publish request is
+  withdrawn and keeps its source title/excerpt snapshot for review history.
+  If the source is deleted after approval, the group copy remains. If a group
+  manager deletes the approved group copy, the request remains approved but
+  `published_document_id` is cleared.
 
 ## Chat source selection
 

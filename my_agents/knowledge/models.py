@@ -65,6 +65,8 @@ class KnowledgePublishRequestStatus(StrEnum):
     PENDING = "pending"
     APPROVED = "approved"
     REJECTED = "rejected"
+    CANCELLED = "cancelled"
+    WITHDRAWN = "withdrawn"
 
 
 class StructuredKnowledgeEntityType(StrEnum):
@@ -208,6 +210,11 @@ class KnowledgePublishRequestModel(Base):
     )
     source_document_id: Mapped[str | None] = mapped_column(
         ForeignKey("documents.id"), nullable=True, index=True
+    )
+    source_document_title_snapshot: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    source_document_excerpt_snapshot: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_document_filename_snapshot: Mapped[str | None] = mapped_column(
+        String(512), nullable=True
     )
     source_knowledge_base_id: Mapped[str | None] = mapped_column(
         ForeignKey("knowledge_bases.id"), nullable=True, index=True

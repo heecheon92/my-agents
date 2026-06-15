@@ -74,6 +74,8 @@ erDiagram
 - 전체 KB 공유 요청은 standard 개인 KB만 허용합니다. 임시 문서는 document-copy 공유 요청의 source document로만 사용할 수 있습니다.
 - 그룹 승인 시 source document를 대상 그룹 KB로 복사하고, 그 그룹 복사본을 ingest합니다.
 - 임시 문서는 비공개 audit/source buffer로 남을 수 있지만 Ask retrieval에서 citation으로 노출되면 안 됩니다.
+- 요청자는 pending publish request를 `cancelled`로 취소하고 나중에 새 요청을 보낼 수 있습니다.
+- 승인 전에 임시 source를 삭제하면 pending publish request는 withdrawn이 되고 source snapshot은 보존됩니다. 승인 후 source 삭제는 group copy를 삭제하지 않습니다. 승인된 group copy 삭제는 foreign key 오류를 내지 않고 이력 request의 `published_document_id`를 비웁니다.
 
 ## 코드 맵
 

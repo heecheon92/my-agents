@@ -20,6 +20,7 @@ REQUIRED_KB_PATHS = {
     "/groups/{group_id}/publish-requests/{request_id}/source",
     "/groups/{group_id}/publish-requests/{request_id}/approve",
     "/groups/{group_id}/publish-requests/{request_id}/reject",
+    "/groups/{group_id}/publish-requests/{request_id}/cancel",
     "/conversations/{conversation_id}",
     "/conversations/{conversation_id}/messages/{message_id}/replay",
     "/conversations/{conversation_id}/messages/{message_id}/replay/stream",
@@ -77,6 +78,13 @@ def test_openapi_exposes_kb_first_document_and_chat_selection_contract() -> None
     assert publish_request_schema["properties"]["status"]["$ref"] == (
         "#/components/schemas/KnowledgePublishRequestStatus"
     )
+    assert schema["components"]["schemas"]["KnowledgePublishRequestStatus"]["enum"] == [
+        "pending",
+        "approved",
+        "rejected",
+        "cancelled",
+        "withdrawn",
+    ]
     source_schema = schema["components"]["schemas"]["KnowledgePublishRequestSourceResponse"]
     source_document_schema = schema["components"]["schemas"][
         "KnowledgePublishRequestSourceDocumentResponse"

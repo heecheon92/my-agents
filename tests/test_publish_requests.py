@@ -361,6 +361,100 @@ def test_owner_can_view_pending_whole_kb_publish_request_documents(monkeypatch) 
     ]
 
 
+def test_requester_can_cancel_pending_document_publish_request_and_request_again(
+    monkeypatch,
+) -> None:  # noqa: ANN001
+    owner = _client(monkeypatch)
+    requester = _client(monkeypatch)
+    _signup_login(owner, "publish-cancel-doc-owner@example.com")
+    _signup_login(requester, "publish-cancel-doc-requester@example.com")
+    group_id = _create_group(owner, name="Cancel Document Request Group")
+    _invite_and_accept_member(
+        owner=owner,
+        recipient=requester,
+        group_id=group_id,
+        recipient_email="publish-cancel-doc-requester@example.com",
+        role="viewer",
+    )
+    target_kb_id = _create_group_kb(owner, group_id, "Cancel Document Group KB")
+    personal_kb_id = _create_personal_kb(requester, "Cancel Document Personal KB")
+    source_document_id = _create_document(
+        requester,
+        kb_id=personal_kb_id,
+        title="Cancelable draft",
+        content="Requester can cancel before review.",
+    )
+    request = requester.post(
+        f"/groups/{group_id}/publish-requests",
+        json={"source_document_id": source_document_id, "target_knowledge_base_id": target_kb_id},
+    )
+    assert request.status_code == 201
+    request_id = request.json()["id"]
+
+    owner_cancel = owner.post(f"/groups/{group_id}/publish-requests/{request_id}/cancel")
+    assert owner_cancel.status_code == 403
+
+    cancelled = requester.post(f"/groups/{group_id}/publish-requests/{request_id}/cancel")
+
+    assert cancelled.status_code == 200
+    assert cancelled.json()["status"] == "cancelled"
+    assert cancelled.json()["source_document_id"] == source_document_id
+    second_request = requester.post(
+        f"/groups/{group_id}/publish-requests",
+        json={"source_document_id": source_document_id, "target_knowledge_base_id": target_kb_id},
+    )
+    assert second_request.status_code == 201
+    assert second_request.json()["id"] != request_id
+    approve_cancelled = owner.post(f"/groups/{group_id}/publish-requests/{request_id}/approve")
+    assert approve_cancelled.status_code == 409
+
+
+def test_requester_can_cancel_pending_whole_kb_publish_request_and_request_again(
+    monkeypatch,
+) -> None:  # noqa: ANN001
+    owner = _client(monkeypatch)
+    requester = _client(monkeypatch)
+    _signup_login(owner, "publish-cancel-kb-owner@example.com")
+    _signup_login(requester, "publish-cancel-kb-requester@example.com")
+    group_id = _create_group(owner, name="Cancel Whole KB Request Group")
+    _invite_and_accept_member(
+        owner=owner,
+        recipient=requester,
+        group_id=group_id,
+        recipient_email="publish-cancel-kb-requester@example.com",
+        role="viewer",
+    )
+    personal_kb_id = _create_personal_kb(requester, "Cancelable Whole KB")
+    _create_document(
+        requester,
+        kb_id=personal_kb_id,
+        title="Cancelable KB source",
+        content="Requester can cancel whole KB share before review.",
+    )
+    request = requester.post(
+        f"/groups/{group_id}/publish-requests",
+        json={"source_knowledge_base_id": personal_kb_id},
+    )
+    assert request.status_code == 201
+    request_id = request.json()["id"]
+    duplicate_pending = requester.post(
+        f"/groups/{group_id}/publish-requests",
+        json={"source_knowledge_base_id": personal_kb_id},
+    )
+    assert duplicate_pending.status_code == 409
+
+    cancelled = requester.post(f"/groups/{group_id}/publish-requests/{request_id}/cancel")
+
+    assert cancelled.status_code == 200
+    assert cancelled.json()["status"] == "cancelled"
+    second_request = requester.post(
+        f"/groups/{group_id}/publish-requests",
+        json={"source_knowledge_base_id": personal_kb_id},
+    )
+    assert second_request.status_code == 201
+    assert second_request.json()["id"] != request_id
+
+
 def test_publish_request_rejects_invalid_source_or_target_boundaries(monkeypatch) -> None:  # noqa: ANN001
     owner = _client(monkeypatch)
     requester = _client(monkeypatch)
@@ -555,6 +649,144 @@ def test_owner_admin_approval_copies_and_ingests_group_document_without_exposing
         assert copied.knowledge_base_id == target_kb_id
         assert copied.content == original.content
         assert publish_request.published_document_id == published_document_id
+    finally:
+        session_generator.close()
+
+
+def test_owner_can_delete_published_group_copy_without_breaking_request_history(
+    monkeypatch,
+) -> None:  # noqa: ANN001
+    owner = _client(monkeypatch)
+    requester = _client(monkeypatch)
+    owner_id = _signup_login(owner, "publish-delete-copy-owner@example.com")
+    _requester_id = _signup_login(requester, "publish-delete-copy-requester@example.com")
+    group_id = _create_group(owner, name="Publish Delete Copy Group")
+    _invite_and_accept_member(
+        owner=owner,
+        recipient=requester,
+        group_id=group_id,
+        recipient_email="publish-delete-copy-requester@example.com",
+        role="viewer",
+    )
+    target_kb_id = _create_group_kb(owner, group_id, "Delete Copy Group KB")
+    personal_kb_id = _create_personal_kb(requester, "Delete Copy Personal KB")
+    source_document_id = _create_document(
+        requester,
+        kb_id=personal_kb_id,
+        title="Delete Published Copy Source",
+        content="GKDeletePublishedCopyAlpha should disappear after copy deletion.",
+    )
+    _ingest(requester, kb_id=personal_kb_id, document_id=source_document_id)
+    request = requester.post(
+        f"/groups/{group_id}/publish-requests",
+        json={"source_document_id": source_document_id, "target_knowledge_base_id": target_kb_id},
+    )
+    assert request.status_code == 201
+    request_id = request.json()["id"]
+    approved = owner.post(f"/groups/{group_id}/publish-requests/{request_id}/approve")
+    assert approved.status_code == 200
+    published_document_id = approved.json()["published_document_id"]
+    assert published_document_id
+    assert _group_retrieval_hits(
+        owner_id,
+        kb_id=target_kb_id,
+        query="GKDeletePublishedCopyAlpha",
+    ) == [published_document_id]
+
+    response = owner.delete(f"/documents/{published_document_id}")
+
+    assert response.status_code == 204
+    assert (
+        _group_retrieval_hits(
+            owner_id,
+            kb_id=target_kb_id,
+            query="GKDeletePublishedCopyAlpha",
+        )
+        == []
+    )
+    listed = owner.get(f"/groups/{group_id}/publish-requests")
+    assert listed.status_code == 200
+    payload = listed.json()[0]
+    assert payload["id"] == request_id
+    assert payload["status"] == "approved"
+    assert payload["source_document_id"] == source_document_id
+    assert payload["source_document_title"] == "Delete Published Copy Source"
+    assert payload["published_document_id"] is None
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        publish_request = db.scalar(
+            select(KnowledgePublishRequestModel).where(
+                KnowledgePublishRequestModel.id == request_id
+            )
+        )
+        assert db.get(DocumentModel, published_document_id) is None
+        assert publish_request is not None
+        assert publish_request.source_document_id == source_document_id
+        assert publish_request.published_document_id is None
+    finally:
+        session_generator.close()
+
+
+def test_pending_publish_request_is_withdrawn_when_source_document_is_deleted(
+    monkeypatch,
+) -> None:  # noqa: ANN001
+    owner = _client(monkeypatch)
+    requester = _client(monkeypatch)
+    _owner_id = _signup_login(owner, "publish-delete-source-owner@example.com")
+    _requester_id = _signup_login(requester, "publish-delete-source-requester@example.com")
+    group_id = _create_group(owner, name="Publish Delete Source Group")
+    _invite_and_accept_member(
+        owner=owner,
+        recipient=requester,
+        group_id=group_id,
+        recipient_email="publish-delete-source-requester@example.com",
+        role="viewer",
+    )
+    target_kb_id = _create_group_kb(owner, group_id, "Delete Source Group KB")
+    personal_kb_id = _create_personal_kb(requester, "Delete Source Personal KB")
+    source_document_id = _create_document(
+        requester,
+        kb_id=personal_kb_id,
+        title="Delete Source Candidate",
+        content="Deleting a source should withdraw pending publish review.",
+    )
+    request = requester.post(
+        f"/groups/{group_id}/publish-requests",
+        json={"source_document_id": source_document_id, "target_knowledge_base_id": target_kb_id},
+    )
+    assert request.status_code == 201
+    request_id = request.json()["id"]
+
+    response = requester.delete(f"/documents/{source_document_id}")
+
+    assert response.status_code == 204
+    listed = owner.get(f"/groups/{group_id}/publish-requests")
+    assert listed.status_code == 200
+    payload = listed.json()[0]
+    assert payload["id"] == request_id
+    assert payload["status"] == "withdrawn"
+    assert payload["source_document_id"] is None
+    assert payload["source_document_title"] == "Delete Source Candidate"
+    assert payload["source_document_excerpt"] == (
+        "Deleting a source should withdraw pending publish review."
+    )
+    assert payload["published_document_id"] is None
+    approve_after_delete = owner.post(f"/groups/{group_id}/publish-requests/{request_id}/approve")
+    assert approve_after_delete.status_code == 409
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        publish_request = db.scalar(
+            select(KnowledgePublishRequestModel).where(
+                KnowledgePublishRequestModel.id == request_id
+            )
+        )
+        assert db.get(DocumentModel, source_document_id) is None
+        assert publish_request is not None
+        assert publish_request.status == "withdrawn"
+        assert publish_request.source_document_id is None
+        assert publish_request.published_document_id is None
     finally:
         session_generator.close()
 

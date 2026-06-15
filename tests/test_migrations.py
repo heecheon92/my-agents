@@ -167,6 +167,7 @@ def test_alembic_offline_sql_generation_covers_initial_schema(monkeypatch) -> No
     assert "20260610_0025" in sql
     assert "20260614_0026" in sql
     assert "20260614_0027" in sql
+    assert "20260615_0028" in sql
     assert "CREATE TABLE guest_access_requests" in sql
     assert "CREATE TABLE group_invitations" in sql
     assert "CREATE TABLE knowledge_publish_requests" in sql
@@ -189,6 +190,7 @@ def test_alembic_offline_sql_generation_covers_initial_schema(monkeypatch) -> No
     assert "token_hash" in sql
     assert "nickname" in sql
     assert "user_type" in sql
+    assert "source_document_title_snapshot" in sql
 
 
 def test_parse_artifacts_store_only_derived_parser_outputs(
@@ -287,7 +289,7 @@ def test_legacy_documents_without_knowledge_base_upgrade_to_head(
     assert "user_type" in user_columns
     assert legacy_nickname == "legacy-doc"
     assert legacy_user_type == "normal"
-    assert alembic_version == "20260614_0027"
+    assert alembic_version == "20260615_0028"
 
     _assert_database_matches_model_metadata(database_url)
 

@@ -19,7 +19,8 @@
 3. 승인 경계가 필요한 그룹 문서는 `POST /knowledge-bases/team-upload-staging`으로
    업로더 전용 숨김 staging KB를 만든 뒤 그 KB에 원본 문서를 씁니다.
 4. `POST /groups/{group_id}/publish-requests`로 게시 요청을 만들고,
-   approve/reject endpoint로 검토를 완료합니다.
+   approve/reject endpoint로 검토를 완료합니다. 요청자는 검토 전에 cancel endpoint로
+   pending 요청을 취소할 수 있습니다.
 5. 승인된 group copy를 대상 group KB 안에서 ingest합니다.
 6. 채팅에서는 All KBs 또는 선택한 KB 집합만 retrieval source로 사용합니다.
 
@@ -38,8 +39,10 @@
 - `GET /knowledge-bases/{knowledge_base_id}/documents/{document_id}/extraction-runs/{run_id}`
 - `GET /groups/{group_id}/publish-requests`
 - `POST /groups/{group_id}/publish-requests`
+- `GET /groups/{group_id}/publish-requests/{request_id}/source`
 - `POST /groups/{group_id}/publish-requests/{request_id}/approve`
 - `POST /groups/{group_id}/publish-requests/{request_id}/reject`
+- `POST /groups/{group_id}/publish-requests/{request_id}/cancel`
 
 `/documents`, `/documents/upload` compatibility route도 남아 있지만 standalone/developer 용도이며,
 제품 UI의 기본 경로는 KB-scoped route입니다.
@@ -53,10 +56,15 @@
 - 문서 단위 publish request는 `source_document_id`와 `target_knowledge_base_id`가 필요합니다.
 - KB 전체 publish request는 `source_knowledge_base_id`를 사용하며 group 자체를 대상으로 하고,
   `target_knowledge_base_id`를 보내면 안 됩니다.
-- `KnowledgePublishRequestResponse`가 pending/approved/rejected 상태를 UI에 전달하는
+- `KnowledgePublishRequestResponse`가 pending/approved/rejected/cancelled/withdrawn 상태를 UI에 전달하는
   canonical payload입니다.
 - 승인되면 source가 target group KB로 복사되고, retrieval은 staging source가 아니라
   승인된 group copy를 사용해야 합니다.
+- 요청자는 pending publish request를 cancelled로 취소하고 나중에 다시 요청할 수 있습니다.
+- 승인 전에 source document를 삭제하면 publish request는 withdrawn이 되며, review history를
+  위해 source title/excerpt snapshot을 보존합니다. 승인 후 source를 삭제해도 group copy는
+  유지됩니다. group manager가 승인된 group copy를 삭제하면 request는 approved 상태로
+  남고 `published_document_id`만 비웁니다.
 
 ## 채팅 source selection
 
