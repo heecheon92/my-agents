@@ -26,3 +26,4 @@ They live outside `docs/learning/` because `docs/learning/` is reserved for the 
 19. [LangGraph-native memory migration](./19-langgraph-native-memory-migration.md)
 20. [Nickname signup and member roster contract](./20-nickname-signup-member-roster-contract.md)
 21. [System knowledge base and user type contract](./21-system-knowledge-base-user-type.md)
+22. [General Assistant and RAG Agent architecture change report](./22-general-assistant-rag-agent-architecture-change-report.md)

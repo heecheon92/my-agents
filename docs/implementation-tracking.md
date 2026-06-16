@@ -151,7 +151,9 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
 - General assistant README pair under `my_agents/agents/general_assistant/`.
 - ContextForge README pair under `my_agents/agents/context_forge/`.
 - RAG Agent workflow README pair under `my_agents/agents/rag_agent/`.
-- Product architecture notes under `docs/product-chat-service/en/`.
+- Product architecture notes under `docs/product-chat-service/en/`, including the G001
+  architecture report at
+  `docs/product-chat-service/en/22-general-assistant-rag-agent-architecture-change-report.md`.
 - Personal backend learning logs and my-agents-specific project notes under `docs/learning/`.
 - Reusable LangGraph practice conventions, pattern docs, and runnable simulated-agent implementations now live in `~/Git/Playground/langgraph-playground`.
 
@@ -458,6 +460,7 @@ limits.
 
 | Date | Milestone | Evidence |
 | --- | --- | --- |
+| 2026-06-16 | Documented the General Assistant -> RAG Agent -> ContextForge architecture correction with a dedicated change report and review map. | `docs/product-chat-service/en/22-general-assistant-rag-agent-architecture-change-report.md`; product docs index; implementation tracking docs section. |
 | 2026-06-16 | Added opt-in Prometheus timing metrics for internal performance and quality analysis without changing the frontend/product surface. | `pyproject.toml`; `my_agents/observability/metrics.py`; `my_agents/api/metrics.py`; `my_agents/api/__init__.py`; ContextForge/retrieval/embedding/graph/run timing hooks; `tests/test_metrics.py`; README pair; observability docs; `ROADMAP.md`. |
 | 2026-06-14 | Product status review refreshed roadmap/tracking and marked the current version as controlled-alpha worthy after deploy smoke. | `docs/implementation-tracking.md`; `ROADMAP.md`; local docs consistency review; backend verification recorded above. |
 | 2026-06-14 | Publish-request review became owner-actionable: backend responses expose source labels, filenames, excerpts, and source-document content lookup for confident approve/reject; frontend renders list-scale group management as dedicated routes while keeping per-request review in a drawer. | Backend commit `3812ef3`; frontend commits `5eefc77`, `58212af`, `19f33f0`; `tests/test_publish_requests.py`; `tests/test_kb_openapi_contract.py`; frontend `e2e/group-knowledge-v1.spec.ts`. |
