@@ -8,7 +8,9 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from my_agents.agents.rag_agent import SqlAlchemyRagAgentRuntime
 from my_agents.api.assistant import GraphRunner
+from my_agents.knowledge.auth import KnowledgeBaseSelectionContext
 from my_agents.memory.runtime import SqlAlchemyMemoryRuntime
 from my_agents.observability.metrics import track_graph_invocation
 
@@ -27,7 +29,12 @@ class GraphRunnerExecutionError(RuntimeError):
         self.partial_state = partial_state or {}
 
 
-def graph_context_for_run(*, db: Session, user_id: str) -> dict[str, object]:
+def graph_context_for_run(
+    *,
+    db: Session,
+    user_id: str,
+    selection_context: KnowledgeBaseSelectionContext,
+) -> dict[str, object]:
     """Build LangGraph runtime context for one conversation run.
 
     The context carries non-checkpointed runtime dependencies. This keeps memory recall
@@ -36,6 +43,8 @@ def graph_context_for_run(*, db: Session, user_id: str) -> dict[str, object]:
     return {
         "user_id": user_id,
         "memory_runtime": SqlAlchemyMemoryRuntime(db),
+        "rag_runtime": SqlAlchemyRagAgentRuntime(db),
+        "knowledge_base_selection": selection_context,
     }
 
 

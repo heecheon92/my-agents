@@ -5,7 +5,7 @@ from typing import Annotated, Any, Protocol
 from fastapi import APIRouter, Depends, HTTPException
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
-from my_agents.agents.general_assistant.graph import build_graph
+from my_agents.agents.general_assistant.graph import build_graph, build_legacy_chat_graph
 from my_agents.agents.general_assistant.responders import ResponseProviderConfigurationError
 from my_agents.schemas import ChatRequest, ChatResponse, RouteDecision
 
@@ -23,11 +23,17 @@ class GraphRunner(Protocol):
 
 
 _graph_runner = build_graph()
+_legacy_chat_graph_runner = build_legacy_chat_graph()
 
 
 def get_graph_runner() -> GraphRunner:
-    """Return the app-wide compiled graph runner."""
+    """Return the retrieval-enabled product graph runner."""
     return _graph_runner
+
+
+def get_legacy_chat_graph_runner() -> GraphRunner:
+    """Return the unauthenticated legacy/dev chat graph runner."""
+    return _legacy_chat_graph_runner
 
 
 assistant_router = APIRouter(prefix="/assistant", tags=["assistant"])
@@ -36,7 +42,7 @@ assistant_router = APIRouter(prefix="/assistant", tags=["assistant"])
 @assistant_router.post("/chat", response_model=ChatResponse)
 def chat(
     request: ChatRequest,
-    graph_runner: Annotated[GraphRunner, Depends(get_graph_runner)],
+    graph_runner: Annotated[GraphRunner, Depends(get_legacy_chat_graph_runner)],
 ) -> ChatResponse:
     """Run a validated chat request through the legacy personal assistant graph.
 

@@ -12,6 +12,8 @@ from sqlalchemy import func, select
 
 from my_agents.api import create_app
 from my_agents.api.assistant import get_graph_runner
+from my_agents.api.conversations import retrieval_context as retrieval_context_module
+from my_agents.api.conversations.endpoints import replay as replay_endpoint
 from my_agents.api.conversations.endpoints.stream import conversation_run_events
 from my_agents.conversations.models import (
     AgentEventModel,
@@ -29,6 +31,7 @@ from my_agents.persistence.database import get_database_session
 from my_agents.schemas import RouteDecision
 
 from .conftest import verify_latest_auth_email
+from .rag_spy_helpers import rag_update_for_spy
 
 
 class SpyGraph:
@@ -37,10 +40,12 @@ class SpyGraph:
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
 
-    def invoke(self, input: dict) -> dict:  # noqa: A002 - matches LangGraph API
-        self.calls.append(input)
+    def invoke(self, input: dict, **kwargs: Any) -> dict:  # noqa: A002 - matches LangGraph API
+        rag_update = rag_update_for_spy(input, kwargs)
+        self.calls.append({**input, **rag_update})
         messages = input["messages"]
         return {
+            **rag_update,
             "reply": f"saw {len(messages)} messages",
             "route": RouteDecision(label="general_assistant", explanation="spy route"),
         }
@@ -60,8 +65,10 @@ class StreamingSpyGraph:
     def invoke(self, input: dict) -> dict:  # noqa: A002, ARG002 - matches LangGraph API
         raise AssertionError("streaming endpoint should use graph.stream when available")
 
-    def stream(self, input: dict, **kwargs: Any):  # noqa: A002, ARG002 - matches LangGraph API
-        self.calls.append(input)
+    def stream(self, input: dict, **kwargs: Any):  # noqa: A002 - matches LangGraph API
+        rag_update = rag_update_for_spy(input, kwargs)
+        self.calls.append({**input, **rag_update})
+        yield {"type": "updates", "data": {"retrieve_rag_context": rag_update}}
         yield {"type": "messages", "data": (_TextChunk("streamed "), {})}
         yield {"type": "messages", "data": (_TextChunk("answer"), {})}
         yield {
@@ -70,7 +77,7 @@ class StreamingSpyGraph:
                 "classify_request": {
                     "route": RouteDecision(label="general_assistant", explanation="spy route")
                 },
-                "respond_general": {"reply": "streamed answer"},
+                "respond_general": {"reply": "streamed answer", **rag_update},
             },
         }
 
@@ -81,7 +88,11 @@ class CancellingStreamingGraph:
     def invoke(self, input: dict) -> dict:  # noqa: A002, ARG002 - matches LangGraph API
         raise AssertionError("streaming endpoint should use graph.stream when available")
 
-    def stream(self, input: dict, **kwargs: Any):  # noqa: A002, ARG002 - matches LangGraph API
+    def stream(self, input: dict, **kwargs: Any):  # noqa: A002 - matches LangGraph API
+        yield {
+            "type": "updates",
+            "data": {"retrieve_rag_context": rag_update_for_spy(input, kwargs)},
+        }
         _mark_latest_running_run_cancelling(input["conversation_id"])
         yield {"type": "messages", "data": (_TextChunk("cancelled text"), {})}
 
@@ -92,6 +103,13 @@ class FailingGraph:
     def invoke(self, input: dict) -> dict:  # noqa: A002, ARG002 - matches LangGraph API
         raise RuntimeError("private provider failure: do not leak raw prompt")
 
+    def stream(self, input: dict, **kwargs: Any):  # noqa: A002 - matches LangGraph API
+        yield {
+            "type": "updates",
+            "data": {"retrieve_rag_context": rag_update_for_spy(input, kwargs)},
+        }
+        raise RuntimeError("private provider failure: do not leak raw prompt")
+
 
 class MemoryUpdateThenFailingGraph:
     """Graph spy that emits memory provenance before a later provider failure."""
@@ -99,7 +117,11 @@ class MemoryUpdateThenFailingGraph:
     def invoke(self, input: dict, **kwargs: Any) -> dict:  # noqa: A002, ARG002
         raise AssertionError("sync run should collect update stream state when available")
 
-    def stream(self, input: dict, **kwargs: Any):  # noqa: A002, ARG002
+    def stream(self, input: dict, **kwargs: Any):  # noqa: A002
+        yield {
+            "type": "updates",
+            "data": {"retrieve_rag_context": rag_update_for_spy(input, kwargs)},
+        }
         yield {
             "type": "updates",
             "data": {
@@ -341,7 +363,7 @@ def test_debug_logging_exposes_retrieved_context_injected_to_llm(monkeypatch, ca
     assert "DebugRetrievalOnly" in captured
 
 
-def test_ambiguous_document_scope_returns_clarification_without_graph(monkeypatch) -> None:  # noqa: ANN001
+def test_ambiguous_document_scope_returns_visible_clarification(monkeypatch) -> None:  # noqa: ANN001
     graph = SpyGraph()
     client = _client(monkeypatch, graph)
     _signup_login(client, "clarify-docs@example.com")
@@ -368,7 +390,7 @@ def test_ambiguous_document_scope_returns_clarification_without_graph(monkeypatc
     assert payload["retrieval_route"] == "clarification_required"
     assert payload["answer_mode"] == "general_knowledge"
     assert payload["citations"] == []
-    assert payload["reply"] == ""
+    assert payload["reply"]
     assert payload["clarification"] == {
         "required": True,
         "kind": "document_scope",
@@ -379,12 +401,13 @@ def test_ambiguous_document_scope_returns_clarification_without_graph(monkeypatc
         "document_scope": "unknown",
         "rewritten_query": "이 문서 기준으로 개선점을 알려줘",
     }
-    assert graph.calls == []
+    assert graph.calls[-1]["rag_halt_before_response"] is False
+    assert graph.calls[-1]["retrieval_route"] == "clarification_required"
 
     run_id = payload["run_id"]
     detail = client.get(f"/conversations/{conversation_id}/runs/{run_id}")
     assert detail.status_code == 200
-    assert detail.json()["reply"] == ""
+    assert detail.json()["reply"] == payload["reply"]
     assert detail.json()["clarification"]["message_key"] == (
         "clarification.document_scope.select_source"
     )
@@ -784,6 +807,9 @@ def test_streaming_assistant_message_replay_emits_deltas_and_prunes_after_succes
     streaming_graph = StreamingSpyGraph()
     client.app.dependency_overrides[get_graph_runner] = lambda: streaming_graph
 
+    assert not hasattr(retrieval_context_module, "prepare_retrieval_context")
+    assert not hasattr(replay_endpoint, "prepare_retrieval_context")
+
     with client.stream(
         "POST",
         f"/conversations/{conversation_id}/messages/{first_assistant_id}/replay/stream",
@@ -946,7 +972,10 @@ def test_assistant_message_replay_warns_when_original_sources_are_deleted(monkey
     ]
     assert all(citation["document_id"] != document_id for citation in payload["citations"])
     assert "enough relevant authorized document evidence" in payload["reply"]
-    assert len(graph.calls) == 1
+    assert len(graph.calls) == 2
+    assert graph.calls[-1]["rag_halt_before_response"] is True
+    assert graph.calls[-1]["retrieval_route"] == "retrieval_required"
+    assert graph.calls[-1]["retrieved_context"] == []
 
 
 def test_assistant_message_replay_preserves_original_kb_selection(monkeypatch) -> None:  # noqa: ANN001
@@ -1099,7 +1128,8 @@ def test_streaming_required_retrieval_without_evidence_skips_graph_safely(monkey
     assert completed["answer_mode"] == "general_knowledge"
     assert completed["citations"] == []
     assert "enough relevant authorized document evidence" in completed["reply"]
-    assert graph.calls == []
+    assert graph.calls[-1]["rag_halt_before_response"] is True
+    assert graph.calls[-1]["retrieval_route"] == "retrieval_required"
 
     persisted = client.get(f"/conversations/{conversation_id}/runs/{completed['run_id']}/events")
     assert [event["event_type"] for event in persisted.json()] == [
@@ -1217,13 +1247,14 @@ def test_streaming_ambiguous_document_scope_emits_human_clarification_state(
         "run_completed",
     ]
     assert "graph_invoked" not in event_names
-    assert graph.calls == []
-    assert answer_composed["reply_length"] == 0
+    assert graph.calls[-1]["rag_halt_before_response"] is False
+    assert graph.calls[-1]["retrieval_route"] == "clarification_required"
+    assert answer_composed["reply_length"] > 0
     assert answer_composed["clarification_required"] is True
     assert answer_composed["clarification"]["message_key"] == (
         "clarification.document_scope.select_source"
     )
-    assert completed["reply"] == ""
+    assert completed["reply"]
     assert completed["clarification"]["input_slot"] == "document_reference"
     assert completed["agent_trace"][-1]["id"] == "answer_composer"
     assert completed["agent_trace"][-1]["status"] == "waiting"
@@ -1614,14 +1645,14 @@ def test_sync_post_start_failure_terminalizes_run(monkeypatch) -> None:  # noqa:
         "id"
     ]
 
-    from my_agents.api.conversations import run_lifecycle
+    from my_agents.agents.rag_agent.retrieval import SqlAlchemyRagAgentRuntime
 
-    original_prepare_retrieval_context = run_lifecycle.prepare_retrieval_context
+    original_retrieve_context = SqlAlchemyRagAgentRuntime.retrieve_context
 
-    def fail_retrieval_context(**kwargs: Any):  # noqa: ANN401, ARG001
+    def fail_retrieval_context(self, **kwargs: Any):  # noqa: ANN001, ARG001
         raise RuntimeError("retrieval failed after run start")
 
-    monkeypatch.setattr(run_lifecycle, "prepare_retrieval_context", fail_retrieval_context)
+    monkeypatch.setattr(SqlAlchemyRagAgentRuntime, "retrieve_context", fail_retrieval_context)
 
     failed = client.post(
         f"/conversations/{conversation_id}/runs", json={"message": "Fail after start"}
@@ -1639,11 +1670,7 @@ def test_sync_post_start_failure_terminalizes_run(monkeypatch) -> None:  # noqa:
     ]
     assert events.json()[-1]["payload"] == {"safe_error_type": "RuntimeError"}
 
-    monkeypatch.setattr(
-        run_lifecycle,
-        "prepare_retrieval_context",
-        original_prepare_retrieval_context,
-    )
+    monkeypatch.setattr(SqlAlchemyRagAgentRuntime, "retrieve_context", original_retrieve_context)
     recovered = client.post(f"/conversations/{conversation_id}/runs", json={"message": "Recovered"})
     assert recovered.status_code == 200
 

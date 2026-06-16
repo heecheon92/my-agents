@@ -1,5 +1,11 @@
 # ContextForge changelog
 
+## 2026-06-16 — Re-scope ContextForge behind the public RAG Agent boundary
+
+- **Why:** The assistant-facing retrieval surface should be the RAG Agent, while ContextForge remains the permission-first retrieval implementation that can evolve internally.
+- **Behavior / contract impact:** Conversation run graph context now provides a `SqlAlchemyRagAgentRuntime`; the general assistant invokes RAG retrieval in-graph, and that runtime delegates to `invoke_context_forge_graph(...)`. ContextForge docs now describe it as the delegated engine rather than the public assistant entrypoint.
+- **Verification evidence:** `uv run pytest -q tests/test_conversations_api.py tests/test_permission_aware_rag.py` covered graph-owned retrieval, safe halt paths, and permission filtering through the delegated ContextForge path.
+
 ## 2026-06-14 — Expand metadata-profile hits into body evidence
 
 - **Why:** Generated metadata profiles can correctly identify the right document while the injected candidate is only the title/header chunk, leaving buried source facts such as project creator or stack details unavailable to the assistant.

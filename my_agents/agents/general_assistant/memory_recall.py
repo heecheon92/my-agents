@@ -9,6 +9,8 @@ from typing import Any, TypedDict
 from langchain_core.messages import BaseMessage
 from langgraph.runtime import Runtime
 
+from my_agents.agents.rag_agent import RagAgentRuntime
+from my_agents.knowledge.auth import KnowledgeBaseSelectionContext
 from my_agents.memory.runtime import MemoryRuntime, memory_item_context
 
 
@@ -17,6 +19,8 @@ class AssistantRuntimeContext(TypedDict, total=False):
 
     user_id: str
     memory_runtime: MemoryRuntime
+    rag_runtime: RagAgentRuntime
+    knowledge_base_selection: KnowledgeBaseSelectionContext
 
 
 def retrieve_memory_context(

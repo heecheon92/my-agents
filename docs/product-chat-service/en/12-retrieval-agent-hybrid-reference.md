@@ -1,16 +1,18 @@
 # Retrieval agent hybrid reference
 
-This document is the backend-owned reference for the retrieval-agent track. It intentionally keeps the design local to this repository so roadmap and implementation notes do not depend on files from other workspaces. Current production status: ContextForge owns the retrieval service boundary and now exposes a thin LangGraph RetrievalGraph wrapper over that service, while `rag_agent` owns a thin RAG Agent contract graph for trace/grounding verification. The deeper tool-using retrieval graph described here remains a future expansion of that wrapper, not a replacement for the permission-first service boundary.
+This document is the backend-owned reference for the retrieval-agent track. It intentionally keeps the design local to this repository so roadmap and implementation notes do not depend on files from other workspaces. Current production status: `rag_agent` owns the assistant-facing retrieval boundary and exposes the runtime that `general_assistant` calls from inside its graph. ContextForge remains the delegated permission-first retrieval engine behind that boundary and exposes a thin LangGraph RetrievalGraph wrapper over the service. The deeper tool-using retrieval graph described here remains a future expansion of the RAG Agent/ContextForge seam, not a replacement for the permission-first service boundary.
 
 ## Goal
 
-The retrieval agent track should keep document search quality out of the general assistant. ContextForge already takes a user query plus authorization context, produces trustworthy cited chunks, and exposes retrieval evidence. The current thin RetrievalGraph makes that capability callable as a typed graph/tool seam. Future work can promote more retrieval planning into graph/tool nodes when evals justify the added orchestration.
+The retrieval agent track should keep document search quality out of answer composition while still letting the general assistant decide when to retrieve. `general_assistant` calls the RAG Agent runtime; ContextForge takes the query plus authorization context behind that boundary, produces trustworthy cited chunks, and exposes retrieval evidence. Future work can promote more retrieval planning into RAG Agent graph/tool nodes when evals justify the added orchestration.
 
 ## Target pipeline
 
 ```mermaid
 flowchart TD
-    Query[User query] --> Plan[Retrieval query planner]
+    Query[User query] --> GA[general_assistant controller]
+    GA --> RAG[RAG Agent retrieval boundary]
+    RAG --> Plan[Retrieval query planner]
     Plan --> Auth[Permission-filtered candidate scope]
     Auth --> Vector[Vector candidate search]
     Auth --> FullText[Keyword/full-text candidate search]
@@ -32,25 +34,18 @@ flowchart TD
 
 ## Current graph interface
 
-Current conversation runs call:
+Current conversation runs pass a runtime RAG dependency into `general_assistant`:
 
 ```python
-graph_result = invoke_context_forge_graph(
+graph_context = graph_context_for_run(
     db=db,
-    request=ContextForgeRequest(
-        user_id=user_id,
-        conversation_id=conversation_id,
-        query=message,
-        messages=messages,
-        selection_context=selection_context,
-    ),
+    user_id=user_id,
+    selection_context=selection_context,
 )
+# graph_context contains SqlAlchemyRagAgentRuntime(db)
 ```
 
-The wrapper returns the underlying `ContextForgeResult`, a bounded
-`retrieval_attempt_count`, and an `insufficient_evidence` flag. It does not own
-authorization, raw SQL, ingestion, final-answer composition, citations,
-conversation persistence, or provider secrets.
+Inside the graph, `retrieve_rag_context` calls `rag_runtime.retrieve_context(...)`, which returns a `RagAgentRetrievalResult`. The default SQLAlchemy runtime delegates to `invoke_context_forge_graph(...)` and carries back the underlying `ContextForgeResult`, bounded `retrieval_attempt_count`, and `insufficient_evidence` flag. The RAG Agent boundary does not own raw SQL, ingestion, final-answer composition, citations, conversation persistence, or provider secrets; hard authorization remains in ContextForge/RetrievalService.
 
 ## Future interface sketch
 
@@ -79,8 +74,7 @@ class RetrievalAgent:
         """Return permission-safe, ranked retrieval candidates for answer context."""
 ```
 
-The current backend can grow toward this interface incrementally from
-`invoke_context_forge_graph(...)`. The authorization filter remains
+The current backend can grow toward this interface incrementally from `rag_agent.retrieval.RagAgentRuntime`, which delegates to `invoke_context_forge_graph(...)` today. The authorization filter remains
 non-negotiable: every candidate generation path must start from chunks the
 principal is allowed to read.
 
@@ -164,7 +158,7 @@ Current completed slices should remain a foundation, not the final architecture:
 3. Rank authorized chunks by JSON-backed cosine similarity.
 4. Add pgvector storage/search on Postgres while keeping JSON/SQLite fallback.
 5. Keep event/source names truthful.
-6. Add a thin ContextForge RetrievalGraph wrapper so future agents can call the
+6. Add a RAG Agent runtime boundary over the thin ContextForge RetrievalGraph wrapper so future agents can call the
    same permission-first retrieval path as a typed subgraph/tool.
 7. Leave deeper role-node retrieval planning, full-text fusion, ANN/vector index
    tuning, query expansion, HyDE, and broader eval-driven orchestration as

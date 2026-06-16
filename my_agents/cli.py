@@ -8,7 +8,7 @@ from typing import Any, Protocol
 
 from langchain_core.messages import AIMessage, AnyMessage, HumanMessage
 
-from my_agents.agents.general_assistant.graph import build_graph
+from my_agents.agents.general_assistant.graph import build_legacy_chat_graph
 
 _EXIT_COMMANDS = {"/exit", "/quit", "exit", "quit", "q"}
 
@@ -35,7 +35,7 @@ def run_chat_loop(
     input_func: Callable[[str], str],
     print_func: Callable[[str], None],
     write_func: Callable[[str], None] | None = None,
-    graph_factory: Callable[[], GraphRunner] = build_graph,
+    graph_factory: Callable[[], GraphRunner] = build_legacy_chat_graph,
 ) -> None:
     """Run an interactive chat loop with in-process message history.
 

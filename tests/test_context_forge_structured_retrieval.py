@@ -14,15 +14,18 @@ from my_agents.persistence.database import get_database_session
 from my_agents.schemas import RouteDecision
 
 from .conftest import verify_latest_auth_email
+from .rag_spy_helpers import rag_update_for_spy
 
 
 class ContextForgeSpyGraph:
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
 
-    def invoke(self, input: dict) -> dict:  # noqa: A002
-        self.calls.append(input)
+    def invoke(self, input: dict, **kwargs: Any) -> dict:  # noqa: A002
+        rag_update = rag_update_for_spy(input, kwargs)
+        self.calls.append({**input, **rag_update})
         return {
+            **rag_update,
             "reply": "Here are the documented endpoints from the authorized context.",
             "route": RouteDecision(label="general_assistant", explanation="spy route"),
         }
@@ -174,7 +177,9 @@ def test_structured_entities_from_unauthorized_documents_are_not_used(monkeypatc
     assert payload["answer_mode"] == "general_knowledge"
     assert payload["citations"] == []
     assert "enough relevant authorized document evidence" in payload["reply"]
-    assert graph.calls == []
+    assert graph.calls[-1]["rag_halt_before_response"] is True
+    assert graph.calls[-1]["retrieval_route"] == "retrieval_required"
+    assert graph.calls[-1]["retrieved_context"] == []
 
     events = outsider.get(f"/conversations/{conversation_id}/runs/{payload['run_id']}/events")
     assert events.status_code == 200

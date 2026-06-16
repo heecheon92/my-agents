@@ -17,20 +17,22 @@ from my_agents.api.conversations.auth import get_authorized_conversation
 from my_agents.api.conversations.graph_invocation import graph_context_for_run
 from my_agents.api.conversations.graph_streaming import fallback_answer_deltas, stream_graph_items
 from my_agents.api.conversations.retrieval_context import (
+    ConversationRetrievalContext,
     chunks_used_for_answer,
+    clarification_reply,
     clarification_request,
     compose_rag_reply,
+    graph_has_retrieval_context,
     graph_input_for_run,
     graph_memory_source_snapshot_json,
     insufficient_evidence_reply,
     log_retrieval_context_for_llm,
-    prepare_retrieval_context,
+    retrieval_context_from_graph_state,
 )
 from my_agents.api.conversations.run_events import (
     answer_composed_payload,
     append_run_event,
     graph_invoked_payload,
-    retrieval_completed_payload,
     sse_event,
     update_graph_invoked_event_memory_snapshot,
     user_message_stored_payload,
@@ -44,7 +46,7 @@ from my_agents.api.conversations.run_lifecycle import (
     is_run_cancelling,
     persist_completed_run,
     persist_failed_run,
-    record_run_retrieval_metadata,
+    record_retrieval_completed_event,
     start_run,
 )
 from my_agents.api.conversations.serializers import (
@@ -175,115 +177,17 @@ def conversation_run_events(
         yield sse_event(AgentEventType.USER_MESSAGE_STORED.value, user_message_payload)
 
         messages = messages_for_conversation(db, conversation_id)
-        retrieval_context = prepare_retrieval_context(
-            db=db,
-            user_id=user_id,
-            conversation_id=conversation_id,
-            message=request.message,
-            messages=messages,
-            selection_context=selection_context,
-        )
-        retrieval_route = retrieval_context.decision.route
-        answer_mode = retrieval_context.answer_mode
-        record_run_retrieval_metadata(
-            db,
-            run.id,
-            retrieval_decision=retrieval_context.decision,
-            answer_mode=retrieval_context.answer_mode,
-            selection_context=retrieval_context.knowledge_base_selection,
-        )
-        retrieval_payload = retrieval_completed_payload(
-            retrieved_chunks=retrieval_context.retrieved_chunks,
-            retrieval_latency_ms=retrieval_context.retrieval_latency_ms,
-            retrieval_decision=retrieval_context.decision,
-            answer_mode=retrieval_context.answer_mode,
-            selection_context=retrieval_context.knowledge_base_selection,
-            retrieval_evidence=retrieval_context.retrieval_evidence,
-            retrieval_attempt_count=retrieval_context.retrieval_attempt_count,
-            insufficient_evidence=retrieval_context.insufficient_evidence,
-        )
-        append_run_event(db, run.id, AgentEventType.RETRIEVAL_COMPLETED, retrieval_payload)
-        yield sse_event(AgentEventType.RETRIEVAL_COMPLETED.value, retrieval_payload)
-        if is_run_cancelling(db, run.id):
-            yield cancelled_sse_event(db, run.id)
-            record_run_metric("cancelled")
-            return
-
-        if retrieval_context.decision.route == "clarification_required":
-            route = classify_messages(messages)
-            clarification = clarification_request(retrieval_context.decision)
-            response = persist_completed_run(
-                db=db,
-                run_id=run.id,
-                conversation_id=conversation_id,
-                retrieved_chunks=[],
-                route=route,
-                reply="",
-                retrieval_decision=retrieval_context.decision,
-                answer_mode=retrieval_context.answer_mode,
-                selection_context=retrieval_context.knowledge_base_selection,
-                clarification=clarification,
-                retrieval_evidence=retrieval_context.retrieval_evidence,
-            )
-            yield sse_event(
-                AgentEventType.ANSWER_COMPOSED.value,
-                answer_composed_payload(
-                    citation_count=0,
-                    reply=response.reply,
-                    retrieval_decision=retrieval_context.decision,
-                    answer_mode=retrieval_context.answer_mode,
-                    selection_context=retrieval_context.knowledge_base_selection,
-                    clarification=clarification,
-                ),
-            )
-            yield sse_event("run_completed", response.model_dump(mode="json"))
-            record_run_metric("clarification")
-            return
-
-        if retrieval_context.insufficient_evidence:
-            route = classify_messages(messages)
-            response = persist_completed_run(
-                db=db,
-                run_id=run.id,
-                conversation_id=conversation_id,
-                retrieved_chunks=[],
-                route=route,
-                reply=insufficient_evidence_reply(),
-                retrieval_decision=retrieval_context.decision,
-                answer_mode=retrieval_context.answer_mode,
-                selection_context=retrieval_context.knowledge_base_selection,
-                insufficient_evidence=True,
-                retrieval_evidence=retrieval_context.retrieval_evidence,
-            )
-            yield sse_event(
-                AgentEventType.ANSWER_COMPOSED.value,
-                answer_composed_payload(
-                    citation_count=0,
-                    reply=response.reply,
-                    retrieval_decision=retrieval_context.decision,
-                    answer_mode=retrieval_context.answer_mode,
-                    selection_context=retrieval_context.knowledge_base_selection,
-                    insufficient_evidence=True,
-                ),
-            )
-            yield sse_event("run_completed", response.model_dump(mode="json"))
-            record_run_metric("insufficient_evidence")
-            return
-
         graph_input = graph_input_for_run(
             messages=messages,
             user_id=user_id,
             conversation_id=conversation_id,
-            retrieval_context=retrieval_context,
         )
-        log_retrieval_context_for_llm(
-            run_id=run.id,
-            conversation_id=conversation_id,
+        graph_context = graph_context_for_run(
+            db=db,
             user_id=user_id,
-            retrieval_context=retrieval_context,
-            graph_input=graph_input,
+            selection_context=selection_context,
         )
-        graph_context = graph_context_for_run(db=db, user_id=user_id)
+        retrieval_context: ConversationRetrievalContext | None = None
         memory_snapshot = graph_memory_source_snapshot_json(graph_input)
         stream_route = classify_messages(messages)
         graph_invoked = False
@@ -299,10 +203,25 @@ def conversation_run_events(
             ):
                 if item.kind == "update":
                     if item.result:
+                        if retrieval_context is None and graph_has_retrieval_context(item.result):
+                            retrieval_context = retrieval_context_from_graph_state(item.result)
+                            retrieval_route = retrieval_context.decision.route
+                            answer_mode = retrieval_context.answer_mode
+                            retrieval_payload = record_retrieval_completed_event(
+                                db, run.id, retrieval_context
+                            )
+                            yield sse_event(
+                                AgentEventType.RETRIEVAL_COMPLETED.value,
+                                retrieval_payload,
+                            )
+                            if is_run_cancelling(db, run.id):
+                                yield cancelled_sse_event(db, run.id)
+                                record_run_metric("cancelled")
+                                return
                         memory_snapshot = (
                             graph_memory_source_snapshot_json(item.result) or memory_snapshot
                         )
-                    if memory_snapshot and not graph_invoked:
+                    if memory_snapshot and not graph_invoked and retrieval_context is not None:
                         graph_payload = graph_invoked_payload(
                             route=stream_route,
                             messages=messages,
@@ -321,6 +240,35 @@ def conversation_run_events(
                         )
                         graph_invoked = True
                     continue
+                if (
+                    retrieval_context is None
+                    and item.result is not None
+                    and graph_has_retrieval_context(item.result)
+                ):
+                    retrieval_context = retrieval_context_from_graph_state(item.result)
+                    retrieval_route = retrieval_context.decision.route
+                    answer_mode = retrieval_context.answer_mode
+                    retrieval_payload = record_retrieval_completed_event(
+                        db, run.id, retrieval_context
+                    )
+                    yield sse_event(AgentEventType.RETRIEVAL_COMPLETED.value, retrieval_payload)
+                    if is_run_cancelling(db, run.id):
+                        yield cancelled_sse_event(db, run.id)
+                        record_run_metric("cancelled")
+                        return
+                if item.kind == "result":
+                    result = item.result
+                    if result:
+                        memory_snapshot = (
+                            graph_memory_source_snapshot_json(result) or memory_snapshot
+                        )
+                    if retrieval_context is not None and (
+                        retrieval_context.decision.route == "clarification_required"
+                        or retrieval_context.insufficient_evidence
+                    ):
+                        continue
+                if retrieval_context is None:
+                    raise RuntimeError("conversation graph streamed an answer before RAG retrieval")
                 if not graph_invoked:
                     graph_payload = graph_invoked_payload(
                         route=stream_route,
@@ -351,9 +299,6 @@ def conversation_run_events(
                         {"delta": item.delta, "sequence": delta_sequence},
                     )
                     continue
-                result = item.result
-                if result:
-                    memory_snapshot = graph_memory_source_snapshot_json(result) or memory_snapshot
         except ResponseProviderConfigurationError as exc:
             run_id = persist_failed_run(
                 db=db,
@@ -387,6 +332,82 @@ def conversation_run_events(
 
         if result is None:
             raise RuntimeError("conversation graph stream ended without a final result")
+        if retrieval_context is None:
+            retrieval_context = retrieval_context_from_graph_state(result)
+            retrieval_route = retrieval_context.decision.route
+            answer_mode = retrieval_context.answer_mode
+            retrieval_payload = record_retrieval_completed_event(db, run.id, retrieval_context)
+            yield sse_event(AgentEventType.RETRIEVAL_COMPLETED.value, retrieval_payload)
+            if is_run_cancelling(db, run.id):
+                yield cancelled_sse_event(db, run.id)
+                record_run_metric("cancelled")
+                return
+        if retrieval_context.decision.route == "clarification_required":
+            route = coerce_route(result.get("route") or classify_messages(messages))
+            clarification = clarification_request(retrieval_context.decision)
+            response = persist_completed_run(
+                db=db,
+                run_id=run.id,
+                conversation_id=conversation_id,
+                retrieved_chunks=[],
+                route=route,
+                reply=clarification_reply(result.get("reply"), retrieval_context.decision),
+                retrieval_decision=retrieval_context.decision,
+                answer_mode=retrieval_context.answer_mode,
+                selection_context=retrieval_context.knowledge_base_selection,
+                clarification=clarification,
+                retrieval_evidence=retrieval_context.retrieval_evidence,
+            )
+            yield sse_event(
+                AgentEventType.ANSWER_COMPOSED.value,
+                answer_composed_payload(
+                    citation_count=0,
+                    reply=response.reply,
+                    retrieval_decision=retrieval_context.decision,
+                    answer_mode=retrieval_context.answer_mode,
+                    selection_context=retrieval_context.knowledge_base_selection,
+                    clarification=clarification,
+                ),
+            )
+            yield sse_event("run_completed", response.model_dump(mode="json"))
+            record_run_metric("clarification")
+            return
+        if retrieval_context.insufficient_evidence:
+            route = coerce_route(result.get("route") or classify_messages(messages))
+            response = persist_completed_run(
+                db=db,
+                run_id=run.id,
+                conversation_id=conversation_id,
+                retrieved_chunks=[],
+                route=route,
+                reply=insufficient_evidence_reply(),
+                retrieval_decision=retrieval_context.decision,
+                answer_mode=retrieval_context.answer_mode,
+                selection_context=retrieval_context.knowledge_base_selection,
+                insufficient_evidence=True,
+                retrieval_evidence=retrieval_context.retrieval_evidence,
+            )
+            yield sse_event(
+                AgentEventType.ANSWER_COMPOSED.value,
+                answer_composed_payload(
+                    citation_count=0,
+                    reply=response.reply,
+                    retrieval_decision=retrieval_context.decision,
+                    answer_mode=retrieval_context.answer_mode,
+                    selection_context=retrieval_context.knowledge_base_selection,
+                    insufficient_evidence=True,
+                ),
+            )
+            yield sse_event("run_completed", response.model_dump(mode="json"))
+            record_run_metric("insufficient_evidence")
+            return
+        log_retrieval_context_for_llm(
+            run_id=run.id,
+            conversation_id=conversation_id,
+            user_id=user_id,
+            retrieval_context=retrieval_context,
+            graph_input={**graph_input, **result},
+        )
         route = coerce_route(result["route"])
         memory_snapshot = graph_memory_source_snapshot_json(result) or memory_snapshot
         update_graph_invoked_event_memory_snapshot(db, graph_event, memory_snapshot)

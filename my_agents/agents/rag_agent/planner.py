@@ -38,8 +38,8 @@ class DeterministicRagAgentPlanner:
     ) -> RagAgentWorkflowPlan:
         """Build the frontend-safe stage plan for one run.
 
-        ContextForge remains the retrieval agent. The planner only summarizes stage
-        state from already-redacted service-layer counts.
+        ContextForge remains the internal delegated retrieval implementation. The
+        planner only summarizes stage state from already-redacted service-layer counts.
         """
         retrieval_active = answer_mode != "general_knowledge" or candidate_count > 0
         scout_status = "completed" if retrieval_active else "skipped"

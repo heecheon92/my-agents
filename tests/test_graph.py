@@ -11,6 +11,8 @@ from .conftest import (
     assert_chat_response_shape,
     assert_no_delegation_claims,
     get_compiled_graph,
+    graph_runtime_context,
+    graph_state,
     invoke_graph,
 )
 
@@ -19,9 +21,28 @@ def test_graph_compiles_to_real_invokable_langgraph_path() -> None:
     graph = get_compiled_graph()
 
     assert callable(graph.invoke)
-    result = graph.invoke({"messages": invoke_graph_messages("Hello, what can you do?")})
+    result = graph.invoke(
+        graph_state("Hello, what can you do?"),
+        context=graph_runtime_context(),
+    )
 
     assert_chat_response_shape(result, expected_label="general_assistant")
+
+
+def test_product_graph_requires_rag_runtime_context() -> None:
+    graph = get_compiled_graph()
+
+    with pytest.raises(RuntimeError, match="requires RAG Agent runtime context"):
+        graph.invoke(graph_state("Hello, what can you do?"))
+
+
+def test_legacy_chat_graph_omits_rag_runtime_requirement() -> None:
+    from my_agents.agents.general_assistant.graph import build_legacy_chat_graph
+
+    result = build_legacy_chat_graph().invoke({"messages": invoke_graph_messages("Hello")})
+
+    assert_chat_response_shape(result, expected_label="general_assistant")
+    assert "rag_retrieval_result" not in result
 
 
 @pytest.mark.parametrize("expected_label,prompt", REPRESENTATIVE_PROMPTS.items())
@@ -62,11 +83,8 @@ def test_graph_retrieves_memory_from_runtime_context() -> None:
     )
 
     result = graph.invoke(
-        {
-            "messages": invoke_graph_messages("Actually I no longer prefer concise answers"),
-            "retrieved_context": [],
-        },
-        context={"user_id": "user-a", "memory_runtime": memory_runtime},
+        graph_state("Actually I no longer prefer concise answers", user_id="user-a"),
+        context=graph_runtime_context(user_id="user-a", memory_runtime=memory_runtime),
     )
 
     assert memory_runtime.queries == ["Actually I no longer prefer concise answers"]

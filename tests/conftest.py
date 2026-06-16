@@ -10,6 +10,10 @@ from typing import Any
 import pytest
 from langchain_core.messages import AIMessage, AnyMessage, HumanMessage
 
+from my_agents.agents.rag_agent import RagAgentRetrievalResult
+from my_agents.knowledge.auth import KnowledgeBaseSelectionContext
+from my_agents.knowledge.routing import RetrievalRoutingDecision
+
 ALLOWED_ROUTE_LABELS = {
     "general_assistant",
     "research_helper",
@@ -157,8 +161,63 @@ def get_compiled_graph():
 
 def invoke_graph(message: str, history: list[dict[str, str]] | None = None) -> dict[str, Any]:
     graph = get_compiled_graph()
-    state = {"messages": messages_from_payload(message, history)}
-    return as_dict(graph.invoke(state))
+    state = graph_state(message, history)
+    return as_dict(graph.invoke(state, context=graph_runtime_context()))
+
+
+def graph_state(
+    message: str,
+    history: list[dict[str, str]] | None = None,
+    *,
+    user_id: str = "test-user",
+    conversation_id: str = "test-conversation",
+) -> dict[str, Any]:
+    return {
+        "messages": messages_from_payload(message, history),
+        "principal_id": user_id,
+        "conversation_id": conversation_id,
+    }
+
+
+def graph_runtime_context(
+    *,
+    user_id: str = "test-user",
+    rag_runtime: Any | None = None,
+    **overrides: Any,
+) -> dict[str, Any]:
+    context = {
+        "user_id": user_id,
+        "rag_runtime": rag_runtime or FakeRagRuntime(),
+        "knowledge_base_selection": KnowledgeBaseSelectionContext(
+            mode="all",
+            knowledge_base_ids=(),
+            resolved_count=0,
+        ),
+    }
+    context.update(overrides)
+    return context
+
+
+class FakeRagRuntime:
+    """No-document RAG Agent runtime for graph unit tests."""
+
+    def __init__(self) -> None:
+        self.queries: list[str] = []
+
+    def retrieve_context(self, **kwargs: Any) -> RagAgentRetrievalResult:
+        self.queries.append(str(kwargs["message"]))
+        return RagAgentRetrievalResult(
+            decision=RetrievalRoutingDecision(
+                route="no_retrieval",
+                reason="unit test RAG runtime has no documents",
+                rewritten_query=str(kwargs["message"]),
+                document_scope="none",
+            ),
+            answer_mode="general_knowledge",
+            retrieved_chunks=[],
+            retrieval_latency_ms=0.0,
+            knowledge_base_selection=kwargs["selection_context"],
+        )
 
 
 def messages_from_payload(

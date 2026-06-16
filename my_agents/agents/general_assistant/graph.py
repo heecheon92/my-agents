@@ -12,7 +12,12 @@ from my_agents.agents.general_assistant.memory_recall import (
     AssistantRuntimeContext,
     retrieve_memory_context,
 )
+from my_agents.agents.general_assistant.rag_retrieval import (
+    retrieve_rag_context,
+    select_after_rag_context,
+)
 from my_agents.agents.general_assistant.responders import get_response_provider
+from my_agents.agents.rag_agent import RagAgentRetrievalResult
 from my_agents.knowledge.routing import AnswerMode, DocumentScope, RetrievalRoute
 from my_agents.schemas import RouteDecision
 
@@ -33,6 +38,8 @@ class AssistantState(TypedDict, total=False):
     retrieved_context: list[dict[str, object]]
     memory_context: list[dict[str, object]]
     source_conflicts: list[dict[str, object]]
+    rag_retrieval_result: RagAgentRetrievalResult
+    rag_halt_before_response: bool
     retrieval_route: RetrievalRoute
     answer_mode: AnswerMode
     document_scope: DocumentScope
@@ -59,9 +66,20 @@ def respond_general(state: AssistantState) -> AssistantState:
     return {
         "reply": _compose_reply(
             state,
-            "I can help organize the request and suggest a practical next step.",
+            _general_response_guidance(state),
         )
     }
+
+
+def _general_response_guidance(state: AssistantState) -> str:
+    if state.get("retrieval_route") == "clarification_required":
+        return (
+            "The retrieval tool could not determine which authorized document the "
+            "user means. Ask one concise clarification question that prompts the "
+            "user to identify the intended document or source. Do not answer the "
+            "document-specific question yet. Match the user's language."
+        )
+    return "I can help organize the request and suggest a practical next step."
 
 
 def respond_research(state: AssistantState) -> AssistantState:
@@ -90,15 +108,41 @@ def _compose_reply(state: AssistantState, guidance: str) -> str:
 
 
 def build_graph():
-    """Build and compile the real LangGraph StateGraph."""
+    """Build and compile the retrieval-enabled product assistant graph.
+
+    Conversation-run services must invoke this graph with `graph_context_for_run(...)`
+    so the RAG Agent runtime and authorized knowledge-base selection are present.
+    """
+    return _build_graph(include_rag=True)
+
+
+def build_legacy_chat_graph():
+    """Build the unauthenticated legacy/dev chat graph without document retrieval."""
+    return _build_graph(include_rag=False)
+
+
+def _build_graph(*, include_rag: bool):
     graph = StateGraph(AssistantState, context_schema=AssistantRuntimeContext)
     graph.add_node("classify_request", classify_request)
+    if include_rag:
+        graph.add_node("retrieve_rag_context", retrieve_rag_context)
     graph.add_node("retrieve_memory", retrieve_memory_context)
     graph.add_node("respond_general", respond_general)
     graph.add_node("respond_research", respond_research)
 
     graph.add_edge(START, "classify_request")
-    graph.add_edge("classify_request", "retrieve_memory")
+    if include_rag:
+        graph.add_edge("classify_request", "retrieve_rag_context")
+        graph.add_conditional_edges(
+            "retrieve_rag_context",
+            select_after_rag_context,
+            {
+                "retrieve_memory": "retrieve_memory",
+                "end": END,
+            },
+        )
+    else:
+        graph.add_edge("classify_request", "retrieve_memory")
     graph.add_conditional_edges(
         "retrieve_memory",
         select_response_node,

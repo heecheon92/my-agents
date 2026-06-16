@@ -2,13 +2,12 @@
 
 한국어 | [English](./README.en.md)
 
-`context_forge`는 문서 근거 답변을 위한 전용 검색 계층 패키지입니다. `general_assistant` 및 `rag_agent`와 분리되어 있으며, ContextForge는 검색 계획, 소스 경계 전달, 승인된 후보 수집, 답변용 컨텍스트 패킹, redacted evidence 생성을 담당합니다. RAG Agent contract는 assistant가 최종 prose를 쓰기 전후에 이 redacted evidence를 trace/grounding check에 사용합니다.
+`context_forge`는 문서 근거 답변을 위한 내부 retrieval engine 패키지입니다. Public assistant-facing retrieval boundary는 `rag_agent`가 소유하고, ContextForge는 그 boundary 뒤에서 검색 계획, 소스 경계 전달, 승인된 후보 수집, 답변용 컨텍스트 패킹, redacted evidence 생성을 수행합니다. RAG Agent contract는 assistant가 최종 prose를 쓰기 전후에 이 redacted evidence를 trace/grounding check에 사용합니다.
 
 ## 현재 역할
 
 - 대화 실행(conversation run)을 위한 production-surface 검색 오케스트레이션입니다.
-- Conversation run은 얇은 LangGraph retrieval wrapper를 통해 ContextForge에 진입합니다. 이 구조는
-  같은 검색 capability를 나중에 agent용 typed subgraph/tool로 노출하기 위한 seam입니다.
+- Conversation run은 `general_assistant` graph의 `retrieve_rag_context` node를 통해 RAG Agent runtime에 진입하고, RAG Agent가 내부적으로 얇은 ContextForge LangGraph retrieval wrapper를 호출합니다.
 - 여러 역할 구조는 독립 hosted agent가 아니라 테스트 가능한 Python 클래스로 구현되어 있습니다.
 - 문서/지식베이스 권한의 hard boundary는 기존 `RetrievalService`와 source-selection helper 안에 유지합니다.
 - 기본 동작은 오프라인 테스트 가능한 deterministic 방식입니다. Cross-encoder reranking은 `MY_AGENTS_RERANKER_MODE=cross_encoder`로 켜는 optional second-stage seam입니다.
@@ -19,7 +18,8 @@
 
 ```mermaid
 flowchart TD
-    Request[ContextForgeRequest] --> Graph[ContextForge RetrievalGraph]
+    RAG["RAG Agent runtime"] --> Request[ContextForgeRequest]
+    Request --> Graph["ContextForge RetrievalGraph"]
     Graph --> Planner[Query Cartographer]
     Planner --> Warden[Source Warden]
     Warden --> Scouts[Candidate Scouts]
@@ -95,20 +95,18 @@ Cross-encoder는 `MY_AGENTS_RERANKER_TOP_K`가 정하는 이미 승인된 top-k 
 
 ## 보안 경계
 
-ContextForge는 권한 판단을 prompt에 맡기지 않습니다. 후보 생성은 기존 resolved `KnowledgeBaseSelectionContext`와 low-level retrieval SQL filter에서 시작합니다. LangGraph wrapper는 service call과 sufficiency state를 오케스트레이션할 뿐 source authorization을 수행하거나 storage를 직접 query하거나 hidden scratchpad를 노출하지 않습니다. Deterministic/cross-encoder reranking, packing, RAG Agent trace state, graph input, citation, event는 승인된 후보만 받습니다.
+ContextForge는 RAG Agent 뒤의 delegated engine이어도 권한 판단을 prompt에 맡기지 않습니다. 후보 생성은 기존 resolved `KnowledgeBaseSelectionContext`와 low-level retrieval SQL filter에서 시작합니다. LangGraph wrapper는 service call과 sufficiency state를 오케스트레이션할 뿐 source authorization을 수행하거나 storage를 직접 query하거나 hidden scratchpad를 노출하지 않습니다. Deterministic/cross-encoder reranking, packing, RAG Agent trace state, graph input, citation, event는 승인된 후보만 받습니다.
 모호한 문서 참조가 여러 승인 문서에 걸릴 때는 무리하게 전체 문서를 검색하지 않고, 정적 assistant 문장 없이 `message_key`/`input_slot` 기반 clarification contract로 멈춥니다.
 
 ## RetrievalGraph / tool seam
 
-`graph.py`는 `invoke_context_forge_graph(...)`를 노출합니다. 현재 conversation run은 API 응답 형태를 바꾸지 않고
-이 graph를 사용합니다. Graph state는 다음을 반환합니다.
+`graph.py`는 `invoke_context_forge_graph(...)`를 노출합니다. 현재 conversation run은 `rag_agent.retrieval`을 통해 이 graph를 사용하므로, assistant-facing public seam은 RAG Agent이고 ContextForge graph는 내부 implementation seam입니다. Graph state는 다음을 반환합니다.
 
 - underlying `ContextForgeResult`;
 - bounded `retrieval_attempt_count`;
 - required-document fallback 처리를 위한 `insufficient_evidence`.
 
-향후 agent는 이 graph를 final-answer generator가 아니라 authorized context와 redacted evidence를 반환하는
-evidence-retrieval tool로 호출해야 합니다. 최종 답변 작성, citation, run event, persistence는 계속
+향후 agent는 ContextForge를 직접 호출하기보다 RAG Agent public runtime을 통해 authorized context와 redacted evidence를 반환하는 evidence-retrieval tool로 사용해야 합니다. 최종 답변 작성, citation, run event, persistence는 계속
 conversation/assistant layer에 남습니다.
 
 Persistence guardrail: `ContextForgeGraphState`는 runtime-only입니다. 이 retrieval wrapper를

@@ -98,7 +98,7 @@ the graph is still running. Deterministic/local graph spies can also emit multip
 so frontend tests can verify incremental rendering without real credentials.
 
 
-`retrieval_completed`, `graph_invoked`, and `answer_composed` payloads include redacted routing metadata: `retrieval_route`, `answer_mode`, and `document_scope`. Retrieval counts use source names such as `semantic_vector_count`, `keyword_match_count`, `document_metadata_count`, `graph_expansion_count`, and `fallback_count`. A `clarification_required` route completes without `graph_invoked` or `answer_delta`; instead, `answer_composed` and `run_completed` carry `reply: ""` plus a language-neutral `clarification` object such as:
+`retrieval_completed`, `graph_invoked`, and `answer_composed` payloads include redacted routing metadata: `retrieval_route`, `answer_mode`, and `document_scope`. Retrieval counts use source names such as `semantic_vector_count`, `keyword_match_count`, `document_metadata_count`, `graph_expansion_count`, and `fallback_count`. A `clarification_required` route carries both visible assistant text and a language-neutral `clarification` object. Depending on whether the graph/provider streams response chunks, clients may see `graph_invoked`/`answer_delta` before completion or may only receive the final `answer_composed` and `run_completed` payloads. In all cases, `run_completed.reply` is non-empty and the structured clarification object keeps the HITL contract stable:
 
 ```json
 {
@@ -113,7 +113,7 @@ so frontend tests can verify incremental rendering without real credentials.
 }
 ```
 
-Frontend clients should localize `message_key` and collect the missing document/file reference from the human user rather than rendering backend-authored English prose.
+Frontend clients should render the assistant `reply`, localize `message_key` where they need form/input affordances, and collect the missing document/file reference from the human user.
 
 The final `run_completed` event contains the same response shape as
 `POST /conversations/{conversation_id}/runs`:
