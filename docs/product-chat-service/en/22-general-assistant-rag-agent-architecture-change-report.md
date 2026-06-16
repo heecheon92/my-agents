@@ -207,10 +207,17 @@ sequenceDiagram
     RS-->>CF: RetrievedChunk list
     CF-->>RAG: ContextForge result and evidence
     RAG-->>G: RagAgentRetrievalResult
-    alt clarification or insufficient evidence
+    alt clarification required
+        G->>G: retrieve_memory
+        G->>RP: compose visible clarification with route and RAG state
+        RP-->>G: clarification reply
+        G-->>API: final graph state with clarification route
+        API->>DB: Persist assistant message, events, clarification contract
+        API-->>UI: clarification reply and contract
+    else insufficient evidence
         G-->>API: graph state halts before answer node
         API->>DB: Persist safe terminal run state
-        API-->>UI: clarification or insufficient-evidence response
+        API-->>UI: insufficient-evidence response
     else enough context or no retrieval needed
         G->>G: retrieve_memory
         G->>RP: compose response with route, RAG context, memory context
@@ -231,10 +238,9 @@ RAG Agent invocation.
 flowchart TD
     Start([START]) --> Classify["classify_request"]
     Classify --> RetrieveRAG["retrieve_rag_context"]
-    RetrieveRAG --> Decision{"RAG result halts before answer?"}
-    Decision -->|"clarification_required"| End1([END])
+    RetrieveRAG --> Decision{"RAG result can continue?"}
     Decision -->|"insufficient_evidence"| End2([END])
-    Decision -->|"continue"| Memory["retrieve_memory"]
+    Decision -->|"continue, including clarification_required"| Memory["retrieve_memory"]
     Memory --> Route{"Route label"}
     Route -->|"general_assistant"| General["respond_general"]
     Route -->|"research_helper"| Research["respond_research"]
@@ -273,8 +279,8 @@ flowchart LR
     Chunks --> Filter["chunks_used_for_answer"]
     Filter --> IDs["retrieved_chunk_ids"]
     Filter --> PromptContext["retrieved_context"]
-    Decision --> Halt["rag_halt_before_response"]
-    Sufficiency --> Halt
+    Sufficiency --> Halt["rag_halt_before_response"]
+    Decision --> Continue["clarification can still compose reply"]
     Evidence --> Events["retrieval_completed event"]
     IDs --> Citations["citation persistence"]
     PromptContext --> Response["response provider context"]
@@ -321,9 +327,9 @@ while still waiting for answer deltas only when the graph continues to a respons
 stateDiagram-v2
     [*] --> RunStarted
     RunStarted --> RetrievalCompleted: RAG Agent returns decision
-    RetrievalCompleted --> ClarificationCompleted: route is clarification_required
     RetrievalCompleted --> InsufficientEvidenceCompleted: required evidence is insufficient
-    RetrievalCompleted --> AnswerComposition: retrieval is safe to continue
+    RetrievalCompleted --> AnswerComposition: retrieval is safe to continue or needs clarification
+    AnswerComposition --> ClarificationCompleted: visible clarification + structured contract
     AnswerComposition --> GroundingVerification
     GroundingVerification --> CompletedWithCitations: verifier passes
     GroundingVerification --> InsufficientEvidenceCompleted: required retrieval retry exhausted
@@ -340,8 +346,8 @@ stateDiagram-v2
 
 The halt states are part of the safety story:
 
-- `clarification_required` returns a structured clarification contract rather than forcing
-  the answer provider to improvise.
+- `clarification_required` returns visible assistant text plus a structured clarification
+  contract, so the product UI is not left with a successful empty reply.
 - `insufficient_evidence` persists a safe no-evidence answer and no citations.
 - Required retrieval still goes through RAG Agent grounding verification before a cited
   reply is accepted.
@@ -502,8 +508,9 @@ streaming, and replay paths all read retrieval results from graph updates/final 
 behavior stays consistent across conversation modes.
 
 Safety boundaries were preserved: RetrievalService still filters by authorization before
-ranking or context packing, RAG results can halt the graph for clarification or insufficient
-evidence, grounding verification still protects required retrieval answers, and frontend
+ranking or context packing, insufficient RAG evidence can still halt the graph before
+answer composition, clarification results produce visible assistant text plus a structured
+contract, grounding verification still protects required retrieval answers, and frontend
 payloads remain stable. The architecture is now ready for a more ReAct-like General
 Assistant that can choose whether to call the RAG Agent or other future specialist tools,
 while the current tested ContextForge retrieval engine continues to operate behind the

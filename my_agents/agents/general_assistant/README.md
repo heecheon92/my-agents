@@ -61,7 +61,7 @@ flowchart TD
 
 `general_assistant` 폴더는 graph/classifier/RAG invocation/memory recall/responder 경계를 소유합니다. Auth, group/document permission, server-owned conversation, knowledge ingestion, source selection, citation, agent event persistence는 `my_agents/api/`, `my_agents/knowledge/`, `my_agents/conversations/` 같은 service layer에서 소유합니다.
 
-제품용 conversation run은 DB-backed `SqlAlchemyRagAgentRuntime`과 resolved `KnowledgeBaseSelectionContext`를 LangGraph runtime context로 전달합니다. `general_assistant`는 답변을 쓰기 전에 graph 안에서 RAG Agent를 호출합니다. RAG Agent는 public retrieval boundary이고, ContextForge는 내부 delegated retrieval engine입니다. RAG 결과가 `clarification_required`이거나 required retrieval에 충분한 evidence가 없으면 graph는 answer node 전에 멈추고 API layer가 structured clarification 또는 insufficient-evidence reply를 persist합니다. 그 외에는 graph가 자체 `retrieve_memory` node를 실행한 뒤 response provider를 호출합니다.
+제품용 conversation run은 DB-backed `SqlAlchemyRagAgentRuntime`과 resolved `KnowledgeBaseSelectionContext`를 LangGraph runtime context로 전달합니다. `general_assistant`는 답변을 쓰기 전에 graph 안에서 RAG Agent를 호출합니다. RAG Agent는 public retrieval boundary이고, ContextForge는 내부 delegated retrieval engine입니다. RAG 결과가 `clarification_required`이면 graph는 memory/response composition까지 계속 진행해 assistant가 사용자에게 보이는 clarification question을 작성하고, API layer는 structured clarification contract를 함께 persist합니다. Required retrieval에 충분한 evidence가 없을 때만 graph가 answer node 전에 멈추고 safe insufficient-evidence reply를 persist합니다. 그 외에는 graph가 자체 `retrieve_memory` node를 실행한 뒤 response provider를 호출합니다.
 
 Authorized document context에는 authenticated chat user에게 공개되는 ambient system/project knowledge가 포함될 수 있지만, 이는 user memory가 아니라 retrieval context입니다. Memory node는 LangGraph `context`로 전달된 runtime-only `MemoryRuntime` adapter를 사용해 opt-in/governance filter가 적용된 active user memory를 검색하고, compact `memory_context`와 `source_conflicts`를 graph state에 기록합니다. Provider prompt 구성은 명시적인 `SourceContextBundle`을 거칩니다. 최근 Product DB conversation message, opt-in stored memory, authorized document context, material source conflict는 암묵적인 message slice가 아니라 분리된 channel로 전달됩니다. 보안 결정과 permission filter는 계속 `RetrievalService`/ContextForge/API layer에 남고, memory governance는 `my_agents/memory/`가 계속 소유합니다.
 
@@ -81,7 +81,14 @@ sequenceDiagram
     RAG->>Retrieval: delegated permission-first retrieval
     Retrieval-->>RAG: authorized context + redacted evidence
     RAG-->>Graph: retrieval route, answer mode, retrieved_context
-    alt clarification or insufficient evidence
+    alt clarification required
+        Graph->>Memory: retrieve_memory
+        Memory-->>Graph: memory_context + source_conflicts
+        Graph->>Provider: compose visible clarification
+        Provider-->>Graph: clarification reply
+        Graph-->>RunAPI: reply + clarification state
+        RunAPI->>Events: persist retrieval event + clarification contract
+    else insufficient evidence
         Graph-->>RunAPI: halt before answer node
         RunAPI->>Events: persist retrieval event + safe terminal state
     else answerable

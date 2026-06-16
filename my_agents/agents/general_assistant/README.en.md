@@ -61,7 +61,7 @@ This keeps the API honest: `research_helper` may use hosted `web_search` in Open
 
 The `general_assistant` folder owns the graph/classifier/RAG invocation/memory recall/responder boundary. Auth, group/document permissions, server-owned conversations, knowledge ingestion, source selection, citations, and agent-event persistence are owned by service-layer modules such as `my_agents/api/`, `my_agents/knowledge/`, and `my_agents/conversations/`.
 
-Product conversation runs pass a DB-backed `SqlAlchemyRagAgentRuntime` and resolved `KnowledgeBaseSelectionContext` through LangGraph runtime context. Before writing prose, `general_assistant` invokes the RAG Agent inside the graph. The RAG Agent is the public retrieval boundary; ContextForge is the internal delegated retrieval engine. If the RAG result is `clarification_required` or required retrieval has insufficient evidence, the graph stops before answer nodes and the API layer persists a structured clarification or insufficient-evidence reply. Otherwise, the graph runs its own `retrieve_memory` node and then calls the response provider.
+Product conversation runs pass a DB-backed `SqlAlchemyRagAgentRuntime` and resolved `KnowledgeBaseSelectionContext` through LangGraph runtime context. Before writing prose, `general_assistant` invokes the RAG Agent inside the graph. The RAG Agent is the public retrieval boundary; ContextForge is the internal delegated retrieval engine. If the RAG result is `clarification_required`, the graph continues to memory/response composition so the assistant can ask a visible clarification question while the API persists the structured clarification contract. If required retrieval has insufficient evidence, the graph still stops before answer nodes and the API layer persists the safe insufficient-evidence reply. Otherwise, the graph runs its own `retrieve_memory` node and then calls the response provider.
 
 The authorized document context may include ambient system/project knowledge that is public to authenticated chat users; it is still retrieval context, not user memory. The memory node receives a runtime-only `MemoryRuntime` adapter through LangGraph `context`, searches active user-scoped memory after opt-in/governance filtering, and writes compact `memory_context` plus `source_conflicts` into graph state. Provider prompt construction goes through an explicit `SourceContextBundle`: recent Product DB conversation messages, opt-in stored memory, authorized document context, and material source conflicts are separate channels instead of an implicit hidden message slice. Permission decisions remain inside RetrievalService/ContextForge/API layers; memory governance remains under `my_agents/memory/`.
 
@@ -81,7 +81,14 @@ sequenceDiagram
     RAG->>Retrieval: delegated permission-first retrieval
     Retrieval-->>RAG: authorized context + redacted evidence
     RAG-->>Graph: retrieval route, answer mode, retrieved_context
-    alt clarification or insufficient evidence
+    alt clarification required
+        Graph->>Memory: retrieve_memory
+        Memory-->>Graph: memory_context + source_conflicts
+        Graph->>Provider: compose visible clarification
+        Provider-->>Graph: clarification reply
+        Graph-->>RunAPI: reply + clarification state
+        RunAPI->>Events: persist retrieval event + clarification contract
+    else insufficient evidence
         Graph-->>RunAPI: halt before answer node
         RunAPI->>Events: persist retrieval event + safe terminal state
     else answerable

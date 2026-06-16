@@ -65,10 +65,15 @@ sequenceDiagram
     R->>DB: expand through authorized entity mentions
     CG-->>RAG: ContextForgeResult + attempt/sufficiency state
     RAG-->>G: authorized context + route/answer mode
-    alt clarification or insufficient evidence
+    alt clarification required
+        G->>G: compose visible clarification reply
+        G-->>API: reply + structured clarification state
+        API->>DB: persist assistant message, run, clarification contract
+        API-->>UI: clarification reply + clarification contract
+    else insufficient evidence
         G-->>API: halt before answer node
         API->>DB: persist safe terminal run state
-        API-->>UI: clarification or insufficient-evidence reply
+        API-->>UI: insufficient-evidence reply
     else retrieval/answer path
         G-->>API: reply + graph state
         API->>DB: persist assistant message, run, citations

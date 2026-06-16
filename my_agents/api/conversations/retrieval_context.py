@@ -251,6 +251,24 @@ def clarification_request(
     )
 
 
+def clarification_reply(
+    base_reply: str | None,
+    decision: RetrievalRoutingDecision,
+) -> str:
+    """Return visible assistant text for a document-scope clarification run.
+
+    The structured `clarification` payload remains the durable HITL contract. This
+    reply is a safety net for clients that render assistant text directly, and for
+    the General Assistant response provider when it already composed a natural
+    clarification in the user's language.
+    """
+    if decision.route != "clarification_required":
+        return (base_reply or "").strip()
+    if base_reply and base_reply.strip():
+        return base_reply.strip()
+    return "Which document or source should I use to answer that?"
+
+
 def compose_rag_reply(
     base_reply: str,
     retrieved_chunks: list[RetrievedChunk],

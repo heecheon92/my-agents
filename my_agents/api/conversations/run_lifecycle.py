@@ -25,6 +25,7 @@ from my_agents.api.conversations.graph_invocation import (
 from my_agents.api.conversations.retrieval_context import (
     ConversationRetrievalContext,
     chunks_used_for_answer,
+    clarification_reply,
     clarification_request,
     compose_rag_reply,
     graph_has_retrieval_context,
@@ -233,7 +234,7 @@ def _complete_sync_conversation_run(
             conversation_id=conversation_id,
             retrieved_chunks=[],
             route=route,
-            reply="",
+            reply=clarification_reply(result.get("reply"), retrieval_context.decision),
             retrieval_decision=retrieval_context.decision,
             answer_mode=retrieval_context.answer_mode,
             selection_context=retrieval_context.knowledge_base_selection,

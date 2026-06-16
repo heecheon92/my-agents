@@ -6,7 +6,7 @@ meaningful behavior, graph-state, provider, or documentation changes.
 ## 2026-06-16 — Invoke the RAG Agent inside the assistant graph
 
 - **Why:** The general assistant should be the top-level controller and decide inside its graph when to retrieve document evidence, instead of receiving a fully preassembled ContextForge result from the API service.
-- **Behavior/contract impact:** `graph.py` now runs `classify_request -> retrieve_rag_context -> retrieve_memory -> respond_*`, with a halt path for `clarification_required` and insufficient required evidence. `rag_retrieval.py` calls the runtime-only RAG Agent retrieval boundary supplied through LangGraph context, and API run paths persist retrieval/citation/grounding state from graph output.
+- **Behavior/contract impact:** `graph.py` now runs `classify_request -> retrieve_rag_context -> retrieve_memory -> respond_*`. Clarification results continue to response composition so users receive visible assistant text plus the structured clarification contract; insufficient required evidence still halts before answer composition. `rag_retrieval.py` calls the runtime-only RAG Agent retrieval boundary supplied through LangGraph context, and API run paths persist retrieval/citation/grounding state from graph output.
 - **Verification:** `uv run pytest -q tests/test_conversations_api.py tests/test_permission_aware_rag.py` covers sync, streaming, replay, permission, and safe no-evidence halt behavior.
 
 ## 2026-06-14 — Prioritize injected system knowledge in provider prompts

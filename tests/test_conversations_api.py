@@ -363,7 +363,7 @@ def test_debug_logging_exposes_retrieved_context_injected_to_llm(monkeypatch, ca
     assert "DebugRetrievalOnly" in captured
 
 
-def test_ambiguous_document_scope_returns_clarification_without_graph(monkeypatch) -> None:  # noqa: ANN001
+def test_ambiguous_document_scope_returns_visible_clarification(monkeypatch) -> None:  # noqa: ANN001
     graph = SpyGraph()
     client = _client(monkeypatch, graph)
     _signup_login(client, "clarify-docs@example.com")
@@ -390,7 +390,7 @@ def test_ambiguous_document_scope_returns_clarification_without_graph(monkeypatc
     assert payload["retrieval_route"] == "clarification_required"
     assert payload["answer_mode"] == "general_knowledge"
     assert payload["citations"] == []
-    assert payload["reply"] == ""
+    assert payload["reply"]
     assert payload["clarification"] == {
         "required": True,
         "kind": "document_scope",
@@ -401,13 +401,13 @@ def test_ambiguous_document_scope_returns_clarification_without_graph(monkeypatc
         "document_scope": "unknown",
         "rewritten_query": "이 문서 기준으로 개선점을 알려줘",
     }
-    assert graph.calls[-1]["rag_halt_before_response"] is True
+    assert graph.calls[-1]["rag_halt_before_response"] is False
     assert graph.calls[-1]["retrieval_route"] == "clarification_required"
 
     run_id = payload["run_id"]
     detail = client.get(f"/conversations/{conversation_id}/runs/{run_id}")
     assert detail.status_code == 200
-    assert detail.json()["reply"] == ""
+    assert detail.json()["reply"] == payload["reply"]
     assert detail.json()["clarification"]["message_key"] == (
         "clarification.document_scope.select_source"
     )
@@ -1247,14 +1247,14 @@ def test_streaming_ambiguous_document_scope_emits_human_clarification_state(
         "run_completed",
     ]
     assert "graph_invoked" not in event_names
-    assert graph.calls[-1]["rag_halt_before_response"] is True
+    assert graph.calls[-1]["rag_halt_before_response"] is False
     assert graph.calls[-1]["retrieval_route"] == "clarification_required"
-    assert answer_composed["reply_length"] == 0
+    assert answer_composed["reply_length"] > 0
     assert answer_composed["clarification_required"] is True
     assert answer_composed["clarification"]["message_key"] == (
         "clarification.document_scope.select_source"
     )
-    assert completed["reply"] == ""
+    assert completed["reply"]
     assert completed["clarification"]["input_slot"] == "document_reference"
     assert completed["agent_trace"][-1]["id"] == "answer_composer"
     assert completed["agent_trace"][-1]["status"] == "waiting"

@@ -77,7 +77,15 @@ def select_after_rag_context(state: Mapping[str, Any]) -> str:
 
 
 def _halts_before_response(result: RagAgentRetrievalResult) -> bool:
-    return result.decision.route == "clarification_required" or result.insufficient_evidence
+    """Return whether retrieval should stop the assistant before reply generation.
+
+    Clarification is still a user-facing assistant response: the RAG Agent can say
+    that document scope is ambiguous, but the General Assistant should turn that
+    tool result into visible clarification text. Only insufficient evidence halts
+    before the responder so the deterministic backend fallback can avoid
+    hallucinating document-grounded content.
+    """
+    return result.insufficient_evidence
 
 
 def _state_messages(state: Mapping[str, Any]) -> list[BaseMessage]:

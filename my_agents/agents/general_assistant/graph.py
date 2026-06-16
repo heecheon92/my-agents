@@ -66,9 +66,20 @@ def respond_general(state: AssistantState) -> AssistantState:
     return {
         "reply": _compose_reply(
             state,
-            "I can help organize the request and suggest a practical next step.",
+            _general_response_guidance(state),
         )
     }
+
+
+def _general_response_guidance(state: AssistantState) -> str:
+    if state.get("retrieval_route") == "clarification_required":
+        return (
+            "The retrieval tool could not determine which authorized document the "
+            "user means. Ask one concise clarification question that prompts the "
+            "user to identify the intended document or source. Do not answer the "
+            "document-specific question yet. Match the user's language."
+        )
+    return "I can help organize the request and suggest a practical next step."
 
 
 def respond_research(state: AssistantState) -> AssistantState:
