@@ -21,7 +21,7 @@ Markdown is a good canonical text surface for chunking, but it should not be the
 
 ## Why this matters
 
-The current backend already has a dedicated RAG service boundary through `ContextForge` and a thin `rag_agent` contract graph for trace/grounding verification, but the ingestion path is still mostly text-centric. That is enough for a product V1 slice, but production RAG quality depends on preserving document structure before retrieval starts.
+The current backend already has an assistant-facing RAG Agent boundary that delegates to ContextForge for permission-first retrieval plus trace/grounding verification, but the ingestion path is still mostly text-centric. That is enough for a product V1 slice, but production RAG quality depends on preserving document structure before retrieval starts.
 
 Layout parsing helps when documents contain:
 
@@ -46,9 +46,9 @@ flowchart TD
     Extraction --> Chunks["Deterministic chunks"]
     Chunks --> Embeddings["Embeddings / pgvector JSON fallback"]
     Chunks --> Entities["Entities + structured facts"]
-    Embeddings --> ContextForge["ContextForge retrieval service"]
-    Entities --> ContextForge
-    ContextForge --> RAGAgent["RAG Agent contract graph"]
+    Embeddings --> RAGAgent["RAG Agent retrieval boundary"]
+    Entities --> RAGAgent
+    RAGAgent --> ContextForge["ContextForge delegated retrieval engine"]
     ContextForge --> GraphInput["Authorized context for general_assistant"]
     GraphInput --> Answer["Answer + citations"]
     RAGAgent --> AnswerTrace["Verified trace + grounding checks"]
@@ -205,7 +205,7 @@ Recommended migration sequence:
 2. Keep current `document.content` compatibility while writing parsed Markdown into artifacts.
 3. Make ingestion read from the active parse artifact when present, with current text fallback.
 4. Add chunk provenance columns and populate them opportunistically.
-5. Teach ContextForge/RAG tools to use section/table/layout metadata.
+5. Teach the RAG Agent boundary and delegated ContextForge tools to use section/table/layout metadata.
 6. Normalize layout elements into a queryable table only after tool/eval needs prove it.
 7. Add reparse/versioning and cleanup policies before broad production rollout.
 

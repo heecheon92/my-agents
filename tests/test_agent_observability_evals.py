@@ -16,6 +16,7 @@ from my_agents.api.assistant import get_graph_runner
 from my_agents.schemas import RouteDecision
 
 from .conftest import verify_latest_auth_email
+from .rag_spy_helpers import rag_update_for_spy
 
 
 class ObservabilitySpyGraph:
@@ -24,9 +25,11 @@ class ObservabilitySpyGraph:
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
 
-    def invoke(self, input: dict) -> dict:  # noqa: A002 - matches LangGraph API
-        self.calls.append(input)
+    def invoke(self, input: dict, **kwargs: Any) -> dict:  # noqa: A002 - matches LangGraph API
+        rag_update = rag_update_for_spy(input, kwargs)
+        self.calls.append({**input, **rag_update})
         return {
+            **rag_update,
             "reply": "safe graph response",
             "route": RouteDecision(label="general_assistant", explanation="spy route"),
         }

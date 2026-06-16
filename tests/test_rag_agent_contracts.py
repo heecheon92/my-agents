@@ -6,6 +6,7 @@ from dataclasses import replace
 
 from my_agents.agents.rag_agent import (
     EXPECTED_STAGE_ORDER,
+    INTERNAL_RETRIEVAL_IMPLEMENTATION_NAME,
     RETRIEVAL_AGENT_NAME,
     DeterministicRagAgentGroundingVerifier,
     DeterministicRagAgentPlanner,
@@ -17,7 +18,7 @@ from my_agents.knowledge.retrieval import RetrievedChunk
 from my_agents.knowledge.routing import RetrievalRoutingDecision
 
 
-def test_rag_agent_planner_uses_contextforge_as_retrieval_agent() -> None:
+def test_rag_agent_planner_uses_rag_agent_as_public_retrieval_agent() -> None:
     plan = DeterministicRagAgentPlanner().plan(
         retrieval_route="retrieval_required",
         answer_mode="document_grounded",
@@ -34,6 +35,8 @@ def test_rag_agent_planner_uses_contextforge_as_retrieval_agent() -> None:
     assert {stage.agent_name for stage in plan.stages if stage.role == "retrieval_agent"} == {
         RETRIEVAL_AGENT_NAME
     }
+    assert RETRIEVAL_AGENT_NAME == "RAG Agent"
+    assert INTERNAL_RETRIEVAL_IMPLEMENTATION_NAME == "ContextForge"
     assert plan.stages[2].id == "candidate_scouts"
     assert plan.stages[2].status == "completed"
     assert plan.stages[4].evidence == {"injected_count": 3, "rejected_count": 5}

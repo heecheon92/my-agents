@@ -23,14 +23,16 @@ from my_agents.api.conversations.graph_invocation import (
     invoke_graph_runner_collecting_updates,
 )
 from my_agents.api.conversations.retrieval_context import (
+    ConversationRetrievalContext,
     chunks_used_for_answer,
     clarification_request,
     compose_rag_reply,
+    graph_has_retrieval_context,
     graph_input_for_run,
     graph_memory_source_snapshot_json,
     insufficient_evidence_reply,
     log_retrieval_context_for_llm,
-    prepare_retrieval_context,
+    retrieval_context_from_graph_state,
 )
 from my_agents.api.conversations.run_events import (
     answer_composed_payload,
@@ -145,42 +147,83 @@ def _complete_sync_conversation_run(
             duration_seconds=perf_counter() - run_started,
         )
 
+    graph_input = graph_input_for_run(
+        messages=messages,
+        user_id=user_id,
+        conversation_id=conversation_id,
+    )
+    graph_context = graph_context_for_run(
+        db=db,
+        user_id=user_id,
+        selection_context=selection_context,
+    )
     try:
-        retrieval_context = prepare_retrieval_context(
-            db=db,
-            user_id=user_id,
-            conversation_id=conversation_id,
-            message=prompt,
-            messages=messages,
-            selection_context=selection_context,
+        result = invoke_graph_runner_collecting_updates(
+            graph_runner=graph_runner,
+            graph_input=graph_input,
+            graph_context=graph_context,
         )
-    except Exception:
+    except GraphRunnerExecutionError as exc:
+        partial_state = exc.partial_state
+        memory_source_snapshot = graph_memory_source_snapshot_json(partial_state)
+        if graph_has_retrieval_context(partial_state):
+            retrieval_context = retrieval_context_from_graph_state(partial_state)
+            retrieval_route = retrieval_context.decision.route
+            answer_mode = retrieval_context.answer_mode
+            record_retrieval_completed_event(db, run.id, retrieval_context)
+            if not _retrieval_halts_before_response(retrieval_context):
+                append_run_event(
+                    db,
+                    run.id,
+                    AgentEventType.GRAPH_INVOKED,
+                    graph_invoked_payload(
+                        route=_route_from_graph_state(partial_state, messages),
+                        messages=messages,
+                        retrieved_chunks=retrieval_context.retrieved_chunks,
+                        retrieval_decision=retrieval_context.decision,
+                        answer_mode=retrieval_context.answer_mode,
+                        selection_context=retrieval_context.knowledge_base_selection,
+                        memory_source_snapshot_json=memory_source_snapshot,
+                    ),
+                )
+        original = exc.original_exception
+        status_code = (
+            status.HTTP_503_SERVICE_UNAVAILABLE
+            if isinstance(original, ResponseProviderConfigurationError)
+            else status.HTTP_502_BAD_GATEWAY
+        )
+        persist_failed_run(
+            db=db,
+            run_id=run.id,
+            conversation_id=conversation_id,
+            error_type=type(original).__name__,
+            memory_source_snapshot=memory_source_snapshot,
+        )
         record_run_metric("failed")
-        raise
+        raise HTTPException(status_code=status_code, detail="conversation run failed") from original
+    except ResponseProviderConfigurationError as exc:
+        persist_failed_run(
+            db=db,
+            run_id=run.id,
+            conversation_id=conversation_id,
+            error_type=type(exc).__name__,
+        )
+        record_run_metric("failed")
+        raise HTTPException(status_code=503, detail="conversation run failed") from exc
+    except Exception as exc:
+        persist_failed_run(
+            db=db,
+            run_id=run.id,
+            conversation_id=conversation_id,
+            error_type=type(exc).__name__,
+        )
+        record_run_metric("failed")
+        raise HTTPException(status_code=502, detail="conversation run failed") from exc
+
+    retrieval_context = retrieval_context_from_graph_state(result)
     retrieval_route = retrieval_context.decision.route
     answer_mode = retrieval_context.answer_mode
-    record_run_retrieval_metadata(
-        db,
-        run.id,
-        retrieval_decision=retrieval_context.decision,
-        answer_mode=retrieval_context.answer_mode,
-        selection_context=retrieval_context.knowledge_base_selection,
-    )
-    append_run_event(
-        db,
-        run.id,
-        AgentEventType.RETRIEVAL_COMPLETED,
-        retrieval_completed_payload(
-            retrieved_chunks=retrieval_context.retrieved_chunks,
-            retrieval_latency_ms=retrieval_context.retrieval_latency_ms,
-            retrieval_decision=retrieval_context.decision,
-            answer_mode=retrieval_context.answer_mode,
-            selection_context=retrieval_context.knowledge_base_selection,
-            retrieval_evidence=retrieval_context.retrieval_evidence,
-            retrieval_attempt_count=retrieval_context.retrieval_attempt_count,
-            insufficient_evidence=retrieval_context.insufficient_evidence,
-        ),
-    )
+    record_retrieval_completed_event(db, run.id, retrieval_context)
     if retrieval_context.decision.route == "clarification_required":
         route = classify_messages(messages)
         clarification = clarification_request(retrieval_context.decision)
@@ -218,76 +261,30 @@ def _complete_sync_conversation_run(
         )
         record_run_metric("insufficient_evidence")
         return response
-    graph_input = graph_input_for_run(
-        messages=messages,
-        user_id=user_id,
-        conversation_id=conversation_id,
-        retrieval_context=retrieval_context,
-    )
+    graph_state_for_logging = {**graph_input, **result}
     log_retrieval_context_for_llm(
         run_id=run.id,
         conversation_id=conversation_id,
         user_id=user_id,
         retrieval_context=retrieval_context,
-        graph_input=graph_input,
+        graph_input=graph_state_for_logging,
     )
+    route = coerce_route(result["route"])
+    memory_source_snapshot = graph_memory_source_snapshot_json(result)
     graph_event = append_run_event(
         db,
         run.id,
         AgentEventType.GRAPH_INVOKED,
         graph_invoked_payload(
-            route=classify_messages(messages),
+            route=route,
             messages=messages,
             retrieved_chunks=retrieval_context.retrieved_chunks,
             retrieval_decision=retrieval_context.decision,
             answer_mode=retrieval_context.answer_mode,
             selection_context=retrieval_context.knowledge_base_selection,
+            memory_source_snapshot_json=memory_source_snapshot,
         ),
     )
-    try:
-        result = invoke_graph_runner_collecting_updates(
-            graph_runner=graph_runner,
-            graph_input=graph_input,
-            graph_context=graph_context_for_run(db=db, user_id=user_id),
-        )
-    except GraphRunnerExecutionError as exc:
-        memory_source_snapshot = graph_memory_source_snapshot_json(exc.partial_state)
-        update_graph_invoked_event_memory_snapshot(db, graph_event, memory_source_snapshot)
-        original = exc.original_exception
-        status_code = (
-            status.HTTP_503_SERVICE_UNAVAILABLE
-            if isinstance(original, ResponseProviderConfigurationError)
-            else status.HTTP_502_BAD_GATEWAY
-        )
-        persist_failed_run(
-            db=db,
-            run_id=run.id,
-            conversation_id=conversation_id,
-            error_type=type(original).__name__,
-            memory_source_snapshot=memory_source_snapshot,
-        )
-        record_run_metric("failed")
-        raise HTTPException(status_code=status_code, detail="conversation run failed") from original
-    except ResponseProviderConfigurationError as exc:
-        persist_failed_run(
-            db=db,
-            run_id=run.id,
-            conversation_id=conversation_id,
-            error_type=type(exc).__name__,
-        )
-        record_run_metric("failed")
-        raise HTTPException(status_code=503, detail="conversation run failed") from exc
-    except Exception as exc:
-        persist_failed_run(
-            db=db,
-            run_id=run.id,
-            conversation_id=conversation_id,
-            error_type=type(exc).__name__,
-        )
-        record_run_metric("failed")
-        raise HTTPException(status_code=502, detail="conversation run failed") from exc
-    route = coerce_route(result["route"])
-    memory_source_snapshot = graph_memory_source_snapshot_json(result)
     update_graph_invoked_event_memory_snapshot(db, graph_event, memory_source_snapshot)
     used_chunks = chunks_used_for_answer(retrieval_context)
     reply = compose_rag_reply(result["reply"], used_chunks, retrieval_context.answer_mode)
@@ -648,6 +645,55 @@ def record_run_retrieval_metadata(
     )
     run.resolved_knowledge_base_count = selection_context.resolved_count
     db.commit()
+
+
+def record_retrieval_completed_event(
+    db: Session,
+    run_id: str,
+    retrieval_context: ConversationRetrievalContext,
+) -> dict[str, object]:
+    """Persist retrieval metadata and redacted retrieval_completed event payload."""
+    record_run_retrieval_metadata(
+        db,
+        run_id,
+        retrieval_decision=retrieval_context.decision,
+        answer_mode=retrieval_context.answer_mode,
+        selection_context=retrieval_context.knowledge_base_selection,
+    )
+    payload = retrieval_completed_payload(
+        retrieved_chunks=retrieval_context.retrieved_chunks,
+        retrieval_latency_ms=retrieval_context.retrieval_latency_ms,
+        retrieval_decision=retrieval_context.decision,
+        answer_mode=retrieval_context.answer_mode,
+        selection_context=retrieval_context.knowledge_base_selection,
+        retrieval_evidence=retrieval_context.retrieval_evidence,
+        retrieval_attempt_count=retrieval_context.retrieval_attempt_count,
+        insufficient_evidence=retrieval_context.insufficient_evidence,
+    )
+    append_run_event(
+        db,
+        run_id,
+        AgentEventType.RETRIEVAL_COMPLETED,
+        payload,
+    )
+    return payload
+
+
+def _retrieval_halts_before_response(retrieval_context: ConversationRetrievalContext) -> bool:
+    return (
+        retrieval_context.decision.route == "clarification_required"
+        or retrieval_context.insufficient_evidence
+    )
+
+
+def _route_from_graph_state(
+    graph_state: dict[str, object],
+    messages: list[BaseMessage],
+) -> RouteDecision:
+    route = graph_state.get("route")
+    if route is not None:
+        return coerce_route(route)
+    return classify_messages(messages)
 
 
 def is_run_cancelling(db: Session, run_id: str) -> bool:

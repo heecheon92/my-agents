@@ -19,7 +19,8 @@ RagAgentStageId = Literal[
 RagAgentStageStatus = Literal["completed", "skipped", "waiting", "failed"]
 RagAgentAgentRole = Literal["retrieval_agent", "assistant_agent"]
 
-RETRIEVAL_AGENT_NAME = "ContextForge"
+RETRIEVAL_AGENT_NAME = "RAG Agent"
+INTERNAL_RETRIEVAL_IMPLEMENTATION_NAME = "ContextForge"
 ASSISTANT_AGENT_NAME = "GeneralAssistantGraph"
 EXPECTED_STAGE_ORDER: tuple[RagAgentStageId, ...] = (
     "query_cartographer",

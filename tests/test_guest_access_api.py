@@ -23,6 +23,7 @@ from my_agents.persistence.database import get_database_session
 from my_agents.schemas import RouteDecision
 
 from .conftest import verify_latest_auth_email
+from .rag_spy_helpers import rag_update_for_spy
 
 GUEST_REQUEST_EMAIL = "guest-requester@example.com"
 
@@ -35,8 +36,10 @@ class _TextChunk:
 class GuestSpyGraph:
     """Small deterministic graph for guest run limit tests."""
 
-    def invoke(self, input: dict[str, Any]) -> dict[str, Any]:  # noqa: A002
+    def invoke(self, input: dict[str, Any], **kwargs: Any) -> dict[str, Any]:  # noqa: A002
+        rag_update = rag_update_for_spy(input, kwargs)
         return {
+            **rag_update,
             "reply": f"guest saw {len(input['messages'])} messages",
             "route": RouteDecision(label="general_assistant", explanation="guest spy"),
         }
@@ -48,7 +51,11 @@ class GuestCancellingStreamingGraph:
     def invoke(self, input: dict[str, Any]) -> dict[str, Any]:  # noqa: A002, ARG002
         raise AssertionError("streaming endpoint should use graph.stream when available")
 
-    def stream(self, input: dict[str, Any], **kwargs: Any):  # noqa: A002, ARG002, ANN202
+    def stream(self, input: dict[str, Any], **kwargs: Any):  # noqa: A002, ANN202
+        yield {
+            "type": "updates",
+            "data": {"retrieve_rag_context": rag_update_for_spy(input, kwargs)},
+        }
         _mark_latest_running_run_cancelling(input["conversation_id"])
         yield {"type": "messages", "data": (_TextChunk("cancelled"), {})}
 

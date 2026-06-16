@@ -41,10 +41,11 @@ flowchart TD
     API --> Runs["Conversation runs / SSE"]
     KB --> Ingest["Ingestion + chunks + entities + embeddings"]
     SystemKB --> Ingest
-    Runs --> ContextForge["ContextForge permission-aware retrieval"]
-    ContextForge --> RAGAgent["RAG Agent contract graph"]
+    Runs --> Graph["General assistant LangGraph"]
+    Graph --> RAGAgent["RAG Agent retrieval boundary"]
+    RAGAgent --> ContextForge["ContextForge delegated retrieval engine"]
     ContextForge --> GraphInput["Authorized retrieved context"]
-    GraphInput --> Graph["General assistant LangGraph"]
+    GraphInput --> Graph
     Graph --> MemoryRuntime["retrieve_memory node + MemoryRuntime"]
     MemoryRuntime --> Memory["Opt-in user memory service"]
     MemoryRuntime --> Graph
@@ -104,7 +105,7 @@ curl http://127.0.0.1:8000/metrics
 ```
 
 The metrics endpoint is a maintenance/quality-analysis surface, not a product API. It
-records request, conversation-run, ContextForge retrieval, embedding, reranker, and
+records request, conversation-run, RAG Agent/ContextForge retrieval, embedding, reranker, and
 assistant-graph timing histograms without using raw prompts, document text, user IDs, or
 document IDs as metric labels.
 

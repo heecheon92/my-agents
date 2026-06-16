@@ -114,7 +114,7 @@ class DeterministicRagAgentGroundingVerifier:
 def _stage_errors(stage: RagAgentStage) -> list[str]:
     errors: list[str] = []
     if stage.role == "retrieval_agent" and stage.agent_name != RETRIEVAL_AGENT_NAME:
-        errors.append(f"{stage.id}: retrieval role must use ContextForge")
+        errors.append(f"{stage.id}: retrieval role must use {RETRIEVAL_AGENT_NAME}")
     if not stage.title.en or not stage.title.ko:
         errors.append(f"{stage.id}: missing localized title")
     if not stage.description.en or not stage.description.ko:

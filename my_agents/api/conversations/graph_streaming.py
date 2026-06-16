@@ -74,7 +74,7 @@ def stream_graph_items(
         final_result["reply"] = "".join(streamed_parts).strip()
     if "route" not in final_result:
         final_result["route"] = classify_messages(graph_input.get("messages", []))
-    if "reply" in final_result:
+    if "reply" in final_result or "rag_retrieval_result" in final_result:
         yield GraphStreamItem(kind="result", result=final_result)
         return
     if not emitted_stream_event:
@@ -109,10 +109,24 @@ def result_fields_from_update(update: dict[str, Any]) -> dict[str, Any]:
         reply = node_update.get("reply")
         if isinstance(reply, str):
             fields["reply"] = reply
-        for field_name in ("memory_context", "source_conflicts"):
+        for field_name in (
+            "memory_context",
+            "source_conflicts",
+            "retrieved_chunk_ids",
+            "retrieved_context",
+        ):
             value = node_update.get(field_name)
             if isinstance(value, list):
                 fields[field_name] = value
+        for field_name in (
+            "rag_retrieval_result",
+            "rag_halt_before_response",
+            "retrieval_route",
+            "answer_mode",
+            "document_scope",
+        ):
+            if field_name in node_update:
+                fields[field_name] = node_update[field_name]
     return fields
 
 

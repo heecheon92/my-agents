@@ -1,6 +1,6 @@
 ---
 created: 2026-05-17
-updated: 2026-06-10
+updated: 2026-06-16
 status: active
 topics:
   - rag
@@ -37,9 +37,7 @@ The current implementation is intentionally deterministic so tests stay offline:
   human-in-the-loop localization instead of hard-coded English prose;
 - filename/title-like document references are matched against authorized document metadata
   before body-only retrieval, so visible upload names can resolve even when absent from text;
-- conversation runs enter retrieval through a thin ContextForge LangGraph RetrievalGraph wrapper,
-  which currently delegates to the permission-first retrieval service and records bounded
-  retry/sufficiency state;
+- conversation runs enter retrieval through the `general_assistant` graph, which invokes the RAG Agent runtime; the RAG Agent delegates internally to the thin ContextForge LangGraph RetrievalGraph and records bounded retry/sufficiency state;
 - citations are stored against the `AgentRunModel` only when retrieved chunks are actually used;
 - the response payload returns routing metadata plus citation IDs, document IDs, chunk IDs, and snippets.
 
@@ -50,25 +48,29 @@ sequenceDiagram
     participant UI as Frontend
     participant API as Conversation run API
     participant Auth as Auth dependency
+    participant G as general_assistant LangGraph
+    participant RAG as RAG Agent runtime
     participant CG as ContextForge RetrievalGraph
     participant R as RetrievalService
-    participant G as LangGraph assistant
     participant DB as Database
 
     UI->>API: POST /conversations/{id}/runs
     API->>Auth: resolve current principal
     API->>DB: persist user message
-    API->>API: route no/required/optional/clarification
-    alt clarification required
-        API->>DB: persist empty assistant message + clarification run state
-        API-->>UI: reply "" + clarification object for localized human prompt
+    API->>G: invoke with server-owned messages + runtime RAG context
+    G->>RAG: retrieve_rag_context
+    RAG->>CG: invoke_context_forge_graph(request)
+    CG->>R: retrieve(user_id, query) only for required/optional
+    R->>DB: select chunks from authorized documents only
+    R->>DB: expand through authorized entity mentions
+    CG-->>RAG: ContextForgeResult + attempt/sufficiency state
+    RAG-->>G: authorized context + route/answer mode
+    alt clarification or insufficient evidence
+        G-->>API: halt before answer node
+        API->>DB: persist safe terminal run state
+        API-->>UI: clarification or insufficient-evidence reply
     else retrieval/answer path
-        API->>CG: invoke_context_forge_graph(request)
-        CG->>R: retrieve(user_id, query) only for required/optional
-        R->>DB: select chunks from authorized documents only
-        R->>DB: expand through authorized entity mentions
-        CG-->>API: ContextForgeResult + attempt/sufficiency state
-        API->>G: invoke with server-owned messages, answer_mode, and authorized context
+        G-->>API: reply + graph state
         API->>DB: persist assistant message, run, citations
         API-->>UI: reply + citations
     end
@@ -114,12 +116,7 @@ boundary testable before adding more impressive retrieval infrastructure.
 
 ## RetrievalGraph augmentation milestone
 
-An initial retrieval LangGraph now exists as a thin wrapper around ContextForge. The
-current production-shaped boundary is: Conversation API prepares the run request,
-`invoke_context_forge_graph(...)` orchestrates the retrieval attempt and bounded
-sufficiency retry, `RetrievalService` enforces permissions and returns packaged context,
-and `general_assistant` only receives authorized compact context plus `answer_mode`
-metadata.
+The current production-shaped boundary is now: the Conversation API prepares the run request and runtime context, `general_assistant` invokes the RAG Agent inside its graph, the RAG Agent delegates to `invoke_context_forge_graph(...)`, ContextForge orchestrates the retrieval attempt and bounded sufficiency retry, and `RetrievalService` enforces permissions before returning packaged context. `general_assistant` receives authorized compact context plus `answer_mode` as graph state produced by the RAG Agent node.
 
 Promote more of retrieval into graph nodes only when retrieval has enough internal
 workflow to justify the added orchestration, for example:
@@ -139,11 +136,13 @@ future shape is:
 
 ```mermaid
 flowchart LR
-    API[Conversation API] --> Router[Retrieval routing policy]
-    Router --> RG[ContextForge RetrievalGraph]
+    API[Conversation API] --> GA[general_assistant graph]
+    GA --> RAG[RAG Agent retrieval boundary]
+    RAG --> RG[ContextForge RetrievalGraph]
     RG --> RS[RetrievalService authorization + search]
     RS --> RG
-    RG --> GA[general_assistant graph]
+    RG --> RAG
+    RAG --> GA
     GA --> Events[Citations + events]
 ```
 
@@ -160,7 +159,8 @@ flowchart LR
 
 ## Revision history
 
-- 2026-06-10: Added the thin ContextForge RetrievalGraph wrapper as the active retrieval entrypoint while keeping deeper tool-using graph orchestration future-gated.
+- 2026-06-16: Promoted `rag_agent` to the assistant-facing retrieval boundary invoked from `general_assistant`, while ContextForge remains the delegated permission-first retrieval graph.
+- 2026-06-10: Added the thin ContextForge RetrievalGraph wrapper as the active retrieval implementation seam while keeping deeper tool-using graph orchestration future-gated.
 - 2026-05-25: Clarification-required runs now return structured human-in-the-loop state instead of deterministic English text.
 - 2026-05-25: Added authorized title/source-filename metadata matching for filename-only document references.
 - 2026-05-21: Added deterministic retrieval routing, answer modes, clarification route, and response/event metadata.

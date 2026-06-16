@@ -16,15 +16,18 @@ from my_agents.persistence.database import get_database_session
 from my_agents.schemas import RouteDecision
 
 from .conftest import verify_latest_auth_email
+from .rag_spy_helpers import rag_update_for_spy
 
 
 class SystemKnowledgeSpyGraph:
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
 
-    def invoke(self, input: dict) -> dict:  # noqa: A002
-        self.calls.append(input)
+    def invoke(self, input: dict, **kwargs: Any) -> dict:  # noqa: A002
+        rag_update = rag_update_for_spy(input, kwargs)
+        self.calls.append({**input, **rag_update})
         return {
+            **rag_update,
             "reply": "system knowledge graph response",
             "route": RouteDecision(label="general_assistant", explanation="system kb spy"),
         }

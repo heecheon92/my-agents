@@ -9,23 +9,28 @@ from dataclasses import dataclass
 
 from langchain_core.messages import BaseMessage
 from rich import print as rich_print
-from sqlalchemy.orm import Session
 
-from my_agents.agents.context_forge import invoke_context_forge_graph
-from my_agents.agents.context_forge.contracts import ContextForgeRequest, RetrievalEvidence
+from my_agents.agents.context_forge.contracts import RetrievalEvidence
+from my_agents.agents.rag_agent import (
+    RagAgentRetrievalResult,
+)
+from my_agents.agents.rag_agent import (
+    chunks_used_for_answer as rag_chunks_used_for_answer,
+)
+from my_agents.agents.rag_agent import (
+    retrieved_context_for_graph as rag_retrieved_context_for_graph,
+)
 from my_agents.conversations.schemas import ConversationClarificationRequest
 from my_agents.knowledge.auth import KnowledgeBaseSelectionContext
 from my_agents.knowledge.retrieval import RetrievedChunk
 from my_agents.knowledge.routing import (
     AnswerMode,
     RetrievalRoutingDecision,
-    is_relevant_retrieval_result,
 )
 from my_agents.knowledge.source_locations import parse_source_location_json
 
 logger = logging.getLogger(__name__)
 
-_RETRIEVED_CONTEXT_SNIPPET_CHARS = 1200
 _INSUFFICIENT_EVIDENCE_REPLY = (
     "I couldn't find enough relevant authorized document evidence to answer that safely. "
     "Please choose or upload the source document and try again."
@@ -46,36 +51,35 @@ class ConversationRetrievalContext:
     insufficient_evidence: bool = False
 
 
-def prepare_retrieval_context(
-    *,
-    db: Session,
-    user_id: str,
-    conversation_id: str,
-    message: str,
-    messages: list[BaseMessage],
-    selection_context: KnowledgeBaseSelectionContext,
+def conversation_retrieval_context_from_rag_result(
+    result: RagAgentRetrievalResult,
 ) -> ConversationRetrievalContext:
-    graph_result = invoke_context_forge_graph(
-        db=db,
-        request=ContextForgeRequest(
-            user_id=user_id,
-            conversation_id=conversation_id,
-            query=message,
-            messages=messages,
-            selection_context=selection_context,
-        ),
-    )
-    result = graph_result.result
+    """Adapt the RAG Agent public result into the conversation service shape."""
     return ConversationRetrievalContext(
         decision=result.decision,
         answer_mode=result.answer_mode,
         retrieved_chunks=result.retrieved_chunks,
         retrieval_latency_ms=result.retrieval_latency_ms,
-        knowledge_base_selection=selection_context,
-        retrieval_evidence=result.evidence,
-        retrieval_attempt_count=graph_result.retrieval_attempt_count,
-        insufficient_evidence=graph_result.insufficient_evidence,
+        knowledge_base_selection=result.knowledge_base_selection,
+        retrieval_evidence=result.retrieval_evidence,
+        retrieval_attempt_count=result.retrieval_attempt_count,
+        insufficient_evidence=result.insufficient_evidence,
     )
+
+
+def retrieval_context_from_graph_state(
+    graph_state: Mapping[str, object],
+) -> ConversationRetrievalContext:
+    """Extract graph-owned RAG Agent retrieval state after graph execution."""
+    result = graph_state.get("rag_retrieval_result")
+    if isinstance(result, RagAgentRetrievalResult):
+        return conversation_retrieval_context_from_rag_result(result)
+    raise RuntimeError("general_assistant graph did not return RAG Agent retrieval context")
+
+
+def graph_has_retrieval_context(graph_state: Mapping[str, object]) -> bool:
+    """Return whether a graph update/final state contains RAG Agent retrieval output."""
+    return isinstance(graph_state.get("rag_retrieval_result"), RagAgentRetrievalResult)
 
 
 def graph_input_for_run(
@@ -83,24 +87,23 @@ def graph_input_for_run(
     messages: list[BaseMessage],
     user_id: str,
     conversation_id: str,
-    retrieval_context: ConversationRetrievalContext,
 ) -> dict[str, object]:
-    used_chunks = chunks_used_for_answer(retrieval_context)
-    retrieved_context = retrieved_context_for_graph(used_chunks)
-    return {
+    graph_input: dict[str, object] = {
         "messages": messages,
         "principal_id": user_id,
         "conversation_id": conversation_id,
-        "retrieved_chunk_ids": [item.chunk.id for item in used_chunks],
-        "retrieved_context": retrieved_context,
+        "retrieved_chunk_ids": [],
+        "retrieved_context": [],
         # Memory recall is graph-owned. These defaults keep test doubles and legacy
         # graph runners compatible; the real graph overwrites them in `retrieve_memory`.
         "memory_context": [],
         "source_conflicts": [],
-        "retrieval_route": retrieval_context.decision.route,
-        "answer_mode": retrieval_context.answer_mode,
-        "document_scope": retrieval_context.decision.document_scope,
+        "retrieval_route": "no_retrieval",
+        "answer_mode": "general_knowledge",
+        "document_scope": "unknown",
+        "rag_halt_before_response": False,
     }
+    return graph_input
 
 
 def insufficient_evidence_reply() -> str:
@@ -111,34 +114,26 @@ def insufficient_evidence_reply() -> str:
 def chunks_used_for_answer(
     retrieval_context: ConversationRetrievalContext,
 ) -> list[RetrievedChunk]:
-    if retrieval_context.answer_mode == "general_knowledge":
-        return []
-    return [
-        item
-        for item in retrieval_context.retrieved_chunks
-        if is_relevant_retrieval_result(
-            route=retrieval_context.decision.route,
-            source=item.source,
-            score=item.score,
-        )
-    ]
+    return rag_chunks_used_for_answer(_rag_result_from_conversation_context(retrieval_context))
 
 
 def retrieved_context_for_graph(retrieved_chunks: list[RetrievedChunk]) -> list[dict[str, object]]:
-    return [
-        {
-            "document_id": item.document.id,
-            "chunk_id": item.chunk.id,
-            "knowledge_base_id": item.document.knowledge_base_id,
-            "title": item.document.title,
-            "snippet": item.chunk.content[:_RETRIEVED_CONTEXT_SNIPPET_CHARS],
-            "source_page": item.chunk.source_page,
-            "source_location_json": parse_source_location_json(item.chunk.source_location_json),
-            "source_filename": item.document.source_filename,
-            "source": item.source,
-        }
-        for item in retrieved_chunks
-    ]
+    return rag_retrieved_context_for_graph(retrieved_chunks)
+
+
+def _rag_result_from_conversation_context(
+    retrieval_context: ConversationRetrievalContext,
+) -> RagAgentRetrievalResult:
+    return RagAgentRetrievalResult(
+        decision=retrieval_context.decision,
+        answer_mode=retrieval_context.answer_mode,
+        retrieved_chunks=retrieval_context.retrieved_chunks,
+        retrieval_latency_ms=retrieval_context.retrieval_latency_ms,
+        knowledge_base_selection=retrieval_context.knowledge_base_selection,
+        retrieval_evidence=retrieval_context.retrieval_evidence,
+        retrieval_attempt_count=retrieval_context.retrieval_attempt_count,
+        insufficient_evidence=retrieval_context.insufficient_evidence,
+    )
 
 
 def memory_source_snapshot_json(

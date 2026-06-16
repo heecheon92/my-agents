@@ -3,7 +3,7 @@
 import json
 from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -17,20 +17,21 @@ from my_agents.api.conversations.auth import get_authorized_conversation
 from my_agents.api.conversations.graph_invocation import graph_context_for_run
 from my_agents.api.conversations.graph_streaming import fallback_answer_deltas, stream_graph_items
 from my_agents.api.conversations.retrieval_context import (
+    ConversationRetrievalContext,
     chunks_used_for_answer,
     clarification_request,
     compose_rag_reply,
+    graph_has_retrieval_context,
     graph_input_for_run,
     graph_memory_source_snapshot_json,
     insufficient_evidence_reply,
     log_retrieval_context_for_llm,
-    prepare_retrieval_context,
+    retrieval_context_from_graph_state,
 )
 from my_agents.api.conversations.run_events import (
     answer_composed_payload,
     append_run_event,
     graph_invoked_payload,
-    retrieval_completed_payload,
     sse_event,
     update_graph_invoked_event_memory_snapshot,
     user_message_stored_payload,
@@ -43,7 +44,7 @@ from my_agents.api.conversations.run_lifecycle import (
     is_run_active,
     persist_completed_run,
     persist_failed_run,
-    record_run_retrieval_metadata,
+    record_retrieval_completed_event,
     start_run,
 )
 from my_agents.api.conversations.serializers import (
@@ -298,36 +299,135 @@ def replay_conversation_run_events(
             ),
         )
         messages = base_messages_from_persisted(replay_context.prefix_messages)
-        retrieval_context = prepare_retrieval_context(
-            db=db,
+        graph_input = graph_input_for_run(
+            messages=messages,
             user_id=user_id,
             conversation_id=conversation_id,
-            message=replay_context.preceding_message.content,
-            messages=messages,
+        )
+        graph_context = graph_context_for_run(
+            db=db,
+            user_id=user_id,
             selection_context=replay_context.selection_context,
         )
-        record_run_retrieval_metadata(
-            db,
-            run.id,
-            retrieval_decision=retrieval_context.decision,
-            answer_mode=retrieval_context.answer_mode,
-            selection_context=retrieval_context.knowledge_base_selection,
-        )
-        retrieval_payload = retrieval_completed_payload(
-            retrieved_chunks=retrieval_context.retrieved_chunks,
-            retrieval_latency_ms=retrieval_context.retrieval_latency_ms,
-            retrieval_decision=retrieval_context.decision,
-            answer_mode=retrieval_context.answer_mode,
-            selection_context=retrieval_context.knowledge_base_selection,
-            retrieval_evidence=retrieval_context.retrieval_evidence,
-            retrieval_attempt_count=retrieval_context.retrieval_attempt_count,
-            insufficient_evidence=retrieval_context.insufficient_evidence,
-        )
-        append_run_event(db, run.id, AgentEventType.RETRIEVAL_COMPLETED, retrieval_payload)
-        yield sse_event(AgentEventType.RETRIEVAL_COMPLETED.value, retrieval_payload)
+        retrieval_context: ConversationRetrievalContext | None = None
+        memory_snapshot = graph_memory_source_snapshot_json(graph_input)
+        stream_route = classify_messages(messages)
+        graph_invoked = False
+        graph_event = None
+        delta_sequence = 0
+        streamed_base_reply_parts: list[str] = []
+        result: dict[str, Any] | None = None
+        try:
+            for item in stream_graph_items(
+                graph_runner=graph_runner,
+                graph_input=graph_input,
+                graph_context=graph_context,
+            ):
+                if item.kind == "update":
+                    if item.result:
+                        if retrieval_context is None and graph_has_retrieval_context(item.result):
+                            retrieval_context = retrieval_context_from_graph_state(item.result)
+                            retrieval_payload = record_retrieval_completed_event(
+                                db, run.id, retrieval_context
+                            )
+                            yield sse_event(
+                                AgentEventType.RETRIEVAL_COMPLETED.value,
+                                retrieval_payload,
+                            )
+                        memory_snapshot = (
+                            graph_memory_source_snapshot_json(item.result) or memory_snapshot
+                        )
+                    if memory_snapshot and not graph_invoked and retrieval_context is not None:
+                        graph_payload = graph_invoked_payload(
+                            route=stream_route,
+                            messages=messages,
+                            retrieved_chunks=retrieval_context.retrieved_chunks,
+                            retrieval_decision=retrieval_context.decision,
+                            answer_mode=retrieval_context.answer_mode,
+                            selection_context=retrieval_context.knowledge_base_selection,
+                            memory_source_snapshot_json=memory_snapshot,
+                        )
+                        graph_event = append_run_event(
+                            db, run.id, AgentEventType.GRAPH_INVOKED, graph_payload
+                        )
+                        yield sse_event(AgentEventType.GRAPH_INVOKED.value, graph_payload)
+                        graph_invoked = True
+                    continue
+                if (
+                    retrieval_context is None
+                    and item.result is not None
+                    and graph_has_retrieval_context(item.result)
+                ):
+                    retrieval_context = retrieval_context_from_graph_state(item.result)
+                    retrieval_payload = record_retrieval_completed_event(
+                        db, run.id, retrieval_context
+                    )
+                    yield sse_event(AgentEventType.RETRIEVAL_COMPLETED.value, retrieval_payload)
+                if item.kind == "result":
+                    result = item.result
+                    if result:
+                        memory_snapshot = (
+                            graph_memory_source_snapshot_json(result) or memory_snapshot
+                        )
+                    if retrieval_context is not None and (
+                        retrieval_context.decision.route == "clarification_required"
+                        or retrieval_context.insufficient_evidence
+                    ):
+                        continue
+                if retrieval_context is None:
+                    raise RuntimeError("conversation graph streamed an answer before RAG retrieval")
+                if not graph_invoked:
+                    graph_payload = graph_invoked_payload(
+                        route=stream_route,
+                        messages=messages,
+                        retrieved_chunks=retrieval_context.retrieved_chunks,
+                        retrieval_decision=retrieval_context.decision,
+                        answer_mode=retrieval_context.answer_mode,
+                        selection_context=retrieval_context.knowledge_base_selection,
+                        memory_source_snapshot_json=memory_snapshot,
+                    )
+                    graph_event = append_run_event(
+                        db, run.id, AgentEventType.GRAPH_INVOKED, graph_payload
+                    )
+                    yield sse_event(AgentEventType.GRAPH_INVOKED.value, graph_payload)
+                    graph_invoked = True
+                if item.kind == "delta":
+                    delta_sequence += 1
+                    streamed_base_reply_parts.append(item.delta)
+                    yield sse_event(
+                        "answer_delta",
+                        {"delta": item.delta, "sequence": delta_sequence},
+                    )
+                    continue
+        except ResponseProviderConfigurationError as exc:
+            yield from _failed_replay_stream_events(
+                db,
+                run.id,
+                conversation_id,
+                type(exc).__name__,
+                503,
+                memory_source_snapshot=memory_snapshot,
+            )
+            return
+        except Exception as exc:
+            yield from _failed_replay_stream_events(
+                db,
+                run.id,
+                conversation_id,
+                type(exc).__name__,
+                502,
+                memory_source_snapshot=memory_snapshot,
+            )
+            return
 
+        if result is None:
+            raise RuntimeError("conversation graph stream ended without a final result")
+        if retrieval_context is None:
+            retrieval_context = retrieval_context_from_graph_state(result)
+            retrieval_payload = record_retrieval_completed_event(db, run.id, retrieval_context)
+            yield sse_event(AgentEventType.RETRIEVAL_COMPLETED.value, retrieval_payload)
         if retrieval_context.decision.route == "clarification_required":
-            route = classify_messages(messages)
+            route = coerce_route(result.get("route") or classify_messages(messages))
             clarification = clarification_request(retrieval_context.decision)
             response = persist_completed_run(
                 db=db,
@@ -357,9 +457,8 @@ def replay_conversation_run_events(
             _prune_replayed_transcript(db, conversation_id, replay_context, run.id)
             yield sse_event("run_completed", response.model_dump(mode="json"))
             return
-
         if retrieval_context.insufficient_evidence:
-            route = classify_messages(messages)
+            route = coerce_route(result.get("route") or classify_messages(messages))
             response = persist_completed_run(
                 db=db,
                 run_id=run.id,
@@ -388,104 +487,13 @@ def replay_conversation_run_events(
             _prune_replayed_transcript(db, conversation_id, replay_context, run.id)
             yield sse_event("run_completed", response.model_dump(mode="json"))
             return
-
-        graph_input = graph_input_for_run(
-            messages=messages,
-            user_id=user_id,
-            conversation_id=conversation_id,
-            retrieval_context=retrieval_context,
-        )
         log_retrieval_context_for_llm(
             run_id=run.id,
             conversation_id=conversation_id,
             user_id=user_id,
             retrieval_context=retrieval_context,
-            graph_input=graph_input,
+            graph_input={**graph_input, **result},
         )
-        graph_context = graph_context_for_run(db=db, user_id=user_id)
-        memory_snapshot = graph_memory_source_snapshot_json(graph_input)
-        stream_route = classify_messages(messages)
-        graph_invoked = False
-        graph_event = None
-        delta_sequence = 0
-        streamed_base_reply_parts: list[str] = []
-        result: dict | None = None
-        try:
-            for item in stream_graph_items(
-                graph_runner=graph_runner,
-                graph_input=graph_input,
-                graph_context=graph_context,
-            ):
-                if item.kind == "update":
-                    if item.result:
-                        memory_snapshot = (
-                            graph_memory_source_snapshot_json(item.result) or memory_snapshot
-                        )
-                    if memory_snapshot and not graph_invoked:
-                        graph_payload = graph_invoked_payload(
-                            route=stream_route,
-                            messages=messages,
-                            retrieved_chunks=retrieval_context.retrieved_chunks,
-                            retrieval_decision=retrieval_context.decision,
-                            answer_mode=retrieval_context.answer_mode,
-                            selection_context=retrieval_context.knowledge_base_selection,
-                            memory_source_snapshot_json=memory_snapshot,
-                        )
-                        graph_event = append_run_event(
-                            db, run.id, AgentEventType.GRAPH_INVOKED, graph_payload
-                        )
-                        yield sse_event(AgentEventType.GRAPH_INVOKED.value, graph_payload)
-                        graph_invoked = True
-                    continue
-                if not graph_invoked:
-                    graph_payload = graph_invoked_payload(
-                        route=stream_route,
-                        messages=messages,
-                        retrieved_chunks=retrieval_context.retrieved_chunks,
-                        retrieval_decision=retrieval_context.decision,
-                        answer_mode=retrieval_context.answer_mode,
-                        selection_context=retrieval_context.knowledge_base_selection,
-                        memory_source_snapshot_json=memory_snapshot,
-                    )
-                    graph_event = append_run_event(
-                        db, run.id, AgentEventType.GRAPH_INVOKED, graph_payload
-                    )
-                    yield sse_event(AgentEventType.GRAPH_INVOKED.value, graph_payload)
-                    graph_invoked = True
-                if item.kind == "delta":
-                    delta_sequence += 1
-                    streamed_base_reply_parts.append(item.delta)
-                    yield sse_event(
-                        "answer_delta",
-                        {"delta": item.delta, "sequence": delta_sequence},
-                    )
-                    continue
-                result = item.result
-                if result:
-                    memory_snapshot = graph_memory_source_snapshot_json(result) or memory_snapshot
-        except ResponseProviderConfigurationError as exc:
-            yield from _failed_replay_stream_events(
-                db,
-                run.id,
-                conversation_id,
-                type(exc).__name__,
-                503,
-                memory_source_snapshot=memory_snapshot,
-            )
-            return
-        except Exception as exc:
-            yield from _failed_replay_stream_events(
-                db,
-                run.id,
-                conversation_id,
-                type(exc).__name__,
-                502,
-                memory_source_snapshot=memory_snapshot,
-            )
-            return
-
-        if result is None:
-            raise RuntimeError("conversation graph stream ended without a final result")
         route = coerce_route(result["route"])
         memory_snapshot = graph_memory_source_snapshot_json(result) or memory_snapshot
         update_graph_invoked_event_memory_snapshot(db, graph_event, memory_snapshot)

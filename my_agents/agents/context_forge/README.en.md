@@ -2,13 +2,12 @@
 
 [한국어](./README.md) | English
 
-`context_forge` is the dedicated retrieval-layer package for document-grounded answering. It is intentionally separate from both `general_assistant` and `rag_agent`: ContextForge plans retrieval, enforces source-boundary handoff, gathers authorized candidates, packs answer-ready context, and emits redacted evidence. The RAG Agent contract consumes that redacted evidence for trace/grounding checks before and after the assistant writes final prose.
+`context_forge` is the internal retrieval-engine package for document-grounded answering. The public assistant-facing retrieval boundary now belongs to `rag_agent`; behind that boundary, ContextForge plans retrieval, enforces source-boundary handoff, gathers authorized candidates, packs answer-ready context, and emits redacted evidence. The RAG Agent contract consumes that redacted evidence for trace/grounding checks before and after the assistant writes final prose.
 
 ## Current role
 
 - Production-surface retrieval orchestration for conversation runs.
-- Conversation runs enter ContextForge through a thin LangGraph retrieval wrapper so the
-  same retrieval capability can later be exposed as a typed subgraph/tool for agents.
+- Conversation runs enter the RAG Agent runtime through the `retrieve_rag_context` node in the `general_assistant` graph; the RAG Agent then calls the thin ContextForge LangGraph retrieval wrapper internally.
 - Multi-role structure implemented as testable Python classes, not as separate hosted agents.
 - Keeps hard document and knowledge-base authorization inside `RetrievalService` and existing source-selection helpers.
 - Uses deterministic offline behavior by default; cross-encoder reranking is an optional second-stage seam enabled with `MY_AGENTS_RERANKER_MODE=cross_encoder`.
@@ -19,7 +18,8 @@
 
 ```mermaid
 flowchart TD
-    Request[ContextForgeRequest] --> Graph[ContextForge RetrievalGraph]
+    RAG["RAG Agent runtime"] --> Request[ContextForgeRequest]
+    Request --> Graph["ContextForge RetrievalGraph"]
     Graph --> Planner[Query Cartographer]
     Planner --> Warden[Source Warden]
     Warden --> Scouts[Candidate Scouts]
@@ -97,20 +97,18 @@ Enable `MY_AGENTS_DEBUG_KNOWLEDGE_CONTEXT_LOGGING=true` to Rich-print ContextFor
 
 ## Security boundary
 
-ContextForge must never make authorization prompt-dependent. Candidate generation starts from the existing resolved `KnowledgeBaseSelectionContext` and low-level retrieval SQL filters. The LangGraph wrapper orchestrates service calls and sufficiency state; it does not authorize sources, query storage directly, or expose hidden scratchpads. Deterministic/cross-encoder reranking, packing, RAG Agent trace state, graph input, citations, and events only receive authorized candidates.
+Even as the delegated engine behind the RAG Agent, ContextForge must never make authorization prompt-dependent. Candidate generation starts from the existing resolved `KnowledgeBaseSelectionContext` and low-level retrieval SQL filters. The LangGraph wrapper orchestrates service calls and sufficiency state; it does not authorize sources, query storage directly, or expose hidden scratchpads. Deterministic/cross-encoder reranking, packing, RAG Agent trace state, graph input, citations, and events only receive authorized candidates.
 When an ambiguous document reference spans multiple authorized documents, the run stops with a `message_key`/`input_slot` clarification contract instead of broadly searching every accessible document or generating backend-authored English text.
 
 ## RetrievalGraph / tool seam
 
-`graph.py` exposes `invoke_context_forge_graph(...)`. Current conversation runs use it
-without changing API response shape. The graph state returns:
+`graph.py` exposes `invoke_context_forge_graph(...)`. Current conversation runs use this graph through `rag_agent.retrieval`, so the assistant-facing public seam is the RAG Agent and the ContextForge graph is the internal implementation seam. The graph state returns:
 
 - the underlying `ContextForgeResult`;
 - bounded `retrieval_attempt_count`;
 - `insufficient_evidence` for required-document fallback handling.
 
-Future agents should call this graph as an evidence-retrieval tool that returns
-authorized context and redacted evidence, not as a final-answer generator. Final answer
+Future agents should call the RAG Agent public runtime, not ContextForge directly, when they need an evidence-retrieval tool that returns authorized context and redacted evidence. Final answer
 composition, citations, run events, and persistence stay in the conversation/assistant
 layers.
 

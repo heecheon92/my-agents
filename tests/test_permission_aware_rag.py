@@ -23,6 +23,7 @@ from my_agents.persistence.database import get_database_session
 from my_agents.schemas import RouteDecision
 
 from .conftest import verify_latest_auth_email
+from .rag_spy_helpers import rag_update_for_spy
 
 
 class RagSpyGraph:
@@ -31,9 +32,11 @@ class RagSpyGraph:
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
 
-    def invoke(self, input: dict) -> dict:  # noqa: A002 - matches LangGraph API
-        self.calls.append(input)
+    def invoke(self, input: dict, **kwargs: Any) -> dict:  # noqa: A002 - matches LangGraph API
+        rag_update = rag_update_for_spy(input, kwargs)
+        self.calls.append({**input, **rag_update})
         return {
+            **rag_update,
             "reply": "graph reply without hidden document text",
             "route": RouteDecision(label="general_assistant", explanation="spy route"),
         }
@@ -283,7 +286,10 @@ def test_broad_resume_question_uses_recent_authorized_document(monkeypatch) -> N
     assert outsider_payload["citations"] == []
     assert resume_phrase not in outsider_payload["reply"]
     assert "enough relevant authorized document evidence" in outsider_payload["reply"]
-    assert len(graph.calls) == graph_call_count
+    assert len(graph.calls) == graph_call_count + 1
+    assert graph.calls[-1]["rag_halt_before_response"] is True
+    assert graph.calls[-1]["retrieval_route"] == "retrieval_required"
+    assert graph.calls[-1]["retrieved_context"] == []
 
 
 def test_semantic_vector_retrieval_after_permission_filtering(monkeypatch) -> None:  # noqa: ANN001
@@ -343,7 +349,10 @@ def test_semantic_vector_retrieval_after_permission_filtering(monkeypatch) -> No
     outsider_payload = outsider_run.json()
     assert outsider_payload["citations"] == []
     assert "enough relevant authorized document evidence" in outsider_payload["reply"]
-    assert len(graph.calls) == graph_call_count
+    assert len(graph.calls) == graph_call_count + 1
+    assert graph.calls[-1]["rag_halt_before_response"] is True
+    assert graph.calls[-1]["retrieval_route"] == "retrieval_required"
+    assert graph.calls[-1]["retrieved_context"] == []
 
 
 def test_retrieval_dedupes_historical_duplicate_chunks(monkeypatch) -> None:  # noqa: ANN001
