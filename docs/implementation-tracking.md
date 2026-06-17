@@ -362,6 +362,10 @@ Earlier hosted smoke status on 2026-06-03:
 - Future observability goal: add Prometheus + Grafana for common backend operations
   metrics, then evaluate Langfuse vs LangSmith for LLM/provider traces, token/cost
   metrics, prompt/version tracking, and eval/retrieval-quality workflows.
+- Future retrieval UX goal: define Fast / Balanced / Thorough response-quality profiles
+  that tune candidate/vector limits, injected context, reranking/expansion, and optional
+  retrieval depth against measured latency while preserving the current high-quality RAG
+  behavior as the benchmark.
 - Frontend integration lives in the separate frontend repository by design.
 
 ## Recommended next workflow

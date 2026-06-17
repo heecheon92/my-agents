@@ -99,7 +99,23 @@ These metrics complement run events:
 - run events are persisted, frontend-safe, per-run timeline facts;
 - Prometheus metrics are aggregate p50/p95/p99 timing signals for backend operators.
 
-Future observability work should split into two lanes:
+## Future retrieval UX quality profiles
+
+Current RAG quality is the benchmark to protect. The next product-facing latency work
+should not simply lower recall globally. Instead, use metrics and evals to define explicit
+profiles that balance answer quality against impatient product UX:
+
+| Profile | Product goal | Possible retrieval budget knobs |
+| --- | --- | --- |
+| Fast | First useful answer quickly for general or weakly document-related turns. | Lower candidate/vector limit, fewer injected chunks, skip expensive reranking/expansion when safe. |
+| Balanced | Default product UX for most document questions. | Moderate candidate budget and injected context while preserving citations and permission-first retrieval. |
+| Thorough | Maximum quality for explicit document-grounded, comparison, summary, legal/technical, or user-selected careful mode. | Current high-recall baseline or stronger retrieval, with latency made visible in the UI. |
+
+Profile names and numbers are intentionally future contracts, not current runtime behavior.
+Any tuning should be backed by latency histograms plus retrieval/answer-quality fixtures so
+speed improvements do not silently degrade the excellent current RAG accuracy.
+
+Future observability work should split into three lanes:
 
 1. Add Prometheus + Grafana for common backend operations metrics such as request
    latency, request volume, error rate, ingestion/worker health, queue or stale-run
@@ -107,6 +123,8 @@ Future observability work should split into two lanes:
 2. Evaluate Langfuse vs LangSmith for LLM-specific observability: provider latency,
    token/cost metrics, prompt/version tracking, traces, eval datasets, and
    retrieval/answer-quality review.
+3. Add retrieval UX profile experiments that compare Fast / Balanced / Thorough latency,
+   citation quality, and answer usefulness before exposing a user-facing selector.
 
 ## Deterministic eval fixtures
 
@@ -136,6 +154,7 @@ claims testable: grounding, permission safety, redaction, and basic performance 
 
 ## Revision history
 
+- 2026-06-17: Added future Fast / Balanced / Thorough retrieval UX quality profile guidance.
 - 2026-06-16: Recorded future Prometheus/Grafana operations metrics and Langfuse/LangSmith LLM observability goals.
 - 2026-06-16: Added opt-in internal Prometheus timing metrics for maintenance and performance-quality analysis.
 - 2026-05-21: Updated after adding retrieval-route and answer-mode event metadata.

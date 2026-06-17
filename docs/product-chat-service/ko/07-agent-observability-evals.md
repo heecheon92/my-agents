@@ -30,6 +30,23 @@
   path는 metric label로 사용하지 않습니다.
 - 자세한 metric 이름과 label 정책은 영어 원문을 기준으로 유지합니다.
 
+## 향후 retrieval UX 품질 profile
+
+현재 RAG 품질은 보호해야 할 benchmark입니다. Latency를 줄인다는 이유로 전체
+retrieval recall을 무작정 낮추지 말고, metrics/eval 근거를 보고 product UX profile을
+분리합니다.
+
+- `Fast`: 일반 대화나 약한 문서 관련 질문에서 빠른 첫 답변을 우선합니다. 후보/vector
+  limit, injected chunk 수, 비싼 reranking/expansion을 낮추는 방향을 검토합니다.
+- `Balanced`: 대부분의 문서 질문에 대한 기본 UX입니다. Citation과 permission-first
+  retrieval을 유지하면서 중간 수준의 후보/context budget을 사용합니다.
+- `Thorough`: 명시적인 문서 기반 질문, 비교/요약, 법무/기술 세부 검토, 사용자가 신중한
+  답변을 선택한 경우의 고품질 모드입니다. 현재 high-recall baseline을 benchmark로
+  유지하고 latency는 UI에서 명확히 보여주는 방향을 검토합니다.
+
+Profile 이름과 수치는 future contract이며 현재 runtime 동작이 아닙니다. 속도 개선은
+latency histogram과 retrieval/answer-quality fixture 근거가 있을 때만 진행합니다.
+
 ## 향후 observability 목표
 
 - Prometheus + Grafana로 request latency, request volume, error rate, ingestion/worker
@@ -38,3 +55,5 @@
 - Langfuse 또는 LangSmith를 비교해 LLM/provider latency, token/cost metrics,
   prompt/version tracking, trace, eval dataset, retrieval/answer-quality review를
   다룹니다.
+- Fast / Balanced / Thorough retrieval UX profile 실험을 추가해 latency, citation 품질,
+  answer usefulness를 비교한 뒤 user-facing selector 노출 여부를 결정합니다.

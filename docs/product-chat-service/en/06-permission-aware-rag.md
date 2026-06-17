@@ -132,6 +132,9 @@ workflow to justify the added orchestration, for example:
 - cross-encoder reranking as a second-stage pass over top-k already-authorized candidates;
 - reranking;
 - context compression/packaging;
+- product-facing retrieval quality profiles such as Fast / Balanced / Thorough, where
+  candidate/vector limit, structured lookup, reranking, injected chunk count, and context
+  char budget are tuned against measured latency and answer quality;
 - richer clarification options, such as returning authorized document choices after a
   separate product/privacy review.
 
@@ -164,6 +167,7 @@ flowchart LR
 
 ## Revision history
 
+- 2026-06-17: Added future retrieval quality/speed profile guidance for balancing RAG accuracy with product UX latency.
 - 2026-06-16: Promoted `rag_agent` to the assistant-facing retrieval boundary invoked from `general_assistant`, while ContextForge remains the delegated permission-first retrieval graph.
 - 2026-06-10: Added the thin ContextForge RetrievalGraph wrapper as the active retrieval implementation seam while keeping deeper tool-using graph orchestration future-gated.
 - 2026-05-25: Clarification-required runs now return structured human-in-the-loop state instead of deterministic English text.

@@ -5,7 +5,7 @@
 ## 요약
 
 이 문서는 `product-chat-service/06-permission-aware-rag.md`의 한국어 문서 트랙 항목입니다. 현재는 핵심 목적과 영어 원문 위치를 안내하는 요약본입니다.
-2026-06-16 기준 영어 원문은 `general_assistant` graph가 RAG Agent runtime을 호출하고, RAG Agent가 내부적으로 ContextForge `RetrievalGraph`에 위임하는 현재 retrieval entrypoint를 설명합니다. 더 깊은 tool-using retrieval graph orchestration은 future-gated 상태입니다.
+2026-06-16 기준 영어 원문은 `general_assistant` graph가 RAG Agent runtime을 호출하고, RAG Agent가 내부적으로 ContextForge `RetrievalGraph`에 위임하는 현재 retrieval entrypoint를 설명합니다. 더 깊은 tool-using retrieval graph orchestration은 future-gated 상태입니다. 2026-06-17 업데이트는 현재 high-recall RAG 품질을 benchmark로 유지하면서, 향후 Fast / Balanced / Thorough retrieval profile로 product UX latency와 answer quality를 균형 있게 조정하는 방향을 기록합니다.
 
 ## 문서 상태
 

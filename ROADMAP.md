@@ -255,6 +255,10 @@ This is the product-facing equivalent of repo-local `AGENTS.md`: durable Markdow
 - [ ] Langfuse or LangSmith LLM observability for provider latency, token/cost
   metrics, trace/eval datasets, prompt/version tracking, and retrieval/answer-quality
   review.
+- [ ] Retrieval UX quality profiles: define Fast / Balanced / Thorough modes that map
+  to retrieval budgets such as candidate/vector limit, structured lookup, reranking,
+  injected chunk count, and context char budget. Preserve the current high-quality
+  behavior as the benchmark before reducing recall for faster product UX.
 - [ ] OpenTelemetry or equivalent tracing for per-request waterfalls/distributed tracing.
 - [ ] Cost monitoring and quotas for OpenAI-backed paths.
 - [ ] Production safety review for auth, permissions, logging, and prompts.
@@ -305,6 +309,7 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
    - Enable `MY_AGENTS_METRICS_ENABLED=true` only in local, staging, or trusted internal runs.
    - Use `/metrics` to compare request, conversation, ContextForge, retrieval-phase, embedding, reranker, and graph p95 before changing retrieval behavior.
    - Keep labels redacted and low-cardinality; do not turn metrics into a frontend product API.
+   - Design Fast / Balanced / Thorough retrieval profiles only after the current high-recall baseline has measured latency and quality evidence.
    - Follow up with Prometheus + Grafana for common backend operations metrics.
    - Evaluate Langfuse vs LangSmith for LLM-specific latency, token/cost, trace, eval, and prompt/version metrics.
    - Add OpenTelemetry traces only after aggregate latency shows where per-request waterfalls are needed.
@@ -367,7 +372,7 @@ The backend can be called v1 when all of the following are true:
 - [x] ECS-lite or other production-grade deployment automation remains explicitly optional future hardening, not a v1 blocker.
 - [~] Auth/session behavior is safe enough for a narrow public demo: hosted signup/email verification/login works with local in-process abuse limits; shared rate limiting and deeper review remain.
 - [x] Permission-aware retrieval uses a real retrieval path: pgvector SQL search on Postgres, JSON/SQLite fallback, lexical/entity/metadata candidates, ContextForge fusion, and authorization-first filtering.
-- [~] Retrieval has a dedicated ContextForge service boundary with hybrid candidate generation and optional cross-encoder reranking. Query expansion, HyDE, production packaging, and retrieval-quality eval evidence remain follow-up work.
+- [~] Retrieval has a dedicated ContextForge service boundary with hybrid candidate generation and optional cross-encoder reranking. Query expansion, HyDE, production packaging, retrieval-quality eval evidence, and product-facing speed/quality profiles remain follow-up work.
 - [ ] Scoped instruction profiles exist for users and groups/workspaces, with group-over-personal precedence and safe propagation into assistant/retrieval-agent runs.
 - [x] Document ingestion supports realistic uploaded text-based file types: PDF with page provenance, Markdown, and plain text.
 - [~] Citations include persisted document/chunk/snippet provenance and refresh-safe run detail; richer page/offset/source-preview/confidence metadata remains follow-up work.
