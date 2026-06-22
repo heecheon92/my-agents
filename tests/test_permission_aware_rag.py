@@ -704,6 +704,19 @@ def test_graph_expansion_adds_authorized_related_chunks(monkeypatch) -> None:  #
     _signup_login(client, "rag-expansion@example.com")
     kb_id = _create_personal_knowledge_base(client, "Expansion KB")
     unselected_kb_id = _create_personal_knowledge_base(client, "Unselected Expansion KB")
+    entity_mention_batch_calls: list[tuple[str, ...]] = []
+    original_entity_mentions_for_chunks = retrieval_module._entity_mentions_for_chunks
+
+    def track_entity_mention_batch(db, chunk_ids):  # noqa: ANN001
+        batch = tuple(chunk_ids)
+        entity_mention_batch_calls.append(batch)
+        return original_entity_mentions_for_chunks(db, batch)
+
+    monkeypatch.setattr(
+        retrieval_module,
+        "_entity_mentions_for_chunks",
+        track_entity_mention_batch,
+    )
 
     document = _create_document(
         client,
@@ -763,3 +776,5 @@ def test_graph_expansion_adds_authorized_related_chunks(monkeypatch) -> None:  #
     assert {context["document_id"] for context in graph.calls[-1]["retrieved_context"]} == {
         document.json()["id"]
     }
+    assert len(entity_mention_batch_calls) == 1
+    assert all(chunk_id for chunk_id in entity_mention_batch_calls[0])

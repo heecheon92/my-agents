@@ -93,7 +93,7 @@ Cross-encoder는 `MY_AGENTS_RERANKER_TOP_K`가 정하는 이미 승인된 top-k 
 
 `MY_AGENTS_DEBUG_KNOWLEDGE_CONTEXT_LOGGING=true`를 켜면 ContextForge의 역할 handoff가 Rich print로 출력됩니다. 예를 들어 `ConversationRun -> QueryCartographer`, `CandidateFusion -> EvidenceJudge`, `ContextCurator -> ConversationRun`처럼 어느 역할이 어떤 message/payload를 다음 역할로 넘겼는지 확인할 수 있습니다. 이 trace는 chunk ID, query, snippet 등 민감할 수 있는 검색 context를 포함하므로 로컬 디버깅에서만 사용합니다.
 
-Local retrieval이 너무 느려 어떤 단계가 병목인지 보고 싶으면 `MY_AGENTS_DEBUG_RETRIEVAL_TIMING_LOGGING=true`를 켭니다. ContextForge retrieval attempt마다 사람이 읽기 쉬운 Rich panel이 출력되며 `authorized_document_count`, `query_planning`, `candidate_gather`, `candidate_fusion`, `reranking`, `context_pack` 단계별 시간과 total time을 보여줍니다. Timing panel은 redacted 출력입니다. Count, route/intent metadata, millisecond만 출력하고 raw prompt나 문서 본문은 출력하지 않습니다.
+Local retrieval이 너무 느려 어떤 단계가 병목인지 보고 싶으면 `MY_AGENTS_DEBUG_RETRIEVAL_TIMING_LOGGING=true`를 켭니다. ContextForge retrieval attempt마다 사람이 읽기 쉬운 Rich panel이 출력되며 `authorized_document_count`, `query_planning`, `candidate_gather`, `candidate_fusion`, `reranking`, `context_pack` 단계별 시간과 total time을 보여줍니다. Candidate gather가 실행되는 동안 기존 retrieval/embedding span도 `candidate_gather.*` 행으로 같은 panel에 들어오므로 metadata match, query embedding, vector SQL, JSON fallback, entity expansion, overview supplement 중 어디가 느린지 볼 수 있습니다. Timing panel은 redacted 출력입니다. Count, route/intent metadata, millisecond만 출력하고 raw prompt나 문서 본문은 출력하지 않습니다.
 
 ## 보안 경계
 

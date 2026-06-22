@@ -14,12 +14,21 @@ from rich.table import Table
 
 
 @dataclass
+class PhaseTiming:
+    """One redacted phase row in a local timing panel."""
+
+    phase: str
+    elapsed_ms: float
+    calls: int = 1
+
+
+@dataclass
 class RetrievalTimingTrace:
     """Collect one redacted per-attempt retrieval timing timeline."""
 
     enabled: bool
     _started: float = field(default_factory=perf_counter)
-    _phases: list[dict[str, float | str]] = field(default_factory=list)
+    _phases: list[PhaseTiming] = field(default_factory=list)
     _summary: dict[str, object] = field(default_factory=dict)
 
     @contextmanager
@@ -32,12 +41,29 @@ class RetrievalTimingTrace:
         try:
             yield
         finally:
-            self._phases.append(
-                {
-                    "phase": name,
-                    "elapsed_ms": round((perf_counter() - started) * 1000, 3),
-                }
-            )
+            self.record_phase(name, (perf_counter() - started) * 1000)
+
+    def record_phase(self, name: str, elapsed_ms: float) -> None:
+        """Record or aggregate one redacted phase by display name."""
+        if not self.enabled:
+            return
+        rounded_ms = round(elapsed_ms, 3)
+        for phase in self._phases:
+            if phase.phase == name:
+                phase.elapsed_ms = round(phase.elapsed_ms + rounded_ms, 3)
+                phase.calls += 1
+                return
+        self._phases.append(PhaseTiming(phase=name, elapsed_ms=rounded_ms))
+
+    def record_observed_phase(
+        self,
+        *,
+        prefix: str,
+        phase: str,
+        duration_seconds: float,
+    ) -> None:
+        """Record a nested observability span in the local timing table."""
+        self.record_phase(f"{prefix}.{phase}", duration_seconds * 1000)
 
     def update(self, **values: object) -> None:
         """Attach redacted counts, route metadata, and outcome fields."""
@@ -89,13 +115,14 @@ def _summary_table(summary: dict[str, object]) -> Table:
     return table
 
 
-def _phase_table(phases: list[dict[str, float | str]]) -> Table:
+def _phase_table(phases: list[PhaseTiming]) -> Table:
     table = Table(show_header=True, header_style="bold magenta")
     table.add_column("Phase")
+    table.add_column("Calls", justify="right")
     table.add_column("Elapsed ms", justify="right")
     if not phases:
-        table.add_row("none", "0")
+        table.add_row("none", "0", "0")
         return table
     for phase in phases:
-        table.add_row(str(phase["phase"]), str(phase["elapsed_ms"]))
+        table.add_row(phase.phase, str(phase.calls), str(phase.elapsed_ms))
     return table

@@ -7,13 +7,20 @@ not pay unnecessary overhead or expose an operational endpoint by accident.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from contextvars import ContextVar
 from time import perf_counter
 
 from prometheus_client import CONTENT_TYPE_LATEST, REGISTRY, Histogram, generate_latest
 
 from my_agents.settings import get_settings
+
+_LocalTimingObserver = Callable[[str, float], None]
+_LOCAL_TIMING_OBSERVER: ContextVar[_LocalTimingObserver | None] = ContextVar(
+    "my_agents_local_timing_observer",
+    default=None,
+)
 
 _REQUEST_BUCKETS = (
     0.005,
@@ -159,17 +166,21 @@ def observe_context_forge(
 
 @contextmanager
 def track_retrieval_phase(phase: str) -> Iterator[None]:
-    """Record one retrieval-internal timing span when metrics are enabled."""
-    if not metrics_enabled():
+    """Record one retrieval-internal timing span when metrics or local tracing are enabled."""
+    observer = _LOCAL_TIMING_OBSERVER.get()
+    metrics_are_enabled = metrics_enabled()
+    if not metrics_are_enabled and observer is None:
         yield
         return
     started = perf_counter()
     try:
         yield
     finally:
-        RETRIEVAL_PHASE_DURATION_SECONDS.labels(phase=_label(phase)).observe(
-            perf_counter() - started
-        )
+        duration_seconds = perf_counter() - started
+        if metrics_are_enabled:
+            RETRIEVAL_PHASE_DURATION_SECONDS.labels(phase=_label(phase)).observe(duration_seconds)
+        if observer is not None:
+            observer(_label(phase), duration_seconds)
 
 
 @contextmanager
@@ -180,18 +191,30 @@ def track_embedding_call(
     operation: str,
 ) -> Iterator[None]:
     """Record one embedding provider call."""
-    if not metrics_enabled():
+    observer = _LOCAL_TIMING_OBSERVER.get()
+    metrics_are_enabled = metrics_enabled()
+    if not metrics_are_enabled and observer is None:
         yield
         return
     started = perf_counter()
     try:
         yield
     finally:
-        EMBEDDING_DURATION_SECONDS.labels(
-            provider=_label(provider),
-            model=_label(model),
-            operation=_label(operation),
-        ).observe(perf_counter() - started)
+        safe_provider = _label(provider)
+        safe_model = _label(model)
+        safe_operation = _label(operation)
+        duration_seconds = perf_counter() - started
+        if metrics_are_enabled:
+            EMBEDDING_DURATION_SECONDS.labels(
+                provider=safe_provider,
+                model=safe_model,
+                operation=safe_operation,
+            ).observe(duration_seconds)
+        if observer is not None:
+            observer(
+                ".".join(("embedding", safe_operation, safe_provider)),
+                duration_seconds,
+            )
 
 
 @contextmanager
@@ -222,6 +245,20 @@ def track_graph_invocation(mode: str) -> Iterator[None]:
         GRAPH_INVOCATION_DURATION_SECONDS.labels(mode=_label(mode)).observe(
             perf_counter() - started
         )
+
+
+@contextmanager
+def capture_local_timing_phases(observer: _LocalTimingObserver) -> Iterator[None]:
+    """Forward nested observability spans into one local human-readable trace.
+
+    This is intentionally separate from Prometheus enablement: local debugging often needs
+    one detailed run breakdown without exposing or scraping the aggregate ``/metrics`` endpoint.
+    """
+    token = _LOCAL_TIMING_OBSERVER.set(observer)
+    try:
+        yield
+    finally:
+        _LOCAL_TIMING_OBSERVER.reset(token)
 
 
 def _label(value: object) -> str:

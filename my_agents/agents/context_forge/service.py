@@ -23,6 +23,7 @@ from my_agents.agents.context_forge.timing import RetrievalTimingTrace
 from my_agents.knowledge.retrieval import RetrievalService
 from my_agents.knowledge.routing import answer_mode_for_route, is_relevant_retrieval_result
 from my_agents.observability.metrics import (
+    capture_local_timing_phases,
     observe_context_forge,
     track_reranker,
     track_retrieval_phase,
@@ -159,11 +160,18 @@ class ContextForgeService:
         )
         with timing.phase("candidate_gather"):
             with track_retrieval_phase("candidate_gather"):
-                raw_chunks = self._scouts.gather(
-                    user_id=request.user_id,
-                    plan=plan,
-                    knowledge_base_ids=selected_ids,
-                )
+                with capture_local_timing_phases(
+                    lambda phase, duration_seconds: timing.record_observed_phase(
+                        prefix="candidate_gather",
+                        phase=phase,
+                        duration_seconds=duration_seconds,
+                    )
+                ):
+                    raw_chunks = self._scouts.gather(
+                        user_id=request.user_id,
+                        plan=plan,
+                        knowledge_base_ids=selected_ids,
+                    )
         timing.update(raw_candidate_count=len(raw_chunks))
         debug_agent_turn(
             sender="CandidateScouts",

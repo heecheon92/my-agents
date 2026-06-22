@@ -23,6 +23,7 @@ from my_agents.knowledge.auth import KnowledgeBaseSelectionContext
 from my_agents.knowledge.models import DocumentChunkModel, DocumentModel
 from my_agents.knowledge.retrieval import RetrievedChunk
 from my_agents.knowledge.routing import RetrievalRoutingDecision
+from my_agents.observability.metrics import track_embedding_call, track_retrieval_phase
 from my_agents.settings import Settings, get_settings
 
 
@@ -60,15 +61,25 @@ class FakeAuthorizedRetrievalService:
         return 45
 
     def retrieve_scoped(self, **_: Any) -> list[RetrievedChunk]:
-        return [
-            _retrieved_chunk(
-                f"authorized-chunk-{index:02d}",
-                ordinal=index,
-                content=f"Authorized context {index}",
-                score=1.0 - (index * 0.01),
-            )
-            for index in range(45)
-        ]
+        with track_retrieval_phase("document_metadata_match"):
+            metadata_matches: list[RetrievedChunk] = []
+        with track_embedding_call(
+            provider="deterministic",
+            model="lexical-hash-v1",
+            operation="query",
+        ):
+            pass
+        with track_retrieval_phase("direct_authorized_match"):
+            direct_matches = [
+                _retrieved_chunk(
+                    f"authorized-chunk-{index:02d}",
+                    ordinal=index,
+                    content=f"Authorized context {index}",
+                    score=1.0 - (index * 0.01),
+                )
+                for index in range(45)
+            ]
+        return [*metadata_matches, *direct_matches]
 
     def retrieve_structured_entities(self, **_: Any) -> list[object]:
         return []
@@ -162,6 +173,9 @@ def test_context_forge_prints_human_readable_timing_trace_when_enabled(
     output = capsys.readouterr().out
     assert "ContextForge timing" in output
     assert "candidate_gather" in output
+    assert "candidate_gather.document_metadata_match" in output
+    assert "candidate_gather.direct_authorized_match" in output
+    assert "candidate_gather.embedding.query.deterministic" in output
     assert "candidate_fusion" in output
     assert "reranking" in output
     assert "context_pack" in output

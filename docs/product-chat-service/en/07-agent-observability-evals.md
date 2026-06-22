@@ -86,8 +86,11 @@ MY_AGENTS_DEBUG_RETRIEVAL_TIMING_LOGGING=true
 ```
 
 This prints one redacted ContextForge timing panel per retrieval attempt with total time,
-phase timings, and candidate counts. It is better than `/metrics` when the question is
-"which step made this one local run slow?" because Prometheus histograms are aggregate.
+phase timings, and candidate counts. The panel also forwards existing nested
+retrieval/embedding spans under `candidate_gather.*`, so one slow run can distinguish
+metadata matching, query embedding, vector SQL, JSON fallback, entity expansion, and overview
+supplement time. It is better than `/metrics` when the question is "which step made this one
+local run slow?" because Prometheus histograms are aggregate.
 
 Implemented timing histograms:
 

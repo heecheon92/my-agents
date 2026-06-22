@@ -33,7 +33,9 @@
   `MY_AGENTS_DEBUG_RETRIEVAL_TIMING_LOGGING=true`를 사용합니다. 이 값은 retrieval
   attempt마다 Rich timing panel을 출력하며 Prometheus histogram처럼 aggregate가 아니라
   해당 run의 authorization count, planning, candidate gather, fusion, reranking,
-  context packing 시간과 redacted count를 보여줍니다.
+  context packing 시간과 redacted count를 보여줍니다. 또한 `candidate_gather.*` 행으로
+  metadata match, query embedding, vector SQL, JSON fallback, entity expansion, overview
+  supplement 같은 내부 retrieval/embedding span도 함께 보여줍니다.
 
 ## 향후 retrieval UX 품질 profile
 

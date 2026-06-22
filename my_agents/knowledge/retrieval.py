@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import math
 import re
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 
@@ -81,18 +81,19 @@ class RetrievalService:
                 knowledge_base_ids=knowledge_base_ids,
                 limit=limit,
             )
+        query_embedding = self._embedding_provider.embed_query(query)
         with track_retrieval_phase("document_metadata_profile_match"):
             metadata_profile_matches = self._document_metadata_profile_matches(
                 user_id=user_id,
-                query=query,
                 terms=terms,
+                query_embedding=query_embedding,
                 knowledge_base_ids=knowledge_base_ids,
                 limit=limit,
             )
         with track_retrieval_phase("direct_authorized_match"):
             direct_matches = self._direct_authorized_matches(
                 user_id=user_id,
-                query=query,
+                query_embedding=query_embedding,
                 terms=terms,
                 knowledge_base_ids=knowledge_base_ids,
             )
@@ -214,11 +215,10 @@ class RetrievalService:
         self,
         *,
         user_id: str,
-        query: str,
+        query_embedding: list[float],
         terms: set[str],
         knowledge_base_ids: Sequence[str] | None,
     ) -> list[RetrievedChunk]:
-        query_embedding = self._embedding_provider.embed_query(query)
         if _uses_postgres(self._db):
             sql_matches = self._postgres_vector_authorized_matches(
                 user_id=user_id,
@@ -339,31 +339,46 @@ class RetrievalService:
         expansion_seeds = [item for item in direct if item.source != "document_metadata_profile"]
         if not expansion_seeds:
             return []
+        seed_chunk_ids = [item.chunk.id for item in expansion_seeds]
         entity_ids = {
-            mention.entity_id
-            for item in expansion_seeds
-            for mention in _entity_mentions_for_chunk(self._db, item.chunk.id)
+            mention.entity_id for mention in _entity_mentions_for_chunks(self._db, seed_chunk_ids)
         }
         if not entity_ids:
             return []
-        authorized_rows = self._authorized_chunk_rows(
-            user_id, knowledge_base_ids=knowledge_base_ids
+        statement = (
+            select(DocumentChunkModel, DocumentModel)
+            .join(DocumentModel, DocumentChunkModel.document_id == DocumentModel.id)
+            .join(EntityMentionModel, EntityMentionModel.chunk_id == DocumentChunkModel.id)
+            .where(
+                _authorized_document_filter(
+                    user_id,
+                    knowledge_base_ids=knowledge_base_ids,
+                    include_published_personal_kbs=_schema_has_knowledge_base_publications(
+                        self._db
+                    ),
+                    require_standard_purpose=_schema_has_knowledge_base_purpose(self._db),
+                ),
+                EntityMentionModel.entity_id.in_(entity_ids),
+                ~DocumentChunkModel.id.in_(seed_chunk_ids),
+            )
+            .order_by(desc(DocumentModel.created_at), DocumentChunkModel.ordinal)
         )
+        with track_retrieval_phase("related_entity_chunks_sql"):
+            authorized_rows = self._db.execute(statement).all()
         expanded: list[RetrievedChunk] = []
-        direct_chunk_ids = {item.chunk.id for item in expansion_seeds}
+        expanded_chunk_ids: set[str] = set()
         for chunk, document in authorized_rows:
-            if chunk.id in direct_chunk_ids:
+            if chunk.id in expanded_chunk_ids:
                 continue
-            mentions = _entity_mentions_for_chunk(self._db, chunk.id)
-            if any(mention.entity_id in entity_ids for mention in mentions):
-                expanded.append(
-                    RetrievedChunk(
-                        chunk=chunk,
-                        document=document,
-                        score=0.1,
-                        source="graph_expansion",
-                    )
+            expanded_chunk_ids.add(chunk.id)
+            expanded.append(
+                RetrievedChunk(
+                    chunk=chunk,
+                    document=document,
+                    score=0.1,
+                    source="graph_expansion",
                 )
+            )
         return expanded
 
     def _recent_authorized_chunks(
@@ -395,7 +410,7 @@ class RetrievalService:
         if not signal_terms:
             return []
         documents: dict[str, tuple[DocumentModel, float]] = {}
-        for _, document in self._authorized_chunk_rows(
+        for document in self._authorized_document_rows(
             user_id, knowledge_base_ids=knowledge_base_ids
         ):
             if document.id in documents:
@@ -412,10 +427,11 @@ class RetrievalService:
             return []
         rows = [
             (chunk, document, documents[document.id][1])
-            for chunk, document in self._authorized_chunk_rows(
-                user_id, knowledge_base_ids=knowledge_base_ids
+            for chunk, document in self._authorized_chunks_for_document_ids(
+                user_id,
+                document_ids=documents.keys(),
+                knowledge_base_ids=knowledge_base_ids,
             )
-            if document.id in documents
         ]
         rows.sort(key=lambda row: (-row[2], -row[1].created_at.timestamp(), row[0].ordinal))
         return [
@@ -443,10 +459,12 @@ class RetrievalService:
         existing_chunk_ids = {item.chunk.id for item in ranked}
         used_chars = sum(len(item.chunk.content) for item in ranked)
         supplemented = list(ranked)
-        for chunk, document in self._authorized_chunk_rows(
-            user_id, knowledge_base_ids=knowledge_base_ids
+        for chunk, document in self._authorized_chunks_for_document_ids(
+            user_id,
+            document_ids=matched_document_ids,
+            knowledge_base_ids=knowledge_base_ids,
         ):
-            if document.id not in matched_document_ids or chunk.id in existing_chunk_ids:
+            if chunk.id in existing_chunk_ids:
                 continue
             next_size = len(chunk.content)
             if used_chars + next_size > char_budget and supplemented:
@@ -467,8 +485,8 @@ class RetrievalService:
         self,
         *,
         user_id: str,
-        query: str,
         terms: set[str],
+        query_embedding: list[float],
         knowledge_base_ids: Sequence[str] | None,
         limit: int,
     ) -> list[RetrievedChunk]:
@@ -478,7 +496,6 @@ class RetrievalService:
         signal_terms = _metadata_signal_terms(terms)
         if not signal_terms:
             return []
-        query_embedding = self._embedding_provider.embed_query(query)
         if not query_embedding:
             return []
         document_scores: dict[str, tuple[DocumentModel, float]] = {}
@@ -505,11 +522,11 @@ class RetrievalService:
         if not document_scores:
             return []
         rows_by_document: dict[str, list[DocumentChunkModel]] = {}
-        for chunk, document in self._authorized_chunk_rows(
-            user_id, knowledge_base_ids=knowledge_base_ids
+        for chunk, document in self._authorized_chunks_for_document_ids(
+            user_id,
+            document_ids=document_scores.keys(),
+            knowledge_base_ids=knowledge_base_ids,
         ):
-            if document.id not in document_scores:
-                continue
             rows_by_document.setdefault(document.id, []).append(chunk)
         matches: list[RetrievedChunk] = []
         ranked_documents = sorted(
@@ -539,6 +556,9 @@ class RetrievalService:
                 _authorized_document_filter(
                     user_id,
                     knowledge_base_ids=knowledge_base_ids,
+                    include_published_personal_kbs=_schema_has_knowledge_base_publications(
+                        self._db
+                    ),
                     require_standard_purpose=_schema_has_knowledge_base_purpose(self._db),
                 )
             )
@@ -567,6 +587,54 @@ class RetrievalService:
         with track_retrieval_phase("authorized_chunk_rows_sql"):
             return list(self._db.execute(statement).all())
 
+    def _authorized_document_rows(
+        self, user_id: str, *, knowledge_base_ids: Sequence[str] | None
+    ) -> list[DocumentModel]:
+        include_published_personal_kbs = _schema_has_knowledge_base_publications(self._db)
+        statement = (
+            select(DocumentModel)
+            .where(
+                _authorized_document_filter(
+                    user_id,
+                    knowledge_base_ids=knowledge_base_ids,
+                    include_published_personal_kbs=include_published_personal_kbs,
+                    require_standard_purpose=_schema_has_knowledge_base_purpose(self._db),
+                )
+            )
+            .order_by(desc(DocumentModel.created_at), DocumentModel.id)
+        )
+        with track_retrieval_phase("authorized_document_rows_sql"):
+            return list(self._db.scalars(statement).all())
+
+    def _authorized_chunks_for_document_ids(
+        self,
+        user_id: str,
+        *,
+        document_ids: Iterable[str],
+        knowledge_base_ids: Sequence[str] | None,
+    ) -> list[tuple[DocumentChunkModel, DocumentModel]]:
+        unique_document_ids = tuple(dict.fromkeys(document_ids))
+        if not unique_document_ids:
+            return []
+        statement = (
+            select(DocumentChunkModel, DocumentModel)
+            .join(DocumentModel, DocumentChunkModel.document_id == DocumentModel.id)
+            .where(
+                DocumentModel.id.in_(unique_document_ids),
+                _authorized_document_filter(
+                    user_id,
+                    knowledge_base_ids=knowledge_base_ids,
+                    include_published_personal_kbs=_schema_has_knowledge_base_publications(
+                        self._db
+                    ),
+                    require_standard_purpose=_schema_has_knowledge_base_purpose(self._db),
+                ),
+            )
+            .order_by(desc(DocumentModel.created_at), DocumentChunkModel.ordinal)
+        )
+        with track_retrieval_phase("authorized_matched_chunk_rows_sql"):
+            return list(self._db.execute(statement).all())
+
 
 def _postgres_vector_authorized_statement(
     *,
@@ -590,11 +658,14 @@ def _postgres_vector_authorized_statement(
     )
 
 
-def _entity_mentions_for_chunk(db: Session, chunk_id: str) -> list[EntityMentionModel]:
+def _entity_mentions_for_chunks(db: Session, chunk_ids: Iterable[str]) -> list[EntityMentionModel]:
+    unique_chunk_ids = tuple(dict.fromkeys(chunk_ids))
+    if not unique_chunk_ids:
+        return []
     with track_retrieval_phase("entity_mentions_sql"):
         return list(
             db.scalars(
-                select(EntityMentionModel).where(EntityMentionModel.chunk_id == chunk_id)
+                select(EntityMentionModel).where(EntityMentionModel.chunk_id.in_(unique_chunk_ids))
             ).all()
         )
 

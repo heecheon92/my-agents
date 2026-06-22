@@ -1,5 +1,17 @@
 # ContextForge changelog
 
+## 2026-06-22 — Reduce first-stage retrieval scan fan-out
+
+- **Why:** Local timing showed `candidate_gather` was dominated by five repeated authorized chunk scans and thousands of per-chunk entity mention queries, while Postgres vector search itself was fast.
+- **Behavior / contract impact:** Candidate gathering now embeds the rewritten query once per retrieval attempt, uses document-level authorization rows for metadata matching, loads chunks only for matched documents in metadata/profile/overview lanes, and batches graph-expansion entity lookup instead of querying each chunk. Authorization filters and retrieval response contracts are unchanged.
+- **Verification evidence:** `tests/test_permission_aware_rag.py` covers metadata/profile/overview retrieval and batched graph expansion; `tests/test_context_forge_reranking.py` covers the timing panel path.
+
+## 2026-06-22 — Add nested candidate-gather timing rows
+
+- **Why:** The first local timing panel showed `candidate_gather` consumed most retrieval latency, but that top-level row still hid whether the cost came from embeddings, SQL/vector search, JSON fallback, metadata profile matching, entity expansion, or overview supplementation.
+- **Behavior / contract impact:** The local `MY_AGENTS_DEBUG_RETRIEVAL_TIMING_LOGGING=true` Rich panel now forwards existing retrieval and embedding spans during candidate gathering as redacted `candidate_gather.*` rows. Repeated nested spans aggregate their call count and total elapsed milliseconds. Metrics labels and API responses are unchanged.
+- **Verification evidence:** `tests/test_context_forge_reranking.py` covers nested `candidate_gather.*` Rich timing rows and prompt redaction.
+
 ## 2026-06-22 — Add local retrieval timing Rich panel
 
 - **Why:** Aggregate Prometheus histograms showed retrieval was slow but did not give a local, per-run answer to which ContextForge phase dominated one conversation turn.

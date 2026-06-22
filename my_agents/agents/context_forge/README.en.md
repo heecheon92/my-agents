@@ -95,7 +95,7 @@ The cross-encoder only scores already-authorized top-k candidates from `MY_AGENT
 
 Enable `MY_AGENTS_DEBUG_KNOWLEDGE_CONTEXT_LOGGING=true` to Rich-print ContextForge role handoffs. The trace shows which role sends which message/payload to the next role, such as `ConversationRun -> QueryCartographer`, `CandidateFusion -> EvidenceJudge`, and `ContextCurator -> ConversationRun`. These traces can include sensitive retrieval context such as queries, chunk IDs, and snippets, so keep them limited to local debugging.
 
-Enable `MY_AGENTS_DEBUG_RETRIEVAL_TIMING_LOGGING=true` when local retrieval is too slow and you need a per-run breakdown. This prints a human-readable Rich panel for each ContextForge retrieval attempt with total time plus phase timings for `authorized_document_count`, `query_planning`, `candidate_gather`, `candidate_fusion`, `reranking`, and `context_pack`. The timing panel is redacted: it prints counts, route/intent metadata, and milliseconds, not raw prompts or document text.
+Enable `MY_AGENTS_DEBUG_RETRIEVAL_TIMING_LOGGING=true` when local retrieval is too slow and you need a per-run breakdown. This prints a human-readable Rich panel for each ContextForge retrieval attempt with total time plus phase timings for `authorized_document_count`, `query_planning`, `candidate_gather`, `candidate_fusion`, `reranking`, and `context_pack`. While candidate gathering runs, existing retrieval/embedding spans are forwarded into the same panel as `candidate_gather.*` rows, including metadata matching, query embedding, vector SQL, JSON fallback, entity expansion, and overview supplement work. The timing panel is redacted: it prints counts, route/intent metadata, and milliseconds, not raw prompts or document text.
 
 ## Security boundary
 

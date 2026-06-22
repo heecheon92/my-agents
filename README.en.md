@@ -118,7 +118,10 @@ MY_AGENTS_DEBUG_RETRIEVAL_TIMING_LOGGING=true uv run fastapi dev main.py
 
 That local-only debug output prints one human-readable ContextForge timing table per
 retrieval attempt, including authorization count, planning, candidate gather, fusion,
-reranking, context packing, total time, and redacted candidate counts.
+reranking, context packing, total time, and redacted candidate counts. The
+`candidate_gather.*` rows break the slow first-stage retrieval path down into existing
+retrieval/embedding spans such as metadata matching, embedding calls, vector SQL, JSON
+fallback scans, related expansion, and overview supplement work.
 
 ## Common checks
 

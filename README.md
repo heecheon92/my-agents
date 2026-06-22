@@ -120,7 +120,9 @@ MY_AGENTS_DEBUG_RETRIEVAL_TIMING_LOGGING=true uv run fastapi dev main.py
 
 이 debug 출력은 retrieval attempt마다 authorization count, planning, candidate gather,
 fusion, reranking, context packing, total time, redacted candidate count를 사람이 읽기 쉬운
-표로 출력하며 raw prompt나 문서 본문은 출력하지 않습니다.
+표로 출력하며 raw prompt나 문서 본문은 출력하지 않습니다. `candidate_gather.*` 행은
+metadata match, embedding call, vector SQL, JSON fallback scan, related expansion,
+overview supplement처럼 first-stage retrieval 내부에서 이미 계측하던 span을 함께 보여줍니다.
 
 ## 주요 검사
 
