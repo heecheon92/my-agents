@@ -1,10 +1,12 @@
 """LangGraph implementation for the personal assistant backend."""
 
-from typing import Annotated, TypedDict
+from collections.abc import Sequence
+from typing import Annotated, Any, TypedDict
 
-from langchain_core.messages import AnyMessage
+from langchain_core.messages import AnyMessage, BaseMessage
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
+from langgraph.runtime import Runtime
 
 from my_agents.agents.capabilities import AgentCapability, get_capability_for_route
 from my_agents.agents.general_assistant.classifier import classify_messages
@@ -15,8 +17,14 @@ from my_agents.agents.general_assistant.memory_recall import (
 from my_agents.agents.general_assistant.rag_retrieval import (
     retrieve_rag_context,
     select_after_rag_context,
+    skip_rag_context,
 )
 from my_agents.agents.general_assistant.responders import get_response_provider
+from my_agents.agents.general_assistant.retrieval_gate import (
+    RetrievalSourceDecider,
+    RetrievalSourceDecision,
+    get_retrieval_source_decider,
+)
 from my_agents.agents.rag_agent import RagAgentRetrievalResult
 from my_agents.knowledge.routing import AnswerMode, DocumentScope, RetrievalRoute
 from my_agents.schemas import RouteDecision
@@ -39,6 +47,7 @@ class AssistantState(TypedDict, total=False):
     memory_context: list[dict[str, object]]
     source_conflicts: list[dict[str, object]]
     rag_retrieval_result: RagAgentRetrievalResult
+    retrieval_source_decision: RetrievalSourceDecision
     rag_halt_before_response: bool
     retrieval_route: RetrievalRoute
     answer_mode: AnswerMode
@@ -60,6 +69,44 @@ def select_response_node(state: AssistantState) -> str:
         "general_assistant": "respond_general",
         "research_helper": "respond_research",
     }[route]
+
+
+def decide_retrieval_source(
+    state: AssistantState,
+    runtime: Runtime[AssistantRuntimeContext],
+) -> AssistantState:
+    """Decide whether this turn should enter private knowledge-base retrieval."""
+    context = runtime.context or {}
+    selection_context = context.get("knowledge_base_selection")
+    if selection_context is None:
+        raise RuntimeError(
+            "general_assistant graph requires RAG Agent runtime context; "
+            "use graph_context_for_run for conversation runs or build_legacy_chat_graph "
+            "for unauthenticated no-KB chat."
+        )
+    decider = _retrieval_source_decider(context.get("retrieval_source_decider"))
+    decision = decider.decide(
+        messages=_state_messages(state.get("messages", [])),
+        selection_context=selection_context,
+    )
+    return {"retrieval_source_decision": decision}
+
+
+def select_retrieval_source(state: AssistantState) -> str:
+    """Route to RAG retrieval only when the source-selection gate requests it."""
+    decision = state["retrieval_source_decision"]
+    return decision.source
+
+
+def _retrieval_source_decider(candidate: object) -> RetrievalSourceDecider:
+    decide = getattr(candidate, "decide", None)
+    if callable(decide):
+        return candidate  # type: ignore[return-value]
+    return get_retrieval_source_decider()
+
+
+def _state_messages(messages: Sequence[Any]) -> list[BaseMessage]:
+    return [message for message in messages if isinstance(message, BaseMessage)]
 
 
 def respond_general(state: AssistantState) -> AssistantState:
@@ -125,22 +172,33 @@ def _build_graph(*, include_rag: bool):
     graph = StateGraph(AssistantState, context_schema=AssistantRuntimeContext)
     graph.add_node("classify_request", classify_request)
     if include_rag:
+        graph.add_node("decide_retrieval_source", decide_retrieval_source)
         graph.add_node("retrieve_rag_context", retrieve_rag_context)
+        graph.add_node("skip_rag_context", skip_rag_context)
     graph.add_node("retrieve_memory", retrieve_memory_context)
     graph.add_node("respond_general", respond_general)
     graph.add_node("respond_research", respond_research)
 
     graph.add_edge(START, "classify_request")
     if include_rag:
-        graph.add_edge("classify_request", "retrieve_rag_context")
+        graph.add_edge("classify_request", "decide_retrieval_source")
         graph.add_conditional_edges(
-            "retrieve_rag_context",
-            select_after_rag_context,
+            "decide_retrieval_source",
+            select_retrieval_source,
             {
-                "retrieve_memory": "retrieve_memory",
-                "end": END,
+                "knowledge_base": "retrieve_rag_context",
+                "bypass": "skip_rag_context",
             },
         )
+        for retrieval_node in ("retrieve_rag_context", "skip_rag_context"):
+            graph.add_conditional_edges(
+                retrieval_node,
+                select_after_rag_context,
+                {
+                    "retrieve_memory": "retrieve_memory",
+                    "end": END,
+                },
+            )
     else:
         graph.add_edge("classify_request", "retrieve_memory")
     graph.add_conditional_edges(

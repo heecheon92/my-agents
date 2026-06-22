@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -10,6 +11,7 @@ from my_agents.api.assistant import GraphRunner
 from my_agents.api.conversations.graph_invocation import invoke_graph_runner, stream_graph_runner
 
 GraphStreamItemKind = Literal["delta", "update", "result"]
+_ASSISTANT_RESPONSE_STREAM_NODES = frozenset({"respond_general", "respond_research"})
 
 
 @dataclass(frozen=True)
@@ -58,7 +60,9 @@ def stream_graph_items(
         emitted_stream_event = True
         event_type, event_data = stream_event_parts(event)
         if event_type == "messages":
-            message_chunk, _metadata = event_data
+            message_chunk, metadata = event_data
+            if not should_emit_message_chunk(metadata):
+                continue
             text = message_chunk_text(message_chunk)
             if text:
                 streamed_parts.append(text)
@@ -96,6 +100,23 @@ def stream_event_parts(event: Any) -> tuple[str | None, Any]:
     if isinstance(event, tuple) and len(event) == 2:
         return event
     return None, None
+
+
+def should_emit_message_chunk(metadata: Any) -> bool:
+    """Return whether a LangGraph message chunk is user-visible assistant text.
+
+    `stream_mode="messages"` includes tokens from every chat model invoked inside the
+    graph. Source-selection/routing nodes may also use an LLM, but their JSON/control
+    tokens must not be forwarded as answer deltas. Older test doubles and lightweight
+    graph spies often omit LangGraph metadata, so unknown metadata remains visible for
+    backwards compatibility.
+    """
+    if not isinstance(metadata, Mapping):
+        return True
+    node_name = metadata.get("langgraph_node")
+    if not isinstance(node_name, str):
+        return True
+    return node_name in _ASSISTANT_RESPONSE_STREAM_NODES
 
 
 def result_fields_from_update(update: dict[str, Any]) -> dict[str, Any]:

@@ -3,6 +3,12 @@
 This changelog records why the production-surface `general_assistant` agent folder needed
 meaningful behavior, graph-state, provider, or documentation changes.
 
+## 2026-06-22 — Add source-selection gate and bind hosted web search without language-specific hints
+
+- **Why:** App-side English keyword hints missed explicit web-search or no-KB requests written in other languages, and unconditional graph-owned RAG setup made common/web turns pass through ContextForge even when the user asked not to use saved documents.
+- **Behavior/contract impact:** `graph.py` now runs `classify_request -> decide_retrieval_source -> retrieve_rag_context|skip_rag_context -> retrieve_memory -> respond_*`. OpenAI mode can use a thin LLM source-selection gate to decide KB retrieval versus common/web answering; deterministic mode keeps an offline fallback. Bypassed turns still return an explicit `no_retrieval` `RagAgentRetrievalResult` so API events and persistence keep one contract. Source selection is latest-turn-first but multi-turn-aware: follow-up-like turns can inherit recent web/current intent unless the latest turn introduces a new KB/document instruction. `OpenAIResponseProvider` exposes hosted `web_search` for both `general_assistant` and `research_helper` routes, while the provider prompt tells the model to call it only for current, recent, web-backed, source-backed, or externally verifiable requests, including follow-ups that inherit that source need. API response shape is unchanged.
+- **Verification:** `tests/test_retrieval_gate.py`, `tests/test_graph.py`, and `tests/test_responders.py` cover source gating, explicit bypass, source-continuity follow-ups, runtime decider injection, route-level web-search binding, and provider prompt policy.
+
 ## 2026-06-16 — Invoke the RAG Agent inside the assistant graph
 
 - **Why:** The general assistant should be the top-level controller and decide inside its graph when to retrieve document evidence, instead of receiving a fully preassembled ContextForge result from the API service.

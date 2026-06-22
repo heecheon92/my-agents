@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator
 from time import perf_counter
 from typing import Annotated, Any
@@ -68,6 +69,7 @@ from my_agents.persistence.database import get_database_session
 from my_agents.settings import Settings, get_settings
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.post(
@@ -307,6 +309,12 @@ def conversation_run_events(
                 error_type=type(exc).__name__,
                 memory_source_snapshot=memory_snapshot,
             )
+            _log_stream_failure(
+                exc,
+                conversation_id=conversation_id,
+                run_id=run_id,
+                status_code=503,
+            )
             yield sse_event(
                 AgentEventType.RUN_FAILED.value,
                 {"run_id": run_id, "safe_error_type": type(exc).__name__},
@@ -321,6 +329,12 @@ def conversation_run_events(
                 conversation_id=conversation_id,
                 error_type=type(exc).__name__,
                 memory_source_snapshot=memory_snapshot,
+            )
+            _log_stream_failure(
+                exc,
+                conversation_id=conversation_id,
+                run_id=run_id,
+                status_code=502,
             )
             yield sse_event(
                 AgentEventType.RUN_FAILED.value,
@@ -489,6 +503,12 @@ def conversation_run_events(
             error_type=type(exc).__name__,
         )
         if run_id is not None:
+            _log_stream_failure(
+                exc,
+                conversation_id=conversation_id,
+                run_id=run_id,
+                status_code=503,
+            )
             yield sse_event(
                 AgentEventType.RUN_FAILED.value,
                 {"run_id": run_id, "safe_error_type": type(exc).__name__},
@@ -504,6 +524,12 @@ def conversation_run_events(
             error_type=type(exc).__name__,
         )
         if run_id is not None:
+            _log_stream_failure(
+                exc,
+                conversation_id=conversation_id,
+                run_id=run_id,
+                status_code=502,
+            )
             yield sse_event(
                 AgentEventType.RUN_FAILED.value,
                 {"run_id": run_id, "safe_error_type": type(exc).__name__},
@@ -511,3 +537,19 @@ def conversation_run_events(
             yield sse_event("run_error", {"run_id": run_id, "status_code": 502})
         record_run_metric("failed")
         return
+
+
+def _log_stream_failure(
+    exc: Exception,
+    *,
+    conversation_id: str,
+    run_id: str,
+    status_code: int,
+) -> None:
+    logger.exception(
+        "conversation_stream.run_failed conversation_id=%s run_id=%s error_type=%s status_code=%s",
+        conversation_id,
+        run_id,
+        type(exc).__name__,
+        status_code,
+    )

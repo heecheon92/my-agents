@@ -87,7 +87,7 @@ MY_AGENTS_CROSS_ENCODER_BATCH_SIZE=16
 # MY_AGENTS_CROSS_ENCODER_DEVICE=mps
 ```
 
-Cross-encoder는 `MY_AGENTS_RERANKER_TOP_K`가 정하는 이미 승인된 top-k 후보(기본 `40`)만 query/document pair로 점수화합니다. 후보 검색 전체를 cross-encoder로 대체하지 않으며, 권한 필터링은 항상 reranking 전에 끝납니다.
+Cross-encoder는 `MY_AGENTS_RERANKER_TOP_K`가 정하는 이미 승인된 top-k 후보(기본 `40`)만 query/document pair로 점수화합니다. 후보 검색 전체를 cross-encoder로 대체하지 않으며, 권한 필터링은 항상 reranking 전에 끝납니다. Model은 비어 있지 않은 rerank 호출이 처음 발생할 때 lazy load되므로, document candidate scoring을 건너뛰는 route는 cross-encoder cold-start 비용을 내지 않습니다.
 
 ## Rich debug trace
 

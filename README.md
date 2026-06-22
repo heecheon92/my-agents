@@ -12,6 +12,7 @@
 - 개인 지식 기반, 초대 기반 group 지식 기반, root/system 사용자가 관리하는 project knowledge
 - 문서 업로드, 수집, 검색, 출처가 있는 답변
 - Server-owned conversation/run history와 streaming response
+- OpenAI 기반 응답은 최신 정보나 출처 기반 요청에 hosted web search를 노출할 수 있음
 - 그룹 멤버와 공개 요청을 관리하기 위한 권한 흐름
 - 사용자가 실험적으로 켜고 끌 수 있는 long-term memory
 
@@ -42,7 +43,9 @@ flowchart TD
     KB --> Ingest["Ingestion + chunks + entities + embeddings"]
     SystemKB --> Ingest
     Runs --> Graph["General assistant LangGraph"]
-    Graph --> RAGAgent["RAG Agent retrieval boundary"]
+    Graph --> SourceGate["Source-selection gate"]
+    SourceGate -->|knowledge_base| RAGAgent["RAG Agent retrieval boundary"]
+    SourceGate -->|bypass| Provider
     RAGAgent --> ContextForge["ContextForge delegated retrieval engine"]
     ContextForge --> GraphInput["Authorized retrieved context"]
     GraphInput --> Graph

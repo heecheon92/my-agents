@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import pytest
 
+from my_agents.agents.general_assistant.retrieval_gate import RetrievalSourceDecision
 from my_agents.memory.runtime import MemoryRuntimeItem
 
 from .conftest import (
     REPRESENTATIVE_PROMPTS,
+    FakeRagRuntime,
     assert_chat_response_shape,
     assert_no_delegation_claims,
     get_compiled_graph,
@@ -93,6 +95,54 @@ def test_graph_retrieves_memory_from_runtime_context() -> None:
     assert result["source_conflicts"][0]["secondary"] == "memory"
 
 
+def test_graph_bypasses_rag_when_user_excludes_saved_docs() -> None:
+    graph = get_compiled_graph()
+    rag_runtime = FakeRagRuntime()
+
+    result = graph.invoke(
+        graph_state("Don't use saved docs. What is RAG?", user_id="user-a"),
+        context=graph_runtime_context(user_id="user-a", rag_runtime=rag_runtime),
+    )
+
+    assert rag_runtime.queries == []
+    assert result["retrieval_source_decision"].source == "bypass"
+    assert result["rag_retrieval_result"].decision.route == "no_retrieval"
+    assert result["retrieved_context"] == []
+
+
+def test_graph_enters_rag_when_source_gate_selects_knowledge_base() -> None:
+    graph = get_compiled_graph()
+    rag_runtime = FakeRagRuntime()
+
+    result = graph.invoke(
+        graph_state("Summarize my uploaded document", user_id="user-a"),
+        context=graph_runtime_context(user_id="user-a", rag_runtime=rag_runtime),
+    )
+
+    assert rag_runtime.queries == ["Summarize my uploaded document"]
+    assert result["retrieval_source_decision"].source == "knowledge_base"
+    assert result["rag_retrieval_result"].decision.route == "no_retrieval"
+
+
+def test_graph_accepts_runtime_source_decider_for_multilingual_gate() -> None:
+    graph = get_compiled_graph()
+    rag_runtime = FakeRagRuntime()
+    source_decider = FakeRetrievalSourceDecider(source="bypass")
+
+    result = graph.invoke(
+        graph_state("웹에서 찾아보고 저장된 문서는 쓰지 마", user_id="user-a"),
+        context=graph_runtime_context(
+            user_id="user-a",
+            rag_runtime=rag_runtime,
+            retrieval_source_decider=source_decider,
+        ),
+    )
+
+    assert source_decider.messages == ["웹에서 찾아보고 저장된 문서는 쓰지 마"]
+    assert rag_runtime.queries == []
+    assert result["retrieval_source_decision"].source == "bypass"
+
+
 class FakeMemoryRuntime:
     def __init__(self, items: list[MemoryRuntimeItem]) -> None:
         self._items = items
@@ -108,6 +158,20 @@ class FakeMemoryRuntime:
     ) -> list[MemoryRuntimeItem]:
         self.queries.append(query)
         return self._items
+
+
+class FakeRetrievalSourceDecider:
+    def __init__(self, *, source: str) -> None:
+        self._source = source
+        self.messages: list[str] = []
+
+    def decide(self, *, messages, selection_context):  # noqa: ANN001
+        _ = selection_context
+        self.messages.append(str(messages[-1].content))
+        return RetrievalSourceDecision(
+            source=self._source,  # type: ignore[arg-type]
+            reason="fake source decider",
+        )
 
 
 def invoke_graph_messages(message: str):

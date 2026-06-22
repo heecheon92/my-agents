@@ -41,9 +41,19 @@ _CAPABILITIES_BY_ROUTE: dict[RouteLabel, AgentCapability] = {
             "General assistant/router response path that provides practical replies "
             "through the configured response provider."
         ),
-        tools=("ChatOpenAI response provider when OpenAI mode is enabled",),
-        data_sources=("current chat messages",),
-        side_effects=("OpenAI API call when OpenAI mode is enabled",),
+        tools=(
+            "ChatOpenAI response provider when OpenAI mode is enabled",
+            "OpenAI hosted web_search available in OpenAI mode for current or "
+            "source-backed requests",
+        ),
+        data_sources=(
+            "current chat messages",
+            "web search results when OpenAI mode is enabled and the model calls web_search",
+        ),
+        side_effects=(
+            "OpenAI API call when OpenAI mode is enabled",
+            "hosted web search request in OpenAI mode when the model calls web_search",
+        ),
     ),
     "research_helper": AgentCapability(
         name="research_helper_with_hosted_search",

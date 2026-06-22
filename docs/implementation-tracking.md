@@ -62,9 +62,10 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
 - Production-surface assistant graph lives in `my_agents/agents/general_assistant/`.
 - Uses LangGraph `StateGraph` with explicit classification and response nodes.
 - Classification is deterministic.
+- Product graph now runs a source-selection gate before private KB retrieval; OpenAI mode can use a thin multilingual LLM decision, while deterministic mode keeps an offline fallback and explicit no-retrieval result for bypassed turns.
 - OpenAI-backed response generation uses `langchain-openai` / `ChatOpenAI` by default.
 - Deterministic mode remains available for tests and offline smoke checks.
-- Hosted web search can be attached at the response-provider boundary for research/general current-info requests in OpenAI mode.
+- Hosted web search is exposed at the OpenAI response-provider boundary for both `general_assistant` and `research_helper`; the provider prompt, not app-side language-specific keyword hints, decides when the model should call it.
 - Opt-in long-term memory V1 is implemented as a Product DB-backed governance/runtime scaffold: settings, memory CRUD, suggest-confirm lifecycle, policy gates, source provenance, source staleness, relevance-minimized context injection, conflict guidance, and redacted run snapshots. The LangGraph-native migration target is documented in `docs/product-chat-service/en/19-langgraph-native-memory-migration.md`.
 
 ### Auth/session foundation
@@ -122,8 +123,8 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
 - Text document ingestion remains compatible.
 - Text-based upload path for PDF, Markdown, and plain text with safe metadata persistence; PDFs keep page provenance and FlateDecode text-stream fallback support. Hosted ingestion can run through an external worker so heavy parser/embedding/indexing work no longer has to share the web request process.
 - Deterministic chunks, provider-backed JSON embeddings (deterministic by default, OpenAI opt-in), entity mentions, and co-occurrence relationships.
-- RAG Agent now owns the assistant-facing conversation-run retrieval boundary through `my_agents/agents/rag_agent/retrieval.py`; `general_assistant` invokes it inside the graph before memory/answer nodes.
-- ContextForge remains the delegated permission-first retrieval engine behind that boundary, with a thin LangGraph RetrievalGraph wrapper over deterministic query planning, source-boundary handoff, candidate fusion, deterministic default or optional cross-encoder reranking, high-recall context packing, redacted retrieval evidence, and opt-in Rich debug traces for role handoff messages.
+- RAG Agent now owns the assistant-facing conversation-run retrieval boundary through `my_agents/agents/rag_agent/retrieval.py`; `general_assistant` invokes it inside the graph before memory/answer nodes only when the source-selection gate chooses private knowledge-base retrieval.
+- ContextForge remains the delegated permission-first retrieval engine behind that boundary, with a thin LangGraph RetrievalGraph wrapper over deterministic query planning, source-boundary handoff, candidate fusion, deterministic default or optional lazily loaded cross-encoder reranking, high-recall context packing, redacted retrieval evidence, and opt-in Rich debug traces for role handoff messages.
 - Retrieval candidate gathering includes authorized document title/source-filename metadata matching, so filename-only user references can find the matching uploaded document even when the filename is absent from chunk content.
 - Ingestion stores structured knowledge entities for API endpoints, config keys, shell commands, error codes, and database table references with document/chunk/run/page/offset provenance.
 - Deterministic retrieval routing supports `no_retrieval`, `retrieval_required`, `retrieval_optional`, and `clarification_required`; clarification runs now keep the language-neutral `clarification` contract and also return visible assistant text so clients never see a successful empty reply.
@@ -464,6 +465,7 @@ limits.
 
 | Date | Milestone | Evidence |
 | --- | --- | --- |
+| 2026-06-22 | Added a graph-level source-selection gate so explicit KB bypass and common/web requests can skip ContextForge, removed language-specific general-assistant web-search hints, and delayed optional cross-encoder model loading until the first non-empty ContextForge rerank call. | `my_agents/agents/general_assistant/retrieval_gate.py`; `my_agents/agents/general_assistant/graph.py`; `my_agents/agents/general_assistant/rag_retrieval.py`; `my_agents/agents/general_assistant/responders.py`; `my_agents/agents/capabilities.py`; `my_agents/agents/context_forge/reranking.py`; `tests/test_retrieval_gate.py`; `tests/test_graph.py`; `tests/test_responders.py`; `tests/test_context_forge_reranking.py`; README and agent README pairs. |
 | 2026-06-16 | Documented the General Assistant -> RAG Agent -> ContextForge architecture correction with a dedicated change report and review map. | `docs/product-chat-service/en/22-general-assistant-rag-agent-architecture-change-report.md`; product docs index; implementation tracking docs section. |
 | 2026-06-16 | Added opt-in Prometheus timing metrics for internal performance and quality analysis without changing the frontend/product surface. | `pyproject.toml`; `my_agents/observability/metrics.py`; `my_agents/api/metrics.py`; `my_agents/api/__init__.py`; ContextForge/retrieval/embedding/graph/run timing hooks; `tests/test_metrics.py`; README pair; observability docs; `ROADMAP.md`. |
 | 2026-06-14 | Product status review refreshed roadmap/tracking and marked the current version as controlled-alpha worthy after deploy smoke. | `docs/implementation-tracking.md`; `ROADMAP.md`; local docs consistency review; backend verification recorded above. |

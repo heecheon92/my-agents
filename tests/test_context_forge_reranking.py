@@ -188,6 +188,49 @@ def test_cross_encoder_reranker_scores_query_document_pairs() -> None:
     assert reranked[0].reasons[-1] == "cross_encoder:fake-cross-encoder"
 
 
+def test_cross_encoder_reranker_loads_model_only_when_candidates_are_scored(
+    monkeypatch,
+) -> None:  # noqa: ANN001
+    load_calls: list[tuple[str, str | None]] = []
+
+    def fake_load_cross_encoder(model_name: str, device: str | None) -> FakeCrossEncoder:
+        load_calls.append((model_name, device))
+        return FakeCrossEncoder()
+
+    monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
+    monkeypatch.setenv("MY_AGENTS_RERANKER_MODE", "cross_encoder")
+    monkeypatch.setenv("MY_AGENTS_CROSS_ENCODER_MODEL", "fake-cross-encoder")
+    monkeypatch.setenv("MY_AGENTS_CROSS_ENCODER_BATCH_SIZE", "8")
+    monkeypatch.setenv("MY_AGENTS_CROSS_ENCODER_DEVICE", "mps")
+    monkeypatch.setattr(
+        "my_agents.agents.context_forge.reranking._load_cross_encoder",
+        fake_load_cross_encoder,
+    )
+
+    settings = Settings(_env_file=None)
+    reranker = build_reranker(settings)
+
+    assert isinstance(reranker, CrossEncoderReranker)
+    assert load_calls == []
+    assert reranker.rerank(plan=_plan("test"), candidates=[]) == []
+    assert load_calls == []
+
+    reranked = reranker.rerank(
+        plan=_plan("How do I optimize pandas memory?"),
+        candidates=[
+            _candidate(
+                "chunk-precise",
+                ordinal=0,
+                content="Pandas memory optimization uses categorical downcasting.",
+                score=0.4,
+            )
+        ],
+    )
+
+    assert [item.rerank_score for item in reranked] == [10.0]
+    assert load_calls == [("fake-cross-encoder", "mps")]
+
+
 def test_build_reranker_defaults_to_offline_deterministic(
     monkeypatch,
 ) -> None:  # noqa: ANN001

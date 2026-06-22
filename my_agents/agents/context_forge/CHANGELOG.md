@@ -1,5 +1,11 @@
 # ContextForge changelog
 
+## 2026-06-22 — Lazy-load cross-encoder reranker weights
+
+- **Why:** Web-intended conversation runs can pass through graph-owned RAG setup before provider-hosted web search. Eagerly initializing the optional cross-encoder made those turns pay a local Hugging Face cold-start cost even when document candidate reranking was skipped.
+- **Behavior / contract impact:** `CrossEncoderReranker` still represents `MY_AGENTS_RERANKER_MODE=cross_encoder`, but it loads the underlying `sentence-transformers` model only on the first non-empty rerank call. Empty/no-retrieval routes still report the configured reranker name without loading model weights.
+- **Verification evidence:** `tests/test_context_forge_reranking.py` covers lazy construction, no-load empty rerank, and first-load candidate scoring.
+
 ## 2026-06-16 — Re-scope ContextForge behind the public RAG Agent boundary
 
 - **Why:** The assistant-facing retrieval surface should be the RAG Agent, while ContextForge remains the permission-first retrieval implementation that can evolve internally.

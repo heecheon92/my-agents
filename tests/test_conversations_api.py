@@ -68,6 +68,13 @@ class StreamingSpyGraph:
     def stream(self, input: dict, **kwargs: Any):  # noqa: A002 - matches LangGraph API
         rag_update = rag_update_for_spy(input, kwargs)
         self.calls.append({**input, **rag_update})
+        yield {
+            "type": "messages",
+            "data": (
+                _TextChunk('{"source":"bypass"'),
+                {"langgraph_node": "decide_retrieval_source"},
+            ),
+        }
         yield {"type": "updates", "data": {"retrieve_rag_context": rag_update}}
         yield {"type": "messages", "data": (_TextChunk("streamed "), {})}
         yield {"type": "messages", "data": (_TextChunk("answer"), {})}

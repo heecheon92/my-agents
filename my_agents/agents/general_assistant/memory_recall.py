@@ -20,6 +20,7 @@ class AssistantRuntimeContext(TypedDict, total=False):
     user_id: str
     memory_runtime: MemoryRuntime
     rag_runtime: RagAgentRuntime
+    retrieval_source_decider: object
     knowledge_base_selection: KnowledgeBaseSelectionContext
 
 

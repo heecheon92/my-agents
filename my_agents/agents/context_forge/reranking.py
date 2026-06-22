@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from functools import lru_cache
-from typing import Protocol
+from typing import Any, Protocol
 
 from my_agents.agents.context_forge.contracts import RetrievalCandidate, RetrievalPlan
 from my_agents.settings import Settings
@@ -70,7 +70,8 @@ class CrossEncoderReranker:
     ) -> None:
         self._model_name = model_name
         self._batch_size = batch_size
-        self._model = model if model is not None else _load_cross_encoder(model_name, device)
+        self._device = device
+        self._model: Any | None = model
 
     @property
     def name(self) -> str:
@@ -86,7 +87,7 @@ class CrossEncoderReranker:
             return []
         pairs = [(plan.rewritten_query, _candidate_text(candidate)) for candidate in candidates]
 
-        raw_scores = self._model.predict(pairs, batch_size=self._batch_size)
+        raw_scores = self._cross_encoder.predict(pairs, batch_size=self._batch_size)
         scores = [float(score) for score in raw_scores]
         scored_candidates = [
             RetrievalCandidate(
@@ -105,6 +106,12 @@ class CrossEncoderReranker:
                 item.chunk.chunk.ordinal,
             ),
         )
+
+    @property
+    def _cross_encoder(self) -> Any:
+        if self._model is None:
+            self._model = _load_cross_encoder(self._model_name, self._device)
+        return self._model
 
 
 def build_reranker(settings: Settings) -> Reranker:

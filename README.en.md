@@ -12,6 +12,7 @@ Start with [`docs/implementation-tracking.md`](./docs/implementation-tracking.md
 - Personal knowledge bases, invite-based group knowledge bases, and root/system-managed project knowledge
 - Document upload, ingestion, retrieval, and cited answers
 - Server-owned conversation/run history and streaming responses
+- OpenAI-backed responses can expose hosted web search for current or source-backed requests
 - Permission flows for group members and publish requests
 - User-controlled experimental long-term memory
 
@@ -42,7 +43,9 @@ flowchart TD
     KB --> Ingest["Ingestion + chunks + entities + embeddings"]
     SystemKB --> Ingest
     Runs --> Graph["General assistant LangGraph"]
-    Graph --> RAGAgent["RAG Agent retrieval boundary"]
+    Graph --> SourceGate["Source-selection gate"]
+    SourceGate -->|knowledge_base| RAGAgent["RAG Agent retrieval boundary"]
+    SourceGate -->|bypass| Provider
     RAGAgent --> ContextForge["ContextForge delegated retrieval engine"]
     ContextForge --> GraphInput["Authorized retrieved context"]
     GraphInput --> Graph

@@ -63,7 +63,7 @@ def test_openai_provider_passes_gpt_variant_and_optional_tuning(
     )
 
     assert reply == "LangChain OpenAI drafted reply."
-    assert chat_model.bound_tools == []
+    assert chat_model.bound_tools == [[{"type": "web_search"}]]
     assert len(chat_model.calls) == 1
     messages = chat_model.calls[0]
     assert isinstance(messages[0], SystemMessage)
@@ -116,6 +116,7 @@ def test_openai_provider_includes_capability_metadata_in_prompt() -> None:
     assert "OpenAI API call when OpenAI mode is enabled" in final_prompt
     assert "Capability mode" not in final_prompt
     assert "Do not invent" in final_prompt
+    assert "When the hosted web_search tool is available" in final_prompt
 
 
 def test_openai_provider_includes_authorized_document_context_in_prompt() -> None:
@@ -179,11 +180,12 @@ def test_openai_provider_prioritizes_project_document_context_in_prompt() -> Non
     [
         ("research_helper", "Find sources about LangGraph memory", [[{"type": "web_search"}]]),
         ("general_assistant", "What is the latest LangGraph release?", [[{"type": "web_search"}]]),
-        ("general_assistant", "Help me organize my next task", []),
-        ("general_assistant", "Plan my next milestone", []),
+        ("general_assistant", "웹에서 관련 자료를 찾아서 요약해줘", [[{"type": "web_search"}]]),
+        ("general_assistant", "Help me organize my next task", [[{"type": "web_search"}]]),
+        ("general_assistant", "Plan my next milestone", [[{"type": "web_search"}]]),
     ],
 )
-def test_openai_provider_binds_web_search_by_route_and_latest_message_need(
+def test_openai_provider_binds_web_search_by_route_without_language_heuristics(
     route: str,
     message: str,
     expected_tools: list[list[dict[str, str]]],

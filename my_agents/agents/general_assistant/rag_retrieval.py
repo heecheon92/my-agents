@@ -17,6 +17,7 @@ from my_agents.agents.rag_agent import (
     chunks_used_for_answer,
     retrieved_context_for_graph,
 )
+from my_agents.knowledge.routing import RetrievalRoutingDecision
 
 
 def retrieve_rag_context(
@@ -67,6 +68,40 @@ def graph_state_from_rag_result(result: RagAgentRetrievalResult) -> dict[str, ob
         "document_scope": result.decision.document_scope,
         "rag_halt_before_response": _halts_before_response(result),
     }
+
+
+def skip_rag_context(
+    state: Mapping[str, Any],
+    runtime: Runtime[AssistantRuntimeContext],
+) -> dict[str, object]:
+    """Return an explicit no-retrieval RAG result for bypassed conversation turns."""
+    context = runtime.context or {}
+    selection_context = context.get("knowledge_base_selection")
+    if selection_context is None:
+        raise RuntimeError(
+            "general_assistant graph requires RAG Agent runtime context; "
+            "use graph_context_for_run for conversation runs or build_legacy_chat_graph "
+            "for unauthenticated no-KB chat."
+        )
+    source_decision = state.get("retrieval_source_decision")
+    reason = getattr(
+        source_decision,
+        "reason",
+        "source-selection gate bypassed private knowledge-base retrieval",
+    )
+    result = RagAgentRetrievalResult(
+        decision=RetrievalRoutingDecision(
+            route="no_retrieval",
+            reason=str(reason),
+            rewritten_query=latest_human_text(_state_messages(state)),
+            document_scope="unknown",
+        ),
+        answer_mode="general_knowledge",
+        retrieved_chunks=[],
+        retrieval_latency_ms=0.0,
+        knowledge_base_selection=selection_context,
+    )
+    return graph_state_from_rag_result(result)
 
 
 def select_after_rag_context(state: Mapping[str, Any]) -> str:

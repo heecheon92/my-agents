@@ -89,7 +89,7 @@ MY_AGENTS_CROSS_ENCODER_BATCH_SIZE=16
 # MY_AGENTS_CROSS_ENCODER_DEVICE=mps
 ```
 
-The cross-encoder only scores already-authorized top-k candidates from `MY_AGENTS_RERANKER_TOP_K` (`40` by default) as query/document pairs. It does not replace first-stage retrieval, and authorization always completes before reranking.
+The cross-encoder only scores already-authorized top-k candidates from `MY_AGENTS_RERANKER_TOP_K` (`40` by default) as query/document pairs. It does not replace first-stage retrieval, and authorization always completes before reranking. The model is loaded lazily on the first non-empty rerank call, so routes that skip document candidate scoring do not pay the cross-encoder cold-start cost.
 
 ## Rich debug trace
 
