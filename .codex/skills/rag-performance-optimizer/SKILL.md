@@ -60,7 +60,7 @@ Prefer options in this order:
 3. replace broad scans with targeted queries after preserving authorization filters;
 4. add indexes or verify query plans when SQL itself is slow;
 5. cache within one retrieval attempt;
-6. only then tune retrieval budgets, reranker mode/top-k, or Fast/Balanced/Thorough profiles.
+6. only then tune retrieval budgets or quality profiles. Treat cross-encoder reranking as quality-critical for document retrieval; do not disable it unless the user explicitly accepts the quality tradeoff. Prefer low-risk reranker optimizations such as warm-loading, batching/device settings, or avoiding duplicate rerank work.
 
 If the user has already clearly chosen an option, proceed without asking again.
 
@@ -104,7 +104,7 @@ uv run ruff format --check .
 git diff --check
 ```
 
-Do not claim real latency improvement from tests alone. Say the code change is expected to improve the measured bottleneck, then ask for or wait for the user's same-scenario post-optimization timing run.
+Do not claim real latency improvement from tests alone. Say the code change is expected to improve the measured bottleneck, then ask for or wait for the user's same-scenario post-optimization timing run. If reranking is a visible bottleneck, preserve it as a quality-critical stage unless there is a clearly low-risk optimization.
 
 ### 6. Analyze post-optimization metrics
 
