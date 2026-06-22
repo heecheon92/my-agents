@@ -398,6 +398,10 @@ class Settings(BaseSettings):
         default=False,
         validation_alias=AliasChoices("MY_AGENTS_DEBUG_KNOWLEDGE_CONTEXT_LOGGING"),
     )
+    debug_retrieval_timing_logging: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("MY_AGENTS_DEBUG_RETRIEVAL_TIMING_LOGGING"),
+    )
     metrics_enabled: bool = Field(
         default=False,
         validation_alias=AliasChoices("MY_AGENTS_METRICS_ENABLED"),

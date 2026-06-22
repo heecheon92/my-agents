@@ -23,7 +23,7 @@ from my_agents.knowledge.auth import KnowledgeBaseSelectionContext
 from my_agents.knowledge.models import DocumentChunkModel, DocumentModel
 from my_agents.knowledge.retrieval import RetrievedChunk
 from my_agents.knowledge.routing import RetrievalRoutingDecision
-from my_agents.settings import Settings
+from my_agents.settings import Settings, get_settings
 
 
 class FakeCrossEncoder:
@@ -130,6 +130,44 @@ def test_context_forge_uses_reranker_top_k_setting(monkeypatch) -> None:  # noqa
 
     assert result.plan.limits.rerank_limit == 7
     assert len(reranker.seen_chunk_ids) == 7
+
+
+def test_context_forge_prints_human_readable_timing_trace_when_enabled(
+    monkeypatch,
+    capsys,
+) -> None:  # noqa: ANN001
+    monkeypatch.setenv("MY_AGENTS_DEBUG_RETRIEVAL_TIMING_LOGGING", "true")
+    get_settings.cache_clear()
+    reranker = CapturingReranker()
+    service = ContextForgeService(
+        None,  # type: ignore[arg-type]
+        retrieval_service=FakeAuthorizedRetrievalService(),  # type: ignore[arg-type]
+        reranker=reranker,
+    )
+
+    service.retrieve(
+        ContextForgeRequest(
+            user_id="user-1",
+            conversation_id="conversation-1",
+            query="Based on my document, answer the memory question",
+            messages=[],
+            selection_context=KnowledgeBaseSelectionContext(
+                mode="all",
+                knowledge_base_ids=(),
+                resolved_count=0,
+            ),
+        )
+    )
+
+    output = capsys.readouterr().out
+    assert "ContextForge timing" in output
+    assert "candidate_gather" in output
+    assert "candidate_fusion" in output
+    assert "reranking" in output
+    assert "context_pack" in output
+    assert "raw_candidate_count" in output
+    assert "retrieval_latency_ms" in output
+    assert "Based on my document" not in output
 
 
 def test_debug_agent_turn_rich_prints_handoff_when_enabled(capsys) -> None:  # noqa: ANN001

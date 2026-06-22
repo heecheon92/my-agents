@@ -110,7 +110,15 @@ curl http://127.0.0.1:8000/metrics
 The metrics endpoint is a maintenance/quality-analysis surface, not a product API. It
 records request, conversation-run, RAG Agent/ContextForge retrieval, embedding, reranker, and
 assistant-graph timing histograms without using raw prompts, document text, user IDs, or
-document IDs as metric labels.
+document IDs as labels. For local single-run RAG profiling, enable the Rich timing panel:
+
+```bash
+MY_AGENTS_DEBUG_RETRIEVAL_TIMING_LOGGING=true uv run fastapi dev main.py
+```
+
+That local-only debug output prints one human-readable ContextForge timing table per
+retrieval attempt, including authorization count, planning, candidate gather, fusion,
+reranking, context packing, total time, and redacted candidate counts.
 
 ## Common checks
 

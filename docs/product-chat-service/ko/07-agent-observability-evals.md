@@ -29,6 +29,11 @@
 - Raw prompt, 문서 본문, user ID, document ID, chunk ID, email, token, secret, 임의 URL
   path는 metric label로 사용하지 않습니다.
 - 자세한 metric 이름과 label 정책은 영어 원문을 기준으로 유지합니다.
+- 단일 local retrieval run에서 어느 단계가 느렸는지 보려면
+  `MY_AGENTS_DEBUG_RETRIEVAL_TIMING_LOGGING=true`를 사용합니다. 이 값은 retrieval
+  attempt마다 Rich timing panel을 출력하며 Prometheus histogram처럼 aggregate가 아니라
+  해당 run의 authorization count, planning, candidate gather, fusion, reranking,
+  context packing 시간과 redacted count를 보여줍니다.
 
 ## 향후 retrieval UX 품질 profile
 

@@ -112,6 +112,16 @@ Request, conversation run, RAG Agent/ContextForge retrieval, embedding, reranker
 timing histogram을 기록하며 raw prompt, 문서 본문, user ID, document ID를 metric label로
 사용하지 않습니다.
 
+Local에서 단일 RAG 실행이 어느 단계에서 느린지 보려면 Rich timing panel을 켭니다.
+
+```bash
+MY_AGENTS_DEBUG_RETRIEVAL_TIMING_LOGGING=true uv run fastapi dev main.py
+```
+
+이 debug 출력은 retrieval attempt마다 authorization count, planning, candidate gather,
+fusion, reranking, context packing, total time, redacted candidate count를 사람이 읽기 쉬운
+표로 출력하며 raw prompt나 문서 본문은 출력하지 않습니다.
+
 ## 주요 검사
 
 ```bash

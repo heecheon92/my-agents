@@ -1,5 +1,11 @@
 # ContextForge changelog
 
+## 2026-06-22 — Add local retrieval timing Rich panel
+
+- **Why:** Aggregate Prometheus histograms showed retrieval was slow but did not give a local, per-run answer to which ContextForge phase dominated one conversation turn.
+- **Behavior / contract impact:** `MY_AGENTS_DEBUG_RETRIEVAL_TIMING_LOGGING=true` now prints a human-readable Rich timing panel for each ContextForge retrieval attempt. The panel records redacted phase timings and counts for authorization count, query planning, candidate gather, candidate fusion, reranking, and context packing without printing raw prompts or document text. API response shape and metrics labels are unchanged.
+- **Verification evidence:** `tests/test_context_forge_reranking.py` covers the Rich timing output and redaction; `tests/test_settings.py` covers the env flag.
+
 ## 2026-06-22 — Lazy-load cross-encoder reranker weights
 
 - **Why:** Web-intended conversation runs can pass through graph-owned RAG setup before provider-hosted web search. Eagerly initializing the optional cross-encoder made those turns pay a local Hugging Face cold-start cost even when document candidate reranking was skipped.
