@@ -19,6 +19,7 @@ from my_agents.knowledge.metadata_enrichment import (
 )
 from my_agents.knowledge.models import DocumentChunkModel, DocumentMetadataProfileModel
 from my_agents.knowledge.retrieval import RetrievalService, _postgres_vector_authorized_statement
+from my_agents.observability.metrics import capture_local_timing_phases
 from my_agents.persistence.database import get_database_session
 from my_agents.schemas import RouteDecision
 
@@ -669,6 +670,58 @@ def test_metadata_profile_match_injects_body_chunks_not_only_heading(
         "Visit schedule and dosing table" in context["snippet"]
         for context in graph.calls[-1]["retrieved_context"]
     )
+
+
+def test_matched_document_chunk_rows_are_reused_within_retrieval_attempt(
+    monkeypatch,
+) -> None:  # noqa: ANN001
+    fake_embeddings = MetadataFocusedEmbeddingProvider()
+    monkeypatch.setattr(extraction_module, "get_embedding_provider", lambda: fake_embeddings)
+    monkeypatch.setattr(retrieval_module, "get_embedding_provider", lambda: fake_embeddings)
+    monkeypatch.setattr(
+        extraction_module,
+        "build_document_metadata_generator",
+        lambda _settings: StaticMetadataGenerator(),
+    )
+    client = _client(monkeypatch)
+    user_id = _signup_login(client, "matched-chunk-cache-owner@example.com")
+    kb_id = _create_personal_knowledge_base(client, "Matched Chunk Cache KB")
+    document = _create_document(
+        client,
+        json={
+            "title": "Protocol Schedule Notes",
+            "content": (
+                "# Protocol Schedule Notes\n\n"
+                "Visit schedule and dosing table are stored here without disease terms.\n\n"
+                "Participants return every six weeks for safety monitoring and outcome review."
+            ),
+            "knowledge_base_id": kb_id,
+        },
+    )
+    assert document.status_code == 201
+    document_id = document.json()["id"]
+    assert client.post(f"/documents/{document_id}/ingest").status_code == 200
+
+    phases: list[str] = []
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        with capture_local_timing_phases(lambda phase, _duration_seconds: phases.append(phase)):
+            results = RetrievalService(db).retrieve_scoped(
+                user_id=user_id,
+                query="Summarize my uploaded oncology cancer protocol",
+                limit=5,
+                knowledge_base_ids=[kb_id],
+            )
+    finally:
+        session_generator.close()
+
+    assert results
+    assert any(result.document.id == document_id for result in results)
+    assert any(result.source == "document_metadata_profile" for result in results)
+    assert "document_metadata_profile_match" in phases
+    assert "document_overview_supplement" in phases
+    assert phases.count("authorized_matched_chunk_rows_sql") == 1
 
 
 def test_postgres_vector_statement_filters_permissions_before_vector_ordering() -> None:

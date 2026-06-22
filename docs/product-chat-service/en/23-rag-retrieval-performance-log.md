@@ -83,7 +83,7 @@ When comparing before and after, keep the scenario stable:
 | --- | --- | --- |
 | `candidate_gather.authorized_document_rows_sql` | Document-only authorization rows used for metadata matching. | Avoids scanning every chunk just to score document title/filename metadata. |
 | `candidate_gather.authorized_chunk_rows_sql` | Full authorized chunk scan. | Expensive on local Postgres when repeated. Should be minimized. |
-| `candidate_gather.authorized_matched_chunk_rows_sql` | Chunk fetch for already matched document IDs. | Preferred over full scans for metadata/profile/overview lanes. |
+| `candidate_gather.authorized_matched_chunk_rows_sql` | Chunk fetch for already matched document IDs. | Preferred over full scans for metadata/profile/overview lanes; repeated calls for the same documents should be avoided with request-local reuse. |
 | `candidate_gather.document_metadata_match` | Filename/title/document metadata lane. | Can become slow if implemented through full chunk scans. |
 | `candidate_gather.embedding.query.openai` | OpenAI query embedding call. | Network-bound; duplicate query embeddings should be reused. |
 | `candidate_gather.metadata_profile_rows_sql` | Generated document profile rows. | Usually small SQL cost; high downstream time often means chunk fetch/scoring cost. |
@@ -98,15 +98,18 @@ When comparing before and after, keep the scenario stable:
 
 ## Measurement log
 
-### RAG-PERF-2026-06-22-A: initial top-level timing
+Entries are ordered newest-to-oldest so the latest measured state is visible first.
 
-This run proved that retrieval dominated the conversation turn, but the first timing panel did
-not yet show which part of candidate gathering was slow.
+### RAG-PERF-2026-06-22-D: post matched-row reuse timing
+
+This same-scenario rerun happened after request-local matched-document chunk row reuse. The run
+kept the retrieval shape stable: 20 raw/fused/reranked candidates, 12 injected chunks, 8 rejected
+chunks, `document_grounded` answer mode, and cross-encoder reranking enabled.
 
 | Field | Value |
 | --- | ---: |
-| total_ms | 61558.682 |
-| retrieval_latency_ms | 61513.008 |
+| total_ms | 22442.777 |
+| retrieval_latency_ms | 22398.436 |
 | route | retrieval_required |
 | answer_mode | document_grounded |
 | intent | overview |
@@ -119,65 +122,45 @@ not yet show which part of candidate gathering was slow.
 | rejected_count | 8 |
 | budget_truncated | true |
 
-| Phase | Elapsed ms | Share of total |
-| --- | ---: | ---: |
-| authorized_document_count | 32.677 | 0.1% |
-| query_planning | 0.224 | 0.0% |
-| candidate_gather | 51134.382 | 83.1% |
-| candidate_fusion | 0.071 | 0.0% |
-| reranking | 10371.547 | 16.8% |
-| context_pack | 0.047 | 0.0% |
-
-Diagnosis: `candidate_gather` was the primary bottleneck. Cross-encoder reranking was also
-expensive, but optimizing it alone would still leave roughly 51 seconds of retrieval latency.
-
-### RAG-PERF-2026-06-22-B: nested candidate-gather timing
-
-This run used the nested `candidate_gather.*` timing panel. It showed that the bottleneck was
-not pgvector search. The dominant costs were repeated full authorized chunk scans and an N+1
-entity mention pattern.
-
-| Field | Value |
-| --- | ---: |
-| total_ms | 63754.876 |
-| retrieval_latency_ms | 63709.865 |
-| route | retrieval_required |
-| answer_mode | document_grounded |
-| intent | overview |
-| reranker | cross_encoder |
-| authorized_document_count | 18 |
-| raw_candidate_count | 20 |
-| fused_candidate_count | 20 |
-| reranked_candidate_count | 20 |
-| injected_count | 12 |
-| rejected_count | 8 |
-| budget_truncated | true |
-
-| Phase | Calls | Elapsed ms | Diagnosis |
+| Phase | Calls | Elapsed ms | Interpretation |
 | --- | ---: | ---: | --- |
-| authorized_document_count | 1 | 33.240 | Healthy. |
-| query_planning | 1 | 0.189 | Healthy. |
-| candidate_gather.authorized_chunk_rows_sql | 5 | 45461.412 | Main waste: repeated full authorized chunk scans. |
-| candidate_gather.document_metadata_match | 1 | 19541.002 | Slow because metadata lane depended on authorized chunk scans. |
-| candidate_gather.embedding.query.openai | 2 | 2433.501 | Duplicate query embedding call. |
-| candidate_gather.metadata_profile_rows_sql | 1 | 11.572 | Healthy SQL cost. |
-| candidate_gather.document_metadata_profile_match | 1 | 10832.637 | Slow because profile matches loaded/scanned chunks broadly. |
-| candidate_gather.postgres_vector_sql | 1 | 78.245 | Healthy; vector SQL was not the bottleneck. |
-| candidate_gather.direct_authorized_match | 1 | 648.147 | Acceptable relative to total. |
-| candidate_gather.entity_mentions_sql | 9646 | 3356.052 | N+1 query pattern. |
-| candidate_gather.authorized_related_expansion | 1 | 12449.364 | Slow due to entity mention fan-out and another chunk scan. |
-| candidate_gather.document_overview_supplement | 1 | 8777.651 | Slow because overview lane scanned authorized chunks broadly. |
-| candidate_gather | 1 | 52353.431 | Primary bottleneck. |
-| candidate_fusion | 1 | 0.058 | Healthy. |
-| reranking | 1 | 11348.078 | Secondary bottleneck. |
-| context_pack | 1 | 0.062 | Healthy. |
+| authorized_document_count | 1 | 33.957 | Healthy. |
+| query_planning | 1 | 0.302 | Healthy. |
+| candidate_gather.authorized_document_rows_sql | 1 | 10.035 | Healthy document-only auth rows. |
+| candidate_gather.authorized_matched_chunk_rows_sql | 2 | 9275.471 | Improved from 3 calls, but still the largest gather SQL cost. |
+| candidate_gather.document_metadata_match | 1 | 583.695 | Slightly improved. |
+| candidate_gather.embedding.query.openai | 1 | 1904.795 | Slower than run C, likely provider/network variance. |
+| candidate_gather.metadata_profile_rows_sql | 1 | 14.293 | Healthy. |
+| candidate_gather.document_metadata_profile_match | 1 | 8933.371 | Still the main gather sub-phase after overview reuse. |
+| candidate_gather.postgres_vector_sql | 1 | 61.025 | Healthy; vector SQL is still not the bottleneck. |
+| candidate_gather.direct_authorized_match | 1 | 61.152 | Healthy. |
+| candidate_gather.entity_mentions_sql | 1 | 2.364 | Batched. |
+| candidate_gather.related_entity_chunks_sql | 1 | 145.531 | Batched graph expansion fetch. |
+| candidate_gather.authorized_related_expansion | 1 | 156.855 | Healthy. |
+| candidate_gather.document_overview_supplement | 1 | 5.021 | Main cache win: overview now reuses matched rows. |
+| candidate_gather | 1 | 11672.401 | Improved another 20.1% from run C. |
+| candidate_fusion | 1 | 0.062 | Healthy. |
+| reranking | 1 | 10719.124 | Essentially unchanged; now the largest single phase. |
+| context_pack | 1 | 0.058 | Healthy. |
 
-Diagnosis:
+Measured deltas against RAG-PERF-2026-06-22-C:
 
-- `authorized_chunk_rows_sql` ran 5 times and consumed about 45.5 seconds cumulatively.
-- `entity_mentions_sql` ran 9,646 times, which is a clear N+1 regression shape.
-- `postgres_vector_sql` took only 78 ms, so vector search was not the problem in this run.
-- `reranking` remained expensive at 11.3 seconds, but still smaller than candidate gathering.
+| Phase | Before calls | Before ms | After calls | After ms | Delta ms | Delta % |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| total_ms | 1 | 25369.799 | 1 | 22442.777 | 2927.022 | 11.5% |
+| retrieval_latency_ms | 1 | 25323.592 | 1 | 22398.436 | 2925.156 | 11.6% |
+| candidate_gather | 1 | 14601.382 | 1 | 11672.401 | 2928.981 | 20.1% |
+| candidate_gather.authorized_matched_chunk_rows_sql | 3 | 13220.396 | 2 | 9275.471 | 3944.925 | 29.8% |
+| candidate_gather.document_metadata_match | 1 | 620.095 | 1 | 583.695 | 36.400 | 5.9% |
+| candidate_gather.embedding.query.openai | 1 | 993.725 | 1 | 1904.795 | -911.070 | -91.7% |
+| candidate_gather.document_metadata_profile_match | 1 | 9453.883 | 1 | 8933.371 | 520.512 | 5.5% |
+| candidate_gather.document_overview_supplement | 1 | 3303.452 | 1 | 5.021 | 3298.431 | 99.8% |
+| reranking | 1 | 10713.234 | 1 | 10719.124 | -5.890 | -0.1% |
+
+The cache did what it was designed to do: it removed one repeated matched-document chunk SQL call
+and made the overview supplement almost free. The remaining matched-row cost appears to come
+mostly from metadata-profile matching, where the profile lane still fetches/scans source chunks for
+matched documents.
 
 ### RAG-PERF-2026-06-22-C: post fan-out optimization timing
 
@@ -238,20 +221,102 @@ Measured deltas against RAG-PERF-2026-06-22-B:
 
 The comparable SQL-family change is also important: the old repeated full chunk-scan row (`authorized_chunk_rows_sql`, 5 calls, 45461.412 ms) disappeared. It was replaced by one `authorized_document_rows_sql` call and three `authorized_matched_chunk_rows_sql` calls totaling 13235.496 ms, a 32225.916 ms / 70.9% reduction for that data-access family.
 
+### RAG-PERF-2026-06-22-B: nested candidate-gather timing
+
+This run used the nested `candidate_gather.*` timing panel. It showed that the bottleneck was
+not pgvector search. The dominant costs were repeated full authorized chunk scans and an N+1
+entity mention pattern.
+
+| Field | Value |
+| --- | ---: |
+| total_ms | 63754.876 |
+| retrieval_latency_ms | 63709.865 |
+| route | retrieval_required |
+| answer_mode | document_grounded |
+| intent | overview |
+| reranker | cross_encoder |
+| authorized_document_count | 18 |
+| raw_candidate_count | 20 |
+| fused_candidate_count | 20 |
+| reranked_candidate_count | 20 |
+| injected_count | 12 |
+| rejected_count | 8 |
+| budget_truncated | true |
+
+| Phase | Calls | Elapsed ms | Diagnosis |
+| --- | ---: | ---: | --- |
+| authorized_document_count | 1 | 33.240 | Healthy. |
+| query_planning | 1 | 0.189 | Healthy. |
+| candidate_gather.authorized_chunk_rows_sql | 5 | 45461.412 | Main waste: repeated full authorized chunk scans. |
+| candidate_gather.document_metadata_match | 1 | 19541.002 | Slow because metadata lane depended on authorized chunk scans. |
+| candidate_gather.embedding.query.openai | 2 | 2433.501 | Duplicate query embedding call. |
+| candidate_gather.metadata_profile_rows_sql | 1 | 11.572 | Healthy SQL cost. |
+| candidate_gather.document_metadata_profile_match | 1 | 10832.637 | Slow because profile matches loaded/scanned chunks broadly. |
+| candidate_gather.postgres_vector_sql | 1 | 78.245 | Healthy; vector SQL was not the bottleneck. |
+| candidate_gather.direct_authorized_match | 1 | 648.147 | Acceptable relative to total. |
+| candidate_gather.entity_mentions_sql | 9646 | 3356.052 | N+1 query pattern. |
+| candidate_gather.authorized_related_expansion | 1 | 12449.364 | Slow due to entity mention fan-out and another chunk scan. |
+| candidate_gather.document_overview_supplement | 1 | 8777.651 | Slow because overview lane scanned authorized chunks broadly. |
+| candidate_gather | 1 | 52353.431 | Primary bottleneck. |
+| candidate_fusion | 1 | 0.058 | Healthy. |
+| reranking | 1 | 11348.078 | Secondary bottleneck. |
+| context_pack | 1 | 0.062 | Healthy. |
+
+Diagnosis:
+
+- `authorized_chunk_rows_sql` ran 5 times and consumed about 45.5 seconds cumulatively.
+- `entity_mentions_sql` ran 9,646 times, which is a clear N+1 regression shape.
+- `postgres_vector_sql` took only 78 ms, so vector search was not the problem in this run.
+- `reranking` remained expensive at 11.3 seconds, but still smaller than candidate gathering.
+
+### RAG-PERF-2026-06-22-A: initial top-level timing
+
+This run proved that retrieval dominated the conversation turn, but the first timing panel did
+not yet show which part of candidate gathering was slow.
+
+| Field | Value |
+| --- | ---: |
+| total_ms | 61558.682 |
+| retrieval_latency_ms | 61513.008 |
+| route | retrieval_required |
+| answer_mode | document_grounded |
+| intent | overview |
+| reranker | cross_encoder |
+| authorized_document_count | 18 |
+| raw_candidate_count | 20 |
+| fused_candidate_count | 20 |
+| reranked_candidate_count | 20 |
+| injected_count | 12 |
+| rejected_count | 8 |
+| budget_truncated | true |
+
+| Phase | Elapsed ms | Share of total |
+| --- | ---: | ---: |
+| authorized_document_count | 32.677 | 0.1% |
+| query_planning | 0.224 | 0.0% |
+| candidate_gather | 51134.382 | 83.1% |
+| candidate_fusion | 0.071 | 0.0% |
+| reranking | 10371.547 | 16.8% |
+| context_pack | 0.047 | 0.0% |
+
+Diagnosis: `candidate_gather` was the primary bottleneck. Cross-encoder reranking was also
+expensive, but optimizing it alone would still leave roughly 51 seconds of retrieval latency.
+
 ## Optimization ledger
 
-Use this table as append-only history. Fill `After measurement` and `Measured improvement` only
-after a same-scenario rerun. If the scenario changes, add a new measurement ID instead of
-pretending the numbers are comparable.
+Use this table as reverse-chronological history: insert new work at the top of the table. Fill
+`After measurement` and `Measured improvement` only after a same-scenario rerun. If the scenario
+changes, add a new measurement ID instead of pretending the numbers are comparable.
 
 | ID | Date | Change | Before measurement | After measurement | Measured improvement | Commit/status |
 | --- | --- | --- | --- | --- | --- | --- |
-| OBS-1 | 2026-06-22 | Added redacted top-level Rich timing panel. | No per-run phase table. | RAG-PERF-2026-06-22-A produced top-level phase timings. | Observability improvement only; not a latency optimization. | `ab84dc8` pushed. |
-| OBS-2 | 2026-06-22 | Added nested `candidate_gather.*` rows and call counts. | `candidate_gather` was a 51.1s black box. | RAG-PERF-2026-06-22-B identified repeated chunk scans and N+1 entity mentions. | Observability improvement only; enabled targeted optimization. | `6f23b89` pushed. |
-| OPT-1 | 2026-06-22 | Reuse one query embedding across metadata-profile and direct retrieval lanes. | `candidate_gather.embedding.query.openai`: 2 calls, 2433.501 ms. | RAG-PERF-2026-06-22-C: 1 call, 993.725 ms. | 1 fewer OpenAI call; 1439.776 ms / 59.2% lower embedding span. | `6f23b89` pushed; measured in C. |
-| OPT-2 | 2026-06-22 | Use document-only auth rows for metadata matching and matched-document chunk fetches for metadata/profile/overview lanes. | `candidate_gather.authorized_chunk_rows_sql`: 5 calls, 45461.412 ms; metadata/profile/overview lanes were slow. | RAG-PERF-2026-06-22-C: full scan row gone; document/matched chunk rows total 13235.496 ms. | Data-access family down 32225.916 ms / 70.9%; `candidate_gather` down 37752.049 ms / 72.1%. | `6f23b89` pushed; measured in C. |
-| OPT-3 | 2026-06-22 | Batch graph expansion entity lookup and fetch related chunks in one SQL query. | `candidate_gather.entity_mentions_sql`: 9646 calls, 3356.052 ms; `authorized_related_expansion`: 12449.364 ms. | RAG-PERF-2026-06-22-C: `entity_mentions_sql` 1 call / 2.127 ms; `related_entity_chunks_sql` 1 call / 157.361 ms; expansion 167.141 ms. | Entity mentions down 9645 calls and 3353.925 ms / 99.9%; expansion down 12282.223 ms / 98.7%. | `6f23b89` pushed; measured in C. |
+| OPT-4 | 2026-06-22 | Reuse authorized matched-document chunk rows inside one retrieval attempt. | RAG-PERF-2026-06-22-C: `authorized_matched_chunk_rows_sql` 3 calls / 13220.396 ms; overview supplement 3303.452 ms. | RAG-PERF-2026-06-22-D: `authorized_matched_chunk_rows_sql` 2 calls / 9275.471 ms; overview supplement 5.021 ms. | Matched-row SQL down 1 call and 3944.925 ms / 29.8%; overview supplement down 3298.431 ms / 99.8%; `candidate_gather` down 2928.981 ms / 20.1%; total down 2927.022 ms / 11.5%. | Implemented locally; measured in D. |
 | TODO-1 | 2026-06-22 | Evaluate only low-risk cross-encoder optimizations while keeping reranking enabled for document retrieval quality. | `reranking`: 11348.078 ms with 20 candidates. | RAG-PERF-2026-06-22-C: `reranking` 10713.234 ms with 20 candidates. | Reranking changed only 634.844 ms / 5.6%; now a co-bottleneck after gather fixes, but it remains quality-critical. | Future work; do not disable reranking as a default optimization. |
+| OPT-3 | 2026-06-22 | Batch graph expansion entity lookup and fetch related chunks in one SQL query. | `candidate_gather.entity_mentions_sql`: 9646 calls, 3356.052 ms; `authorized_related_expansion`: 12449.364 ms. | RAG-PERF-2026-06-22-C: `entity_mentions_sql` 1 call / 2.127 ms; `related_entity_chunks_sql` 1 call / 157.361 ms; expansion 167.141 ms. | Entity mentions down 9645 calls and 3353.925 ms / 99.9%; expansion down 12282.223 ms / 98.7%. | `6f23b89` pushed; measured in C. |
+| OPT-2 | 2026-06-22 | Use document-only auth rows for metadata matching and matched-document chunk fetches for metadata/profile/overview lanes. | `candidate_gather.authorized_chunk_rows_sql`: 5 calls, 45461.412 ms; metadata/profile/overview lanes were slow. | RAG-PERF-2026-06-22-C: full scan row gone; document/matched chunk rows total 13235.496 ms. | Data-access family down 32225.916 ms / 70.9%; `candidate_gather` down 37752.049 ms / 72.1%. | `6f23b89` pushed; measured in C. |
+| OPT-1 | 2026-06-22 | Reuse one query embedding across metadata-profile and direct retrieval lanes. | `candidate_gather.embedding.query.openai`: 2 calls, 2433.501 ms. | RAG-PERF-2026-06-22-C: 1 call, 993.725 ms. | 1 fewer OpenAI call; 1439.776 ms / 59.2% lower embedding span. | `6f23b89` pushed; measured in C. |
+| OBS-2 | 2026-06-22 | Added nested `candidate_gather.*` rows and call counts. | `candidate_gather` was a 51.1s black box. | RAG-PERF-2026-06-22-B identified repeated chunk scans and N+1 entity mentions. | Observability improvement only; enabled targeted optimization. | `6f23b89` pushed. |
+| OBS-1 | 2026-06-22 | Added redacted top-level Rich timing panel. | No per-run phase table. | RAG-PERF-2026-06-22-A produced top-level phase timings. | Observability improvement only; not a latency optimization. | `ab84dc8` pushed. |
 
 ## Improvement calculation template
 
@@ -276,21 +341,31 @@ Example row format:
 
 ## Current interpretation and next step
 
-As of RAG-PERF-2026-06-22-C, `6f23b89` produced a real same-scenario latency improvement:
+As of RAG-PERF-2026-06-22-D, request-local matched-document row reuse produced another
+same-scenario latency improvement:
 
-- total runtime dropped from 63754.876 ms to 25369.799 ms: 38385.077 ms / 60.2% faster;
-- retrieval latency dropped from 63709.865 ms to 25323.592 ms: 38386.273 ms / 60.3% faster;
-- `candidate_gather` dropped from 52353.431 ms to 14601.382 ms: 37752.049 ms / 72.1% faster;
-- `entity_mentions_sql` dropped from 9646 calls to 1 call;
-- `embedding.query.openai` dropped from 2 calls to 1 call;
-- the old repeated full `authorized_chunk_rows_sql` row disappeared.
+- total runtime dropped from 25369.799 ms to 22442.777 ms: 2927.022 ms / 11.5% faster;
+- retrieval latency dropped from 25323.592 ms to 22398.436 ms: 2925.156 ms / 11.6% faster;
+- `candidate_gather` dropped from 14601.382 ms to 11672.401 ms: 2928.981 ms / 20.1% faster;
+- `authorized_matched_chunk_rows_sql` dropped from 3 calls / 13220.396 ms to 2 calls /
+  9275.471 ms: 3944.925 ms / 29.8% lower;
+- `document_overview_supplement` dropped from 3303.452 ms to 5.021 ms: 3298.431 ms /
+  99.8% lower;
+- `embedding.query.openai` was slower in run D by 911.070 ms, so the net total improvement is
+  smaller than the matched-row/overview gains.
 
-The new bottlenecks are:
+The remaining bottleneck watchlist is:
 
-1. `candidate_gather.authorized_matched_chunk_rows_sql`: 3 calls, 13220.396 ms. This is targeted instead of broad, but still dominates gather time. Next quality-safe option: cache/reuse matched-document chunk rows within a single retrieval attempt or reduce repeated matched-document fetches between metadata profile and overview lanes without lowering recall.
-2. `reranking`: 1 call, 10713.234 ms over 20 candidates. Reranking is quality-critical for document retrieval, so do not disable it as a default latency fix. Next option after matched-row reuse: evaluate only low-risk cross-encoder improvements such as warm/cold behavior, local device choice, batch settings, or avoiding duplicate rerank work.
+1. `reranking`: 1 call, 10719.124 ms over 20 candidates in run D. Reranking is quality-critical for document retrieval, so do not disable it as a default latency fix.
+2. `candidate_gather.authorized_matched_chunk_rows_sql`: 2 calls, 9275.471 ms. The likely next quality-safe target is metadata-profile chunk loading: fetch/reuse fewer source chunks for top matched profile documents without changing authorization or document-grounding behavior.
+3. `candidate_gather.document_metadata_profile_match`: 8933.371 ms. This now accounts for most remaining gather cost and likely overlaps with the matched-row fetch.
 
-Do not reduce candidate limits, injected context, or reranking quality globally until matched-row reuse is measured and the user explicitly accepts any quality tradeoff.
+Next recommended option before touching cross-encoder behavior: make metadata-profile matching
+fetch source chunks only for the top matched documents needed to satisfy the retrieval limit, with
+a small safety buffer, rather than loading chunks for every profile-scored document.
+
+Do not reduce candidate limits, injected context, or reranking quality globally unless the user
+explicitly accepts a quality tradeoff.
 
 ## Regression guardrails
 
@@ -321,5 +396,7 @@ git diff --check
 
 ## Revision history
 
+- 2026-06-22: Added RAG-PERF-2026-06-22-D and measured the request-local matched-document chunk row reuse optimization.
+- 2026-06-22: Reordered this ledger newest-to-oldest and recorded request-local matched-document chunk row reuse as pending same-scenario measurement.
 - 2026-06-22: Added post-optimization RAG-PERF-2026-06-22-C measurement and before/after deltas for `6f23b89`.
 - 2026-06-22: Created the performance ledger from the initial top-level timing run, nested candidate-gather timing run, and the first candidate-gather fan-out optimization commit.

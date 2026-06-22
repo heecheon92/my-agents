@@ -128,6 +128,13 @@ For `my-agents`, update the performance ledger when measurements or optimization
 - `docs/product-chat-service/ko/23-rag-retrieval-performance-log.md` should summarize the operational state;
 - link or update observability docs only when the measurement process changes.
 
+Write each evolving section recent-work-first:
+
+- insert newest measurement blocks above older measurement blocks;
+- insert newest optimization ledger rows at the top of the table;
+- insert newest current-state / next-step bullets before older findings;
+- insert newest revision-history bullets first.
+
 Record:
 
 - measurement ID and date;

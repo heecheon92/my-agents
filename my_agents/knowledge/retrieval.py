@@ -54,6 +54,9 @@ class RetrievedStructuredEntity:
     source: str = "structured_entity"
 
 
+MatchedDocumentChunkRowsCache = dict[str, list[tuple[DocumentChunkModel, DocumentModel]]]
+
+
 class RetrievalService:
     """Retrieve only authorized chunks, then expand through authorized entity links."""
 
@@ -73,6 +76,7 @@ class RetrievalService:
         knowledge_base_ids: Sequence[str] | None = None,
     ) -> list[RetrievedChunk]:
         terms = _query_terms(query)
+        matched_document_chunk_rows_cache: MatchedDocumentChunkRowsCache = {}
         with track_retrieval_phase("document_metadata_match"):
             metadata_matches = self._document_metadata_matches(
                 user_id=user_id,
@@ -80,6 +84,7 @@ class RetrievalService:
                 terms=terms,
                 knowledge_base_ids=knowledge_base_ids,
                 limit=limit,
+                matched_document_chunk_rows_cache=matched_document_chunk_rows_cache,
             )
         query_embedding = self._embedding_provider.embed_query(query)
         with track_retrieval_phase("document_metadata_profile_match"):
@@ -89,6 +94,7 @@ class RetrievalService:
                 query_embedding=query_embedding,
                 knowledge_base_ids=knowledge_base_ids,
                 limit=limit,
+                matched_document_chunk_rows_cache=matched_document_chunk_rows_cache,
             )
         with track_retrieval_phase("direct_authorized_match"):
             direct_matches = self._direct_authorized_matches(
@@ -141,6 +147,7 @@ class RetrievalService:
                     user_id=user_id,
                     knowledge_base_ids=knowledge_base_ids,
                     char_budget=6000,
+                    matched_document_chunk_rows_cache=matched_document_chunk_rows_cache,
                 )
         return _dedupe_retrieved_chunks(ranked, limit=limit)
 
@@ -404,6 +411,7 @@ class RetrievalService:
         terms: set[str],
         knowledge_base_ids: Sequence[str] | None,
         limit: int,
+        matched_document_chunk_rows_cache: MatchedDocumentChunkRowsCache,
     ) -> list[RetrievedChunk]:
         """Return chunks from authorized documents whose title/filename matches the query."""
         signal_terms = _metadata_signal_terms(terms)
@@ -431,6 +439,7 @@ class RetrievalService:
                 user_id,
                 document_ids=documents.keys(),
                 knowledge_base_ids=knowledge_base_ids,
+                matched_document_chunk_rows_cache=matched_document_chunk_rows_cache,
             )
         ]
         rows.sort(key=lambda row: (-row[2], -row[1].created_at.timestamp(), row[0].ordinal))
@@ -451,6 +460,7 @@ class RetrievalService:
         user_id: str,
         knowledge_base_ids: Sequence[str] | None,
         char_budget: int,
+        matched_document_chunk_rows_cache: MatchedDocumentChunkRowsCache,
     ) -> list[RetrievedChunk]:
         """Supplement summary-style queries with broader coverage for small matched docs."""
         if not ranked:
@@ -463,6 +473,7 @@ class RetrievalService:
             user_id,
             document_ids=matched_document_ids,
             knowledge_base_ids=knowledge_base_ids,
+            matched_document_chunk_rows_cache=matched_document_chunk_rows_cache,
         ):
             if chunk.id in existing_chunk_ids:
                 continue
@@ -489,6 +500,7 @@ class RetrievalService:
         query_embedding: list[float],
         knowledge_base_ids: Sequence[str] | None,
         limit: int,
+        matched_document_chunk_rows_cache: MatchedDocumentChunkRowsCache,
     ) -> list[RetrievedChunk]:
         """Return source chunks from documents matched by generated metadata."""
         if not _schema_has_document_metadata_profiles(self._db):
@@ -526,6 +538,7 @@ class RetrievalService:
             user_id,
             document_ids=document_scores.keys(),
             knowledge_base_ids=knowledge_base_ids,
+            matched_document_chunk_rows_cache=matched_document_chunk_rows_cache,
         ):
             rows_by_document.setdefault(document.id, []).append(chunk)
         matches: list[RetrievedChunk] = []
@@ -612,6 +625,44 @@ class RetrievalService:
         *,
         document_ids: Iterable[str],
         knowledge_base_ids: Sequence[str] | None,
+        matched_document_chunk_rows_cache: MatchedDocumentChunkRowsCache | None = None,
+    ) -> list[tuple[DocumentChunkModel, DocumentModel]]:
+        unique_document_ids = tuple(dict.fromkeys(document_ids))
+        if not unique_document_ids:
+            return []
+        if matched_document_chunk_rows_cache is not None:
+            missing_document_ids = tuple(
+                document_id
+                for document_id in unique_document_ids
+                if document_id not in matched_document_chunk_rows_cache
+            )
+            if missing_document_ids:
+                for document_id in missing_document_ids:
+                    matched_document_chunk_rows_cache[document_id] = []
+                for chunk, document in self._load_authorized_chunks_for_document_ids(
+                    user_id,
+                    document_ids=missing_document_ids,
+                    knowledge_base_ids=knowledge_base_ids,
+                ):
+                    matched_document_chunk_rows_cache[document.id].append((chunk, document))
+            return _sort_authorized_chunk_rows(
+                row
+                for document_id in unique_document_ids
+                for row in matched_document_chunk_rows_cache.get(document_id, ())
+            )
+
+        return self._load_authorized_chunks_for_document_ids(
+            user_id,
+            document_ids=unique_document_ids,
+            knowledge_base_ids=knowledge_base_ids,
+        )
+
+    def _load_authorized_chunks_for_document_ids(
+        self,
+        user_id: str,
+        *,
+        document_ids: Iterable[str],
+        knowledge_base_ids: Sequence[str] | None,
     ) -> list[tuple[DocumentChunkModel, DocumentModel]]:
         unique_document_ids = tuple(dict.fromkeys(document_ids))
         if not unique_document_ids:
@@ -668,6 +719,19 @@ def _entity_mentions_for_chunks(db: Session, chunk_ids: Iterable[str]) -> list[E
                 select(EntityMentionModel).where(EntityMentionModel.chunk_id.in_(unique_chunk_ids))
             ).all()
         )
+
+
+def _sort_authorized_chunk_rows(
+    rows: Iterable[tuple[DocumentChunkModel, DocumentModel]],
+) -> list[tuple[DocumentChunkModel, DocumentModel]]:
+    """Match the SQL ordering used for authorized chunk rows."""
+    return sorted(
+        rows,
+        key=lambda row: (
+            -row[1].created_at.timestamp(),
+            row[0].ordinal,
+        ),
+    )
 
 
 def _authorized_document_filter(

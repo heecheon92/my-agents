@@ -18,11 +18,39 @@
 
 Raw prompt, 문서 본문, document ID, chunk ID, email, token, secret은 이 문서에 붙이지 않습니다.
 Route, intent, count, phase name, millisecond 값만 기록합니다.
+각 section은 최신 작업이 위에 오도록 recent-work-first 순서로 유지합니다.
 
-## 기준 측정과 post-optimization 결과
+## 현재 작업
+
+이번 변경에서는 single retrieval attempt 안에서 authorized matched-document chunk rows를
+재사용했고, 같은 scenario로 다시 측정했습니다.
+
+RAG-PERF-2026-06-22-D 결과:
+
+- `total_ms`: 25369.799 ms → 22442.777 ms, 2927.022 ms / 11.5% faster.
+- `retrieval_latency_ms`: 25323.592 ms → 22398.436 ms, 2925.156 ms / 11.6% faster.
+- `candidate_gather`: 14601.382 ms → 11672.401 ms, 2928.981 ms / 20.1% faster.
+- `authorized_matched_chunk_rows_sql`: 3 calls / 13220.396 ms → 2 calls / 9275.471 ms,
+  3944.925 ms / 29.8% lower.
+- `document_overview_supplement`: 3303.452 ms → 5.021 ms, 3298.431 ms / 99.8% lower.
+- `embedding.query.openai`는 993.725 ms → 1904.795 ms로 느려졌습니다. 그래서 total
+  improvement는 matched-row/overview gain보다 작게 보입니다.
+
+## 최신 측정 결과
 
 2026-06-22 nested timing 기준으로 병목은 full authorized chunk scan 반복, duplicate embedding,
-entity mention N+1이었습니다. `6f23b89` 이후 같은 scenario로 다시 측정한 결과는 다음과 같습니다.
+entity mention N+1이었습니다. 최신 same-scenario 측정까지 포함한 핵심 결과는 다음과 같습니다.
+
+| Metric / Phase | Before | After | 개선 |
+| --- | ---: | ---: | ---: |
+| `total_ms` | 25369.799 ms | 22442.777 ms | 2927.022 ms / 11.5% faster |
+| `retrieval_latency_ms` | 25323.592 ms | 22398.436 ms | 2925.156 ms / 11.6% faster |
+| `candidate_gather` | 14601.382 ms | 11672.401 ms | 2928.981 ms / 20.1% faster |
+| `candidate_gather.authorized_matched_chunk_rows_sql` | 3 calls / 13220.396 ms | 2 calls / 9275.471 ms | 1 call 제거, 29.8% lower |
+| `candidate_gather.document_overview_supplement` | 3303.452 ms | 5.021 ms | 99.8% lower |
+| `reranking` | 10713.234 ms | 10719.124 ms | 거의 동일; 현재 largest single phase |
+
+직전 큰 개선(`6f23b89`)의 기준 변화는 다음과 같습니다.
 
 | Metric / Phase | Before | After | 개선 |
 | --- | ---: | ---: | ---: |
@@ -40,20 +68,23 @@ entity mention N+1이었습니다. `6f23b89` 이후 같은 scenario로 다시 �
 
 | ID | 변경 | 측정 전 | 측정 후 |
 | --- | --- | --- | --- |
-| OPT-1 | metadata-profile lane과 direct retrieval lane이 query embedding을 공유합니다. | OpenAI query embedding 2 calls, 2433.501 ms. | 1 call, 993.725 ms. |
-| OPT-2 | metadata/profile/overview lane에서 full chunk scan 대신 document-only rows와 matched-document chunk rows를 사용합니다. | `authorized_chunk_rows_sql` 5 calls, 45461.412 ms. | full scan row 제거. `authorized_document_rows_sql` 1 call / 15.100 ms, `authorized_matched_chunk_rows_sql` 3 calls / 13220.396 ms. |
+| OPT-4 | single retrieval attempt 안에서 matched-document chunk rows를 request-local cache로 재사용합니다. | RAG-PERF-2026-06-22-C: `authorized_matched_chunk_rows_sql` 3 calls / 13220.396 ms, overview supplement 3303.452 ms. | RAG-PERF-2026-06-22-D: `authorized_matched_chunk_rows_sql` 2 calls / 9275.471 ms, overview supplement 5.021 ms. |
 | OPT-3 | graph expansion entity lookup을 batch query로 바꿉니다. | `entity_mentions_sql` 9646 calls, 3356.052 ms. | `entity_mentions_sql` 1 call / 2.127 ms, `related_entity_chunks_sql` 1 call / 157.361 ms. |
+| OPT-2 | metadata/profile/overview lane에서 full chunk scan 대신 document-only rows와 matched-document chunk rows를 사용합니다. | `authorized_chunk_rows_sql` 5 calls, 45461.412 ms. | full scan row 제거. `authorized_document_rows_sql` 1 call / 15.100 ms, `authorized_matched_chunk_rows_sql` 3 calls / 13220.396 ms. |
+| OPT-1 | metadata-profile lane과 direct retrieval lane이 query embedding을 공유합니다. | OpenAI query embedding 2 calls, 2433.501 ms. | 1 call, 993.725 ms. |
 
 ## 현재 해석과 다음 단계
 
-성능 개선은 실제로 확인됐습니다. 다만 새로운 병목이 남아 있습니다.
+OPT-4 개선은 실제로 확인됐습니다. 다만 새로운 병목이 남아 있습니다.
 
-1. `candidate_gather.authorized_matched_chunk_rows_sql`: 3 calls, 13220.396 ms.
-   - full scan은 제거됐지만 targeted matched-document chunk fetch가 아직 큽니다.
-   - 다음 quality-safe 후보는 single retrieval attempt 안에서 matched-document chunk rows를 cache/reuse하거나 metadata profile과 overview lane 사이의 반복 fetch를 줄이는 것입니다.
-2. `reranking`: 1 call, 10713.234 ms.
+1. `reranking`: 1 call, 10719.124 ms.
    - gather가 줄면서 cross-encoder reranking이 co-bottleneck이 됐습니다.
    - 하지만 reranking은 document retrieval 품질에 중요한 단계이므로 기본 latency fix로 끄지 않습니다.
-   - 다음 후보는 cross-encoder warm/cold behavior, device, batch setting, duplicate rerank 회피처럼 품질을 낮추지 않는 low-risk 최적화만 우선 측정하는 것입니다.
+2. `candidate_gather.authorized_matched_chunk_rows_sql`: 2 calls, 9275.471 ms.
+   - overview lane reuse는 해결됐지만 metadata-profile matching 쪽 chunk loading이 아직 큽니다.
+   - 다음 quality-safe 후보는 metadata-profile lane에서 retrieval limit을 만족시키는 top matched documents에 대해서만 source chunks를 fetch하고, 작은 safety buffer를 두는 것입니다.
+3. `candidate_gather.document_metadata_profile_match`: 8933.371 ms.
+   - 남은 gather cost 대부분이 이 phase에 모여 있습니다.
 
-Candidate limit, injected context, reranker off 같은 quality tradeoff는 위 두 항목을 먼저 측정하고, 사용자가 명시적으로 품질 tradeoff를 수용할 때만 검토합니다.
+Candidate limit, injected context, reranker off 같은 quality tradeoff는 사용자가 명시적으로
+품질 tradeoff를 수용할 때만 검토합니다.
