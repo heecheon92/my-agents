@@ -36,6 +36,8 @@
   context packing 시간과 redacted count를 보여줍니다. 또한 `candidate_gather.*` 행으로
   metadata match, query embedding, vector SQL, JSON fallback, entity expansion, overview
   supplement 같은 내부 retrieval/embedding span도 함께 보여줍니다.
+- Durable before/after optimization 기록은
+  [`23-rag-retrieval-performance-log.md`](./23-rag-retrieval-performance-log.md)에 남깁니다.
 
 ## 향후 retrieval UX 품질 profile
 

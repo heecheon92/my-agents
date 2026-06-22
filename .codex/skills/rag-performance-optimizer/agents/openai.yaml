@@ -1,0 +1,4 @@
+interface:
+  display_name: "RAG Performance Optimizer"
+  short_description: "Analyze and optimize RAG timing safely"
+  default_prompt: "Use $rag-performance-optimizer to analyze this retrieval timing result and propose quality-safe optimizations."

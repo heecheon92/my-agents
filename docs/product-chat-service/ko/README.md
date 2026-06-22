@@ -21,12 +21,13 @@
 13. [Public demo deployment readiness runbook](./12-public-demo-deployment-readiness.md)
 14. [Retrieval-agent hybrid reference](./12-retrieval-agent-hybrid-reference.md)
 15. [Generic container deployment path](./13-generic-container-deployment-path.md)
-16. [Render migration and rollback notes](./14-render-migration-and-rollback-notes.md)
-17. [Deployment troubleshooting log](./15-deployment-troubleshooting-log.md)
+16. [Render migration and rollback notes](../en/14-render-migration-and-rollback-notes.md)
+17. [Deployment troubleshooting log](../en/15-deployment-troubleshooting-log.md)
 18. [Group upload staging flow](./18-team-upload-staging-flow.md)
 19. [LangGraph-native memory migration](./19-langgraph-native-memory-migration.md)
 20. [Nickname signup and member roster contract](./20-nickname-signup-member-roster-contract.md)
 21. [System knowledge base와 user type 계약](./21-system-knowledge-base-user-type.md)
+22. [RAG retrieval performance log](./23-rag-retrieval-performance-log.md)
 
 ## 문서 상태
 
