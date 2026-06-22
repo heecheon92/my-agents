@@ -307,6 +307,96 @@ The API contract remains the same for the frontend: upload returns a document, a
 returns an extraction run, and polling reads extraction-run status. Deployment now needs one web
 service plus one worker process when using `external_worker`.
 
+### 10. Async ingestion stayed queued because no external worker was running
+
+**Symptom**
+
+Hosted upload and enqueue paths looked healthy:
+
+- `POST /documents/upload` returned `201 Created`;
+- `POST /documents/{document_id}/ingest/async` returned `202 Accepted`;
+- repeated `GET /extraction-runs/{run_id}` requests returned `200 OK` quickly;
+- the document row existed in Neon.
+
+However, polling kept returning a run stuck at:
+
+```json
+{
+  "status": "pending",
+  "stage": "queued",
+  "progress_percent": 0,
+  "error": null,
+  "started_at": null,
+  "completed_at": null
+}
+```
+
+The first reproduction happened through a system knowledge base, which made the incident look like
+a system-knowledge permission or nested-route problem. The same stuck state later reproduced in a
+regular knowledge base, so the shared ingestion executor became the real suspect.
+
+**Root cause**
+
+Production was configured with:
+
+```env
+MY_AGENTS_INGESTION_EXECUTION_MODE=external_worker
+```
+
+In this mode, the web service only creates a queued extraction run. It intentionally does not run
+chunking, embedding, entity extraction, or vector writes in the FastAPI process. A separate
+`python -m my_agents.ingestion_worker` process must be running against the same database to claim
+the queued run.
+
+The worker was not actually running as a persistent production service, so the queue had no
+consumer. The frontend was accurately polling the latest backend state; the backend state simply
+never changed because no executor claimed it.
+
+**Resolution**
+
+Starting the worker manually with the same production environment loaded immediately claimed the
+queued run and produced ingestion logs:
+
+```bash
+uv run python -m my_agents.ingestion_worker --log-level INFO
+```
+
+For a one-time drain of existing queued runs:
+
+```bash
+uv run python -m my_agents.ingestion_worker --once --batch-size 20 --log-level INFO
+```
+
+If a hosted background worker service is unavailable, use the temporary single-process fallback:
+
+```env
+MY_AGENTS_INGESTION_EXECUTION_MODE=in_process_thread
+MY_AGENTS_DOCUMENT_UPLOAD_CONCURRENCY=1
+```
+
+This fallback avoids an external worker requirement, but ingestion can again compete with normal
+web requests. Keep document size and upload concurrency small until a real worker service or
+alternative queue is available.
+
+**Rejected explanations**
+
+- System knowledge authorization: rejected after root/system-management checks passed and the same
+  symptom reproduced in a regular knowledge base.
+- Frontend polling/cache: rejected because the backend response itself stayed `pending` /
+  `queued` with `started_at=null`.
+- Upload failure: rejected because the document row and extraction-run row both existed.
+
+**Follow-up**
+
+Keep `MY_AGENTS_INGESTION_EXECUTION_MODE` aligned with the actual deployment shape:
+
+- use `external_worker` only when a supervised worker process is actually running;
+- use `in_process_thread` for the small no-worker demo path;
+- treat `pending` / `queued` plus `started_at=null` as a worker-claim diagnostic before chasing
+  frontend cache or system-knowledge route hypotheses.
+
+Detailed learning note: [`Production async ingestion queued without a worker`](../../learning/11-production-async-ingestion-queued-without-a-worker.md).
+
 
 ## Operational diagnostics checklist after stable demo
 

@@ -15,6 +15,7 @@ Start here:
 9. [Structured retrieval gap: API docs without endpoint-list wording](./08-structured-retrieval-api-docs.md)
 10. [Production guest login stale Postgres SSL connection](./09-production-guest-login-stale-postgres-ssl-connection.md)
 11. [Metadata-profile retrieval must inject body evidence](./10-metadata-profile-retrieval-must-inject-body-evidence.md)
+12. [Production async ingestion queued without a worker](./11-production-async-ingestion-queued-without-a-worker.md)
 
 This directory is the owner's learning path archive. The root numbered notes are personal learning logs. Focused project-specific notes can live in subfolders, such as [`project-notes/`](./project-notes/). Project architecture docs that are not primarily learning logs live outside this directory, for example [`docs/product-chat-service/en/`](../product-chat-service/).
 
