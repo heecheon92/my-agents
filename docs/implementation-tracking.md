@@ -121,7 +121,7 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
 
 - Knowledge-base create/list.
 - Text document ingestion remains compatible.
-- Text-based upload path for PDF, Markdown, and plain text with safe metadata persistence; PDFs keep page provenance and FlateDecode text-stream fallback support. Hosted ingestion can run through an external worker so heavy parser/embedding/indexing work no longer has to share the web request process.
+- Upload path for PDF, Markdown, plain text, `.xlsx`, `.pptx`, and DOCX-only `.docx` with safe metadata persistence; PDFs keep page provenance, Office uploads keep Markdown parse artifacts where available, and hosted ingestion can run through an external worker so heavy parser/embedding/indexing work no longer has to share the web request process.
 - Deterministic chunks, provider-backed JSON embeddings (deterministic by default, OpenAI opt-in), entity mentions, and co-occurrence relationships.
 - RAG Agent now owns the assistant-facing conversation-run retrieval boundary through `my_agents/agents/rag_agent/retrieval.py`; `general_assistant` invokes it inside the graph before memory/answer nodes only when the source-selection gate chooses private knowledge-base retrieval.
 - ContextForge remains the delegated permission-first retrieval engine behind that boundary, with a thin LangGraph RetrievalGraph wrapper over deterministic query planning, source-boundary handoff, candidate fusion, deterministic default or optional lazily loaded cross-encoder reranking, high-recall context packing, redacted retrieval evidence, and opt-in Rich debug traces for role handoff messages.
@@ -324,9 +324,9 @@ Earlier hosted smoke status on 2026-06-03:
 
 ### Knowledge ingestion and retrieval
 
-- Text-based upload and extraction supports PDFs through the current local parser chain (`pymupdf_text_v1` primary, then `pypdf_text_v2`, Docling Markdown, constrained Tesseract OCR, and deterministic stream fallback), Markdown through `utf8_markdown_v1`, and plain text through `utf8_text_v1`.
-- Original uploaded file bytes are not retained yet; only extracted text plus source metadata are stored, so future parser upgrades cannot reprocess old uploads unless users upload the source file again.
-- Scanned/image-heavy PDFs have only a constrained local OCR fallback; docx, HTML, CSV/JSON structural parsing, durable parse artifacts, and production layout-aware parsing remain future work.
+- Text-based upload and extraction supports PDFs through the current local parser chain (`pymupdf_text_v1` primary, then `pypdf_text_v2`, Docling Markdown, constrained Tesseract OCR, and deterministic stream fallback), Markdown through `utf8_markdown_v1`, plain text through `utf8_text_v1`, and Office uploads through local Markdown parsers (`openpyxl_markdown_v1`, `python_pptx_markdown_v1`, and DOCX-only `docling_docx_markdown_v1`).
+- Original uploaded file bytes are not retained yet; only extracted text, source metadata, and supported parse artifacts are stored, so future parser upgrades cannot reprocess old uploads unless users upload the source file again.
+- Scanned/image-heavy PDFs have only a constrained local OCR fallback; legacy `.doc`, HTML, CSV/JSON structural parsing, PDF parse-artifact migration, source-file retention, and production layout-aware parsing remain future work.
 - Async ingestion progress is available through an additive endpoint (`POST /documents/{id}/ingest/async`) plus direct run polling. Local/default mode still supports in-process threads; hosted mode can set `MY_AGENTS_INGESTION_EXECUTION_MODE=external_worker` and run `python -m my_agents.ingestion_worker`. Frontend multi-file upload fan-out is exposed as a safe `/health` hint backed by `MY_AGENTS_DOCUMENT_UPLOAD_CONCURRENCY` (default `3`). Durable queue semantics and stale-run recovery remain future work.
 - Embeddings use a provider boundary: deterministic 32-dimensional lexical-hash vectors by default, or opt-in OpenAI embeddings through `langchain-openai` when `MY_AGENTS_EMBEDDING_MODE=openai`; Postgres chunks also store a pgvector `embedding_vector` through Alembic migration `20260521_0007`.
 - Retrieval ranking is permission-first RAG Agent -> ContextForge orchestration over pgvector SQL vector search on Postgres, JSON cosine fallback for SQLite/tests, blended lexical score, entity expansion, structured entity retrieval, deterministic fusion/reranking, optional cross-encoder second-stage reranking over bounded authorized candidates, and a narrow personal-document fallback; aggregate internal timing metrics now exist, while LLM query rewrite, ANN/vector index tuning, production reranker packaging, and retrieval-quality/latency evals are still future work.
@@ -392,12 +392,12 @@ Stop condition:
 
 ### Near implementation milestone: Upstage-backed layout-aware ingestion foundation
 
-The next ingestion-quality milestone is to preserve original uploaded files and introduce a provider-backed parse artifact layer before wiring Upstage Document Parse as an optional cloud parser. The near-term plan lives in `docs/plan/upstage-integration.md`, and the broader architecture idea lives in `docs/idea/layout-aware-ingestion-rag-agent.md`.
+The next ingestion-quality milestone is to preserve original uploaded files and generalize the provider-backed parse artifact layer before wiring Upstage Document Parse as an optional cloud parser. DOCX now proves the Markdown-plus-elements artifact shape locally, but source-file retention, parser caching, PDF artifact migration, and provider routing remain future work. The near-term plan lives in `docs/plan/upstage-integration.md`, and the broader architecture idea lives in `docs/idea/layout-aware-ingestion-rag-agent.md`.
 
 Suggested order:
 
 1. Add original source-file retention through a local/dev storage provider plus production-ready storage abstraction.
-2. Add a generic `document_parse_artifacts` layer for Markdown/HTML/layout metadata, while keeping current `documents.content` compatibility.
+2. Generalize the existing `document_parse_artifacts` layer for Markdown/HTML/layout metadata across PDFs and future providers, while keeping current `documents.content` compatibility.
 3. Introduce a parser provider boundary so current local parsing and future Upstage parsing share one internal contract.
 4. Add cost-aware routing and parse caching by source hash + provider/version/mode.
 5. Add a re-extract + re-ingest path that can regenerate document text, chunks, embeddings, entities, and metadata from the retained original.
@@ -405,7 +405,7 @@ Suggested order:
 Stop condition:
 
 - Old behavior still supports local/offline parsing and deterministic tests.
-- New behavior can retain originals, write parse artifacts, reuse cached parser output, and distinguish re-index from re-extract.
+- New behavior can retain originals, write/reuse parse artifacts across parser providers, reuse cached parser output, and distinguish re-index from re-extract.
 - Upstage can be enabled by config without becoming mandatory for all uploads or tests.
 
 ### Next milestone: hosted demo cleanup and smoke verification
@@ -465,6 +465,7 @@ limits.
 
 | Date | Milestone | Evidence |
 | --- | --- | --- |
+| 2026-06-23 | Added DOCX-only upload, Markdown parse artifacts, ingestion/citation coverage, and legacy `.doc` rejection. | `my_agents/knowledge/office_uploads.py`; upload route descriptions; `tests/test_office_uploads.py`; `tests/test_knowledge_ingestion.py`; `tests/test_publish_requests.py`; ingestion docs. |
 | 2026-06-22 | Added a graph-level source-selection gate so explicit KB bypass and common/web requests can skip ContextForge, removed language-specific general-assistant web-search hints, and delayed optional cross-encoder model loading until the first non-empty ContextForge rerank call. | `my_agents/agents/general_assistant/retrieval_gate.py`; `my_agents/agents/general_assistant/graph.py`; `my_agents/agents/general_assistant/rag_retrieval.py`; `my_agents/agents/general_assistant/responders.py`; `my_agents/agents/capabilities.py`; `my_agents/agents/context_forge/reranking.py`; `tests/test_retrieval_gate.py`; `tests/test_graph.py`; `tests/test_responders.py`; `tests/test_context_forge_reranking.py`; README and agent README pairs. |
 | 2026-06-16 | Documented the General Assistant -> RAG Agent -> ContextForge architecture correction with a dedicated change report and review map. | `docs/product-chat-service/en/22-general-assistant-rag-agent-architecture-change-report.md`; product docs index; implementation tracking docs section. |
 | 2026-06-16 | Added opt-in Prometheus timing metrics for internal performance and quality analysis without changing the frontend/product surface. | `pyproject.toml`; `my_agents/observability/metrics.py`; `my_agents/api/metrics.py`; `my_agents/api/__init__.py`; ContextForge/retrieval/embedding/graph/run timing hooks; `tests/test_metrics.py`; README pair; observability docs; `ROADMAP.md`. |

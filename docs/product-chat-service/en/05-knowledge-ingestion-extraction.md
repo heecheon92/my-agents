@@ -1,6 +1,6 @@
 ---
 created: 2026-05-17
-updated: 2026-06-07
+updated: 2026-06-23
 status: active
 topics:
   - knowledge-base
@@ -23,7 +23,7 @@ This note explains the text-based V1 knowledge-ingestion slice.
 
 ## What is implemented now
 
-A user can create a personal or group knowledge base, attach either a JSON text document or a supported text-based file upload, and run deterministic ingestion over the stored document text. The upload path accepts text-based PDFs, Markdown files, and plain-text files. The existing bodyless synchronous `/documents/{document_id}/ingest` contract remains unchanged. The additive `/documents/{document_id}/ingest/async` endpoint returns a queued run for polling-based multi-file UX; local/default mode can process it in-process, while hosted demos can use `MY_AGENTS_INGESTION_EXECUTION_MODE=external_worker` and a separate `python -m my_agents.ingestion_worker` process so parser/indexing work does not starve the web service.
+A user can create a personal or group knowledge base, attach either a JSON text document or a supported file upload, and run deterministic ingestion over the stored document text. The upload path accepts text-based PDFs, Markdown files, plain-text files, `.xlsx`, `.pptx`, and `.docx`. DOCX support is DOCX-only: legacy binary `.doc` remains unsupported. The existing bodyless synchronous `/documents/{document_id}/ingest` contract remains unchanged. The additive `/documents/{document_id}/ingest/async` endpoint returns a queued run for polling-based multi-file UX; local/default mode can process it in-process, while hosted demos can use `MY_AGENTS_INGESTION_EXECUTION_MODE=external_worker` and a separate `python -m my_agents.ingestion_worker` process so parser/indexing work does not starve the web service.
 
 The ingestion pass creates:
 
@@ -35,7 +35,8 @@ The ingestion pass creates:
 - co-occurrence relationships between adjacent extracted entities;
 - provenance back to document chunks;
 - upload metadata on documents (`source_filename`, content type, byte size, SHA-256, page count when available, parser name);
-- page provenance on chunks through `source_page` when the source document is a PDF.
+- Markdown-first parse artifacts for supported Office uploads, including DOCX block elements with Markdown offsets;
+- page provenance on chunks through `source_page` when the source document is a PDF, and parser-derived `source_location_json` when upload artifacts provide stable offsets.
 
 ## Ingestion flow
 
@@ -45,6 +46,7 @@ flowchart TD
     Dispatch -->|".pdf application/pdf"| PdfGate["PDF validation + classification"]
     Dispatch -->|".md/.markdown text/markdown"| Markdown["utf8_markdown_v1"]
     Dispatch -->|".txt text/plain"| Plain["utf8_text_v1"]
+    Dispatch -->|".xlsx/.pptx/.docx OOXML"| Office["Office parser to Markdown + elements"]
 
     PdfGate --> PyMuPDF["pymupdf_text_v1 primary parser"]
     PyMuPDF --> PyMuPDFGate{"Valid extracted text?"}
@@ -66,6 +68,7 @@ flowchart TD
     Metadata --> Content["Stored normalized text"]
     Markdown --> Metadata
     Plain --> Metadata
+    Office --> Metadata
     Text["POST /documents JSON text"] --> Content
     Content --> RunChoice{"Ingestion endpoint"}
     RunChoice -->|"sync compatibility"| Run["POST /documents/{id}/ingest"]
@@ -131,6 +134,14 @@ lexical-hash vectors by default, or OpenAI embeddings through `langchain-openai`
 Postgres stores the same vectors in a pgvector column after Alembic migrations so
 retrieval can use SQL vector search.
 
+Office uploads keep the same deterministic/local-first boundary. XLSX uses
+`openpyxl_markdown_v1`, PPTX uses `python_pptx_markdown_v1`, and DOCX uses
+`docling_docx_markdown_v1`. DOCX parsing produces canonical Markdown plus
+provider-neutral block elements such as `word_heading`, `word_paragraph`, and
+`word_table`; the Markdown is mirrored into `documents.content` for the current chunker,
+while the parse artifact preserves offsets and heading paths for future citation,
+rendering, and Upstage-normalized provider output.
+
 This is a scaffold for review-visible architecture, not a claim of production extraction quality.
 
 ## Why the current custom chunker exists
@@ -180,8 +191,9 @@ The ingestion service now pre-collects entity names for a run, inserts them in a
 
 - PDF support is local-first through `pymupdf_text_v1`, with `pypdf_text_v2`, Docling Markdown, constrained Tesseract OCR, and legacy literal/FlateDecode fallbacks;
 - Markdown/plain-text support is UTF-8 text-only; Markdown structure is not parsed into a typed AST;
+- DOCX support is local DOCX-only parsing through Docling Markdown and block elements; legacy binary `.doc` is still unsupported;
 - scanned-PDF support is only a small local OCR fallback for PDFs within the page cap; there is no production-grade OCR/layout pipeline yet;
-- no docx, HTML, or CSV/JSON structural ingestion yet;
+- no HTML or CSV/JSON structural ingestion yet;
 - no cloud object storage adapter yet;
 - OpenAI embeddings are opt-in and require `OPENAI_API_KEY`; OpenAI extraction calls are not implemented yet;
 - async ingestion supports local in-process threads and hosted external-worker mode, but no durable Redis/Celery-style queue or production worker supervisor yet;
@@ -199,6 +211,7 @@ Thin permission-aware RAG and graph expansion now live in the next learning note
 - text-path regression for bodyless ingestion;
 - accepted PDF upload metadata persistence;
 - accepted Markdown/plain-text upload metadata persistence and retrieval;
+- accepted Office upload metadata, Markdown parse artifacts, and DOCX source-location citations;
 - pgvector schema migration coverage with SQLite fallback;
 - rejected unsupported or unsafe upload input;
 - PDF parser fallback ordering, including PyMuPDF, Docling, constrained Tesseract, and legacy rejection cases;
@@ -212,6 +225,7 @@ Thin permission-aware RAG and graph expansion now live in the next learning note
 
 ## Revision history
 
+- 2026-06-23: Added DOCX-only upload support through local Docling Markdown/block artifacts while keeping legacy `.doc` unsupported.
 - 2026-06-07: Updated parser docs for the PyMuPDF-primary PDF pipeline, Docling/Tesseract fallbacks, Mermaid rendering, and the custom chunker rationale.
 - 2026-05-30: Updated async ingestion docs for the hosted external-worker execution mode and clarified remaining durable-queue gaps.
 - 2026-05-22: Documented and fixed the Postgres parallel-ingestion entity deadlock lesson.

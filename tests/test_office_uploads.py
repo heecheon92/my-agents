@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from io import BytesIO
+from typing import Any, cast
 
 import pytest
+from docx import Document as WordDocument
 from openpyxl import Workbook
 from pptx import Presentation
 from pptx.util import Inches
@@ -16,9 +18,13 @@ from my_agents.knowledge.office_uploads import (
     EXCEL_UPLOAD_PARSER_NAME,
     POWERPOINT_CONTENT_TYPE,
     POWERPOINT_UPLOAD_PARSER_NAME,
+    WORD_DOCUMENT_SOURCE_TYPE,
+    WORD_DOCX_CONTENT_TYPE,
+    WORD_DOCX_UPLOAD_PARSER_NAME,
     OfficeUploadError,
     parse_uploaded_office_document,
 )
+from my_agents.knowledge.pdf_uploads import DoclingExtractionConfig
 
 
 def _xlsx_bytes() -> bytes:
@@ -99,6 +105,22 @@ def _pptx_bytes() -> bytes:
     table.cell(1, 1).text = "Backend"
     buffer = BytesIO()
     presentation.save(buffer)
+    return buffer.getvalue()
+
+
+def _docx_bytes() -> bytes:
+    document = WordDocument()
+    document.add_heading("DOCX Upload Plan", level=1)
+    document.add_paragraph("WordAlpha supports DOCX ingestion.")
+    document.add_paragraph("GET /documents/upload")
+    document.add_paragraph("First bullet", style="List Bullet")
+    table = document.add_table(rows=2, cols=2)
+    table.cell(0, 0).text = "Metric"
+    table.cell(0, 1).text = "Value"
+    table.cell(1, 0).text = "DocxParser"
+    table.cell(1, 1).text = "Ready"
+    buffer = BytesIO()
+    document.save(buffer)
     return buffer.getvalue()
 
 
@@ -218,8 +240,145 @@ def test_parse_pptx_to_markdown_with_slide_and_shape_locations() -> None:
     assert text_element["source_location"]["shape_index"] is not None
 
 
+def test_parse_docx_to_markdown_with_word_block_locations() -> None:
+    content = _docx_bytes()
+
+    parsed = parse_uploaded_office_document(
+        filename="word-plan.docx",
+        content_type=WORD_DOCX_CONTENT_TYPE,
+        content=content,
+    )
+
+    assert parsed.source_type == WORD_DOCUMENT_SOURCE_TYPE
+    assert parsed.source_content_type == WORD_DOCX_CONTENT_TYPE
+    assert parsed.parser_name == WORD_DOCX_UPLOAD_PARSER_NAME
+    assert parsed.parser_provider == "local"
+    assert parsed.parser_version
+    assert parsed.sha256
+    assert parsed.content.startswith("## DOCX Upload Plan")
+    assert "WordAlpha supports DOCX ingestion." in parsed.content
+    assert "GET /documents/upload" in parsed.content
+    assert "DocxParser" in parsed.content
+    assert "Ready" in parsed.content
+
+    kinds = {element["kind"] for element in parsed.elements}
+    assert "word_heading" in kinds
+    assert "word_paragraph" in kinds
+    assert "word_table" in kinds
+
+    heading = next(element for element in parsed.elements if element["kind"] == "word_heading")
+    assert parsed.content[heading["markdown_start"] : heading["markdown_end"]] == (
+        "## DOCX Upload Plan"
+    )
+    assert heading["source_location"] == {
+        "source_type": WORD_DOCUMENT_SOURCE_TYPE,
+        "block_index": 1,
+        "heading_path": "DOCX Upload Plan",
+        "heading_level": 2,
+        "heading": "DOCX Upload Plan",
+    }
+
+    endpoint = next(
+        element
+        for element in parsed.elements
+        if parsed.content[element["markdown_start"] : element["markdown_end"]]
+        == "GET /documents/upload"
+    )
+    assert endpoint["kind"] == "word_paragraph"
+    assert endpoint["source_location"] == {
+        "source_type": WORD_DOCUMENT_SOURCE_TYPE,
+        "block_index": 3,
+        "heading_path": "DOCX Upload Plan",
+    }
+
+    table = next(element for element in parsed.elements if element["kind"] == "word_table")
+    assert "| Metric" in parsed.content[table["markdown_start"] : table["markdown_end"]]
+    assert table["source_location"] == {
+        "source_type": WORD_DOCUMENT_SOURCE_TYPE,
+        "block_index": 5,
+        "heading_path": "DOCX Upload Plan",
+        "row_count": 2,
+    }
+
+
+def test_docx_parser_uses_docling_extraction_config(monkeypatch) -> None:  # noqa: ANN001
+    from docling.datamodel.base_models import InputFormat
+    from docling.datamodel.document import ConversionStatus
+
+    captured: dict[str, object] = {}
+
+    class _FakeDocument:
+        def export_to_markdown(self) -> str:
+            return "## Configured DOCX\n\nDoclingTimeoutAlpha"
+
+    class _FakeResult:
+        document = _FakeDocument()
+        status = ConversionStatus.SUCCESS
+        errors: tuple[object, ...] = ()
+
+    class _FakeConverter:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            captured["format_options"] = kwargs["format_options"]
+
+        def convert(self, *args: object, **kwargs: object) -> _FakeResult:
+            return _FakeResult()
+
+    monkeypatch.setattr("docling.document_converter.DocumentConverter", _FakeConverter)
+
+    parsed = parse_uploaded_office_document(
+        filename="word-plan.docx",
+        content_type=WORD_DOCX_CONTENT_TYPE,
+        content=_docx_bytes(),
+        docling_config=DoclingExtractionConfig(
+            accelerator="cpu",
+            ocr_enabled=False,
+            timeout_seconds=12.5,
+            threads=2,
+        ),
+    )
+
+    format_options = cast(dict[object, Any], captured["format_options"])
+    word_options = format_options[InputFormat.DOCX]
+    pipeline_options = word_options.pipeline_options
+    assert pipeline_options.document_timeout == 12.5
+    assert pipeline_options.accelerator_options.num_threads == 2
+    device = pipeline_options.accelerator_options.device
+    assert getattr(device, "value", device) == "cpu"
+    assert "DoclingTimeoutAlpha" in parsed.content
+
+
+def test_docx_parser_rejects_extracted_markdown_over_budget(monkeypatch) -> None:  # noqa: ANN001
+    from docling.datamodel.document import ConversionStatus
+
+    class _FakeDocument:
+        def export_to_markdown(self) -> str:
+            return "A" * 33
+
+    class _FakeResult:
+        document = _FakeDocument()
+        status = ConversionStatus.SUCCESS
+        errors: tuple[object, ...] = ()
+
+    class _FakeConverter:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        def convert(self, *args: object, **kwargs: object) -> _FakeResult:
+            return _FakeResult()
+
+    monkeypatch.setattr(office_uploads_module, "MAX_OFFICE_MARKDOWN_CHARS", 32)
+    monkeypatch.setattr("docling.document_converter.DocumentConverter", _FakeConverter)
+
+    with pytest.raises(OfficeUploadError, match="extracted text limit"):
+        parse_uploaded_office_document(
+            filename="word-plan.docx",
+            content_type=WORD_DOCX_CONTENT_TYPE,
+            content=_docx_bytes(),
+        )
+
+
 def test_office_parser_rejects_unsupported_or_corrupted_files_safely() -> None:
-    with pytest.raises(OfficeUploadError, match="only .xlsx and .pptx"):
+    with pytest.raises(OfficeUploadError, match=r"only \.xlsx, \.pptx, and \.docx"):
         parse_uploaded_office_document(
             filename="legacy.xls",
             content_type="application/vnd.ms-excel",
@@ -230,6 +389,27 @@ def test_office_parser_rejects_unsupported_or_corrupted_files_safely() -> None:
         parse_uploaded_office_document(
             filename="metrics.xlsx",
             content_type=EXCEL_CONTENT_TYPE,
+            content=b"not-office",
+        )
+
+    with pytest.raises(OfficeUploadError, match="not a valid OOXML Office file"):
+        parse_uploaded_office_document(
+            filename="word-plan.docx",
+            content_type=WORD_DOCX_CONTENT_TYPE,
+            content=b"not-office",
+        )
+
+    with pytest.raises(OfficeUploadError, match=r"\.docx uploads must use"):
+        parse_uploaded_office_document(
+            filename="word-plan.docx",
+            content_type="text/plain",
+            content=_docx_bytes(),
+        )
+
+    with pytest.raises(OfficeUploadError, match=r"only \.xlsx, \.pptx, and \.docx"):
+        parse_uploaded_office_document(
+            filename="legacy.doc",
+            content_type="application/msword",
             content=b"not-office",
         )
 

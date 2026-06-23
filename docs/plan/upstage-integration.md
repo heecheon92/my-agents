@@ -12,7 +12,7 @@ This is the near-term execution plan for the broader architecture idea in [`docs
 
 ## Why this matters
 
-Current ingestion works for V1 RAG, but it stores only extracted normalized text in `documents.content`. It does not retain the original uploaded file. That means we can re-index old documents from existing text, but we cannot re-run a better future parser over the original PDF/Markdown/text file unless the user uploads it again.
+Current ingestion works for V1 RAG, but it still stores the current compatibility text in `documents.content` and does not retain the original uploaded file. Some Office uploads, including DOCX, now also persist Markdown-plus-elements parse artifacts, but old uploads still cannot be re-run through a better future parser unless the user uploads the source file again.
 
 A production ingestion path should treat parsing as **document-to-semantic-artifact compilation**, not just text extraction:
 
@@ -31,7 +31,7 @@ The key product improvement is that relevant context sent to the LLM can preserv
 
 Evidence from current code:
 
-- Upload dispatch supports `.pdf`, `.md`, `.markdown`, and `.txt` in `my_agents/knowledge/uploads.py`.
+- Upload dispatch supports `.pdf`, `.md`, `.markdown`, `.txt`, `.xlsx`, `.pptx`, and `.docx` in `my_agents/knowledge/uploads.py`; legacy binary `.doc` remains unsupported.
 - Current PDF parser order in `my_agents/knowledge/pdf_uploads.py` is:
   1. `pymupdf_text_v1`
   2. `pypdf_text_v2`
@@ -39,7 +39,8 @@ Evidence from current code:
   4. constrained `tesseract_ocr_v1`
   5. `deterministic_stream_fallback_v1`
 - `my_agents/api/documents.py` reads upload bytes, parses immediately, then persists `DocumentModel(content=parsed.content, ...)`.
-- `my_agents/knowledge/models.py` stores source metadata such as filename, content type, byte size, SHA-256, page count, and parser name, but no original blob/object key.
+- `my_agents/knowledge/office_uploads.py` writes local Markdown parser artifacts for supported Office files; DOCX uses `docling_docx_markdown_v1` and emits provider-neutral `word_*` block elements with Markdown offsets.
+- `my_agents/knowledge/models.py` stores source metadata such as filename, content type, byte size, SHA-256, page count, parser name, and parse artifacts where available, but no original blob/object key.
 - `my_agents/knowledge/extraction.py` ingests from `document.content`, producing chunks, embeddings, pgvector values, entities, relationships, and metadata profiles.
 
 ## Upstage role
@@ -68,10 +69,12 @@ flowchart TD
     Cache -->|"no"| Route{"Parser policy"}
     Route -->|"simple text / markdown"| LocalText["Local UTF-8 parser"]
     Route -->|"simple text PDF"| LocalPdf["Local PyMuPDF-first parser"]
+    Route -->|"local Office / DOCX"| LocalOffice["Local Office Markdown parser"]
     Route -->|"failed local quality gate"| UpstageStd["Upstage Document Parse Standard"]
     Route -->|"tables / charts / scans / premium"| UpstageAuto["Upstage Auto or Enhanced"]
     LocalText --> Artifact["Parse artifact"]
     LocalPdf --> Artifact
+    LocalOffice --> Artifact
     UpstageStd --> Artifact
     UpstageAuto --> Artifact
     Reuse --> Artifact
@@ -110,7 +113,7 @@ Why first: without this, improved parsing cannot be applied to old uploads.
 
 ### Slice 2 — Parse artifact model
 
-Add a generic artifact layer independent of Upstage.
+Generalize the generic artifact layer independent of Upstage. DOCX/Office uploads already prove this direction for local Markdown-plus-elements output; the remaining work is to make the contract provider-routed, cached, and applied consistently to PDFs and future parsers.
 
 Candidate table:
 
@@ -169,6 +172,7 @@ Suggested default policy:
 | --- | --- |
 | Markdown/plain text | Local parser |
 | Simple text PDF | Local PyMuPDF-first parser |
+| `.xlsx`, `.pptx`, `.docx` | Local Office Markdown parser |
 | Local parser quality failure | Upstage Standard fallback |
 | Tables/charts/scanned/image-heavy docs | Upstage Auto or Standard |
 | User-selected high-quality parse | Upstage Auto or Enhanced |
@@ -222,6 +226,7 @@ Upstage should be a quality upgrade path, not the only path.
 Reasons:
 
 - local PyMuPDF parsing is fast and free for simple text PDFs;
+- local Office parsing already handles `.xlsx`, `.pptx`, and `.docx` without provider credentials;
 - offline tests and deterministic mode must keep working without provider credentials;
 - repeated local/dev uploads should not consume cloud parse budget;
 - provider routing lets simple documents stay cheap while complex documents get better treatment;

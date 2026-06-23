@@ -111,5 +111,9 @@ def test_openapi_exposes_kb_first_document_and_chat_selection_contract() -> None
     kb_upload_contract = str(schema["components"]["schemas"][kb_upload_body_ref.rsplit("/", 1)[-1]])
     assert ".xlsx" in upload_contract
     assert ".pptx" in upload_contract
+    assert ".docx" in upload_contract
+    assert "application/msword" not in upload_contract
     assert ".xlsx" in kb_upload_contract
     assert ".pptx" in kb_upload_contract
+    assert ".docx" in kb_upload_contract
+    assert "application/msword" not in kb_upload_contract

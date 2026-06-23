@@ -6,6 +6,7 @@ import hashlib
 import logging
 import re
 import zipfile
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from importlib.metadata import PackageNotFoundError, version
 from io import BytesIO
@@ -15,7 +16,11 @@ from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
 from pptx import Presentation
 
-from my_agents.knowledge.pdf_uploads import MAX_PDF_UPLOAD_BYTES
+from my_agents.knowledge.pdf_uploads import (
+    MAX_PDF_UPLOAD_BYTES,
+    DoclingExtractionConfig,
+    _docling_accelerator_device,
+)
 
 MAX_OFFICE_UPLOAD_BYTES = MAX_PDF_UPLOAD_BYTES
 MAX_OFFICE_ARCHIVE_MEMBERS = 600
@@ -31,22 +36,31 @@ MAX_POWERPOINT_TABLE_CELLS = 20000
 MAX_OFFICE_MARKDOWN_CHARS = 500_000
 EXCEL_UPLOAD_PARSER_NAME = "openpyxl_markdown_v1"
 POWERPOINT_UPLOAD_PARSER_NAME = "python_pptx_markdown_v1"
+WORD_DOCX_UPLOAD_PARSER_NAME = "docling_docx_markdown_v1"
 EXCEL_SOURCE_TYPE = "spreadsheet"
 POWERPOINT_SOURCE_TYPE = "presentation"
+WORD_DOCUMENT_SOURCE_TYPE = "word_document"
 EXCEL_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 POWERPOINT_CONTENT_TYPE = (
     "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 )
+WORD_DOCX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 OFFICE_PARSER_PROVIDER = "local"
 OFFICE_PARSER_MODE = "deterministic"
 
 _EXCEL_SUFFIX = ".xlsx"
 _POWERPOINT_SUFFIX = ".pptx"
+_WORD_DOCX_SUFFIX = ".docx"
+_SUPPORTED_OFFICE_SUFFIXES = frozenset({_EXCEL_SUFFIX, _POWERPOINT_SUFFIX, _WORD_DOCX_SUFFIX})
+_SUPPORTED_OFFICE_SUFFIX_LIST = ".xlsx, .pptx, and .docx"
 _GENERIC_UPLOAD_CONTENT_TYPES = frozenset({"", "application/octet-stream"})
 _EXCEL_CONTENT_TYPES = frozenset({EXCEL_CONTENT_TYPE, *_GENERIC_UPLOAD_CONTENT_TYPES})
 _POWERPOINT_CONTENT_TYPES = frozenset({POWERPOINT_CONTENT_TYPE, *_GENERIC_UPLOAD_CONTENT_TYPES})
+_WORD_DOCX_CONTENT_TYPES = frozenset({WORD_DOCX_CONTENT_TYPE, *_GENERIC_UPLOAD_CONTENT_TYPES})
 _MONTH_VALUE_PATTERN = re.compile(r"^(?:[1-9]|1[0-2])월$")
 _NUMERIC_VALUE_PATTERN = re.compile(r"^[+-]?(?:(?:\d{1,3}(?:,\d{3})+)|\d+)(?:\.\d+)?%?$")
+_MARKDOWN_HEADING_PATTERN = re.compile(r"^(?P<marks>#{1,6})\s+(?P<title>.+?)\s*$")
+_MARKDOWN_ORDERED_LIST_PATTERN = re.compile(r"^\s*\d+[\.)]\s+")
 logger = logging.getLogger(__name__)
 
 
@@ -106,6 +120,7 @@ def parse_uploaded_office_document(
     filename: str | None,
     content_type: str | None,
     content: bytes,
+    docling_config: DoclingExtractionConfig | None = None,
 ) -> ParsedOfficeDocument:
     """Parse a supported OOXML Office upload into canonical Markdown and metadata."""
     safe_filename = _validate_office_filename(filename)
@@ -126,7 +141,14 @@ def parse_uploaded_office_document(
         return parse_uploaded_pptx(
             filename=safe_filename, content_type=content_type, content=content
         )
-    raise OfficeUploadError("only .xlsx and .pptx Office uploads are supported")
+    if suffix == _WORD_DOCX_SUFFIX:
+        return parse_uploaded_docx(
+            filename=safe_filename,
+            content_type=content_type,
+            content=content,
+            docling_config=docling_config,
+        )
+    raise OfficeUploadError(f"only {_SUPPORTED_OFFICE_SUFFIX_LIST} Office uploads are supported")
 
 
 def parse_uploaded_xlsx(
@@ -322,6 +344,43 @@ def parse_uploaded_pptx(
     )
 
 
+def parse_uploaded_docx(
+    *,
+    filename: str | None,
+    content_type: str | None,
+    content: bytes,
+    docling_config: DoclingExtractionConfig | None = None,
+) -> ParsedOfficeDocument:
+    """Parse a local `.docx` document into canonical Markdown and block locations."""
+    safe_filename = _validate_office_filename(filename, expected_suffix=_WORD_DOCX_SUFFIX)
+    _validate_content_type(
+        suffix=_WORD_DOCX_SUFFIX,
+        content_type=content_type,
+        allowed_content_types=_WORD_DOCX_CONTENT_TYPES,
+        expected_content_type=WORD_DOCX_CONTENT_TYPE,
+    )
+    _validate_office_content(content, filename=safe_filename)
+    _validate_ooxml_archive(content, filename=safe_filename)
+    markdown_content, warnings = _docx_markdown_with_docling(
+        filename=safe_filename,
+        content=content,
+        config=docling_config or DoclingExtractionConfig(),
+    )
+    if not markdown_content:
+        raise OfficeUploadError("uploaded Word document has no extractable text")
+    return ParsedOfficeDocument(
+        content=markdown_content,
+        source_type=WORD_DOCUMENT_SOURCE_TYPE,
+        source_content_type=WORD_DOCX_CONTENT_TYPE,
+        byte_size=len(content),
+        sha256=hashlib.sha256(content).hexdigest(),
+        parser_name=WORD_DOCX_UPLOAD_PARSER_NAME,
+        parser_version=_package_version("docling"),
+        elements=_docx_markdown_elements(markdown_content),
+        warnings=warnings,
+    )
+
+
 def _validate_office_filename(
     filename: str | None,
     *,
@@ -335,8 +394,10 @@ def _validate_office_filename(
     suffix = _filename_suffix(stripped)
     if expected_suffix is not None and suffix != expected_suffix:
         raise OfficeUploadError(f"only {expected_suffix} uploads are supported")
-    if expected_suffix is None and suffix not in {_EXCEL_SUFFIX, _POWERPOINT_SUFFIX}:
-        raise OfficeUploadError("only .xlsx and .pptx Office uploads are supported")
+    if expected_suffix is None and suffix not in _SUPPORTED_OFFICE_SUFFIXES:
+        raise OfficeUploadError(
+            f"only {_SUPPORTED_OFFICE_SUFFIX_LIST} Office uploads are supported"
+        )
     return stripped
 
 
@@ -392,6 +453,254 @@ def _validate_archive_member(member: zipfile.ZipInfo) -> None:
         or path.endswith("/..")
     ):
         raise OfficeUploadError("uploaded Office file contains an unsafe archive path")
+
+
+def _docx_markdown_with_docling(
+    *,
+    filename: str,
+    content: bytes,
+    config: DoclingExtractionConfig,
+) -> tuple[str, list[str]]:
+    try:
+        from docling.datamodel.accelerator_options import AcceleratorDevice, AcceleratorOptions
+        from docling.datamodel.base_models import DocumentStream, InputFormat
+        from docling.datamodel.document import ConversionStatus
+        from docling.datamodel.pipeline_options import ConvertPipelineOptions
+        from docling.document_converter import DocumentConverter, WordFormatOption
+    except Exception as exc:  # noqa: BLE001 - local parser dependency should fail closed.
+        raise OfficeUploadError("DOCX parsing is unavailable in this environment") from exc
+
+    try:
+        source = DocumentStream(name=filename, stream=BytesIO(content))
+        pipeline_options = ConvertPipelineOptions()
+        pipeline_options.accelerator_options = AcceleratorOptions(
+            num_threads=config.threads,
+            device=_docling_accelerator_device(config.accelerator, AcceleratorDevice),
+        )
+        pipeline_options.document_timeout = config.timeout_seconds
+        converter = DocumentConverter(
+            allowed_formats=[InputFormat.DOCX],
+            format_options={InputFormat.DOCX: WordFormatOption(pipeline_options=pipeline_options)},
+        )
+        result = converter.convert(
+            source,
+            raises_on_error=False,
+            max_file_size=MAX_OFFICE_UPLOAD_BYTES,
+        )
+    except Exception as exc:  # noqa: BLE001 - keep parser failures display-safe.
+        raise OfficeUploadError(f"{filename} could not be parsed as a valid .docx file") from exc
+
+    document = getattr(result, "document", None)
+    status = getattr(result, "status", None)
+    accepted_statuses = {ConversionStatus.SUCCESS, ConversionStatus.PARTIAL_SUCCESS}
+    if status not in accepted_statuses or document is None:
+        detail = _docling_error_summary(getattr(result, "errors", ()))
+        suffix = f": {detail}" if detail else ""
+        raise OfficeUploadError(f"{filename} could not be parsed as a valid .docx file{suffix}")
+
+    markdown = _normalize_docx_markdown(document.export_to_markdown())
+    if len(markdown) > MAX_OFFICE_MARKDOWN_CHARS:
+        raise OfficeUploadError("uploaded Office file exceeds the extracted text limit")
+    warnings = _docling_conversion_warnings(
+        status_name=getattr(status, "name", str(status)),
+        errors=getattr(result, "errors", ()),
+        partial=status == ConversionStatus.PARTIAL_SUCCESS,
+    )
+    return markdown, warnings
+
+
+def _normalize_docx_markdown(markdown: str) -> str:
+    return markdown.replace("\r\n", "\n").replace("\r", "\n").strip()
+
+
+def _docx_markdown_elements(markdown: str) -> list[dict[str, Any]]:
+    lines = markdown.splitlines(keepends=True)
+    line_offsets: list[tuple[int, str]] = []
+    cursor = 0
+    for line in lines:
+        line_offsets.append((cursor, line))
+        cursor += len(line)
+
+    elements: list[dict[str, Any]] = []
+    heading_stack: list[str] = []
+    block_index = 0
+    index = 0
+    while index < len(line_offsets):
+        line_start, line = line_offsets[index]
+        stripped = line.strip()
+        if not stripped:
+            index += 1
+            continue
+
+        heading_match = _MARKDOWN_HEADING_PATTERN.match(stripped)
+        if heading_match is not None:
+            block_index += 1
+            level = len(heading_match.group("marks"))
+            title = _clean_inline_text(heading_match.group("title"))
+            heading_stack = [*heading_stack[: level - 1], title]
+            line_end = _line_markdown_end(line_start=line_start, line=line)
+            elements.append(
+                _word_source_element(
+                    kind="word_heading",
+                    markdown_start=line_start,
+                    markdown_end=line_end,
+                    block_index=block_index,
+                    heading_path=heading_stack,
+                    extra={"heading_level": level, "heading": title},
+                )
+            )
+            index += 1
+            continue
+
+        if _is_markdown_table_line(stripped):
+            block_index += 1
+            table_start = line_start
+            table_end, row_count, index = _consume_markdown_table(line_offsets, index)
+            elements.append(
+                _word_source_element(
+                    kind="word_table",
+                    markdown_start=table_start,
+                    markdown_end=table_end,
+                    block_index=block_index,
+                    heading_path=heading_stack,
+                    extra={"row_count": row_count},
+                )
+            )
+            continue
+
+        if _is_markdown_list_item(stripped):
+            block_index += 1
+            line_end = _line_markdown_end(line_start=line_start, line=line)
+            elements.append(
+                _word_source_element(
+                    kind="word_list_item",
+                    markdown_start=line_start,
+                    markdown_end=line_end,
+                    block_index=block_index,
+                    heading_path=heading_stack,
+                    extra={},
+                )
+            )
+            index += 1
+            continue
+
+        block_index += 1
+        paragraph_start = line_start
+        paragraph_end, index = _consume_markdown_paragraph(line_offsets, index)
+        elements.append(
+            _word_source_element(
+                kind="word_paragraph",
+                markdown_start=paragraph_start,
+                markdown_end=paragraph_end,
+                block_index=block_index,
+                heading_path=heading_stack,
+                extra={},
+            )
+        )
+
+    return elements
+
+
+def _consume_markdown_table(
+    line_offsets: Sequence[tuple[int, str]],
+    index: int,
+) -> tuple[int, int, int]:
+    table_end = line_offsets[index][0]
+    row_count = 0
+    while index < len(line_offsets):
+        line_start, line = line_offsets[index]
+        stripped = line.strip()
+        if not _is_markdown_table_line(stripped):
+            break
+        table_end = _line_markdown_end(line_start=line_start, line=line)
+        if not _is_markdown_table_separator(stripped):
+            row_count += 1
+        index += 1
+    return table_end, row_count, index
+
+
+def _consume_markdown_paragraph(
+    line_offsets: Sequence[tuple[int, str]],
+    index: int,
+) -> tuple[int, int]:
+    paragraph_end = line_offsets[index][0]
+    while index < len(line_offsets):
+        line_start, line = line_offsets[index]
+        stripped = line.strip()
+        if (
+            not stripped
+            or _MARKDOWN_HEADING_PATTERN.match(stripped)
+            or _is_markdown_table_line(stripped)
+            or _is_markdown_list_item(stripped)
+        ):
+            break
+        paragraph_end = _line_markdown_end(line_start=line_start, line=line)
+        index += 1
+    return paragraph_end, index
+
+
+def _word_source_element(
+    *,
+    kind: str,
+    markdown_start: int,
+    markdown_end: int,
+    block_index: int,
+    heading_path: list[str],
+    extra: dict[str, Any],
+) -> dict[str, Any]:
+    source_location = {
+        "source_type": WORD_DOCUMENT_SOURCE_TYPE,
+        "block_index": block_index,
+        "heading_path": " > ".join(heading_path) if heading_path else None,
+        **extra,
+    }
+    return _source_element(
+        kind=kind,
+        markdown_start=markdown_start,
+        markdown_end=markdown_end,
+        source_location=source_location,
+    )
+
+
+def _line_markdown_end(*, line_start: int, line: str) -> int:
+    return line_start + len(line.rstrip("\n"))
+
+
+def _is_markdown_table_line(stripped_line: str) -> bool:
+    return stripped_line.startswith("|") and stripped_line.endswith("|")
+
+
+def _is_markdown_table_separator(stripped_line: str) -> bool:
+    cells = [cell.strip() for cell in stripped_line.strip("|").split("|")]
+    return bool(cells) and all(cell and set(cell) <= {"-", ":"} for cell in cells)
+
+
+def _is_markdown_list_item(stripped_line: str) -> bool:
+    return stripped_line.startswith(("- ", "* ", "+ ")) or bool(
+        _MARKDOWN_ORDERED_LIST_PATTERN.match(stripped_line)
+    )
+
+
+def _docling_conversion_warnings(
+    *,
+    status_name: str,
+    errors: Sequence[Any],
+    partial: bool,
+) -> list[str]:
+    warnings: list[str] = []
+    if partial:
+        warnings.append(f"docling conversion status: {status_name}")
+    warnings.extend(_safe_docling_message(error) for error in errors[:5])
+    return [warning for warning in warnings if warning]
+
+
+def _docling_error_summary(errors: Sequence[Any]) -> str:
+    return "; ".join(_safe_docling_message(error) for error in errors[:3] if error)[:200]
+
+
+def _safe_docling_message(error: Any) -> str:
+    message = getattr(error, "message", None) or str(error)
+    return _clean_inline_text(message)[:200]
 
 
 def _worksheet_markdown(worksheet: Any) -> _WorksheetMarkdown | None:

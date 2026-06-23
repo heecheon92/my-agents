@@ -24,13 +24,18 @@ from my_agents.knowledge.pdf_uploads import (
 MAX_TEXT_UPLOAD_BYTES = MAX_PDF_UPLOAD_BYTES
 TEXT_UPLOAD_PARSER_NAME = "utf8_text_v1"
 MARKDOWN_UPLOAD_PARSER_NAME = "utf8_markdown_v1"
-_SUPPORTED_UPLOAD_SUFFIXES = frozenset({".pdf", ".md", ".markdown", ".txt", ".xlsx", ".pptx"})
+_SUPPORTED_UPLOAD_SUFFIXES = frozenset(
+    {".pdf", ".md", ".markdown", ".txt", ".xlsx", ".pptx", ".docx"}
+)
 _TEXT_UPLOAD_SUFFIXES = frozenset({".md", ".markdown", ".txt"})
-_OFFICE_UPLOAD_SUFFIXES = frozenset({".xlsx", ".pptx"})
+_OFFICE_UPLOAD_SUFFIXES = frozenset({".xlsx", ".pptx", ".docx"})
 _GENERIC_UPLOAD_CONTENT_TYPES = frozenset({"", "application/octet-stream"})
 _MARKDOWN_CONTENT_TYPES = frozenset({"text/markdown", "text/x-markdown", "text/plain"})
 _PLAIN_TEXT_CONTENT_TYPES = frozenset({"text/plain"})
 _SAFE_CONTROL_CHARACTERS = frozenset({"\t", "\n", "\r", "\f"})
+_SUPPORTED_UPLOAD_ERROR_MESSAGE = (
+    "only .pdf, .md, .markdown, .txt, .xlsx, .pptx, or .docx uploads are supported"
+)
 logger = logging.getLogger(__name__)
 
 
@@ -101,6 +106,7 @@ def parse_uploaded_document(
             filename=safe_filename,
             content_type=content_type,
             content=content,
+            docling_config=docling_config,
         )
     if suffix in _TEXT_UPLOAD_SUFFIXES:
         return _parse_text_file(
@@ -109,9 +115,7 @@ def parse_uploaded_document(
             content_type=content_type,
             content=content,
         )
-    raise UnsupportedDocumentUploadError(
-        "only .pdf, .md, .markdown, .txt, .xlsx, or .pptx uploads are supported"
-    )
+    raise UnsupportedDocumentUploadError(_SUPPORTED_UPLOAD_ERROR_MESSAGE)
 
 
 def _parse_pdf(
@@ -165,12 +169,14 @@ def _parse_office_file(
     filename: str,
     content_type: str | None,
     content: bytes,
+    docling_config: DoclingExtractionConfig | None,
 ) -> ParsedDocumentUpload:
     try:
         parsed = parse_uploaded_office_document(
             filename=filename,
             content_type=content_type,
             content=content,
+            docling_config=docling_config,
         )
     except OfficeUploadError as exc:
         logger.warning(
@@ -255,9 +261,7 @@ def _validate_upload_filename(filename: str | None) -> str:
         raise DocumentUploadError("document filename must not contain path separators")
     suffix = _filename_suffix(stripped)
     if suffix not in _SUPPORTED_UPLOAD_SUFFIXES:
-        raise UnsupportedDocumentUploadError(
-            "only .pdf, .md, .markdown, .txt, .xlsx, or .pptx uploads are supported"
-        )
+        raise UnsupportedDocumentUploadError(_SUPPORTED_UPLOAD_ERROR_MESSAGE)
     return stripped
 
 
@@ -315,5 +319,7 @@ def _office_parse_artifact(parsed: ParsedOfficeDocument) -> ParsedUploadParseArt
 
 def _is_office_unsupported_media_error(message: str) -> bool:
     return (
-        "only .xlsx and .pptx" in message or "must use" in message or message.startswith("only .")
+        "Office uploads are supported" in message
+        or "must use" in message
+        or message.startswith("only .")
     )

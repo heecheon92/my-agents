@@ -136,7 +136,9 @@ async def upload_document(
     file: Annotated[
         UploadFile,
         File(
-            description=("Supported file: text-based PDF, Markdown, plain text, .xlsx, or .pptx.")
+            description=(
+                "Supported file: text-based PDF, Markdown, plain text, .xlsx, .pptx, or .docx."
+            )
         ),
     ],
     knowledge_base_id: Annotated[str, Form(min_length=1)],

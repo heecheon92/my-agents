@@ -136,7 +136,7 @@ Current honest status:
 - [x] Text-based upload API: `POST /documents/upload`.
 - [x] Deterministic text-based PDF parser with metadata persistence and chunk page provenance.
 - [x] UTF-8 Markdown and plain-text upload parser with metadata persistence.
-- [ ] Production parsers for scanned/encrypted/compressed PDF, DOCX, web pages, CSV/JSON structure, etc. See [`docs/idea/layout-aware-ingestion-rag-agent.md`](./docs/idea/layout-aware-ingestion-rag-agent.md) for the layout-aware parser artifact plan that feeds a future tool-using RAG Agent graph beyond the current contract graph.
+- [~] Production parser coverage now includes local DOCX Markdown/block artifacts, while scanned/encrypted/compressed PDFs, legacy `.doc`, web pages, CSV/JSON structure, and richer layout fidelity remain future work. See [`docs/idea/layout-aware-ingestion-rag-agent.md`](./docs/idea/layout-aware-ingestion-rag-agent.md) for the layout-aware parser artifact plan that feeds a future tool-using RAG Agent graph beyond the current contract graph.
 - [~] Hosted PDF/Markdown ingestion works for supported text-based files and now has an external-worker execution mode; production-quality ingestion still needs deployment wiring, stale-run recovery, parser policy tuning, and larger/runtime-isolated resources.
 - [ ] Object storage for uploaded source files.
 - [ ] Reingestion/versioning policy.

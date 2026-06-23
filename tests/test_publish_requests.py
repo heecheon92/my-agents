@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from io import BytesIO
 
+from docx import Document as WordDocument
 from fastapi.testclient import TestClient
 from openpyxl import Workbook
 from sqlalchemy import select
@@ -107,6 +108,22 @@ def _upload_xlsx_document(client: TestClient, *, kb_id: str, title: str) -> str:
     return response.json()["id"]
 
 
+def _upload_docx_document(client: TestClient, *, kb_id: str, title: str) -> str:
+    response = client.post(
+        f"/knowledge-bases/{kb_id}/documents/upload",
+        data={"title": title},
+        files={
+            "file": (
+                "publish-word.docx",
+                _docx_bytes(),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+    )
+    assert response.status_code == 201
+    return response.json()["id"]
+
+
 def _xlsx_bytes() -> bytes:
     workbook = Workbook()
     sheet = workbook.active
@@ -115,6 +132,15 @@ def _xlsx_bytes() -> bytes:
     sheet.append(["GKPublishOfficeArtifact", "present"])
     buffer = BytesIO()
     workbook.save(buffer)
+    return buffer.getvalue()
+
+
+def _docx_bytes() -> bytes:
+    document = WordDocument()
+    document.add_heading("Publish Word Plan", level=1)
+    document.add_paragraph("GKPublishWordArtifact is present in DOCX.")
+    buffer = BytesIO()
+    document.save(buffer)
     return buffer.getvalue()
 
 
@@ -843,6 +869,64 @@ def test_owner_approval_copies_office_parse_artifact_to_group_document(monkeypat
         assert copied_artifact.markdown_content == source_artifact.markdown_content
         assert copied_artifact.elements_json == source_artifact.elements_json
         assert copied_artifact.source_filename == "publish-metrics.xlsx"
+        assert copied_artifact.source_sha256 == source_artifact.source_sha256
+    finally:
+        session_generator.close()
+
+
+def test_owner_approval_copies_docx_parse_artifact_to_group_document(monkeypatch) -> None:  # noqa: ANN001
+    owner = _client(monkeypatch)
+    requester = _client(monkeypatch)
+    _owner_id = _signup_login(owner, "publish-docx-owner@example.com")
+    _requester_id = _signup_login(requester, "publish-docx-requester@example.com")
+    group_id = _create_group(owner, name="DOCX Publish Group")
+    _invite_and_accept_member(
+        owner=owner,
+        recipient=requester,
+        group_id=group_id,
+        recipient_email="publish-docx-requester@example.com",
+        role="viewer",
+    )
+    target_kb_id = _create_group_kb(owner, group_id, "DOCX Publish KB")
+    personal_kb_id = _create_personal_kb(requester, "DOCX Publish Personal KB")
+    source_document_id = _upload_docx_document(
+        requester,
+        kb_id=personal_kb_id,
+        title="Publish Word Document",
+    )
+
+    request = requester.post(
+        f"/groups/{group_id}/publish-requests",
+        json={"source_document_id": source_document_id, "target_knowledge_base_id": target_kb_id},
+    )
+    assert request.status_code == 201
+
+    approved = owner.post(f"/groups/{group_id}/publish-requests/{request.json()['id']}/approve")
+
+    assert approved.status_code == 200
+    published_document_id = approved.json()["published_document_id"]
+    assert published_document_id and published_document_id != source_document_id
+
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        source_artifact = db.scalar(
+            select(DocumentParseArtifactModel).where(
+                DocumentParseArtifactModel.document_id == source_document_id
+            )
+        )
+        copied_artifact = db.scalar(
+            select(DocumentParseArtifactModel).where(
+                DocumentParseArtifactModel.document_id == published_document_id
+            )
+        )
+        assert source_artifact is not None
+        assert copied_artifact is not None
+        assert copied_artifact.id != source_artifact.id
+        assert copied_artifact.markdown_content == source_artifact.markdown_content
+        assert copied_artifact.elements_json == source_artifact.elements_json
+        assert copied_artifact.source_filename == "publish-word.docx"
+        assert copied_artifact.source_type == "word_document"
         assert copied_artifact.source_sha256 == source_artifact.source_sha256
     finally:
         session_generator.close()

@@ -10,7 +10,7 @@
 
 - Email/password 계정, 초대 링크 기반 가입, 세션, guest access gate
 - 개인 지식 기반, 초대 기반 group 지식 기반, root/system 사용자가 관리하는 project knowledge
-- 문서 업로드, 수집, 검색, 출처가 있는 답변
+- 문서 업로드, 수집, 검색, 출처가 있는 답변 (PDF, Markdown, plain text, `.xlsx`, `.pptx`, `.docx`; legacy `.doc`는 아직 미지원)
 - Server-owned conversation/run history와 streaming response
 - OpenAI 기반 응답은 최신 정보나 출처 기반 요청에 hosted web search를 노출할 수 있음
 - 그룹 멤버와 공개 요청을 관리하기 위한 권한 흐름

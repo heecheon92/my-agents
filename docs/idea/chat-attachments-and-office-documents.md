@@ -32,7 +32,7 @@ The current durable document path is:
 KnowledgeBase -> Document -> ExtractionRun -> Chunks/entities/embeddings -> ContextForge -> Answer with citations
 ```
 
-Today the upload dispatch supports PDF, Markdown, and plain text. The roadmap already points toward original-file retention, parser provider boundaries, parse artifacts, canonical Markdown, and layout-aware chunks.
+Today the upload dispatch supports PDF, Markdown, plain text, `.xlsx`, `.pptx`, and `.docx`. The roadmap still points toward original-file retention, parser provider boundaries, richer parse artifacts, canonical Markdown, and layout-aware chunks beyond the current local parsers.
 
 That direction should be reused for Office documents instead of adding ad-hoc parsing directly inside conversation routes.
 
@@ -267,7 +267,7 @@ Permission and source policy remain backend-owned. Attachments should be scoped 
 ## Recommended phases
 
 1. **Office parser support for durable KB documents**
-   - Add `.xlsx` and `.pptx` parser support.
+   - Add `.xlsx`, `.pptx`, and `.docx` parser support.
    - Convert to canonical Markdown.
    - Preserve sheet/slide provenance where possible.
    - Store as current document content initially.

@@ -241,7 +241,9 @@ async def upload_knowledge_base_document(
     file: Annotated[
         UploadFile,
         File(
-            description=("Supported file: text-based PDF, Markdown, plain text, .xlsx, or .pptx.")
+            description=(
+                "Supported file: text-based PDF, Markdown, plain text, .xlsx, .pptx, or .docx."
+            )
         ),
     ],
 ) -> DocumentResponse:

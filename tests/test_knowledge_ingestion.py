@@ -10,6 +10,7 @@ from pathlib import Path
 from time import monotonic, sleep
 
 import pytest
+from docx import Document as WordDocument
 from fastapi.testclient import TestClient
 from openpyxl import Workbook
 from pptx import Presentation
@@ -238,6 +239,22 @@ def _pptx_bytes() -> bytes:
     textbox.text = "OfficeSlideAlpha depends on PowerPoint provenance."
     buffer = BytesIO()
     presentation.save(buffer)
+    return buffer.getvalue()
+
+
+def _docx_bytes() -> bytes:
+    document = WordDocument()
+    document.add_heading("Word Provenance Plan", level=1)
+    document.add_paragraph("OfficeWordAlpha connects DOCX upload to retrieval.")
+    document.add_heading("API Endpoints", level=2)
+    document.add_paragraph("GET /word-docx")
+    table = document.add_table(rows=2, cols=2)
+    table.cell(0, 0).text = "Field"
+    table.cell(0, 1).text = "Meaning"
+    table.cell(1, 0).text = "OfficeWordAlpha"
+    table.cell(1, 1).text = "DOCX provenance"
+    buffer = BytesIO()
+    document.save(buffer)
     return buffer.getvalue()
 
 
@@ -1278,6 +1295,81 @@ def test_powerpoint_upload_ingests_slide_source_location_and_cites_it(monkeypatc
     assert run.json()["citations"][0]["source_location_json"] == source_location
 
 
+def test_docx_upload_persists_artifact_ingests_source_location_and_cites_it(
+    monkeypatch,
+) -> None:  # noqa: ANN001
+    client = _client(monkeypatch)
+    _signup_login(client, "docx-provenance-owner@example.com")
+    kb_id = _create_personal_knowledge_base(client, "DOCX Provenance KB")
+    document = _upload_document(
+        client,
+        data={"title": "Word Provenance", "knowledge_base_id": kb_id},
+        files={
+            "file": (
+                "word-plan.docx",
+                _docx_bytes(),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+    )
+    assert document.status_code == 201
+    payload = document.json()
+    assert payload["source_type"] == "word_document"
+    assert payload["source_filename"] == "word-plan.docx"
+    assert payload["source_content_type"] == (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+    assert payload["parser_name"] == "docling_docx_markdown_v1"
+    assert payload["source_page_count"] is None
+
+    [persisted] = _database_rows(select(DocumentModel).where(DocumentModel.id == payload["id"]))
+    assert "Word Provenance Plan" in persisted.content
+    assert "OfficeWordAlpha connects DOCX upload to retrieval." in persisted.content
+
+    [artifact] = _database_rows(
+        select(DocumentParseArtifactModel).where(
+            DocumentParseArtifactModel.document_id == payload["id"]
+        )
+    )
+    assert artifact.source_filename == "word-plan.docx"
+    assert artifact.source_type == "word_document"
+    assert artifact.parser_provider == "local"
+    assert artifact.parser_name == "docling_docx_markdown_v1"
+    assert artifact.markdown_content == persisted.content
+    elements = json.loads(artifact.elements_json)
+    assert {element["kind"] for element in elements} >= {
+        "word_heading",
+        "word_paragraph",
+        "word_table",
+    }
+
+    ingest = client.post(f"/documents/{payload['id']}/ingest")
+    assert ingest.status_code == 200
+    chunks = _database_rows(
+        select(DocumentChunkModel)
+        .where(DocumentChunkModel.document_id == payload["id"])
+        .order_by(DocumentChunkModel.ordinal)
+    )
+    word_chunk = next(item for item in chunks if "OfficeWordAlpha" in item.content)
+    source_location = json.loads(word_chunk.source_location_json)
+    assert source_location["source_type"] == "word_document"
+    assert source_location["heading_path"] == "Word Provenance Plan"
+    assert source_location["block_index"] >= 1
+
+    conversation = client.post("/conversations", json={"title": "DOCX provenance RAG"})
+    assert conversation.status_code == 201
+    run = client.post(
+        f"/conversations/{conversation.json()['id']}/runs",
+        json={"message": "What mentions OfficeWordAlpha?"},
+    )
+
+    assert run.status_code == 200
+    assert run.json()["citations"]
+    citation = run.json()["citations"][0]
+    assert citation["source_filename"] == "word-plan.docx"
+    assert citation["source_location_json"]["source_type"] == "word_document"
+
+
 def test_langgraph_academy_pdf_regression_extracts_real_text_when_available() -> None:
     sample = (
         Path.home() / "Downloads/LangChain_Academy_-_Introduction_to_LangGraph_-_Motivation.pdf"
@@ -1489,12 +1581,25 @@ def test_upload_rejects_unsupported_or_unsafe_input(monkeypatch) -> None:  # noq
     _signup_login(client, "pdf-safety@example.com")
     kb_id = _create_personal_knowledge_base(client, "PDF Safety KB")
 
-    unsupported = _upload_document(
+    corrupt_docx = _upload_document(
         client,
-        data={"title": "Docx", "knowledge_base_id": kb_id},
-        files={"file": ("notes.docx", b"not supported", "text/plain")},
+        data={"title": "Corrupt DOCX", "knowledge_base_id": kb_id},
+        files={
+            "file": (
+                "notes.docx",
+                b"not supported",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
     )
-    assert unsupported.status_code == 415
+    assert corrupt_docx.status_code == 400
+
+    unsupported_doc = _upload_document(
+        client,
+        data={"title": "Legacy DOC", "knowledge_base_id": kb_id},
+        files={"file": ("legacy.doc", b"not supported", "application/msword")},
+    )
+    assert unsupported_doc.status_code == 415
 
     legacy_office = _upload_document(
         client,

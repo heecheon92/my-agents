@@ -10,7 +10,7 @@ Start with [`docs/implementation-tracking.md`](./docs/implementation-tracking.md
 
 - Email/password accounts, invitation-link signup, sessions, and gated guest access
 - Personal knowledge bases, invite-based group knowledge bases, and root/system-managed project knowledge
-- Document upload, ingestion, retrieval, and cited answers
+- Document upload, ingestion, retrieval, and cited answers (PDF, Markdown, plain text, `.xlsx`, `.pptx`, `.docx`; legacy `.doc` is not supported yet)
 - Server-owned conversation/run history and streaming responses
 - OpenAI-backed responses can expose hosted web search for current or source-backed requests
 - Permission flows for group members and publish requests
