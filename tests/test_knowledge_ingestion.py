@@ -21,6 +21,7 @@ import my_agents.knowledge.extraction as extraction_module
 import my_agents.knowledge.pdf_uploads as pdf_uploads_module
 from my_agents.api.conversations.retrieval_context import retrieved_context_for_graph
 from my_agents.knowledge.extraction import (
+    _chunk_document_text,
     _chunk_pdf_text,
     _chunk_text,
     _deterministic_embedding,
@@ -1368,6 +1369,40 @@ def test_docx_upload_persists_artifact_ingests_source_location_and_cites_it(
     citation = run.json()["citations"][0]
     assert citation["source_filename"] == "word-plan.docx"
     assert citation["source_location_json"]["source_type"] == "word_document"
+
+
+def test_word_document_markdown_chunks_keep_headings_with_body_context() -> None:
+    markdown = (
+        "**목차**\n\n"
+        "1.1 개요\n\n"
+        "2.1 JATG PORT\n\n"
+        "<!-- image -->\n\n"
+        "**CHAPTER 1. INTRODUCTION**\n\n"
+        "- 1.1. **개요**\n\n"
+        "ACCU-BANK는 출입 통제 시스템에 사용되는 사용자 인증용 주 장치로서, "
+        "Ethernet을 이용한 TCP/IP통신 프로토콜을 사용합니다.\n\n"
+        "**2.1.1.1 JATG PORT**\n\n"
+        "제품의 AS및 유지 보수 용으로 사용되는 포트입니다."
+    )
+    document = DocumentModel(
+        title="ACCU-BANK Manual",
+        content=markdown,
+        source_type="word_document",
+        owner_user_id="user-1",
+        knowledge_base_id="kb-1",
+    )
+
+    chunks = _chunk_document_text(document)
+
+    chunk_texts = [content for content, *_ in chunks]
+    assert "<!-- image -->" not in chunk_texts
+    assert "- 1.1. **개요**" not in chunk_texts
+    assert any(
+        "- 1.1. **개요**" in content
+        and "ACCU-BANK는 출입 통제 시스템에 사용되는 사용자 인증용 주 장치" in content
+        for content in chunk_texts
+    )
+    assert len(chunks) < len(_chunk_text(markdown))
 
 
 def test_langgraph_academy_pdf_regression_extracts_real_text_when_available() -> None:

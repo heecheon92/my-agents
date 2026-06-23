@@ -55,6 +55,12 @@ _DATABASE_TABLE_PATTERN = re.compile(
     r"\b(?:table|from|join|into|update)\s+[`\"]?(?P<table>[A-Za-z][A-Za-z0-9_]{2,})[`\"]?",
     flags=re.IGNORECASE,
 )
+_WORD_DOCUMENT_SOURCE_TYPE = "word_document"
+_MARKDOWN_ATX_HEADING_PATTERN = re.compile(r"^#{1,6}\s+\S")
+_MARKDOWN_IMAGE_PLACEHOLDER_PATTERN = re.compile(
+    r"^<!--\s*image\s*-->$",
+    flags=re.IGNORECASE,
+)
 _CHUNK_TARGET_CHARS = 1500
 _CHUNK_OVERLAP_CHARS = 200
 logger = logging.getLogger(__name__)
@@ -442,6 +448,11 @@ def _chunk_document_text(
             (content, start, end, source_page, None)
             for content, start, end, source_page in _chunk_pdf_text(document.content)
         ]
+    chunked_text = (
+        _chunk_word_markdown_text(document.content)
+        if document.source_type == _WORD_DOCUMENT_SOURCE_TYPE
+        else _chunk_text(document.content)
+    )
     return [
         (
             content,
@@ -454,7 +465,7 @@ def _chunk_document_text(
                 end_offset=end,
             ),
         )
-        for content, start, end in _chunk_text(document.content)
+        for content, start, end in chunked_text
     ]
 
 
@@ -512,6 +523,96 @@ def _chunk_text(
             continue
         chunks.extend(_fixed_width_units(unit, base_offset=start))
     return chunks or [(stripped, 0, len(stripped))]
+
+
+def _chunk_word_markdown_text(
+    text: str,
+    *,
+    max_chars: int = _CHUNK_TARGET_CHARS,
+) -> list[tuple[str, int, int]]:
+    """Return retrieval-sized chunks for Docling DOCX Markdown.
+
+    Docling often serializes Word files as Markdown with blank lines between almost
+    every title, list item, image placeholder, and paragraph. The generic text
+    chunker intentionally preserves those semantic units one-for-one, but that
+    makes realistic DOCX uploads produce hundreds of tiny chunks whose highest
+    retrieval hits are frequently heading or table-of-contents fragments. For Word
+    Markdown we keep the same unit boundaries and offsets, then pack adjacent
+    units into retrieval-sized chunks so headings stay with their body text.
+    """
+    stripped = text.strip()
+    if not stripped:
+        return [("", 0, 0)]
+    units = [
+        (unit, start, end)
+        for unit, start, end in _semantic_units(stripped)
+        if not _is_markdown_image_placeholder(unit)
+    ]
+    return _coalesced_semantic_units(units, max_chars=max_chars) or [(stripped, 0, len(stripped))]
+
+
+def _coalesced_semantic_units(
+    units: Iterable[tuple[str, int, int]],
+    *,
+    max_chars: int,
+) -> list[tuple[str, int, int]]:
+    chunks: list[tuple[str, int, int]] = []
+    buffer: list[str] = []
+    buffer_start: int | None = None
+    buffer_end = 0
+    buffer_chars = 0
+
+    def flush_buffer() -> None:
+        nonlocal buffer, buffer_start, buffer_end, buffer_chars
+        if buffer and buffer_start is not None:
+            chunks.append(("\n\n".join(buffer), buffer_start, buffer_end))
+        buffer = []
+        buffer_start = None
+        buffer_end = 0
+        buffer_chars = 0
+
+    for unit, start, end in units:
+        if not unit:
+            continue
+        if (
+            buffer
+            and _starts_markdown_atx_heading(unit)
+            and _buffer_contains_non_heading_text(buffer)
+        ):
+            flush_buffer()
+        if len(unit) > max_chars:
+            flush_buffer()
+            chunks.extend(_fixed_width_units(unit, base_offset=start))
+            continue
+        candidate_chars = len(unit) if not buffer else buffer_chars + 2 + len(unit)
+        if buffer and candidate_chars > max_chars:
+            flush_buffer()
+            candidate_chars = len(unit)
+        if buffer_start is None:
+            buffer_start = start
+        buffer.append(unit)
+        buffer_end = end
+        buffer_chars = candidate_chars
+
+    flush_buffer()
+    return chunks
+
+
+def _is_markdown_image_placeholder(unit: str) -> bool:
+    return bool(_MARKDOWN_IMAGE_PLACEHOLDER_PATTERN.match(unit.strip()))
+
+
+def _starts_markdown_atx_heading(unit: str) -> bool:
+    first_line = next((line.strip() for line in unit.splitlines() if line.strip()), "")
+    return bool(_MARKDOWN_ATX_HEADING_PATTERN.match(first_line))
+
+
+def _buffer_contains_non_heading_text(buffer: Iterable[str]) -> bool:
+    return any(
+        stripped_line and not _MARKDOWN_ATX_HEADING_PATTERN.match(stripped_line)
+        for unit in buffer
+        for stripped_line in (line.strip() for line in unit.splitlines())
+    )
 
 
 def _extract_entity_names(text: str) -> list[str]:
