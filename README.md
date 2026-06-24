@@ -27,7 +27,10 @@
   guest에게 `user_type`, `can_manage_system_knowledge`를 생략하고 root/system manager에게만
   해당 값을 포함합니다.
 - Nickname은 사람을 알아보기 위한 표시 이름이며, 로그인과 초대의 식별자는 email입니다. 계정이 없는 초대 수신자는 초대 token이 증명한 email을 그대로 사용하고 nickname/password만 정합니다.
-- Publish request 작성자는 승인 전 요청을 `cancelled`로 취소할 수 있고, 다시 요청할 수 있습니다. 승인 전에 source document를 삭제하면 요청은 `withdrawn`으로 전환됩니다. 승인 후 source document 삭제는 group copy를 유지하고, group manager가 승인된 group copy를 삭제하면 publish request 이력은 남기되 `published_document_id`를 비웁니다.
+- 표준 개인/그룹/system 지식 기반은 권한 있는 소유자/관리자가 knowledge-base API로 이름을 바꾸거나 삭제할 수 있습니다. 숨겨진 `team_upload_staging` KB는 내부 임시 저장소라서 일반 관리 흐름에서 이름 변경/삭제 대상이 아닙니다.
+- 문서 목록 response는 가볍게 유지합니다. 선택한 문서의 Markdown/internal representation 전체가 필요한 UI는 `GET /knowledge-bases/{knowledge_base_id}/documents/{document_id}/preview`를 사용합니다.
+- Publish request 작성자는 승인 전 요청을 `cancelled`로 취소할 수 있고, 다시 요청할 수 있습니다. 승인 전에 source document나 source knowledge base를 삭제하면 요청은 `withdrawn`으로 전환됩니다. 승인 후 source 삭제는 group-owned copy를 유지하고, group manager가 승인된 group copy를 삭제하면 publish request 이력은 남기되 `published_document_id` 또는 `published_knowledge_base_id`를 비웁니다.
+- 전체 knowledge-base approval은 requester-owned source KB를 그대로 retrieval 권한으로 열지 않고 group-owned KB copy를 만듭니다. 과거 approved KB publication row는 `uv run python -m scripts.backfill_kb_publication_copies --dry-run` 결과를 검토한 뒤 `--apply`로 backfill합니다.
 - Long-term memory는 기본적으로 꺼져 있고, 사용자가 실험 기능으로 직접 켤 수 있습니다.
 - 실제 secret은 commit하지 않습니다. `.env`는 local only이고 `.env.example`은 안전한 placeholder입니다.
 
@@ -138,6 +141,7 @@ git diff --check
 - 현재 구현 상태: [`docs/implementation-tracking.md`](./docs/implementation-tracking.md)
 - Product roadmap: [`ROADMAP.md`](./ROADMAP.md)
 - Product docs: [`docs/product-chat-service/ko/README.md`](./docs/product-chat-service/ko/README.md)
+- 지식 관리 lifecycle/publish copy 계약: [`docs/product-chat-service/ko/24-knowledge-lifecycle-and-publish-copy-contract.md`](./docs/product-chat-service/ko/24-knowledge-lifecycle-and-publish-copy-contract.md)
 - Frontend demo runbook: [`docs/product-chat-service/ko/10-frontend-demo-runbook.md`](./docs/product-chat-service/ko/10-frontend-demo-runbook.md)
 - Script commands: [`scripts/README.md`](./scripts/README.md)
 - Ideas: [`docs/idea/`](./docs/idea/)

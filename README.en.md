@@ -27,7 +27,10 @@ Start with [`docs/implementation-tracking.md`](./docs/implementation-tracking.md
   `can_manage_system_knowledge` for normal users and guests, and only include them
   for root/system managers.
 - Nickname is display metadata; email remains the login and invitation identifier. Invitees without an account use the token-proved email and choose only a nickname/password.
-- Publish request requesters can cancel pending requests as `cancelled` and request again. Deleting a publish request's source document before approval moves the request to `withdrawn`. After approval, source deletion keeps the group copy, and manager deletion of the approved group copy preserves request history while clearing `published_document_id`.
+- Standard personal, group, and system knowledge bases are lifecycle-managed through the knowledge-base API by their authorized owners/managers. Hidden `team_upload_staging` KBs stay internal and cannot be renamed or deleted through the normal management flow.
+- Document source lists stay lightweight. Use `GET /knowledge-bases/{knowledge_base_id}/documents/{document_id}/preview` when a UI needs the full Markdown/internal representation for a selected document.
+- Publish request requesters can cancel pending requests as `cancelled` and request again. Deleting a publish request's source document or source knowledge base before approval moves the request to `withdrawn`. After approval, source deletion keeps the group-owned copy, and manager deletion of the approved group copy preserves request history while clearing `published_document_id` or `published_knowledge_base_id`.
+- Whole-knowledge-base approval creates a group-owned KB copy for retrieval instead of authorizing the requester-owned source KB. Backfill old approved KB publication rows with `uv run python -m scripts.backfill_kb_publication_copies --dry-run` and then `--apply` after reviewing the summary.
 - Long-term memory is disabled by default and can be enabled from experimental settings.
 - Never commit real secrets. `.env` is local-only; `.env.example` contains safe placeholders.
 
@@ -137,6 +140,7 @@ git diff --check
 - Current implementation status: [`docs/implementation-tracking.md`](./docs/implementation-tracking.md)
 - Product roadmap: [`ROADMAP.md`](./ROADMAP.md)
 - Product docs: [`docs/product-chat-service/en/README.md`](./docs/product-chat-service/en/README.md)
+- Knowledge lifecycle and publish-copy contract: [`docs/product-chat-service/en/24-knowledge-lifecycle-and-publish-copy-contract.md`](./docs/product-chat-service/en/24-knowledge-lifecycle-and-publish-copy-contract.md)
 - Frontend demo runbook: [`docs/product-chat-service/en/10-frontend-demo-runbook.md`](./docs/product-chat-service/en/10-frontend-demo-runbook.md)
 - Script commands: [`scripts/README.md`](./scripts/README.md)
 - Ideas: [`docs/idea/`](./docs/idea/)

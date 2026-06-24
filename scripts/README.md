@@ -19,6 +19,7 @@ repository root with `uv run python -m scripts.<name>`.
 | `scripts.set_user_type` | Set a registered account's platform `user_type` (`normal`, `root`, `system`) with safe dry-run output. | Operator-only system knowledge manager assignment. |
 | `scripts.local_demo_seed` | Seed a file-backed SQLite demo user, knowledge base, document, and extraction run. | Prepare a local demo database before starting the backend. |
 | `scripts.local_demo_smoke` | Smoke-test a running backend over HTTP only. | Verify the local V1 API path after seeding and starting the server. |
+| `scripts.backfill_kb_publication_copies` | Copy legacy approved whole-KB publications into group-owned KB copies with dry-run output. | Migrate historical publication rows after the publish-copy contract change. |
 | `scripts.issue_guest_access_code` | Issue a one-time guest access code for print-first operator delivery. | Guest-code workflows. |
 | `scripts.auth_approval` | Backward-compatible alias for `scripts.ops`. | Existing auth approval workflows. |
 | `scripts.learning_log` | Create numbered personal learning notes and update the learning index. | Add a new `docs/learning/` note without hand-numbering files. |
@@ -206,6 +207,28 @@ uv run python -m scripts.local_demo_smoke \
 
 A successful run prints `Local V1 API smoke passed` plus the conversation/run
 IDs, answer-delta count, citation count, and event count.
+
+## `scripts.backfill_kb_publication_copies`
+
+Backfills legacy approved whole-knowledge-base publication rows that still point
+at a requester-owned personal KB. The script copies those legacy publications into
+group-owned KBs so retrieval and future lifecycle management use the approved
+group copy as the source of record.
+
+Run a dry run first and inspect the JSON summary:
+
+```bash
+uv run python -m scripts.backfill_kb_publication_copies --dry-run
+```
+
+Apply only after the dry-run summary matches expectations and the target
+environment has an appropriate backup or snapshot:
+
+```bash
+uv run python -m scripts.backfill_kb_publication_copies --apply
+```
+
+The default mode is dry-run, so omitting both flags does not mutate data.
 
 ## `scripts.ops`
 

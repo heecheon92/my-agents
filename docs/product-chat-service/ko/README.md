@@ -28,6 +28,7 @@
 20. [Nickname signup and member roster contract](./20-nickname-signup-member-roster-contract.md)
 21. [System knowledge base와 user type 계약](./21-system-knowledge-base-user-type.md)
 22. [RAG retrieval performance log](./23-rag-retrieval-performance-log.md)
+23. [지식 관리 lifecycle와 publish copy 계약](./24-knowledge-lifecycle-and-publish-copy-contract.md)
 
 ## 문서 상태
 
@@ -42,6 +43,7 @@
 - KB-first handoff: [Knowledge-base path OpenAPI handoff](./12-knowledge-base-path-openapi-handoff.md)
 - 그룹 문서 승인 업로드 흐름: [Group upload staging flow](./18-team-upload-staging-flow.md)
 - System knowledge 계약: [System knowledge base와 user type 계약](./21-system-knowledge-base-user-type.md)
+- 지식 관리 lifecycle/publish copy 계약: [지식 관리 lifecycle와 publish copy 계약](./24-knowledge-lifecycle-and-publish-copy-contract.md)
 
 ## 배포 / 마이그레이션 참고
 
