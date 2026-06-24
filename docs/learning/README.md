@@ -16,6 +16,7 @@ Start here:
 10. [Production guest login stale Postgres SSL connection](./09-production-guest-login-stale-postgres-ssl-connection.md)
 11. [Metadata-profile retrieval must inject body evidence](./10-metadata-profile-retrieval-must-inject-body-evidence.md)
 12. [Production async ingestion queued without a worker](./11-production-async-ingestion-queued-without-a-worker.md)
+13. [DOCX Markdown chunking must keep headings with body context](./12-docx-markdown-chunking-must-keep-headings-with-body-context.md)
 
 This directory is the owner's learning path archive. The root numbered notes are personal learning logs. Focused project-specific notes can live in subfolders, such as [`project-notes/`](./project-notes/). Project architecture docs that are not primarily learning logs live outside this directory, for example [`docs/product-chat-service/en/`](../product-chat-service/).
 
