@@ -106,6 +106,8 @@ def test_system_kb_management_is_manager_only_and_hidden_from_normal_lists(monke
     normal_list = normal.get("/knowledge-bases")
     root_list = root.get("/knowledge-bases")
     normal_get = normal.get(f"/knowledge-bases/{system_id}")
+    normal_rename = normal.patch(f"/knowledge-bases/{system_id}", json={"name": "Nope"})
+    normal_delete = normal.delete(f"/knowledge-bases/{system_id}")
     renamed = root.patch(f"/knowledge-bases/{system_id}", json={"name": "Project Facts"})
 
     assert normal_create.status_code == 403
@@ -116,6 +118,8 @@ def test_system_kb_management_is_manager_only_and_hidden_from_normal_lists(monke
     assert system_id not in {item["id"] for item in normal_list.json()}
     assert system_id in {item["id"] for item in root_list.json()}
     assert normal_get.status_code == 404
+    assert normal_rename.status_code == 404
+    assert normal_delete.status_code == 404
     assert renamed.status_code == 200
     assert renamed.json()["name"] == "Project Facts"
 

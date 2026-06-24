@@ -12,7 +12,6 @@ from my_agents.auth.contracts import Principal
 from my_agents.groups.models import MembershipModel, MembershipRole
 from my_agents.knowledge.models import (
     KnowledgeBaseModel,
-    KnowledgeBasePublicationModel,
     KnowledgeBasePurpose,
     KnowledgeBaseScope,
 )
@@ -148,20 +147,7 @@ def user_can_select_knowledge_base(
             return False
         if knowledge_base.owner_user_id == user_id:
             return True
-        return (
-            db.scalar(
-                select(KnowledgeBasePublicationModel.id)
-                .join(
-                    MembershipModel,
-                    MembershipModel.group_id == KnowledgeBasePublicationModel.group_id,
-                )
-                .where(
-                    KnowledgeBasePublicationModel.knowledge_base_id == knowledge_base.id,
-                    MembershipModel.user_id == user_id,
-                )
-            )
-            is not None
-        )
+        return False
     if knowledge_base.scope == KnowledgeBaseScope.GROUP.value:
         return knowledge_base.group_id is not None and has_group_membership(
             db, knowledge_base.group_id, user_id
@@ -178,7 +164,6 @@ def authorized_knowledge_base_filter(user_id: str):
     `retrievable_knowledge_base_filter` for chat/list/retrieval surfaces.
     """
     group_ids = select(MembershipModel.group_id).where(MembershipModel.user_id == user_id)
-    published_personal_kb_ids = published_personal_knowledge_base_ids_for_user(user_id)
     return or_(
         and_(
             KnowledgeBaseModel.scope == KnowledgeBaseScope.PERSONAL.value,
@@ -188,10 +173,6 @@ def authorized_knowledge_base_filter(user_id: str):
         and_(
             KnowledgeBaseModel.scope == KnowledgeBaseScope.GROUP.value,
             KnowledgeBaseModel.group_id.in_(group_ids),
-        ),
-        and_(
-            KnowledgeBaseModel.scope == KnowledgeBaseScope.PERSONAL.value,
-            KnowledgeBaseModel.id.in_(published_personal_kb_ids),
         ),
     )
 
@@ -215,14 +196,6 @@ def management_visible_knowledge_base_filter(principal: Principal):
 def retrievable_knowledge_base_filter(user_id: str):
     """Return the SQL predicate for KBs that can appear in chat/RAG retrieval."""
     return or_(selectable_knowledge_base_filter(user_id), system_knowledge_base_filter())
-
-
-def published_personal_knowledge_base_ids_for_user(user_id: str):
-    """Return KB IDs published into any group where the user is currently a member."""
-    group_ids = select(MembershipModel.group_id).where(MembershipModel.user_id == user_id)
-    return select(KnowledgeBasePublicationModel.knowledge_base_id).where(
-        KnowledgeBasePublicationModel.group_id.in_(group_ids)
-    )
 
 
 def has_group_membership(db: Session, group_id: str, user_id: str) -> bool:

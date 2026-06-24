@@ -11,8 +11,10 @@ from sqlalchemy import select
 
 from my_agents.api import create_app
 from my_agents.knowledge.models import (
+    DocumentChunkModel,
     DocumentModel,
     DocumentParseArtifactModel,
+    KnowledgeBaseModel,
     KnowledgeBasePublicationModel,
     KnowledgePublishRequestModel,
 )
@@ -1045,7 +1047,7 @@ def test_owner_approval_publishes_entire_personal_kb_as_group_source(monkeypatch
     requester = _client(monkeypatch)
     viewer = _client(monkeypatch)
     owner_id = _signup_login(owner, "publish-kb-owner@example.com")
-    requester_id = _signup_login(requester, "publish-kb-requester@example.com")
+    _requester_id = _signup_login(requester, "publish-kb-requester@example.com")
     viewer_id = _signup_login(viewer, "publish-kb-viewer@example.com")
     group_id = _create_group(owner, name="Published Personal KB Group")
     _invite_and_accept_member(
@@ -1067,9 +1069,15 @@ def test_owner_approval_publishes_entire_personal_kb_as_group_source(monkeypatch
         requester,
         kb_id=personal_kb_id,
         title="Whole Personal KB Source",
-        content="GKPublishedPersonalKbAlpha should become a shared group source.",
+        content="GKPublishedPersonalKbAlpha should become a copied group source.",
+    )
+    source_docx_id = _upload_docx_document(
+        requester,
+        kb_id=personal_kb_id,
+        title="Whole Personal KB Office Source",
     )
     _ingest(requester, kb_id=personal_kb_id, document_id=source_document_id)
+    _ingest(requester, kb_id=personal_kb_id, document_id=source_docx_id)
 
     request = requester.post(
         f"/groups/{group_id}/publish-requests",
@@ -1084,6 +1092,7 @@ def test_owner_approval_publishes_entire_personal_kb_as_group_source(monkeypatch
     assert request_payload["source_document_title"] is None
     assert request_payload["target_knowledge_base_name"] is None
     assert request_payload["published_knowledge_base_id"] is None
+    assert request_payload["published_knowledge_base_name"] is None
     assert (
         _retrieval_hits(
             viewer_id,
@@ -1101,35 +1110,106 @@ def test_owner_approval_publishes_entire_personal_kb_as_group_source(monkeypatch
     approved = owner.post(f"/groups/{group_id}/publish-requests/{request_payload['id']}/approve")
     assert approved.status_code == 200
     approved_payload = approved.json()
+    group_copy_id = approved_payload["published_knowledge_base_id"]
     assert approved_payload["status"] == "approved"
     assert approved_payload["reviewer_user_id"] == owner_id
     assert approved_payload["published_document_id"] is None
-    assert approved_payload["published_knowledge_base_id"] == personal_kb_id
+    assert group_copy_id and group_copy_id != personal_kb_id
+    assert approved_payload["published_knowledge_base_name"] == "Requester Public Candidate KB"
+    assert (
+        _retrieval_hits(
+            viewer_id,
+            kb_ids=[personal_kb_id],
+            query="GKPublishedPersonalKbAlpha",
+        )
+        == []
+    )
+
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        group_copy = db.get(KnowledgeBaseModel, group_copy_id)
+        assert group_copy is not None
+        assert group_copy.scope == "group"
+        assert group_copy.group_id == group_id
+        assert group_copy.purpose == "standard"
+        copied_documents = db.scalars(
+            select(DocumentModel).where(DocumentModel.knowledge_base_id == group_copy_id)
+        ).all()
+        copied_document_ids = {document.id for document in copied_documents}
+        assert {document.title for document in copied_documents} == {
+            "Whole Personal KB Source",
+            "Whole Personal KB Office Source",
+        }
+        assert source_document_id not in copied_document_ids
+        assert source_docx_id not in copied_document_ids
+        copied_text_document = next(
+            document
+            for document in copied_documents
+            if document.title == "Whole Personal KB Source"
+        )
+        copied_docx_document = next(
+            document
+            for document in copied_documents
+            if document.title == "Whole Personal KB Office Source"
+        )
+        source_artifact = db.scalar(
+            select(DocumentParseArtifactModel).where(
+                DocumentParseArtifactModel.document_id == source_docx_id
+            )
+        )
+        copied_artifact = db.scalar(
+            select(DocumentParseArtifactModel).where(
+                DocumentParseArtifactModel.document_id == copied_docx_document.id
+            )
+        )
+        assert source_artifact is not None
+        assert copied_artifact is not None
+        assert copied_artifact.id != source_artifact.id
+        assert copied_artifact.markdown_content == source_artifact.markdown_content
+        assert copied_artifact.source_filename == "publish-word.docx"
+        copied_chunks = db.scalars(
+            select(DocumentChunkModel).where(
+                DocumentChunkModel.document_id.in_(copied_document_ids)
+            )
+        ).all()
+        assert copied_chunks
+        assert {chunk.document_id for chunk in copied_chunks}.issubset(copied_document_ids)
+        publication = db.scalar(
+            select(KnowledgeBasePublicationModel).where(
+                KnowledgeBasePublicationModel.group_id == group_id,
+                KnowledgeBasePublicationModel.knowledge_base_id == personal_kb_id,
+            )
+        )
+        assert publication is None
+    finally:
+        session_generator.close()
+
     assert _retrieval_hits(
         viewer_id,
-        kb_ids=[personal_kb_id],
+        kb_ids=[group_copy_id],
         query="GKPublishedPersonalKbAlpha",
-    ) == [source_document_id]
+    ) == [copied_text_document.id]
+    assert _retrieval_hits(
+        viewer_id,
+        kb_ids=[group_copy_id],
+        query="GKPublishWordArtifact",
+    ) == [copied_docx_document.id]
 
-    listed_knowledge_bases = viewer.get("/knowledge-bases").json()
-    listed_ids = {knowledge_base["id"] for knowledge_base in listed_knowledge_bases}
-    assert personal_kb_id in listed_ids
-    listed_published_kb = next(
+    requester_knowledge_bases = requester.get("/knowledge-bases").json()
+    original_listing = next(
         knowledge_base
-        for knowledge_base in listed_knowledge_bases
+        for knowledge_base in requester_knowledge_bases
         if knowledge_base["id"] == personal_kb_id
     )
-    assert listed_published_kb["published_group_ids"] == [group_id]
-
-    direct_write = viewer.post(
-        f"/knowledge-bases/{personal_kb_id}/documents",
-        json={"title": "Viewer write", "content": "must not write"},
+    group_copy_listing = next(
+        knowledge_base
+        for knowledge_base in requester_knowledge_bases
+        if knowledge_base["id"] == group_copy_id
     )
-    assert direct_write.status_code == 422
-    assert (
-        direct_write.json()["detail"]
-        == "direct document writes require an owned personal knowledge base"
-    )
+    assert original_listing["published_group_ids"] == []
+    assert group_copy_listing["group_id"] == group_id
+    assert group_copy_listing["published_group_ids"] == [group_id]
 
     duplicate = requester.post(
         f"/groups/{group_id}/publish-requests",
@@ -1138,18 +1218,99 @@ def test_owner_approval_publishes_entire_personal_kb_as_group_source(monkeypatch
     assert duplicate.status_code == 409
     assert duplicate.json()["detail"] == "knowledge base already published to group"
 
+    deleted_original = requester.delete(f"/knowledge-bases/{personal_kb_id}")
+    assert deleted_original.status_code == 204
+    assert _retrieval_hits(
+        viewer_id,
+        kb_ids=[group_copy_id],
+        query="GKPublishedPersonalKbAlpha",
+    ) == [copied_text_document.id]
+    history_after_source_delete = owner.get(f"/groups/{group_id}/publish-requests").json()
+    approved_history = next(
+        item for item in history_after_source_delete if item["id"] == request_payload["id"]
+    )
+    assert approved_history["source_knowledge_base_id"] is None
+    assert approved_history["source_knowledge_base_name"] == "Requester Public Candidate KB"
+    assert approved_history["published_knowledge_base_id"] == group_copy_id
+    assert approved_history["published_knowledge_base_name"] == "Requester Public Candidate KB"
+
+    deleted_group_copy = owner.delete(f"/knowledge-bases/{group_copy_id}")
+    assert deleted_group_copy.status_code == 204
+    assert (
+        _retrieval_hits(
+            viewer_id,
+            kb_ids=[group_copy_id],
+            query="GKPublishedPersonalKbAlpha",
+        )
+        == []
+    )
+    history_after_group_delete = owner.get(f"/groups/{group_id}/publish-requests").json()
+    deleted_copy_history = next(
+        item for item in history_after_group_delete if item["id"] == request_payload["id"]
+    )
+    assert deleted_copy_history["status"] == "approved"
+    assert deleted_copy_history["published_knowledge_base_id"] is None
+    assert deleted_copy_history["published_knowledge_base_name"] == "Requester Public Candidate KB"
+
+
+def test_whole_kb_publish_approval_rolls_back_group_copy_when_ingestion_fails(monkeypatch) -> None:  # noqa: ANN001
+    def fail_ingestion(self, document):  # noqa: ANN001, ARG001
+        raise RuntimeError("fixture whole-kb ingestion failure")
+
+    monkeypatch.setattr(
+        "my_agents.knowledge.publication_copies.KnowledgeExtractionService.ingest_document",
+        fail_ingestion,
+    )
+    owner = _client(monkeypatch, raise_server_exceptions=False)
+    requester = _client(monkeypatch, raise_server_exceptions=False)
+    _owner_id = _signup_login(owner, "publish-kb-fail-owner@example.com")
+    _requester_id = _signup_login(requester, "publish-kb-fail-requester@example.com")
+    group_id = _create_group(owner, name="Whole KB Failure Group")
+    _invite_and_accept_member(
+        owner=owner,
+        recipient=requester,
+        group_id=group_id,
+        recipient_email="publish-kb-fail-requester@example.com",
+        role="viewer",
+    )
+    personal_kb_id = _create_personal_kb(requester, "Whole KB Failure Personal KB")
+    _create_document(
+        requester,
+        kb_id=personal_kb_id,
+        title="Whole KB Rollback Source",
+        content="GKWholeKbRollback should not leak through a partial group copy.",
+    )
+    request = requester.post(
+        f"/groups/{group_id}/publish-requests",
+        json={"source_knowledge_base_id": personal_kb_id},
+    )
+    assert request.status_code == 201
+    request_id = request.json()["id"]
+
+    approved = owner.post(f"/groups/{group_id}/publish-requests/{request_id}/approve")
+
+    assert approved.status_code == 500
     session_generator = get_database_session()
     db = next(session_generator)
     try:
-        publication = db.scalar(
-            select(KnowledgeBasePublicationModel).where(
-                KnowledgeBasePublicationModel.group_id == group_id,
-                KnowledgeBasePublicationModel.knowledge_base_id == personal_kb_id,
+        publish_request = db.scalar(
+            select(KnowledgePublishRequestModel).where(
+                KnowledgePublishRequestModel.id == request_id
             )
         )
-        assert publication is not None
-        assert publication.requester_user_id == requester_id
-        assert publication.approved_by_user_id == owner_id
-        assert publication.publish_request_id == request_payload["id"]
+        leaked_group_kbs = db.scalars(
+            select(KnowledgeBaseModel).where(
+                KnowledgeBaseModel.group_id == group_id,
+                KnowledgeBaseModel.name.like("Whole KB Failure Personal KB%"),
+            )
+        ).all()
+        leaked_documents = db.scalars(
+            select(DocumentModel).where(DocumentModel.title == "Whole KB Rollback Source")
+        ).all()
+        assert publish_request is not None
+        assert publish_request.status == "pending"
+        assert publish_request.published_knowledge_base_id is None
+        assert leaked_group_kbs == []
+        assert all(document.knowledge_base_id == personal_kb_id for document in leaked_documents)
     finally:
         session_generator.close()

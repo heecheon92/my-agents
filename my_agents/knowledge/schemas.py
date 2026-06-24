@@ -103,6 +103,7 @@ class KnowledgePublishRequestResponse(BaseModel):
     reviewer_user_id: str | None
     published_document_id: str | None
     published_knowledge_base_id: str | None
+    published_knowledge_base_name: str | None = None
     created_at: datetime
     reviewed_at: datetime | None
 
@@ -159,6 +160,21 @@ class DocumentResponse(BaseModel):
     source_sha256: str | None = None
     source_page_count: int | None = None
     parser_name: str | None = None
+
+
+class DocumentPreviewResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    title: str
+    content: str
+    source_type: str = "text"
+    source_filename: str | None = None
+    source_content_type: str | None = None
+    source_byte_size: int | None = None
+    source_page_count: int | None = None
+    parser_name: str | None = None
+    created_at: datetime
 
 
 class DocumentPermissionPatchRequest(BaseModel):

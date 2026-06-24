@@ -14,10 +14,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from my_agents.groups.models import MembershipModel
-from my_agents.knowledge.auth import (
-    published_personal_knowledge_base_ids_for_user,
-    retrievable_knowledge_base_filter,
-)
+from my_agents.knowledge.auth import retrievable_knowledge_base_filter
 from my_agents.knowledge.embeddings import EmbeddingProvider, get_embedding_provider
 from my_agents.knowledge.models import (
     DocumentChunkModel,
@@ -754,12 +751,6 @@ def _authorized_document_filter(
             _system_knowledge_base_ids(require_standard_purpose=require_standard_purpose)
         ),
     ]
-    if include_published_personal_kbs:
-        readable_document_predicates.append(
-            DocumentModel.knowledge_base_id.in_(
-                published_personal_knowledge_base_ids_for_user(user_id)
-            )
-        )
     return and_(
         _knowledge_base_scope_filter(
             user_id,
@@ -832,7 +823,12 @@ def _system_knowledge_base_ids(*, require_standard_purpose: bool):
 
 
 def _schema_has_knowledge_base_publications(db: Session) -> bool:
-    return inspect(db.get_bind()).has_table("knowledge_base_publications")
+    """Return whether legacy publication rows should grant retrieval.
+
+    The table can remain present while backfill deletes old rows, but after the
+    group-owned-copy cutover it must not authorize personal source KB access.
+    """
+    return False
 
 
 def _schema_has_knowledge_base_purpose(db: Session) -> bool:

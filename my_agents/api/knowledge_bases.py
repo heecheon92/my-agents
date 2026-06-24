@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile, status
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from my_agents.api.documents import (
     create_document_in_knowledge_base,
     delete_document_record,
+    get_document_in_knowledge_base_or_404,
     get_extraction_run_in_knowledge_base,
     ingest_document_async_in_knowledge_base,
     ingest_document_in_knowledge_base,
@@ -33,9 +35,12 @@ from my_agents.knowledge.models import (
     KnowledgeBasePublicationModel,
     KnowledgeBasePurpose,
     KnowledgeBaseScope,
+    KnowledgePublishRequestModel,
+    KnowledgePublishRequestStatus,
 )
 from my_agents.knowledge.schemas import (
     DocumentCreateRequest,
+    DocumentPreviewResponse,
     DocumentResponse,
     DocumentUpdateRequest,
     ExtractionRunResponse,
@@ -43,6 +48,8 @@ from my_agents.knowledge.schemas import (
     KnowledgeBaseResponse,
     KnowledgeBaseUpdateRequest,
 )
+from my_agents.permissions.contracts import DocumentOperation
+from my_agents.permissions.service import AuthorizationService
 from my_agents.persistence.database import get_database_session
 from my_agents.settings import Settings, get_settings
 
@@ -155,13 +162,8 @@ def update_knowledge_base(
     principal: Annotated[Principal, Depends(get_current_principal)],
     db: Annotated[Session, Depends(get_database_session)],
 ) -> KnowledgeBaseResponse:
-    """Update system KB metadata through the privileged management path."""
-    knowledge_base = get_manageable_knowledge_base_or_404(db, knowledge_base_id, principal)
-    if knowledge_base.scope != KnowledgeBaseScope.SYSTEM.value:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="only system knowledge bases can be updated through this route",
-        )
+    """Update lifecycle-manageable standard KB metadata."""
+    knowledge_base = _get_lifecycle_mutable_knowledge_base_or_404(db, knowledge_base_id, principal)
     knowledge_base.name = request.name.strip()
     db.add(knowledge_base)
     db.commit()
@@ -175,13 +177,9 @@ def delete_knowledge_base(
     principal: Annotated[Principal, Depends(get_current_principal)],
     db: Annotated[Session, Depends(get_database_session)],
 ) -> Response:
-    """Delete a system KB and dependent document artifacts."""
-    knowledge_base = get_manageable_knowledge_base_or_404(db, knowledge_base_id, principal)
-    if knowledge_base.scope != KnowledgeBaseScope.SYSTEM.value:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="only system knowledge bases can be deleted through this route",
-        )
+    """Delete a lifecycle-manageable standard KB and dependent document artifacts."""
+    knowledge_base = _get_lifecycle_mutable_knowledge_base_or_404(db, knowledge_base_id, principal)
+    _detach_knowledge_base_from_publish_requests(db, knowledge_base)
     documents = db.scalars(
         select(DocumentModel).where(DocumentModel.knowledge_base_id == knowledge_base.id)
     ).all()
@@ -202,6 +200,40 @@ def list_knowledge_base_documents(
         db=db,
         knowledge_base_id=knowledge_base_id,
         principal=principal,
+    )
+
+
+@knowledge_bases_router.get(
+    "/{knowledge_base_id}/documents/{document_id}/preview",
+    response_model=DocumentPreviewResponse,
+)
+def preview_knowledge_base_document(
+    knowledge_base_id: str,
+    document_id: str,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    db: Annotated[Session, Depends(get_database_session)],
+) -> DocumentPreviewResponse:
+    """Return full display content for a document after enforcing its KB path boundary."""
+    document = get_document_in_knowledge_base_or_404(
+        db=db,
+        knowledge_base_id=knowledge_base_id,
+        document_id=document_id,
+        principal=principal,
+    )
+    knowledge_base = db.get(KnowledgeBaseModel, knowledge_base_id)
+    if knowledge_base is None or not _can_preview_document(db, principal, knowledge_base, document):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="document not found")
+    return DocumentPreviewResponse(
+        id=document.id,
+        title=document.title,
+        content=document.content,
+        source_type=document.source_type,
+        source_filename=document.source_filename,
+        source_content_type=document.source_content_type,
+        source_byte_size=document.source_byte_size,
+        source_page_count=document.source_page_count,
+        parser_name=document.parser_name,
+        created_at=document.created_at,
     )
 
 
@@ -368,6 +400,95 @@ def _has_group_manager_access(db: Session, group_id: str, user_id: str) -> bool:
     }
 
 
+def _get_lifecycle_mutable_knowledge_base_or_404(
+    db: Session, knowledge_base_id: str, principal: Principal
+) -> KnowledgeBaseModel:
+    """Return a standard KB the principal can rename/delete, concealing other IDs."""
+    knowledge_base = db.get(KnowledgeBaseModel, knowledge_base_id)
+    if knowledge_base is None or knowledge_base.purpose != KnowledgeBasePurpose.STANDARD.value:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="knowledge base not found",
+        )
+    if knowledge_base.scope == KnowledgeBaseScope.SYSTEM.value:
+        if is_system_knowledge_manager(principal):
+            return knowledge_base
+    elif knowledge_base.scope == KnowledgeBaseScope.PERSONAL.value:
+        if knowledge_base.group_id is None and knowledge_base.owner_user_id == principal.user_id:
+            return knowledge_base
+    elif (
+        knowledge_base.scope == KnowledgeBaseScope.GROUP.value
+        and knowledge_base.group_id is not None
+        and _has_group_manager_access(db, knowledge_base.group_id, principal.user_id)
+    ):
+        return knowledge_base
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="knowledge base not found")
+
+
+def _detach_knowledge_base_from_publish_requests(
+    db: Session, knowledge_base: KnowledgeBaseModel
+) -> None:
+    """Preserve publish request rows while removing references to a deleted KB."""
+    now = datetime.now(UTC)
+    source_requests = db.scalars(
+        select(KnowledgePublishRequestModel).where(
+            KnowledgePublishRequestModel.source_knowledge_base_id == knowledge_base.id
+        )
+    ).all()
+    for publish_request in source_requests:
+        publish_request.source_knowledge_base_name_snapshot = (
+            publish_request.source_knowledge_base_name_snapshot or knowledge_base.name
+        )
+        publish_request.source_knowledge_base_id = None
+        if publish_request.status == KnowledgePublishRequestStatus.PENDING.value:
+            publish_request.status = KnowledgePublishRequestStatus.WITHDRAWN.value
+            publish_request.reviewed_at = now
+        db.add(publish_request)
+
+    published_requests = db.scalars(
+        select(KnowledgePublishRequestModel).where(
+            KnowledgePublishRequestModel.published_knowledge_base_id == knowledge_base.id
+        )
+    ).all()
+    for publish_request in published_requests:
+        publish_request.published_knowledge_base_name_snapshot = (
+            publish_request.published_knowledge_base_name_snapshot or knowledge_base.name
+        )
+        publish_request.published_knowledge_base_id = None
+        db.add(publish_request)
+
+    target_requests = db.scalars(
+        select(KnowledgePublishRequestModel).where(
+            KnowledgePublishRequestModel.target_knowledge_base_id == knowledge_base.id
+        )
+    ).all()
+    for publish_request in target_requests:
+        publish_request.target_knowledge_base_id = None
+        db.add(publish_request)
+
+    db.execute(
+        delete(KnowledgeBasePublicationModel).where(
+            KnowledgeBasePublicationModel.knowledge_base_id == knowledge_base.id
+        )
+    )
+    db.flush()
+
+
+def _can_preview_document(
+    db: Session,
+    principal: Principal,
+    knowledge_base: KnowledgeBaseModel,
+    document: DocumentModel,
+) -> bool:
+    if knowledge_base.scope == KnowledgeBaseScope.SYSTEM.value:
+        return is_system_knowledge_manager(principal)
+    return AuthorizationService(db).can(
+        user_id=principal.user_id,
+        document=document,
+        operation=DocumentOperation.READ,
+    )
+
+
 def _knowledge_base_response(
     db: Session, knowledge_base: KnowledgeBaseModel, *, user_id: str
 ) -> KnowledgeBaseResponse:
@@ -391,14 +512,20 @@ def _published_group_ids_for_user(
 ) -> list[str]:
     return list(
         db.scalars(
-            select(KnowledgeBasePublicationModel.group_id)
+            select(KnowledgePublishRequestModel.target_group_id)
             .join(
-                MembershipModel, MembershipModel.group_id == KnowledgeBasePublicationModel.group_id
+                MembershipModel,
+                MembershipModel.group_id == KnowledgePublishRequestModel.target_group_id,
             )
             .where(
-                KnowledgeBasePublicationModel.knowledge_base_id == knowledge_base_id,
+                KnowledgePublishRequestModel.published_knowledge_base_id == knowledge_base_id,
+                KnowledgePublishRequestModel.status == KnowledgePublishRequestStatus.APPROVED.value,
                 MembershipModel.user_id == user_id,
             )
-            .order_by(KnowledgeBasePublicationModel.created_at, KnowledgeBasePublicationModel.id)
+            .order_by(
+                KnowledgePublishRequestModel.reviewed_at,
+                KnowledgePublishRequestModel.created_at,
+                KnowledgePublishRequestModel.id,
+            )
         ).all()
     )

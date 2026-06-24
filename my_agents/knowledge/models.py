@@ -219,6 +219,9 @@ class KnowledgePublishRequestModel(Base):
     source_knowledge_base_id: Mapped[str | None] = mapped_column(
         ForeignKey("knowledge_bases.id"), nullable=True, index=True
     )
+    source_knowledge_base_name_snapshot: Mapped[str | None] = mapped_column(
+        String(160), nullable=True
+    )
     status: Mapped[str] = mapped_column(
         String(20), default=KnowledgePublishRequestStatus.PENDING.value, nullable=False, index=True
     )
@@ -228,6 +231,9 @@ class KnowledgePublishRequestModel(Base):
     )
     published_knowledge_base_id: Mapped[str | None] = mapped_column(
         ForeignKey("knowledge_bases.id"), nullable=True, index=True
+    )
+    published_knowledge_base_name_snapshot: Mapped[str | None] = mapped_column(
+        String(160), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False

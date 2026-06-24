@@ -10,11 +10,11 @@ from sqlalchemy import select
 
 from my_agents.api import create_app
 from my_agents.api.assistant import get_graph_runner
-from my_agents.knowledge.models import DocumentModel
+from my_agents.knowledge.models import DocumentModel, KnowledgeBaseModel
 from my_agents.persistence.database import get_database_session
 from my_agents.schemas import RouteDecision
 
-from .conftest import verify_latest_auth_email
+from .conftest import latest_auth_email_token, verify_latest_auth_email
 from .rag_spy_helpers import rag_update_for_spy
 
 
@@ -69,6 +69,24 @@ def _first_group_kb(client: TestClient, group_id: str) -> str:
     ]
     assert group_kbs
     return group_kbs[0]["id"]
+
+
+def _invite_and_accept_member(
+    *,
+    owner: TestClient,
+    recipient: TestClient,
+    group_id: str,
+    recipient_email: str,
+    role: str = "viewer",
+) -> None:
+    invitation = owner.post(
+        f"/groups/{group_id}/invitations",
+        json={"email": recipient_email, "role": role},
+    )
+    assert invitation.status_code == 201
+    token = latest_auth_email_token(recipient_email, "group_invitation")
+    accepted = recipient.post("/group-invitations/accept", json={"token": token})
+    assert accepted.status_code == 200
 
 
 def _create_published_group_document(
@@ -164,6 +182,183 @@ def test_kb_nested_document_routes_enforce_no_null_writes_and_wrong_kb_404(monke
     assert async_ingest.status_code == 202
     persisted = _document_rows(created.json()["id"])
     assert persisted[0].knowledge_base_id == kb_id
+
+
+def test_kb_document_preview_is_path_scoped_and_keeps_lists_lightweight(monkeypatch) -> None:  # noqa: ANN001
+    owner = _client(monkeypatch)
+    outsider = _client(monkeypatch)
+    _signup_login(owner, "kb-preview-owner@example.com")
+    _signup_login(outsider, "kb-preview-outsider@example.com")
+    kb_id = _create_kb(owner, "Preview KB")
+    other_kb_id = _create_kb(owner, "Other Preview KB")
+    document = owner.post(
+        f"/knowledge-bases/{kb_id}/documents",
+        json={"title": "Preview Doc", "content": "# Preview\n\nInternalMarkdownAlpha"},
+    )
+    assert document.status_code == 201
+    document_id = document.json()["id"]
+
+    listed = owner.get(f"/knowledge-bases/{kb_id}/documents")
+    preview = owner.get(f"/knowledge-bases/{kb_id}/documents/{document_id}/preview")
+    wrong_kb = owner.get(f"/knowledge-bases/{other_kb_id}/documents/{document_id}/preview")
+    outsider_preview = outsider.get(f"/knowledge-bases/{kb_id}/documents/{document_id}/preview")
+
+    assert listed.status_code == 200
+    assert "content" not in listed.json()[0]
+    assert preview.status_code == 200
+    assert preview.json()["id"] == document_id
+    assert preview.json()["title"] == "Preview Doc"
+    assert preview.json()["content"] == "# Preview\n\nInternalMarkdownAlpha"
+    assert preview.json()["source_type"] == "text"
+    assert preview.json()["created_at"]
+    assert wrong_kb.status_code == 404
+    assert outsider_preview.status_code == 404
+
+
+def test_group_member_can_preview_group_kb_document_by_path(monkeypatch) -> None:  # noqa: ANN001
+    owner = _client(monkeypatch)
+    member = _client(monkeypatch)
+    outsider = _client(monkeypatch)
+    _signup_login(owner, "group-preview-owner@example.com")
+    _signup_login(member, "group-preview-member@example.com")
+    _signup_login(outsider, "group-preview-outsider@example.com")
+    group_id = owner.post("/groups", json={"name": "Preview Group"}).json()["id"]
+    _invite_and_accept_member(
+        owner=owner,
+        recipient=member,
+        group_id=group_id,
+        recipient_email="group-preview-member@example.com",
+    )
+    group_kb_id = _first_group_kb(owner, group_id)
+    group_document_id = _create_published_group_document(
+        owner,
+        group_id=group_id,
+        group_kb_id=group_kb_id,
+        title="Group Preview Doc",
+        content="GroupPreviewAlpha visible to members.",
+    )
+
+    member_preview = member.get(
+        f"/knowledge-bases/{group_kb_id}/documents/{group_document_id}/preview"
+    )
+    outsider_preview = outsider.get(
+        f"/knowledge-bases/{group_kb_id}/documents/{group_document_id}/preview"
+    )
+
+    assert member_preview.status_code == 200
+    assert member_preview.json()["content"] == "GroupPreviewAlpha visible to members."
+    assert outsider_preview.status_code == 404
+
+
+def test_personal_kb_rename_delete_and_staging_lifecycle_guards(monkeypatch) -> None:  # noqa: ANN001
+    owner = _client(monkeypatch)
+    outsider = _client(monkeypatch)
+    _signup_login(owner, "kb-lifecycle-owner@example.com")
+    _signup_login(outsider, "kb-lifecycle-outsider@example.com")
+    kb_id = _create_kb(owner, "Lifecycle Source")
+    document = owner.post(
+        f"/knowledge-bases/{kb_id}/documents",
+        json={"title": "Delete With KB", "content": "DeleteWithKbAlpha"},
+    )
+    staging = owner.post("/knowledge-bases/team-upload-staging")
+
+    outsider_rename = outsider.patch(f"/knowledge-bases/{kb_id}", json={"name": "Nope"})
+    renamed = owner.patch(f"/knowledge-bases/{kb_id}", json={"name": "Renamed Source"})
+    staging_rename = owner.patch(
+        f"/knowledge-bases/{staging.json()['id']}", json={"name": "Visible Staging"}
+    )
+    staging_delete = owner.delete(f"/knowledge-bases/{staging.json()['id']}")
+    deleted = owner.delete(f"/knowledge-bases/{kb_id}")
+
+    assert document.status_code == 201
+    assert staging.status_code == 200
+    assert outsider_rename.status_code == 404
+    assert renamed.status_code == 200
+    assert renamed.json()["name"] == "Renamed Source"
+    assert staging_rename.status_code == 404
+    assert staging_delete.status_code == 404
+    assert deleted.status_code == 204
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        assert db.get(KnowledgeBaseModel, kb_id) is None
+        assert db.get(DocumentModel, document.json()["id"]) is None
+        assert db.get(KnowledgeBaseModel, staging.json()["id"]) is not None
+    finally:
+        session_generator.close()
+
+
+def test_group_kb_lifecycle_requires_owner_or_admin_and_cleans_documents(monkeypatch) -> None:  # noqa: ANN001
+    owner = _client(monkeypatch)
+    admin = _client(monkeypatch)
+    viewer = _client(monkeypatch)
+    _signup_login(owner, "group-lifecycle-owner@example.com")
+    _signup_login(admin, "group-lifecycle-admin@example.com")
+    _signup_login(viewer, "group-lifecycle-viewer@example.com")
+    group_id = owner.post("/groups", json={"name": "Lifecycle Group"}).json()["id"]
+    _invite_and_accept_member(
+        owner=owner,
+        recipient=admin,
+        group_id=group_id,
+        recipient_email="group-lifecycle-admin@example.com",
+        role="admin",
+    )
+    _invite_and_accept_member(
+        owner=owner,
+        recipient=viewer,
+        group_id=group_id,
+        recipient_email="group-lifecycle-viewer@example.com",
+    )
+    group_kb_id = _first_group_kb(owner, group_id)
+    group_document_id = _create_published_group_document(
+        owner,
+        group_id=group_id,
+        group_kb_id=group_kb_id,
+        title="Group Delete Doc",
+        content="GroupDeleteAlpha",
+    )
+
+    viewer_rename = viewer.patch(f"/knowledge-bases/{group_kb_id}", json={"name": "Viewer Edit"})
+    viewer_delete = viewer.delete(f"/knowledge-bases/{group_kb_id}")
+    admin_rename = admin.patch(f"/knowledge-bases/{group_kb_id}", json={"name": "Admin Edit"})
+    admin_delete = admin.delete(f"/knowledge-bases/{group_kb_id}")
+
+    assert viewer_rename.status_code == 404
+    assert viewer_delete.status_code == 404
+    assert admin_rename.status_code == 200
+    assert admin_rename.json()["name"] == "Admin Edit"
+    assert admin_delete.status_code == 204
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        assert db.get(KnowledgeBaseModel, group_kb_id) is None
+        assert db.get(DocumentModel, group_document_id) is None
+    finally:
+        session_generator.close()
+
+
+def test_deleting_pending_whole_kb_source_withdraws_publish_request(monkeypatch) -> None:  # noqa: ANN001
+    owner = _client(monkeypatch)
+    _signup_login(owner, "kb-pending-delete-owner@example.com")
+    group_id = owner.post("/groups", json={"name": "Pending Delete Group"}).json()["id"]
+    kb_id = _create_kb(owner, "Pending Whole KB")
+    publish_request = owner.post(
+        f"/groups/{group_id}/publish-requests",
+        json={"source_knowledge_base_id": kb_id},
+    )
+
+    deleted = owner.delete(f"/knowledge-bases/{kb_id}")
+    requests = owner.get(f"/groups/{group_id}/publish-requests")
+    request_payload = next(
+        item for item in requests.json() if item["id"] == publish_request.json()["id"]
+    )
+
+    assert publish_request.status_code == 201
+    assert deleted.status_code == 204
+    assert requests.status_code == 200
+    assert request_payload["status"] == "withdrawn"
+    assert request_payload["source_knowledge_base_id"] is None
+    assert request_payload["reviewed_at"] is not None
 
 
 def test_legacy_document_writes_require_authorized_kb(monkeypatch) -> None:  # noqa: ANN001

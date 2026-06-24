@@ -60,6 +60,7 @@ from my_agents.knowledge.models import (
     KnowledgePublishRequestStatus,
     StructuredKnowledgeEntityModel,
 )
+from my_agents.knowledge.publication_copies import copy_personal_knowledge_base_to_group
 from my_agents.knowledge.schemas import (
     KnowledgePublishRequestCreateRequest,
     KnowledgePublishRequestResponse,
@@ -398,6 +399,7 @@ def create_publish_request(
     source_document_filename_snapshot: str | None = None
     target_knowledge_base_id: str | None = None
     source_knowledge_base_id: str | None = None
+    source_knowledge_base_name_snapshot: str | None = None
     if request.source_document_id is not None:
         source_document = _get_owned_personal_source_document(
             db,
@@ -426,6 +428,7 @@ def create_publish_request(
             knowledge_base_id=source_knowledge_base.id,
         )
         source_knowledge_base_id = source_knowledge_base.id
+        source_knowledge_base_name_snapshot = source_knowledge_base.name
 
     publish_request = KnowledgePublishRequestModel(
         requester_user_id=principal.user_id,
@@ -436,6 +439,7 @@ def create_publish_request(
         source_document_excerpt_snapshot=source_document_excerpt_snapshot,
         source_document_filename_snapshot=source_document_filename_snapshot,
         source_knowledge_base_id=source_knowledge_base_id,
+        source_knowledge_base_name_snapshot=source_knowledge_base_name_snapshot,
         status=KnowledgePublishRequestStatus.PENDING.value,
     )
     db.add(publish_request)
@@ -719,6 +723,18 @@ def _require_publishable_personal_knowledge_base_request(
             status_code=status.HTTP_409_CONFLICT,
             detail="knowledge base already published to group",
         )
+    existing_approved_request = db.scalar(
+        select(KnowledgePublishRequestModel).where(
+            KnowledgePublishRequestModel.target_group_id == group_id,
+            KnowledgePublishRequestModel.source_knowledge_base_id == knowledge_base_id,
+            KnowledgePublishRequestModel.status == KnowledgePublishRequestStatus.APPROVED.value,
+        )
+    )
+    if existing_approved_request is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="knowledge base already published to group",
+        )
     pending_statement = select(KnowledgePublishRequestModel).where(
         KnowledgePublishRequestModel.target_group_id == group_id,
         KnowledgePublishRequestModel.source_knowledge_base_id == knowledge_base_id,
@@ -881,18 +897,19 @@ def _approve_knowledge_base_publish_request(
         knowledge_base_id=source_knowledge_base.id,
         exclude_request_id=publish_request.id,
     )
-    publication = KnowledgeBasePublicationModel(
-        group_id=publish_request.target_group_id,
-        knowledge_base_id=source_knowledge_base.id,
-        requester_user_id=publish_request.requester_user_id,
-        approved_by_user_id=reviewer_user_id,
-        publish_request_id=publish_request.id,
-    )
-    db.add(publication)
-    db.flush()
+    group_copy = copy_personal_knowledge_base_to_group(
+        db,
+        source_knowledge_base=source_knowledge_base,
+        target_group_id=publish_request.target_group_id,
+        group_owner_user_id=reviewer_user_id,
+    ).knowledge_base
     publish_request.status = KnowledgePublishRequestStatus.APPROVED.value
     publish_request.reviewer_user_id = reviewer_user_id
-    publish_request.published_knowledge_base_id = source_knowledge_base.id
+    publish_request.source_knowledge_base_name_snapshot = (
+        publish_request.source_knowledge_base_name_snapshot or source_knowledge_base.name
+    )
+    publish_request.published_knowledge_base_id = group_copy.id
+    publish_request.published_knowledge_base_name_snapshot = group_copy.name
     publish_request.reviewed_at = datetime.now(UTC)
     db.add(publish_request)
     db.commit()
@@ -923,6 +940,11 @@ def _publish_request_response(
         if publish_request.target_knowledge_base_id is not None
         else None
     )
+    published_knowledge_base = (
+        db.get(KnowledgeBaseModel, publish_request.published_knowledge_base_id)
+        if publish_request.published_knowledge_base_id is not None
+        else None
+    )
     return KnowledgePublishRequestResponse(
         id=publish_request.id,
         requester_user_id=publish_request.requester_user_id,
@@ -946,7 +968,9 @@ def _publish_request_response(
             else publish_request.source_document_filename_snapshot
         ),
         source_knowledge_base_name=(
-            source_knowledge_base.name if source_knowledge_base is not None else None
+            source_knowledge_base.name
+            if source_knowledge_base is not None
+            else publish_request.source_knowledge_base_name_snapshot
         ),
         target_knowledge_base_name=(
             target_knowledge_base.name if target_knowledge_base is not None else None
@@ -955,6 +979,11 @@ def _publish_request_response(
         reviewer_user_id=publish_request.reviewer_user_id,
         published_document_id=publish_request.published_document_id,
         published_knowledge_base_id=publish_request.published_knowledge_base_id,
+        published_knowledge_base_name=(
+            published_knowledge_base.name
+            if published_knowledge_base is not None
+            else publish_request.published_knowledge_base_name_snapshot
+        ),
         created_at=publish_request.created_at,
         reviewed_at=publish_request.reviewed_at,
     )

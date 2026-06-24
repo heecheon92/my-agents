@@ -12,6 +12,7 @@ REQUIRED_KB_PATHS = {
     "/knowledge-bases/{knowledge_base_id}/documents",
     "/knowledge-bases/{knowledge_base_id}/documents/upload",
     "/knowledge-bases/{knowledge_base_id}/documents/{document_id}",
+    "/knowledge-bases/{knowledge_base_id}/documents/{document_id}/preview",
     "/knowledge-bases/{knowledge_base_id}/documents/{document_id}/ingest",
     "/knowledge-bases/{knowledge_base_id}/documents/{document_id}/ingest/async",
     "/knowledge-bases/{knowledge_base_id}/documents/{document_id}/extraction-runs",
@@ -41,6 +42,8 @@ def test_openapi_exposes_kb_first_document_and_chat_selection_contract() -> None
     kb_scope_schema = schema["components"]["schemas"]["KnowledgeBaseScope"]
     kb_response_schema = schema["components"]["schemas"]["KnowledgeBaseResponse"]
     kb_create_schema = schema["components"]["schemas"]["KnowledgeBaseCreateRequest"]
+    document_response_schema = schema["components"]["schemas"]["DocumentResponse"]
+    document_preview_schema = schema["components"]["schemas"]["DocumentPreviewResponse"]
     publish_request_schema = schema["components"]["schemas"]["KnowledgePublishRequestResponse"]
     publish_request_create_schema = schema["components"]["schemas"][
         "KnowledgePublishRequestCreateRequest"
@@ -78,6 +81,10 @@ def test_openapi_exposes_kb_first_document_and_chat_selection_contract() -> None
     assert publish_request_schema["properties"]["status"]["$ref"] == (
         "#/components/schemas/KnowledgePublishRequestStatus"
     )
+    assert (
+        publish_request_schema["properties"]["published_knowledge_base_name"]["anyOf"][0]["type"]
+        == "string"
+    )
     assert schema["components"]["schemas"]["KnowledgePublishRequestStatus"]["enum"] == [
         "pending",
         "approved",
@@ -100,6 +107,23 @@ def test_openapi_exposes_kb_first_document_and_chat_selection_contract() -> None
     assert (
         "patch" in schema["paths"]["/knowledge-bases/{knowledge_base_id}/documents/{document_id}"]
     )
+    assert (
+        "get"
+        in schema["paths"]["/knowledge-bases/{knowledge_base_id}/documents/{document_id}/preview"]
+    )
+    assert "content" not in document_response_schema["properties"]
+    assert {
+        "id",
+        "title",
+        "content",
+        "source_type",
+        "source_filename",
+        "source_content_type",
+        "source_byte_size",
+        "source_page_count",
+        "parser_name",
+        "created_at",
+    }.issubset(document_preview_schema["properties"])
 
     upload_body_ref = schema["paths"]["/documents/upload"]["post"]["requestBody"]["content"][
         "multipart/form-data"
