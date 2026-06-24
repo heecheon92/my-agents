@@ -264,6 +264,7 @@ def test_personal_kb_rename_delete_and_staging_lifecycle_guards(monkeypatch) -> 
 
     outsider_rename = outsider.patch(f"/knowledge-bases/{kb_id}", json={"name": "Nope"})
     renamed = owner.patch(f"/knowledge-bases/{kb_id}", json={"name": "Renamed Source"})
+    blank_rename = owner.patch(f"/knowledge-bases/{kb_id}", json={"name": "   "})
     staging_rename = owner.patch(
         f"/knowledge-bases/{staging.json()['id']}", json={"name": "Visible Staging"}
     )
@@ -275,6 +276,7 @@ def test_personal_kb_rename_delete_and_staging_lifecycle_guards(monkeypatch) -> 
     assert outsider_rename.status_code == 404
     assert renamed.status_code == 200
     assert renamed.json()["name"] == "Renamed Source"
+    assert blank_rename.status_code == 422
     assert staging_rename.status_code == 404
     assert staging_delete.status_code == 404
     assert deleted.status_code == 204

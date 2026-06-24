@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from my_agents.knowledge.models import (
     KnowledgeBasePurpose,
@@ -20,6 +20,13 @@ class KnowledgeBaseCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=160)
     scope: KnowledgeBaseScope = KnowledgeBaseScope.PERSONAL
     group_id: str | None = None
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def strip_name(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip()
+        return value
 
 
 class KnowledgeBaseResponse(BaseModel):
@@ -38,6 +45,13 @@ class KnowledgeBaseUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(min_length=1, max_length=160)
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def strip_name(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip()
+        return value
 
 
 class KnowledgePublishRequestCreateRequest(BaseModel):

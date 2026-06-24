@@ -541,6 +541,33 @@ def test_publish_request_rejects_invalid_source_or_target_boundaries(monkeypatch
     assert non_personal_source.status_code == 422
     assert non_personal_source.json()["detail"] == "source document must be personal"
 
+    unsupported_hidden_kb_id = _create_personal_kb(requester, "Unsupported Hidden KB")
+    unsupported_hidden_doc_id = _create_document(
+        requester,
+        kb_id=unsupported_hidden_kb_id,
+        title="Unsupported hidden",
+        content="unsupported hidden source should not publish by raw id",
+    )
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        unsupported_hidden_kb = db.get(KnowledgeBaseModel, unsupported_hidden_kb_id)
+        assert unsupported_hidden_kb is not None
+        unsupported_hidden_kb.purpose = "unsupported_hidden"
+        db.add(unsupported_hidden_kb)
+        db.commit()
+    finally:
+        session_generator.close()
+    hidden_nonstandard_source = requester.post(
+        f"/groups/{group_id}/publish-requests",
+        json={
+            "source_document_id": unsupported_hidden_doc_id,
+            "target_knowledge_base_id": target_group_kb_id,
+        },
+    )
+    assert hidden_nonstandard_source.status_code == 422
+    assert hidden_nonstandard_source.json()["detail"] == "source document must be personal"
+
     non_group_target = requester.post(
         f"/groups/{group_id}/publish-requests",
         json={

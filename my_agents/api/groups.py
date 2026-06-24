@@ -680,7 +680,19 @@ def _get_owned_personal_source_document(
     source_document = db.get(DocumentModel, document_id)
     if source_document is None or source_document.owner_user_id != requester_user_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="document not found")
-    if source_document.group_id is not None:
+    source_knowledge_base = db.get(KnowledgeBaseModel, source_document.knowledge_base_id)
+    if (
+        source_document.group_id is not None
+        or source_knowledge_base is None
+        or source_knowledge_base.owner_user_id != requester_user_id
+        or source_knowledge_base.scope != KnowledgeBaseScope.PERSONAL.value
+        or source_knowledge_base.group_id is not None
+        or source_knowledge_base.purpose
+        not in (
+            KnowledgeBasePurpose.STANDARD.value,
+            KnowledgeBasePurpose.TEAM_UPLOAD_STAGING.value,
+        )
+    ):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="source document must be personal",
