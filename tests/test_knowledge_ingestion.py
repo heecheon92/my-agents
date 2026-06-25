@@ -7,6 +7,7 @@ import logging
 import zlib
 from io import BytesIO
 from pathlib import Path
+from threading import Event
 from time import monotonic, sleep
 
 import pytest
@@ -28,6 +29,10 @@ from my_agents.knowledge.extraction import (
     _extract_entity_names,
 )
 from my_agents.knowledge.ingestion_worker import process_pending_extraction_runs_once
+from my_agents.knowledge.metadata_enrichment import (
+    DocumentMetadataProfile,
+    GeneratedDocumentMetadata,
+)
 from my_agents.knowledge.models import (
     CitationModel,
     DocumentChunkModel,
@@ -40,9 +45,10 @@ from my_agents.knowledge.models import (
     KnowledgeBaseModel,
     StructuredKnowledgeEntityModel,
 )
-from my_agents.knowledge.pdf_uploads import PdfUploadError, parse_uploaded_pdf
+from my_agents.knowledge.pdf_uploads import PDF_PAGE_SEPARATOR, PdfUploadError, parse_uploaded_pdf
 from my_agents.knowledge.retrieval import RetrievalService
 from my_agents.persistence.database import get_database_session
+from my_agents.settings import get_settings
 
 from .conftest import latest_auth_email_token, load_app, verify_latest_auth_email
 
@@ -78,6 +84,54 @@ class SlowEmbeddingProvider(FakeEmbeddingProvider):
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         sleep(0.05)
         return super().embed_documents(texts)
+
+
+class CoordinatedEmbeddingProvider(FakeEmbeddingProvider):
+    provider = "coordinated-fake"
+    model = "coordinated-fake-embedding-model"
+
+    def __init__(self, *, metadata_started: Event, embedding_started: Event) -> None:
+        self._metadata_started = metadata_started
+        self._embedding_started = embedding_started
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        if len(texts) > 1:
+            self._embedding_started.set()
+            assert self._metadata_started.wait(timeout=1), (
+                "metadata generation did not start before chunk embedding completed"
+            )
+        return super().embed_documents(texts)
+
+
+class CoordinatedMetadataGenerator:
+    name = "openai-test-double"
+    model = "parallel-metadata-test-double"
+
+    def __init__(self, *, metadata_started: Event, embedding_started: Event) -> None:
+        self._metadata_started = metadata_started
+        self._embedding_started = embedding_started
+
+    def generate(self, document: DocumentModel) -> DocumentMetadataProfile:
+        self._metadata_started.set()
+        assert self._embedding_started.wait(timeout=1), (
+            "chunk embedding did not overlap metadata generation"
+        )
+        metadata = GeneratedDocumentMetadata(
+            title=document.title or "Parallel metadata",
+            description="Parallel metadata test double.",
+            summary="Metadata generation overlaps chunk embedding.",
+            keywords=["parallel", "metadata"],
+            topics=["ingestion"],
+            entities=["OpenAI"],
+            language="en",
+            confidence="test",
+        )
+        return DocumentMetadataProfile(
+            metadata=metadata,
+            search_text="parallel metadata ingestion",
+            generator=self.name,
+            model=self.model,
+        )
 
 
 def _client(monkeypatch) -> TestClient:  # noqa: ANN001 - pytest monkeypatch fixture
@@ -328,6 +382,114 @@ def test_personal_knowledge_base_document_ingestion_creates_extraction_artifacts
     assert {chunk.source_page for chunk in chunks} == {None}
 
 
+def test_upload_timing_trace_prints_redacted_phase_breakdown_when_enabled(
+    monkeypatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:  # noqa: ANN001
+    monkeypatch.setenv("MY_AGENTS_DEBUG_INGESTION_TIMING_LOGGING", "true")
+    get_settings.cache_clear()
+    client = _client(monkeypatch)
+    _signup_login(client, "upload-timing@example.com")
+    kb_id = _create_personal_knowledge_base(client, "Upload Timing KB")
+
+    response = _upload_document(
+        client,
+        data={"title": "Upload Timing", "knowledge_base_id": kb_id},
+        files={
+            "file": (
+                "sensitive-upload-name.txt",
+                b"SecretUploadAlpha stays out of the timing panel.",
+                "text/plain",
+            )
+        },
+    )
+
+    assert response.status_code == 201
+    output = capsys.readouterr().out
+    assert "Knowledge ingestion timing" in output
+    assert "upload" in output
+    assert "upload.read" in output
+    assert "parse.text" in output
+    assert "document.persist" in output
+    assert "filename_suffix" in output
+    assert ".txt" in output
+    assert "sensitive-upload-name" not in output
+    assert "SecretUploadAlpha" not in output
+
+
+def test_pdf_upload_timing_trace_prints_parser_subphases_when_enabled(
+    monkeypatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:  # noqa: ANN001
+    monkeypatch.setenv("MY_AGENTS_DEBUG_INGESTION_TIMING_LOGGING", "true")
+    get_settings.cache_clear()
+    client = _client(monkeypatch)
+    _signup_login(client, "pdf-timing@example.com")
+    kb_id = _create_personal_knowledge_base(client, "PDF Timing KB")
+
+    response = _upload_document(
+        client,
+        data={"title": "PDF Timing", "knowledge_base_id": kb_id},
+        files={
+            "file": (
+                "secret-pdf-name.pdf",
+                _text_pdf("SecretPdfAlpha stays out of the timing panel."),
+                "application/pdf",
+            )
+        },
+    )
+
+    assert response.status_code == 201
+    output = capsys.readouterr().out
+    assert "Knowledge ingestion timing" in output
+    assert "parse.pdf" in output
+    assert "parse.pdf.validate" in output
+    assert "parse.pdf.sha256" in output
+    assert "parse.pdf.parser.pymupdf_text_v1" in output
+    assert "parse.pdf.quality_gate.pymupdf_text_v1" in output
+    assert "pdf_doc_type" in output
+    assert "unclassified_primary_accepted" in output
+    assert "secret-pdf-name" not in output
+    assert "SecretPdfAlpha" not in output
+
+
+def test_extraction_timing_trace_prints_redacted_phase_breakdown_when_enabled(
+    monkeypatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:  # noqa: ANN001
+    monkeypatch.setenv("MY_AGENTS_DEBUG_INGESTION_TIMING_LOGGING", "true")
+    get_settings.cache_clear()
+    client = _client(monkeypatch)
+    _signup_login(client, "extraction-timing@example.com")
+    kb_id = _create_personal_knowledge_base(client, "Extraction Timing KB")
+    document = _create_document(
+        client,
+        json={
+            "title": "Extraction Timing",
+            "content": "SecretIngestionAlpha mentions OpenAI.\\n\\nLangGraph supports agents.",
+            "knowledge_base_id": kb_id,
+        },
+    )
+    assert document.status_code == 201
+
+    response = client.post(f"/documents/{document.json()['id']}/ingest")
+
+    assert response.status_code == 200
+    output = capsys.readouterr().out
+    assert "Knowledge ingestion timing" in output
+    assert "extraction" in output
+    assert "chunking" in output
+    assert "embedding.chunks" in output
+    assert "entities.extract" in output
+    assert "indexing.persist_chunks" in output
+    assert "metadata.generate" in output
+    assert "metadata.embed" in output
+    assert "final_commit" in output
+    assert "chunk_count" in output
+    assert "entity_count" in output
+    assert "SecretIngestionAlpha" not in output
+
+
 def test_long_text_chunking_uses_document_sized_target_and_overlap() -> None:
     text = "A" * 1800
 
@@ -335,6 +497,27 @@ def test_long_text_chunking_uses_document_sized_target_and_overlap() -> None:
 
     assert [(start, end) for _, start, end in chunks] == [(0, 1500), (1300, 1800)]
     assert [len(content) for content, *_ in chunks] == [1500, 500]
+
+
+def test_line_heavy_pdf_chunking_coalesces_within_page_boundaries() -> None:
+    page_one = "\n\n".join(
+        f"LangGraph Alpha page one line {index} mentions FastAPI ingestion."
+        for index in range(1, 13)
+    )
+    page_two = "\n\n".join(
+        f"OpenAI metadata profile page two line {index} mentions retrieval."
+        for index in range(1, 13)
+    )
+
+    chunks = _chunk_pdf_text(PDF_PAGE_SEPARATOR.join((page_one, page_two)))
+
+    assert len(chunks) == 2
+    assert [source_page for *_offsets, source_page in chunks] == [1, 2]
+    assert "LangGraph Alpha page one line 1" in chunks[0][0]
+    assert "LangGraph Alpha page one line 12" in chunks[0][0]
+    assert "OpenAI metadata profile page two line 1" in chunks[1][0]
+    assert "OpenAI metadata profile page two line 12" in chunks[1][0]
+    assert len(chunks) < len(_chunk_text(page_one)) + len(_chunk_text(page_two))
 
 
 def test_reingesting_document_replaces_chunks_without_duplicate_ordinals(
@@ -531,6 +714,49 @@ def test_ingestion_uses_configured_embedding_provider(monkeypatch) -> None:  # n
         "[0.0, 21.0, 1.0]",
         "[1.0, 22.0, 1.0]",
     ]
+
+
+def test_openai_metadata_generation_overlaps_chunk_embedding(monkeypatch) -> None:  # noqa: ANN001
+    metadata_started = Event()
+    embedding_started = Event()
+    monkeypatch.setattr(
+        extraction_module,
+        "get_embedding_provider",
+        lambda: CoordinatedEmbeddingProvider(
+            metadata_started=metadata_started,
+            embedding_started=embedding_started,
+        ),
+    )
+    monkeypatch.setattr(
+        extraction_module,
+        "build_document_metadata_generator",
+        lambda _settings: CoordinatedMetadataGenerator(
+            metadata_started=metadata_started,
+            embedding_started=embedding_started,
+        ),
+    )
+    client = _client(monkeypatch)
+    _signup_login(client, "parallel-metadata@example.com")
+    kb_id = _create_personal_knowledge_base(client, "Parallel Metadata KB")
+    document = _create_document(
+        client,
+        json={
+            "title": "Parallel Metadata",
+            "content": "First parallel chunk. OpenAI metadata overlaps here.\n\n"
+            "Second parallel chunk. LangGraph indexing overlaps here.",
+            "knowledge_base_id": kb_id,
+        },
+    )
+    assert document.status_code == 201
+    monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    get_settings.cache_clear()
+
+    ingest = client.post(f"/documents/{document.json()['id']}/ingest")
+
+    assert ingest.status_code == 200
+    assert metadata_started.is_set()
+    assert embedding_started.is_set()
 
 
 def test_async_ingest_returns_queued_run_and_polling_completes(monkeypatch) -> None:  # noqa: ANN001
@@ -745,6 +971,26 @@ def test_pdf_parser_tolerates_invalid_octal_like_literal_escape() -> None:
     assert parsed.page_count == 1
 
 
+def test_pdf_parser_accepts_pymupdf_success_without_pypdf_classification(
+    monkeypatch,
+) -> None:  # noqa: ANN001
+    monkeypatch.setattr(
+        pdf_uploads_module,
+        "_classify_pdf",
+        lambda _: pytest.fail("classification should be lazy after PyMuPDF success"),
+    )
+
+    parsed = parse_uploaded_pdf(
+        filename="happy-path.pdf",
+        content_type="application/pdf",
+        content=_text_pdf("Happy path text mentions FastAPI and LangGraph."),
+    )
+
+    assert parsed.parser_name == "pymupdf_text_v1"
+    assert parsed.page_count == 1
+    assert "Happy path text" in parsed.content
+
+
 def test_pdf_parser_decodes_flate_streams() -> None:
     parsed = parse_uploaded_pdf(
         filename="compressed.pdf",
@@ -769,7 +1015,15 @@ def test_pdf_parser_removes_postgres_unsafe_nul_bytes() -> None:
 
 
 def test_pdf_parser_uses_docling_after_pymupdf_quality_failure(monkeypatch) -> None:  # noqa: ANN001
+    classified = False
+
+    def classify_pdf(content: bytes) -> pdf_uploads_module.PdfClassification:  # noqa: ARG001
+        nonlocal classified
+        classified = True
+        return pdf_uploads_module.PdfClassification(doc_type="no_extractable_text", page_count=1)
+
     monkeypatch.setattr(pdf_uploads_module, "_extract_page_texts_with_pymupdf", lambda _: [])
+    monkeypatch.setattr(pdf_uploads_module, "_classify_pdf", classify_pdf)
     monkeypatch.setattr(pdf_uploads_module, "_extract_page_texts_with_pypdf", lambda _: [])
     monkeypatch.setattr(
         pdf_uploads_module,
@@ -787,6 +1041,7 @@ def test_pdf_parser_uses_docling_after_pymupdf_quality_failure(monkeypatch) -> N
 
     assert parsed.content == "Docling extracted docling.pdf as Markdown."
     assert parsed.parser_name == "docling_markdown_v1"
+    assert classified is True
 
 
 def test_docling_extractor_forces_cpu_accelerator(monkeypatch) -> None:  # noqa: ANN001

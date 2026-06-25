@@ -126,6 +126,43 @@ reranking, context packing, total time, and redacted candidate counts. The
 retrieval/embedding spans such as metadata matching, embedding calls, vector SQL, JSON
 fallback scans, related expansion, and overview supplement work.
 
+For local single-run ingestion profiling, enable the ingestion Rich timing panel:
+
+```bash
+MY_AGENTS_DEBUG_INGESTION_TIMING_LOGGING=true uv run fastapi dev main.py
+```
+
+That local-only debug output prints one human-readable timing table for each upload parse
+and each extraction/indexing run. The upload trace includes file read, parser dispatch,
+document persistence, and PDF subphases such as validation, checksum, classification,
+parser attempts, and quality gates; the extraction trace includes clearing stale artifacts,
+parse artifact lookup, chunking, chunk embedding, entity extraction/upsert, chunk/index
+persistence, metadata generation/embedding, and final commit. It reports counts and source
+metadata such as suffix, source type, parser, bytes, characters, pages, PDF doc type,
+chunks, entities, and relationships without printing raw filenames or document text. When
+OpenAI metadata generation is active, metadata generation runs in parallel with chunk
+embedding/indexing, so ingestion timing phases are spans and may overlap rather than adding
+up to `total_ms`.
+
+The PDF path uses lazy classification: it tries the fast PyMuPDF text extractor first and
+accepts it when the existing quality gate passes. If PyMuPDF fails or produces low-quality
+text, the parser runs the pypdf classification step and routes through pypdf, Docling,
+Tesseract, and legacy fallbacks as before.
+
+For repeatable ingestion before/after measurements, use the local benchmark harness:
+
+```bash
+uv run python scripts/measure_ingestion_performance.py \
+  --scenario pdf \
+  --repeat 3 \
+  --output /tmp/my-agents-ingestion-pdf.json
+```
+
+The benchmark runs against an isolated SQLite database with deterministic embeddings and
+metadata generation. It reports parse, persist, ingest, retrieval-smoke, total time, RSS
+delta, parser/source metadata, chunk/entity/relationship counts, and a redacted quality
+signature so ingestion optimizations can be compared without weakening retrieval quality.
+
 ## Common checks
 
 ```bash

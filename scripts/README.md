@@ -19,6 +19,7 @@ repository root with `uv run python -m scripts.<name>`.
 | `scripts.set_user_type` | Set a registered account's platform `user_type` (`normal`, `root`, `system`) with safe dry-run output. | Operator-only system knowledge manager assignment. |
 | `scripts.local_demo_seed` | Seed a file-backed SQLite demo user, knowledge base, document, and extraction run. | Prepare a local demo database before starting the backend. |
 | `scripts.local_demo_smoke` | Smoke-test a running backend over HTTP only. | Verify the local V1 API path after seeding and starting the server. |
+| `scripts/measure_ingestion_performance.py` | Measure parse/ingest/retrieval-smoke timing in an isolated deterministic database. | Before/after ingestion optimization comparisons. |
 | `scripts.backfill_kb_publication_copies` | Copy legacy approved whole-KB publications into group-owned KB copies with dry-run output. | Migrate historical publication rows after the publish-copy contract change. |
 | `scripts.issue_guest_access_code` | Issue a one-time guest access code for print-first operator delivery. | Guest-code workflows. |
 | `scripts.auth_approval` | Backward-compatible alias for `scripts.ops`. | Existing auth approval workflows. |
@@ -32,10 +33,13 @@ Use module execution so imports resolve from the repository root:
 uv run python -m scripts.local_demo_seed --help
 uv run python -m scripts.local_demo_smoke --help
 uv run python -m scripts.dev_pgvector --help
+uv run python scripts/measure_ingestion_performance.py --help
 ```
 
 Do not run these commands from inside `scripts/`; several of them assume the
-current working directory is the repository root.
+current working directory is the repository root. `measure_ingestion_performance.py`
+is intentionally run by path rather than `-m` so it can be copied into ad hoc
+performance worktrees without package-name assumptions.
 
 If you are in another directory, either `cd` into the repo first or use
 `uv --directory`:
@@ -207,6 +211,37 @@ uv run python -m scripts.local_demo_smoke \
 
 A successful run prints `Local V1 API smoke passed` plus the conversation/run
 IDs, answer-delta count, citation count, and event count.
+
+## `scripts/measure_ingestion_performance.py`
+
+Runs a local ingestion benchmark against an isolated temporary SQLite database. It
+does not contact hosted services, mutate configured app data, or require OpenAI
+credentials. The script forces deterministic response, embedding, and metadata modes
+so before/after runs compare ingestion code-path changes instead of network variance.
+
+Example:
+
+```bash
+uv run python scripts/measure_ingestion_performance.py \
+  --scenario pdf \
+  --repeat 3 \
+  --repeat-units 80 \
+  --output /tmp/my-agents-ingestion-pdf.json
+```
+
+The JSON output includes:
+
+- parse, persist, ingest, retrieval-smoke, and total wall time;
+- RSS before/after/delta for the benchmark process;
+- parser/source metadata and page/byte/character counts;
+- chunk, entity, relationship, structured-entity, and metadata-profile counts;
+- retrieval hit count/top source; and
+- a redacted quality signature for before/after comparison.
+
+Use the same `--scenario`, `--repeat`, and `--repeat-units` before and after an
+optimization. Treat parser/source changes, missing metadata profiles, missing retrieval
+hits, or unexpected entity loss as quality guard failures unless the optimization
+explicitly intends to change those contracts.
 
 ## `scripts.backfill_kb_publication_copies`
 

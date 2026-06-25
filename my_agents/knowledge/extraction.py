@@ -7,8 +7,10 @@ import logging
 import re
 import uuid
 from collections.abc import Iterable
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from time import perf_counter
 
 from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
@@ -18,6 +20,7 @@ from sqlalchemy.orm import Session
 from my_agents.knowledge.embeddings import deterministic_embedding, get_embedding_provider
 from my_agents.knowledge.metadata_enrichment import (
     DeterministicDocumentMetadataGenerator,
+    DocumentMetadataProfile,
     build_document_metadata_generator,
     metadata_json,
 )
@@ -37,7 +40,8 @@ from my_agents.knowledge.models import (
 )
 from my_agents.knowledge.pdf_uploads import PDF_PAGE_SEPARATOR
 from my_agents.knowledge.source_locations import source_location_json_for_offsets
-from my_agents.settings import get_settings
+from my_agents.knowledge.timing import IngestionTimingTrace
+from my_agents.settings import Settings, get_settings
 
 _ENTITY_PATTERN = re.compile(
     r"\b(?:[A-Z][A-Za-z0-9]*(?:[-_][A-Za-z0-9]+)*|[A-Z]{2,})"
@@ -88,12 +92,34 @@ class StructuredEntityExtraction:
     confidence: str
 
 
+@dataclass(frozen=True)
+class _MetadataDocumentSnapshot:
+    """Plain document fields safe to read from a background metadata thread."""
+
+    title: str | None
+    content: str
+    source_filename: str | None
+    source_type: str
+    source_page_count: int | None
+
+
+@dataclass(frozen=True)
+class _MetadataGenerationResult:
+    """Generated metadata plus phase timings captured outside the DB thread."""
+
+    profile: DocumentMetadataProfile
+    generate_elapsed_ms: float
+    fallback_elapsed_ms: float | None = None
+
+
 class KnowledgeExtractionService:
     """Create chunks, embeddings, entities, and relationships."""
 
     def __init__(self, db: Session) -> None:
+        settings = get_settings()
         self._db = db
         self._embedding_provider = get_embedding_provider()
+        self._debug_ingestion_timing_logging = settings.debug_ingestion_timing_logging
 
     def create_extraction_run(self, document_id: str) -> ExtractionRunModel:
         """Create a queued extraction run without doing document work."""
@@ -133,29 +159,67 @@ class KnowledgeExtractionService:
             document.parser_name,
             len(document.content),
         )
+        timing = IngestionTimingTrace(
+            enabled=self._debug_ingestion_timing_logging,
+            trace="extraction",
+        )
+        timing.update(
+            source_type=document.source_type,
+            parser=document.parser_name,
+            source_bytes=document.source_byte_size,
+            content_chars=len(document.content),
+            page_count=document.source_page_count,
+            embedding_provider=getattr(
+                self._embedding_provider,
+                "provider",
+                type(self._embedding_provider).__name__,
+            ),
+        )
+        metadata_executor: ThreadPoolExecutor | None = None
+        metadata_future: Future[_MetadataGenerationResult] | None = None
         try:
             self._mark_progress(run, status=ExtractionStatus.RUNNING, stage="chunking", percent=15)
-            self._clear_prior_extraction_artifacts(document.id)
-            parse_artifact_elements_json = _parse_artifact_elements_json(self._db, document.id)
-            chunks = list(
-                _chunk_document_text(
-                    document,
-                    parse_artifact_elements_json=parse_artifact_elements_json,
+            with timing.phase("clear_prior_artifacts"):
+                self._clear_prior_extraction_artifacts(document.id)
+            with timing.phase("parse_artifact_lookup"):
+                parse_artifact_elements_json = _parse_artifact_elements_json(self._db, document.id)
+            with timing.phase("chunking"):
+                chunks = list(
+                    _chunk_document_text(
+                        document,
+                        parse_artifact_elements_json=parse_artifact_elements_json,
+                    )
                 )
-            )
             logger.info(
                 "knowledge_ingestion.chunked run_id=%s document_id=%s chunk_count=%d",
                 run_id,
                 document.id,
                 len(chunks),
             )
+            timing.update(chunk_count=len(chunks))
             run.chunk_count = len(chunks)
-            self._db.commit()
+            with timing.phase("chunk_count_commit"):
+                self._db.commit()
+            settings = get_settings()
+            if _should_parallelize_metadata_generation(settings):
+                metadata_executor = ThreadPoolExecutor(
+                    max_workers=1,
+                    thread_name_prefix="my-agents-ingestion-metadata",
+                )
+                metadata_future = metadata_executor.submit(
+                    _generate_document_metadata_profile,
+                    settings=settings,
+                    document=_metadata_document_snapshot(document),
+                )
+                timing.update(metadata_generation="parallel")
+            else:
+                timing.update(metadata_generation="inline")
 
             self._mark_progress(run, status=ExtractionStatus.RUNNING, stage="embedding", percent=45)
-            embeddings = self._embedding_provider.embed_documents(
-                [content for content, *_ in chunks]
-            )
+            with timing.phase("embedding.chunks"):
+                embeddings = self._embedding_provider.embed_documents(
+                    [content for content, *_ in chunks]
+                )
             logger.info(
                 "knowledge_ingestion.embedded run_id=%s document_id=%s embedding_count=%d "
                 "provider=%s model=%s",
@@ -167,9 +231,11 @@ class KnowledgeExtractionService:
                 ),
                 getattr(self._embedding_provider, "model", None),
             )
+            timing.update(embedding_count=len(embeddings))
             entity_ids: set[str] = set()
             relationship_count = 0
-            stores_sql_vector = _stores_sql_embedding_vector(self._db)
+            with timing.phase("embedding_storage_check"):
+                stores_sql_vector = _stores_sql_embedding_vector(self._db)
             if stores_sql_vector:
                 self._mark_progress(
                     run,
@@ -183,79 +249,84 @@ class KnowledgeExtractionService:
                 stage="entities",
                 percent=85,
             )
-            entity_names_by_chunk = [_extract_entity_names(content) for content, *_ in chunks]
-            entity_by_name = self._get_or_create_entities(
-                name for names in entity_names_by_chunk for name in names
-            )
-            chunk_embeddings = zip(chunks, embeddings, strict=True)
-            for ordinal, (
-                (content, start, end, source_page, source_location_json),
-                embedding,
-            ) in enumerate(chunk_embeddings):
-                chunk = DocumentChunkModel(
-                    document_id=document.id,
-                    extraction_run_id=run.id,
-                    ordinal=ordinal,
-                    content=content,
-                    start_offset=start,
-                    end_offset=end,
-                    source_page=source_page,
-                    source_location_json=source_location_json,
-                    embedding_json=json.dumps(embedding),
+            with timing.phase("entities.extract"):
+                entity_names_by_chunk = [_extract_entity_names(content) for content, *_ in chunks]
+            with timing.phase("entities.upsert"):
+                entity_by_name = self._get_or_create_entities(
+                    name for names in entity_names_by_chunk for name in names
                 )
-                self._db.add(chunk)
-                self._db.flush()
-                if stores_sql_vector:
-                    self._store_sql_embedding_vector(
-                        table=DocumentChunkModel.__table__, row_id=chunk.id, embedding=embedding
+            structured_entity_count = 0
+            chunk_embeddings = zip(chunks, embeddings, strict=True)
+            with timing.phase("indexing.persist_chunks"):
+                for ordinal, (
+                    (content, start, end, source_page, source_location_json),
+                    embedding,
+                ) in enumerate(chunk_embeddings):
+                    chunk = DocumentChunkModel(
+                        document_id=document.id,
+                        extraction_run_id=run.id,
+                        ordinal=ordinal,
+                        content=content,
+                        start_offset=start,
+                        end_offset=end,
+                        source_page=source_page,
+                        source_location_json=source_location_json,
+                        embedding_json=json.dumps(embedding),
                     )
-                chunk_entity_ids = []
-                for entity_name in entity_names_by_chunk[ordinal]:
-                    entity = entity_by_name[entity_name]
-                    entity_ids.add(entity.id)
-                    chunk_entity_ids.append(entity.id)
-                    self._db.add(
-                        EntityMentionModel(
-                            entity_id=entity.id,
-                            chunk_id=chunk.id,
-                            document_id=document.id,
-                            extraction_run_id=run.id,
+                    self._db.add(chunk)
+                    self._db.flush()
+                    if stores_sql_vector:
+                        self._store_sql_embedding_vector(
+                            table=DocumentChunkModel.__table__, row_id=chunk.id, embedding=embedding
                         )
-                    )
-                for source_id, target_id in zip(
-                    chunk_entity_ids, chunk_entity_ids[1:], strict=False
-                ):
-                    self._db.add(
-                        EntityRelationshipModel(
-                            source_entity_id=source_id,
-                            target_entity_id=target_id,
-                            relation_type="co_occurs_with",
-                            document_id=document.id,
-                            chunk_id=chunk.id,
-                            extraction_run_id=run.id,
+                    chunk_entity_ids = []
+                    for entity_name in entity_names_by_chunk[ordinal]:
+                        entity = entity_by_name[entity_name]
+                        entity_ids.add(entity.id)
+                        chunk_entity_ids.append(entity.id)
+                        self._db.add(
+                            EntityMentionModel(
+                                entity_id=entity.id,
+                                chunk_id=chunk.id,
+                                document_id=document.id,
+                                extraction_run_id=run.id,
+                            )
                         )
-                    )
-                    relationship_count += 1
-                for structured in _extract_structured_entities(content):
-                    self._db.add(
-                        StructuredKnowledgeEntityModel(
-                            document_id=document.id,
-                            chunk_id=chunk.id,
-                            extraction_run_id=run.id,
-                            entity_type=structured.entity_type.value,
-                            label=structured.label,
-                            attributes_json=json.dumps(
-                                structured.attributes,
-                                ensure_ascii=False,
-                                sort_keys=True,
-                            ),
-                            source_page=source_page,
-                            source_location_json=source_location_json,
-                            start_offset=start + structured.start,
-                            end_offset=start + structured.end,
-                            confidence=structured.confidence,
+                    for source_id, target_id in zip(
+                        chunk_entity_ids, chunk_entity_ids[1:], strict=False
+                    ):
+                        self._db.add(
+                            EntityRelationshipModel(
+                                source_entity_id=source_id,
+                                target_entity_id=target_id,
+                                relation_type="co_occurs_with",
+                                document_id=document.id,
+                                chunk_id=chunk.id,
+                                extraction_run_id=run.id,
+                            )
                         )
-                    )
+                        relationship_count += 1
+                    for structured in _extract_structured_entities(content):
+                        self._db.add(
+                            StructuredKnowledgeEntityModel(
+                                document_id=document.id,
+                                chunk_id=chunk.id,
+                                extraction_run_id=run.id,
+                                entity_type=structured.entity_type.value,
+                                label=structured.label,
+                                attributes_json=json.dumps(
+                                    structured.attributes,
+                                    ensure_ascii=False,
+                                    sort_keys=True,
+                                ),
+                                source_page=source_page,
+                                source_location_json=source_location_json,
+                                start_offset=start + structured.start,
+                                end_offset=start + structured.end,
+                                confidence=structured.confidence,
+                            )
+                        )
+                        structured_entity_count += 1
 
             self._mark_progress(
                 run,
@@ -263,7 +334,13 @@ class KnowledgeExtractionService:
                 stage="metadata",
                 percent=95,
             )
-            self._store_document_metadata_profile(document=document, run=run)
+            self._store_document_metadata_profile(
+                document=document,
+                run=run,
+                timing=timing,
+                settings=settings,
+                metadata_future=metadata_future,
+            )
 
             run.status = ExtractionStatus.COMPLETED.value
             run.stage = "completed"
@@ -273,8 +350,9 @@ class KnowledgeExtractionService:
             run.relationship_count = relationship_count
             run.error = None
             run.completed_at = datetime.now(UTC)
-            self._db.commit()
-            self._db.refresh(run)
+            with timing.phase("final_commit"):
+                self._db.commit()
+                self._db.refresh(run)
             logger.info(
                 "knowledge_ingestion.completed run_id=%s document_id=%s chunks=%d entities=%d "
                 "relationships=%d",
@@ -283,6 +361,14 @@ class KnowledgeExtractionService:
                 len(chunks),
                 len(entity_ids),
                 relationship_count,
+            )
+            timing.emit(
+                outcome="completed",
+                chunk_count=len(chunks),
+                entity_count=len(entity_ids),
+                relationship_count=relationship_count,
+                structured_entity_count=structured_entity_count,
+                metadata_profile_count=1,
             )
             return ExtractionSummary(
                 run=run,
@@ -305,7 +391,13 @@ class KnowledgeExtractionService:
                 document.id,
                 _safe_error_message(exc),
             )
+            timing.emit(outcome="failed", error_type=exc.__class__.__name__)
             raise
+        finally:
+            if metadata_future is not None:
+                metadata_future.cancel()
+            if metadata_executor is not None:
+                metadata_executor.shutdown(wait=False, cancel_futures=True)
 
     def _clear_prior_extraction_artifacts(self, document_id: str) -> None:
         """Remove stale document-derived rows so repeated ingest is idempotent.
@@ -393,49 +485,108 @@ class KnowledgeExtractionService:
         self._db.execute(statement)
 
     def _store_document_metadata_profile(
-        self, *, document: DocumentModel, run: ExtractionRunModel
+        self,
+        *,
+        document: DocumentModel,
+        run: ExtractionRunModel,
+        timing: IngestionTimingTrace,
+        settings: Settings,
+        metadata_future: Future[_MetadataGenerationResult] | None,
     ) -> None:
-        settings = get_settings()
-        generator = build_document_metadata_generator(settings)
-        try:
-            profile = generator.generate(document)
-        except Exception:
-            if settings.document_metadata_enrichment_mode == "openai":
-                raise
-            fallback = DeterministicDocumentMetadataGenerator(
-                max_input_chars=settings.document_metadata_max_input_chars
+        if metadata_future is None:
+            metadata_result = _generate_document_metadata_profile(
+                settings=settings,
+                document=_metadata_document_snapshot(document),
             )
-            profile = fallback.generate(document)
-        embedding = self._embedding_provider.embed_documents([profile.search_text])[0]
-        row = DocumentMetadataProfileModel(
-            document_id=document.id,
-            extraction_run_id=run.id,
-            generated_title=profile.metadata.title,
-            description=profile.metadata.description,
-            summary=profile.metadata.summary,
-            keywords_json=metadata_json(profile.metadata.keywords),
-            topics_json=metadata_json(profile.metadata.topics),
-            entities_json=metadata_json(profile.metadata.entities),
-            language=profile.metadata.language,
-            confidence=profile.metadata.confidence,
-            generator=profile.generator,
-            model=profile.model,
-            prompt_version=profile.prompt_version,
-            search_text=profile.search_text,
-            embedding_json=json.dumps(embedding),
-        )
-        self._db.add(row)
-        self._db.flush()
-        if _stores_sql_embedding_vector(self._db):
-            self._store_sql_embedding_vector(
-                table=DocumentMetadataProfileModel.__table__, row_id=row.id, embedding=embedding
+        else:
+            metadata_result = metadata_future.result()
+        timing.record_phase("metadata.generate", metadata_result.generate_elapsed_ms)
+        if metadata_result.fallback_elapsed_ms is not None:
+            timing.record_phase("metadata.fallback_generate", metadata_result.fallback_elapsed_ms)
+        profile = metadata_result.profile
+        with timing.phase("metadata.embed"):
+            embedding = self._embedding_provider.embed_documents([profile.search_text])[0]
+        with timing.phase("metadata.persist"):
+            row = DocumentMetadataProfileModel(
+                document_id=document.id,
+                extraction_run_id=run.id,
+                generated_title=profile.metadata.title,
+                description=profile.metadata.description,
+                summary=profile.metadata.summary,
+                keywords_json=metadata_json(profile.metadata.keywords),
+                topics_json=metadata_json(profile.metadata.topics),
+                entities_json=metadata_json(profile.metadata.entities),
+                language=profile.metadata.language,
+                confidence=profile.metadata.confidence,
+                generator=profile.generator,
+                model=profile.model,
+                prompt_version=profile.prompt_version,
+                search_text=profile.search_text,
+                embedding_json=json.dumps(embedding),
             )
+            self._db.add(row)
+            self._db.flush()
+            if _stores_sql_embedding_vector(self._db):
+                self._store_sql_embedding_vector(
+                    table=DocumentMetadataProfileModel.__table__, row_id=row.id, embedding=embedding
+                )
 
     def _store_sql_embedding_vector(self, *, table, row_id: str, embedding: list[float]) -> None:
         embedding_vector = table.c.embedding_vector
         self._db.execute(
             update(table).where(table.c.id == row_id).values({embedding_vector: embedding})
         )
+
+
+def _metadata_document_snapshot(document: DocumentModel) -> _MetadataDocumentSnapshot:
+    """Copy metadata-generator inputs before any background thread touches them."""
+    return _MetadataDocumentSnapshot(
+        title=document.title,
+        content=document.content,
+        source_filename=document.source_filename,
+        source_type=document.source_type,
+        source_page_count=document.source_page_count,
+    )
+
+
+def _should_parallelize_metadata_generation(settings: Settings) -> bool:
+    """Return whether metadata generation is likely network-bound enough to overlap."""
+    if settings.document_metadata_enrichment_mode == "openai":
+        return True
+    return (
+        settings.document_metadata_enrichment_mode == "auto"
+        and settings.response_mode == "openai"
+        and bool(settings.openai_api_key_value())
+    )
+
+
+def _generate_document_metadata_profile(
+    *,
+    settings: Settings,
+    document: _MetadataDocumentSnapshot,
+) -> _MetadataGenerationResult:
+    generator = build_document_metadata_generator(settings)
+    started = perf_counter()
+    try:
+        profile = generator.generate(document)
+    except Exception:
+        generate_elapsed_ms = (perf_counter() - started) * 1000
+        if settings.document_metadata_enrichment_mode == "openai":
+            raise
+        fallback = DeterministicDocumentMetadataGenerator(
+            max_input_chars=settings.document_metadata_max_input_chars
+        )
+        fallback_started = perf_counter()
+        profile = fallback.generate(document)
+        return _MetadataGenerationResult(
+            profile=profile,
+            generate_elapsed_ms=generate_elapsed_ms,
+            fallback_elapsed_ms=(perf_counter() - fallback_started) * 1000,
+        )
+    return _MetadataGenerationResult(
+        profile=profile,
+        generate_elapsed_ms=(perf_counter() - started) * 1000,
+    )
 
 
 def _chunk_document_text(
@@ -497,7 +648,11 @@ def _chunk_pdf_text(text: str) -> list[tuple[str, int, int, int | None]]:
     chunks: list[tuple[str, int, int, int | None]] = []
     base_offset = 0
     for page_index, page_text in enumerate(pages, start=1):
-        for content, start, end in _chunk_text(page_text):
+        page_chunks = _coalesced_semantic_units(
+            _semantic_units(page_text.strip()),
+            max_chars=_CHUNK_TARGET_CHARS,
+        )
+        for content, start, end in page_chunks or _chunk_text(page_text):
             chunks.append((content, base_offset + start, base_offset + end, page_index))
         base_offset += len(page_text)
         if page_index < len(pages):

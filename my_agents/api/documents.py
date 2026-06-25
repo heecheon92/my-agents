@@ -49,6 +49,7 @@ from my_agents.knowledge.schemas import (
     DocumentUpdateRequest,
     ExtractionRunResponse,
 )
+from my_agents.knowledge.timing import IngestionTimingTrace
 from my_agents.knowledge.uploads import (
     DocumentUploadError,
     ParsedDocumentUpload,
@@ -182,7 +183,12 @@ async def upload_document_in_knowledge_base(
         principal=principal,
         allow_system_management=allow_system_management,
     )
-    content = await file.read()
+    timing = IngestionTimingTrace(
+        enabled=settings.debug_ingestion_timing_logging,
+        trace="upload",
+    )
+    with timing.phase("upload.read"):
+        content = await file.read()
     logger.info(
         "document_upload.received user_id=%s knowledge_base_id=%s title=%s filename=%s "
         "content_type=%s bytes=%d",
@@ -212,6 +218,7 @@ async def upload_document_in_knowledge_base(
                 timeout_seconds=settings.tesseract_timeout_seconds,
                 max_pages=settings.tesseract_max_pages,
             ),
+            timing=timing,
         )
     except DocumentUploadError as exc:
         logger.warning(
@@ -230,32 +237,34 @@ async def upload_document_in_knowledge_base(
             if isinstance(exc, UnsupportedDocumentUploadError)
             else status.HTTP_400_BAD_REQUEST
         )
+        timing.emit(outcome="failed", error_type=exc.__class__.__name__)
         raise HTTPException(status_code=status_code, detail=str(exc)) from exc
     source_filename = file.filename.strip() if file.filename else None
-    document = DocumentModel(
-        title=title.strip(),
-        content=parsed.content,
-        source_type=parsed.source_type,
-        source_filename=source_filename,
-        source_content_type=parsed.source_content_type,
-        source_byte_size=parsed.byte_size,
-        source_sha256=parsed.sha256,
-        source_page_count=parsed.page_count,
-        parser_name=parsed.parser_name,
-        owner_user_id=principal.user_id,
-        group_id=knowledge_base.group_id,
-        knowledge_base_id=knowledge_base.id,
-    )
-    db.add(document)
-    db.flush()
-    _add_parse_artifact_for_upload(
-        db,
-        document=document,
-        parsed=parsed,
-        source_filename=source_filename,
-    )
-    db.commit()
-    db.refresh(document)
+    with timing.phase("document.persist"):
+        document = DocumentModel(
+            title=title.strip(),
+            content=parsed.content,
+            source_type=parsed.source_type,
+            source_filename=source_filename,
+            source_content_type=parsed.source_content_type,
+            source_byte_size=parsed.byte_size,
+            source_sha256=parsed.sha256,
+            source_page_count=parsed.page_count,
+            parser_name=parsed.parser_name,
+            owner_user_id=principal.user_id,
+            group_id=knowledge_base.group_id,
+            knowledge_base_id=knowledge_base.id,
+        )
+        db.add(document)
+        db.flush()
+        _add_parse_artifact_for_upload(
+            db,
+            document=document,
+            parsed=parsed,
+            source_filename=source_filename,
+        )
+        db.commit()
+        db.refresh(document)
     logger.info(
         "document_upload.persisted document_id=%s user_id=%s knowledge_base_id=%s "
         "source_type=%s parser=%s bytes=%s pages=%s chars=%d",
@@ -268,6 +277,7 @@ async def upload_document_in_knowledge_base(
         document.source_page_count,
         len(document.content),
     )
+    timing.emit(outcome="completed")
     return _document_response(document)
 
 

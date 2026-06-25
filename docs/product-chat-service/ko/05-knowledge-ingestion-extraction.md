@@ -12,6 +12,68 @@
 기존 chunk/retrieval 경로와 호환되도록 Markdown을 `documents.content`에도 저장합니다.
 legacy binary `.doc`는 이 slice에서 계속 지원하지 않습니다.
 
+PDF는 page boundary를 넘지 않는 범위에서 line-heavy page text를 retrieval-sized chunk로
+coalesce합니다. 따라서 parser가 줄 단위 text를 많이 만들더라도 같은 page 안에서는 더 큰
+chunk로 묶어 embedding row, entity mention, retrieval scan 비용을 줄이면서 `source_page`
+provenance는 유지합니다.
+
+Ingestion 최적화 전후 측정은 아래 benchmark harness를 기준으로 합니다.
+
+```bash
+uv run python scripts/measure_ingestion_performance.py \
+  --scenario pdf \
+  --repeat 3 \
+  --repeat-units 80 \
+  --output /tmp/my-agents-ingestion-pdf.json
+```
+
+이 harness는 임시 SQLite DB와 deterministic embedding/metadata mode를 사용해 parse,
+persist, ingest, retrieval-smoke, total time, RSS delta, parser/source metadata,
+artifact count, redacted quality signature를 출력합니다. 최적화 전후에는 같은 scenario와
+repeat 설정을 사용하고, parser/source 변경, metadata profile 누락, retrieval hit 누락,
+예상하지 않은 entity 손실은 quality guard 실패로 봅니다.
+
+API를 직접 쓰면서 실제 local 문서가 느린 단계를 보고 싶으면 ingestion timing panel을 켭니다.
+
+```bash
+MY_AGENTS_DEBUG_INGESTION_TIMING_LOGGING=true uv run fastapi dev main.py
+```
+
+이 local-only 출력은 upload parsing과 extraction/indexing run마다 redacted Rich table을
+보여줍니다. File read, PDF validation/checksum/classification, 개별 PDF parser attempt,
+PDF quality gate, DB persistence, stale artifact cleanup, chunking, chunk embedding,
+entity upsert/linking, chunk/index persistence, metadata generation, metadata embedding,
+final commit 중 어디가 느린지 확인할 때 사용합니다. Raw filename이나 문서 본문은 출력하지 않고
+source metadata와 count만 출력합니다. OpenAI metadata generation이
+켜져 있으면 metadata generation은 chunking 이후 시작되어 chunk embedding/indexing과 병렬로
+실행됩니다. 따라서 phase row는 서로 겹칠 수 있는 span이며 wall-clock total에 단순 합산되지
+않습니다.
+
+PDF classification은 happy path에서 lazy하게 실행됩니다. Upload parser는 먼저
+`pymupdf_text_v1`을 실행하고 기존 quality gate를 통과하면 바로 수락합니다. PyMuPDF가
+실패하거나 빈/저품질 text를 만들면 그때 pypdf classification을 실행해서 encrypted,
+corrupted, native/mixed/no-text fallback routing을 판단한 뒤 pypdf, Docling, Tesseract,
+legacy fallback을 시도합니다.
+
+## 측정된 최적화 snapshot
+
+2026-06-25 local 최적화 측정은 195쪽 Aliro 1.0 specification PDF
+(`pymupdf_text_v1`, 3.57 MB, 추출 text 409,701자)를 기준으로 했습니다. OpenAI embedding,
+OpenAI metadata generation, `MY_AGENTS_EMBEDDING_BATCH_SIZE=64` 조합에서 parser/source 출력과
+ingestion quality count를 유지한 채 wall-clock time을 줄이는 것이 목표였습니다.
+
+| 단계 | Upload total | Extraction total | End-to-end | 주요 변경 |
+| --- | ---: | ---: | ---: | --- |
+| Baseline | 8.50s | 27.66s | 36.16s | OpenAI embedding과 metadata가 직렬 실행되고, PDF를 PyMuPDF 전에 pre-classify함. |
+| Batch-size tuning | 8.45s | 23.43s | 31.88s | 더 큰 embedding batch로 chunk embedding latency 감소. |
+| Parallel metadata | 8.48s | 13.01s | 21.50s | OpenAI metadata generation을 chunk embedding/indexing과 겹치게 실행. |
+| Lazy classification | 5.00s | 11.57s | 16.57s | 정상 native-text PDF happy path에서 pypdf pre-classification 생략. |
+
+측정 중 quality guard는 유지됐습니다: `page_count=195`, `content_chars=409701`,
+`chunk_count=392`, `entity_count=1935`, `relationship_count=6537`,
+`structured_entity_count=127`. 최종 end-to-end 개선은 baseline 대비 약 54%였지만, 이 값은
+local profile이며 OpenAI latency와 PDF 형태에 따라 달라질 수 있습니다.
+
 ## 문서 상태
 
 - 영어 원문은 `docs/product-chat-service/en/05-knowledge-ingestion-extraction.md`에 있습니다.

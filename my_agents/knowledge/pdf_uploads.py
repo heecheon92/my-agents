@@ -19,6 +19,8 @@ import pymupdf
 from pypdf import PdfReader
 from pypdf.errors import PdfReadError
 
+from my_agents.knowledge.timing import IngestionTimingTrace
+
 MAX_PDF_UPLOAD_BYTES = 5 * 1024 * 1024
 PDF_CONTENT_TYPES = frozenset({"application/pdf", "application/octet-stream"})
 PYMUPDF_PARSER_NAME = "pymupdf_text_v1"
@@ -117,25 +119,29 @@ def parse_uploaded_pdf(
     content: bytes,
     docling_config: DoclingExtractionConfig | None = None,
     tesseract_config: TesseractOcrConfig | None = None,
+    timing: IngestionTimingTrace | None = None,
 ) -> ParsedPdf:
     """Validate, classify, extract, clean, and quality-gate a V1 PDF upload.
 
     The local pipeline follows the production-pipeline pattern from the PDF extraction
-    docs: classify before routing, try local text/table extractors, preserve a
-    deterministic fallback for simple legacy streams, clean PostgreSQL-unsafe and
-    encoding artifacts, and reject low-quality output instead of persisting garbage into
-    RAG.
+    docs: try the fast primary text extractor first, lazily classify before fallback
+    routing only when that primary path fails quality gates, preserve a deterministic
+    fallback for simple legacy streams, clean PostgreSQL-unsafe and encoding artifacts,
+    and reject low-quality output instead of persisting garbage into RAG.
     """
-    safe_filename = _validate_pdf_filename(filename)
-    _validate_pdf_content_type(content_type)
-    if not content:
-        raise PdfUploadError("uploaded PDF is empty")
-    if len(content) > MAX_PDF_UPLOAD_BYTES:
-        raise PdfUploadError("uploaded PDF exceeds the 5 MiB V1 limit")
-    if not content.startswith(b"%PDF-"):
-        raise PdfUploadError("uploaded file is not a PDF")
+    timing = timing or IngestionTimingTrace(enabled=False, trace="pdf_parse")
+    with timing.phase("parse.pdf.validate"):
+        safe_filename = _validate_pdf_filename(filename)
+        _validate_pdf_content_type(content_type)
+        if not content:
+            raise PdfUploadError("uploaded PDF is empty")
+        if len(content) > MAX_PDF_UPLOAD_BYTES:
+            raise PdfUploadError("uploaded PDF exceeds the 5 MiB V1 limit")
+        if not content.startswith(b"%PDF-"):
+            raise PdfUploadError("uploaded file is not a PDF")
 
-    sha256 = hashlib.sha256(content).hexdigest()
+    with timing.phase("parse.pdf.sha256"):
+        sha256 = hashlib.sha256(content).hexdigest()
     logger.info(
         "pdf_upload.parse.start filename=%s content_type=%s bytes=%d sha256=%s",
         safe_filename,
@@ -143,45 +149,57 @@ def parse_uploaded_pdf(
         len(content),
         sha256,
     )
-    classification = _classify_pdf(content)
-    logger.info(
-        "pdf_upload.classified filename=%s doc_type=%s page_count=%d native_pages=%s "
-        "empty_pages=%s warnings=%s",
+    best_validation = PdfValidation(is_valid=False, warnings=["extraction was not attempted"])
+    effective_docling_config = docling_config or DoclingExtractionConfig()
+    effective_tesseract_config = tesseract_config or TesseractOcrConfig()
+
+    primary_attempt = _logged_extraction_attempt(
         safe_filename,
-        classification.doc_type,
-        classification.page_count,
-        classification.native_pages,
-        classification.empty_pages,
-        classification.warnings,
+        PYMUPDF_PARSER_NAME,
+        lambda: _extract_page_texts_with_pymupdf(content),
+        timing,
+    )
+    primary_validation = _validate_attempt(primary_attempt, timing)
+    if primary_validation.is_valid:
+        _log_accepted_attempt(filename=safe_filename, attempt=primary_attempt)
+        timing.update(
+            pdf_doc_type="unclassified_primary_accepted",
+            pdf_native_page_count=len(primary_attempt.pages),
+            pdf_empty_page_count=0,
+            pdf_warning_count=0,
+        )
+        return ParsedPdf(
+            content=PDF_PAGE_SEPARATOR.join(primary_attempt.pages),
+            page_count=len(primary_attempt.pages),
+            sha256=sha256,
+            byte_size=len(content),
+            parser_name=primary_attempt.parser_name,
+        )
+
+    _log_rejected_attempt(
+        filename=safe_filename,
+        attempt=primary_attempt,
+        validation=primary_validation,
+    )
+    best_validation = primary_validation
+
+    classification = _classify_pdf_for_fallback(
+        content=content, filename=safe_filename, timing=timing
     )
     if classification.doc_type == "encrypted":
         logger.warning("pdf_upload.rejected filename=%s reason=encrypted", safe_filename)
         raise PdfUploadError("encrypted PDFs are not supported")
-    best_validation = PdfValidation(is_valid=False, warnings=["extraction was not attempted"])
-    effective_docling_config = docling_config or DoclingExtractionConfig()
-    effective_tesseract_config = tesseract_config or TesseractOcrConfig()
-    for attempt in _extraction_attempts(
+    for attempt in _fallback_extraction_attempts(
         content,
         classification,
         safe_filename,
         effective_docling_config,
         effective_tesseract_config,
+        timing,
     ):
-        validation = _validate_extracted_pages(attempt.pages)
-        char_count = sum(len(page) for page in attempt.pages)
-        log_context = {
-            "filename": safe_filename,
-            "parser": attempt.parser_name,
-            "page_count": len(attempt.pages),
-            "char_count": char_count,
-            "warnings": validation.warnings,
-        }
+        validation = _validate_attempt(attempt, timing)
         if validation.is_valid:
-            logger.info(
-                "pdf_upload.parser.accepted filename=%(filename)s parser=%(parser)s "
-                "pages=%(page_count)d chars=%(char_count)d",
-                log_context,
-            )
+            _log_accepted_attempt(filename=safe_filename, attempt=attempt)
             return ParsedPdf(
                 content=PDF_PAGE_SEPARATOR.join(attempt.pages),
                 page_count=max(classification.page_count, len(attempt.pages)),
@@ -189,11 +207,7 @@ def parse_uploaded_pdf(
                 byte_size=len(content),
                 parser_name=attempt.parser_name,
             )
-        logger.warning(
-            "pdf_upload.parser.rejected filename=%(filename)s parser=%(parser)s "
-            "pages=%(page_count)d chars=%(char_count)d warnings=%(warnings)s",
-            log_context,
-        )
+        _log_rejected_attempt(filename=safe_filename, attempt=attempt, validation=validation)
         best_validation = validation
 
     logger.warning(
@@ -259,22 +273,41 @@ def _classify_pdf(content: bytes) -> PdfClassification:
     )
 
 
-def _extraction_attempts(
+def _classify_pdf_for_fallback(
+    *,
+    content: bytes,
+    filename: str,
+    timing: IngestionTimingTrace,
+) -> PdfClassification:
+    with timing.phase("parse.pdf.classify"):
+        classification = _classify_pdf(content)
+    timing.update(
+        pdf_doc_type=classification.doc_type,
+        pdf_native_page_count=len(classification.native_pages),
+        pdf_empty_page_count=len(classification.empty_pages),
+        pdf_warning_count=len(classification.warnings),
+    )
+    logger.info(
+        "pdf_upload.classified filename=%s doc_type=%s page_count=%d native_pages=%s "
+        "empty_pages=%s warnings=%s",
+        filename,
+        classification.doc_type,
+        classification.page_count,
+        classification.native_pages,
+        classification.empty_pages,
+        classification.warnings,
+    )
+    return classification
+
+
+def _fallback_extraction_attempts(
     content: bytes,
     classification: PdfClassification,
     filename: str,
     docling_config: DoclingExtractionConfig,
     tesseract_config: TesseractOcrConfig,
+    timing: IngestionTimingTrace,
 ) -> Iterator[_ExtractionAttempt]:
-    # PyMuPDF is the fast primary local extractor. It is tried before the older
-    # pypdf compatibility layer so normal text PDFs do not pay Docling's heavier
-    # model startup cost.
-    yield _logged_extraction_attempt(
-        filename,
-        PYMUPDF_PARSER_NAME,
-        lambda: _extract_page_texts_with_pymupdf(content),
-    )
-
     # Keep the lightweight extractors before heavier model/OCR fallback so malformed or
     # image-heavy PDFs do not pay Docling/Tesseract costs when simple text extraction works.
     if classification.doc_type in {"native_text", "mixed_or_low_text"}:
@@ -282,6 +315,7 @@ def _extraction_attempts(
             filename,
             PDF_PARSER_NAME,
             lambda: _extract_page_texts_with_pypdf(content),
+            timing,
         )
     # Docling is the structured fallback for PDFs where fast text extraction
     # is empty or fails the quality gate. It can produce RAG-friendly Markdown and
@@ -291,6 +325,7 @@ def _extraction_attempts(
         filename,
         DOCLING_PARSER_NAME,
         lambda: _extract_page_texts_with_docling(filename, content, docling_config),
+        timing,
     )
 
     # Tesseract is the OCR fallback for image-heavy PDFs where text extractors only
@@ -299,6 +334,7 @@ def _extraction_attempts(
         filename,
         TESSERACT_PARSER_NAME,
         lambda: _extract_page_texts_with_tesseract(content, tesseract_config),
+        timing,
     )
 
     # Keep the deterministic legacy fallback so tiny fixture PDFs and simple literal streams
@@ -307,6 +343,7 @@ def _extraction_attempts(
         filename,
         LEGACY_STREAM_PARSER_NAME,
         lambda: _legacy_extract_page_texts(content),
+        timing,
     )
 
 
@@ -314,10 +351,12 @@ def _logged_extraction_attempt(
     filename: str,
     parser_name: str,
     extractor: Callable[[], list[str]],
+    timing: IngestionTimingTrace,
 ) -> _ExtractionAttempt:
     logger.info("pdf_upload.parser.start filename=%s parser=%s", filename, parser_name)
     try:
-        pages = extractor()
+        with timing.phase(f"parse.pdf.parser.{parser_name}"):
+            pages = extractor()
     except Exception:
         logger.exception("pdf_upload.parser.error filename=%s parser=%s", filename, parser_name)
         raise
@@ -330,6 +369,40 @@ def _logged_extraction_attempt(
     )
     _log_full_parser_text_for_debug(filename=filename, parser_name=parser_name, pages=pages)
     return _ExtractionAttempt(parser_name, pages)
+
+
+def _validate_attempt(
+    attempt: _ExtractionAttempt,
+    timing: IngestionTimingTrace,
+) -> PdfValidation:
+    with timing.phase(f"parse.pdf.quality_gate.{attempt.parser_name}"):
+        return _validate_extracted_pages(attempt.pages)
+
+
+def _log_accepted_attempt(*, filename: str, attempt: _ExtractionAttempt) -> None:
+    logger.info(
+        "pdf_upload.parser.accepted filename=%s parser=%s pages=%d chars=%d",
+        filename,
+        attempt.parser_name,
+        len(attempt.pages),
+        sum(len(page) for page in attempt.pages),
+    )
+
+
+def _log_rejected_attempt(
+    *,
+    filename: str,
+    attempt: _ExtractionAttempt,
+    validation: PdfValidation,
+) -> None:
+    logger.warning(
+        "pdf_upload.parser.rejected filename=%s parser=%s pages=%d chars=%d warnings=%s",
+        filename,
+        attempt.parser_name,
+        len(attempt.pages),
+        sum(len(page) for page in attempt.pages),
+        validation.warnings,
+    )
 
 
 def _log_full_parser_text_for_debug(

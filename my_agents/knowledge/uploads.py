@@ -20,6 +20,7 @@ from my_agents.knowledge.pdf_uploads import (
     TesseractOcrConfig,
     parse_uploaded_pdf,
 )
+from my_agents.knowledge.timing import IngestionTimingTrace
 
 MAX_TEXT_UPLOAD_BYTES = MAX_PDF_UPLOAD_BYTES
 TEXT_UPLOAD_PARSER_NAME = "utf8_text_v1"
@@ -81,10 +82,17 @@ def parse_uploaded_document(
     content: bytes,
     docling_config: DoclingExtractionConfig | None = None,
     tesseract_config: TesseractOcrConfig | None = None,
+    timing: IngestionTimingTrace | None = None,
 ) -> ParsedDocumentUpload:
     """Parse a supported upload into normalized text and source metadata."""
     safe_filename = _validate_upload_filename(filename)
     suffix = _filename_suffix(safe_filename)
+    timing = timing or IngestionTimingTrace(enabled=False, trace="upload")
+    timing.update(
+        filename_suffix=suffix,
+        content_type=_normalize_content_type(content_type),
+        source_bytes=len(content),
+    )
     logger.info(
         "document_upload.dispatch filename=%s suffix=%s content_type=%s bytes=%d sha256=%s",
         safe_filename,
@@ -94,27 +102,37 @@ def parse_uploaded_document(
         hashlib.sha256(content).hexdigest(),
     )
     if suffix == ".pdf":
-        return _parse_pdf(
-            filename=safe_filename,
-            content_type=content_type,
-            content=content,
-            docling_config=docling_config,
-            tesseract_config=tesseract_config,
-        )
+        with timing.phase("parse.pdf"):
+            upload = _parse_pdf(
+                filename=safe_filename,
+                content_type=content_type,
+                content=content,
+                docling_config=docling_config,
+                tesseract_config=tesseract_config,
+                timing=timing,
+            )
+        _record_parsed_upload_timing_summary(timing, upload)
+        return upload
     if suffix in _OFFICE_UPLOAD_SUFFIXES:
-        return _parse_office_file(
-            filename=safe_filename,
-            content_type=content_type,
-            content=content,
-            docling_config=docling_config,
-        )
+        with timing.phase("parse.office"):
+            upload = _parse_office_file(
+                filename=safe_filename,
+                content_type=content_type,
+                content=content,
+                docling_config=docling_config,
+            )
+        _record_parsed_upload_timing_summary(timing, upload)
+        return upload
     if suffix in _TEXT_UPLOAD_SUFFIXES:
-        return _parse_text_file(
-            filename=safe_filename,
-            suffix=suffix,
-            content_type=content_type,
-            content=content,
-        )
+        with timing.phase("parse.text"):
+            upload = _parse_text_file(
+                filename=safe_filename,
+                suffix=suffix,
+                content_type=content_type,
+                content=content,
+            )
+        _record_parsed_upload_timing_summary(timing, upload)
+        return upload
     raise UnsupportedDocumentUploadError(_SUPPORTED_UPLOAD_ERROR_MESSAGE)
 
 
@@ -125,6 +143,7 @@ def _parse_pdf(
     content: bytes,
     docling_config: DoclingExtractionConfig | None,
     tesseract_config: TesseractOcrConfig | None,
+    timing: IngestionTimingTrace,
 ) -> ParsedDocumentUpload:
     try:
         parsed = parse_uploaded_pdf(
@@ -133,6 +152,7 @@ def _parse_pdf(
             content=content,
             docling_config=docling_config,
             tesseract_config=tesseract_config,
+            timing=timing,
         )
     except PdfUploadError as exc:
         logger.warning(
@@ -250,6 +270,18 @@ def _parse_text_file(
         sha256=hashlib.sha256(content).hexdigest(),
         page_count=None,
         parser_name=parser_name,
+    )
+
+
+def _record_parsed_upload_timing_summary(
+    timing: IngestionTimingTrace,
+    upload: ParsedDocumentUpload,
+) -> None:
+    timing.update(
+        source_type=upload.source_type,
+        parser=upload.parser_name,
+        content_chars=len(upload.content),
+        page_count=upload.page_count,
     )
 
 

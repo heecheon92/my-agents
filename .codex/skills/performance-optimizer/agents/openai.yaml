@@ -1,0 +1,4 @@
+interface:
+  display_name: "Performance Optimizer"
+  short_description: "Collaborative measured optimization loop"
+  default_prompt: "Use $performance-optimizer to run a measured before/after optimization loop without losing quality."

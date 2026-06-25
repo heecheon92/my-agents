@@ -506,6 +506,15 @@ def test_debug_retrieval_timing_logging_env_flag(monkeypatch: pytest.MonkeyPatch
     assert settings.debug_retrieval_timing_logging is True
 
 
+def test_debug_ingestion_timing_logging_env_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
+    monkeypatch.setenv("MY_AGENTS_DEBUG_INGESTION_TIMING_LOGGING", "true")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.debug_ingestion_timing_logging is True
+
+
 def test_metrics_enabled_env_flag(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
     monkeypatch.setenv("MY_AGENTS_METRICS_ENABLED", "true")

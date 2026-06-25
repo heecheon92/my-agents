@@ -1,9 +1,23 @@
 ---
 name: rag-performance-optimizer
-description: Use when optimizing RAG, retrieval, ContextForge, embedding, reranking, or database-query performance from measured timing output. Supports a multi-turn workflow where the user provides pre-optimization metrics, Codex identifies bottlenecks and quality-safe options, the user chooses actions, Codex implements them, then the user provides post-optimization metrics for before/after documentation.
+description: "Use when optimizing RAG, retrieval, ContextForge, embedding, reranking, or retrieval database-query performance from measured timing output. This is the RAG-specific specialization of the generic performance-optimizer workflow and preserves the multi-turn agent/human loop: baseline metrics first, Codex diagnoses bottlenecks and quality-safe options, the human chooses actions, Codex implements, then same-scenario post-optimization metrics are compared and documented."
 ---
 
 # RAG Performance Optimizer
+
+## Relationship to `performance-optimizer`
+
+This skill specializes the generic `performance-optimizer` workflow for RAG/retrieval.
+Preserve the same collaborative loop:
+
+```text
+baseline measurement -> diagnosis -> options -> human choice -> implementation
+-> post-measurement -> quality comparison -> durable docs
+```
+
+Use the generic workflow for non-RAG subjects such as ingestion, API latency, frontend
+rendering, build time, or memory. Use this RAG skill when retrieval-specific invariants
+or files apply.
 
 ## Purpose
 

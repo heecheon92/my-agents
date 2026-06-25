@@ -127,6 +127,44 @@ fusion, reranking, context packing, total time, redacted candidate count를 사�
 metadata match, embedding call, vector SQL, JSON fallback scan, related expansion,
 overview supplement처럼 first-stage retrieval 내부에서 이미 계측하던 span을 함께 보여줍니다.
 
+Local에서 단일 ingestion 실행이 어느 단계에서 느린지 보려면 ingestion Rich timing panel을
+켭니다.
+
+```bash
+MY_AGENTS_DEBUG_INGESTION_TIMING_LOGGING=true uv run fastapi dev main.py
+```
+
+이 debug 출력은 upload parse와 extraction/indexing run마다 사람이 읽기 쉬운 timing 표를
+출력합니다. Upload trace는 file read, parser dispatch, document persistence와 PDF validation,
+checksum, classification, parser attempt, quality gate 같은 PDF subphase를 보여주고,
+extraction trace는 stale artifact 정리, parse artifact lookup, chunking, chunk embedding,
+entity extraction/upsert, chunk/index persistence, metadata generation/embedding, final commit을
+보여줍니다. Suffix, source type, parser, byte/character/page count, PDF doc type,
+chunk/entity/relationship count 같은 redacted metadata와 count만 출력하고 raw filename이나
+문서 본문은 출력하지 않습니다.
+OpenAI metadata generation이 켜져 있으면 metadata generation은 chunk embedding/indexing과
+병렬로 실행됩니다. 따라서 ingestion timing phase는 span이며, 서로 겹칠 수 있어서
+`total_ms`에 단순 합산되지 않습니다.
+
+PDF 경로는 lazy classification을 사용합니다. 먼저 빠른 PyMuPDF text extractor를 실행하고
+기존 quality gate를 통과하면 바로 수락합니다. PyMuPDF가 실패하거나 low-quality text를 만들면
+그때 pypdf classification을 실행한 뒤 pypdf, Docling, Tesseract, legacy fallback 경로로
+라우팅합니다.
+
+Ingestion 최적화 전후를 반복 가능하게 비교하려면 local benchmark harness를 사용합니다.
+
+```bash
+uv run python scripts/measure_ingestion_performance.py \
+  --scenario pdf \
+  --repeat 3 \
+  --output /tmp/my-agents-ingestion-pdf.json
+```
+
+이 benchmark는 격리된 SQLite DB와 deterministic embedding/metadata generation을 사용합니다.
+Parse, persist, ingest, retrieval-smoke, total time, RSS delta, parser/source metadata,
+chunk/entity/relationship count, redacted quality signature를 출력하므로 retrieval quality를
+약화시키지 않고 ingestion 최적화 전후를 비교할 수 있습니다.
+
 ## 주요 검사
 
 ```bash
