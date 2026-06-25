@@ -98,7 +98,7 @@ When touching `my-agents` retrieval, inspect as needed:
 - `my_agents/observability/metrics.py`
 - `tests/test_context_forge_reranking.py`
 - `tests/test_permission_aware_rag.py`
-- `docs/product-chat-service/en/23-rag-retrieval-performance-log.md`
+- `docs/performance/en/rag-retrieval-performance-log.md`
 
 ### 5. Validate before claiming improvement
 
@@ -138,8 +138,8 @@ Use a compact table:
 
 For `my-agents`, update the performance ledger when measurements or optimizations change:
 
-- `docs/product-chat-service/en/23-rag-retrieval-performance-log.md` is canonical;
-- `docs/product-chat-service/ko/23-rag-retrieval-performance-log.md` should summarize the operational state;
+- `docs/performance/en/rag-retrieval-performance-log.md` is canonical;
+- `docs/performance/ko/rag-retrieval-performance-log.md` should summarize the operational state;
 - link or update observability docs only when the measurement process changes.
 
 Write each evolving section recent-work-first:

@@ -93,7 +93,7 @@ supplement time. It is better than `/metrics` when the question is "which step m
 local run slow?" because Prometheus histograms are aggregate.
 
 Keep durable before/after retrieval optimization measurements in
-[`23-rag-retrieval-performance-log.md`](./23-rag-retrieval-performance-log.md). That log records
+[`docs/performance/en/rag-retrieval-performance-log.md`](../../performance/en/rag-retrieval-performance-log.md). That log records
 measured phase output, applied optimizations, and same-scenario improvement deltas.
 
 Implemented timing histograms:

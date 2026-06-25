@@ -229,26 +229,16 @@ returns empty text, or fails the quality gate, the parser then runs pypdf classi
 for encrypted/corrupted/native/mixed/no-text fallback routing before trying pypdf,
 Docling, Tesseract, and legacy fallbacks.
 
-### Measured optimization snapshot
+### Performance optimization records
 
-The 2026-06-25 local optimization run used a 195-page Aliro 1.0 specification PDF
-(`pymupdf_text_v1`, 3.57 MB, 409,701 extracted characters) with OpenAI embeddings,
-OpenAI metadata generation, and `MY_AGENTS_EMBEDDING_BATCH_SIZE=64`. The benchmark goal
-was to reduce wall-clock time without changing parser/source output or ingestion quality
-counts.
+Detailed ingestion before/after measurements now live in the dedicated performance ledger:
 
-| Step | Upload total | Extraction total | End-to-end | Main change |
-| --- | ---: | ---: | ---: | --- |
-| Baseline | 8.50s | 27.66s | 36.16s | OpenAI embeddings and metadata ran serially; PDF pre-classified before PyMuPDF. |
-| Batch-size tuning | 8.45s | 23.43s | 31.88s | Larger embedding batch reduced chunk embedding latency. |
-| Parallel metadata | 8.48s | 13.01s | 21.50s | OpenAI metadata generation overlapped chunk embedding/indexing. |
-| Lazy classification | 5.00s | 11.57s | 16.57s | Happy-path native-text PDFs skip pypdf pre-classification. |
+- [`docs/performance/en/ingestion-performance-log.md`](../../performance/en/ingestion-performance-log.md)
 
-Quality guards stayed stable across the run: `page_count=195`, `content_chars=409701`,
-`chunk_count=392`, `entity_count=1935`, `relationship_count=6537`, and
-`structured_entity_count=127`. The final end-to-end improvement was about 54% versus the
-baseline while keeping the same accepted parser and derived artifact counts. Treat these
-numbers as one local profile, not a global SLA; OpenAI latency and PDF shape will vary.
+The 2026-06-25 Aliro PDF run documents the baseline, embedding batch-size experiment,
+parallel OpenAI metadata generation, PDF parser sub-timing, lazy PDF classification, quality
+guards, and lessons learned. Keep future ingestion performance work in that ledger instead of
+expanding this architecture document.
 
 ## Parallel ingestion concurrency lesson
 

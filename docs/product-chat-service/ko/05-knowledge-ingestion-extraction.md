@@ -55,24 +55,15 @@ PDF classification은 happy path에서 lazy하게 실행됩니다. Upload parser
 corrupted, native/mixed/no-text fallback routing을 판단한 뒤 pypdf, Docling, Tesseract,
 legacy fallback을 시도합니다.
 
-## 측정된 최적화 snapshot
+## Performance optimization 기록
 
-2026-06-25 local 최적화 측정은 195쪽 Aliro 1.0 specification PDF
-(`pymupdf_text_v1`, 3.57 MB, 추출 text 409,701자)를 기준으로 했습니다. OpenAI embedding,
-OpenAI metadata generation, `MY_AGENTS_EMBEDDING_BATCH_SIZE=64` 조합에서 parser/source 출력과
-ingestion quality count를 유지한 채 wall-clock time을 줄이는 것이 목표였습니다.
+자세한 ingestion before/after 측정 기록은 전용 performance ledger에 둡니다.
 
-| 단계 | Upload total | Extraction total | End-to-end | 주요 변경 |
-| --- | ---: | ---: | ---: | --- |
-| Baseline | 8.50s | 27.66s | 36.16s | OpenAI embedding과 metadata가 직렬 실행되고, PDF를 PyMuPDF 전에 pre-classify함. |
-| Batch-size tuning | 8.45s | 23.43s | 31.88s | 더 큰 embedding batch로 chunk embedding latency 감소. |
-| Parallel metadata | 8.48s | 13.01s | 21.50s | OpenAI metadata generation을 chunk embedding/indexing과 겹치게 실행. |
-| Lazy classification | 5.00s | 11.57s | 16.57s | 정상 native-text PDF happy path에서 pypdf pre-classification 생략. |
+- [`docs/performance/ko/ingestion-performance-log.md`](../../performance/ko/ingestion-performance-log.md)
 
-측정 중 quality guard는 유지됐습니다: `page_count=195`, `content_chars=409701`,
-`chunk_count=392`, `entity_count=1935`, `relationship_count=6537`,
-`structured_entity_count=127`. 최종 end-to-end 개선은 baseline 대비 약 54%였지만, 이 값은
-local profile이며 OpenAI latency와 PDF 형태에 따라 달라질 수 있습니다.
+2026-06-25 Aliro PDF run에는 baseline, embedding batch-size 실험, OpenAI metadata 병렬화,
+PDF parser sub-timing, lazy PDF classification, quality guard, learning lesson이 기록되어 있습니다.
+앞으로의 ingestion 성능 작업도 이 문서가 아니라 performance ledger에 추가합니다.
 
 ## 문서 상태
 

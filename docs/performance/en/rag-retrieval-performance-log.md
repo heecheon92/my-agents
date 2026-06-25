@@ -19,7 +19,7 @@ related_code:
 
 # RAG retrieval performance log
 
-[한국어 요약](../ko/23-rag-retrieval-performance-log.md) | English
+[한국어 요약](../ko/rag-retrieval-performance-log.md) | English
 
 This is the living ledger for local RAG retrieval performance work. Keep it updated when a
 slow run is measured, when an optimization is applied, and when the same scenario is rerun.

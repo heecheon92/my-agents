@@ -1,6 +1,6 @@
 # RAG retrieval performance log
 
-[English original](../en/23-rag-retrieval-performance-log.md) | 한국어
+[English original](../en/rag-retrieval-performance-log.md) | 한국어
 
 ## 요약
 

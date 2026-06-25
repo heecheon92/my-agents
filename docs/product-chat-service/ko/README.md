@@ -27,8 +27,11 @@
 19. [LangGraph-native memory migration](./19-langgraph-native-memory-migration.md)
 20. [Nickname signup and member roster contract](./20-nickname-signup-member-roster-contract.md)
 21. [System knowledge base와 user type 계약](./21-system-knowledge-base-user-type.md)
-22. [RAG retrieval performance log](./23-rag-retrieval-performance-log.md)
-23. [지식 관리 lifecycle와 publish copy 계약](./24-knowledge-lifecycle-and-publish-copy-contract.md)
+22. [지식 관리 lifecycle와 publish copy 계약](./24-knowledge-lifecycle-and-publish-copy-contract.md)
+
+## 관련 maintenance ledger
+
+- [Performance optimization records](../../performance/README.md)
 
 ## 문서 상태
 
