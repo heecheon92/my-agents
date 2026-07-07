@@ -101,7 +101,7 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("MY_AGENTS_RERANKER_TOP_K"),
     )
     cross_encoder_model: str = Field(
-        default="cross-encoder/ms-marco-MiniLM-L-6-v2",
+        default="BAAI/bge-reranker-v2-m3",
         min_length=1,
         validation_alias=AliasChoices("MY_AGENTS_CROSS_ENCODER_MODEL"),
     )

@@ -294,7 +294,7 @@ def test_build_reranker_defaults_to_offline_deterministic(
     assert isinstance(build_reranker(settings), DeterministicReranker)
     assert settings.reranker_mode == "deterministic"
     assert settings.reranker_top_k == 40
-    assert settings.cross_encoder_model == "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    assert settings.cross_encoder_model == "BAAI/bge-reranker-v2-m3"
     assert settings.cross_encoder_batch_size == 16
 
 
