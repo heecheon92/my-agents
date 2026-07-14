@@ -1,6 +1,6 @@
 # Implementation tracking
 
-Last updated: 2026-06-25
+Last updated: 2026-07-14
 Status owner: repo-tracked source of truth for cross-machine agent handoff
 
 This file exists because `.omx/` is local runtime state and is not shared across machines. When working with an agent on any machine, start here before re-discovering project status from the codebase.
@@ -372,7 +372,42 @@ Earlier hosted smoke status on 2026-06-03:
 
 ## Recommended next workflow
 
-### Current milestone: controlled alpha deploy smoke and tester handoff
+### Critical next move: tokenizer-aware retrieval and embedding-index safety
+
+The next RAG correctness milestone is not to force one tokenizer across every model. It is to keep
+each model paired with its own tokenizer while preventing silent reranker truncation and incompatible
+embedding-space comparisons. The repository already defaults to `BAAI/bge-reranker-v2-m3`; the
+2026-07-14 safe effective-settings audit found an MS MARCO MiniLM runtime override whose English
+WordPiece tokenizer reduced a representative 1,500-character Korean query/chunk pair from 2,388
+tokens to the model's 512-token input. The same audit found that stored embeddings have no complete
+provider/model/index identity and compatibility currently proves only equal vector length.
+
+Suggested order:
+
+1. Use `BAAI/bge-reranker-v2-m3` as the Korean/multilingual evaluation candidate and remove the MS
+   MARCO override from the intended runtime.
+2. Add Korean, English, and code relevance fixtures plus reranker latency/memory measurements.
+3. Add query-aware, model-tokenizer-based document windows and redacted window/truncation evidence;
+   authorization must still finish before any reranker input is created.
+4. Persist embedding provider/model/dimensions/encoding-or-preprocessing/index-version identity,
+   exclude incompatible vectors even when dimensions match, and define a re-embed/backfill path.
+5. Add model-aware or provider-reported answer-context token usage while retaining the deterministic
+   character budget as a safe fallback.
+
+Stop condition:
+
+- Korean, English, and code fixtures do not silently lose relevant tail evidence during reranking.
+- The BAAI reranker candidate has recorded relevance, latency, and memory evidence on the intended
+  runtime.
+- Query vectors cannot be compared with a different stored embedding index identity.
+- Existing chunks and metadata profiles have an explicit compatible/re-embed migration decision.
+- Token/usage observability remains redacted, and permission-first retrieval plus offline tests stay
+  green.
+
+Analysis and acceptance details:
+[`docs/learning/project-notes/tokenizer-consistency-audit-and-rag-index-safety.md`](./learning/project-notes/tokenizer-consistency-audit-and-rag-index-safety.md).
+
+### Parallel product milestone: controlled alpha deploy smoke and tester handoff
 
 The product surface is now strong enough for a small trusted preview. Before sending the link, deploy the latest backend and frontend together, run migrations through the nickname/group-invitation/publish-request heads, refresh hosted OpenAPI evidence, and record a redacted smoke run.
 
