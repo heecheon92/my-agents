@@ -67,6 +67,13 @@ flowchart TD
     Events --> DB
 ```
 
+Default document retrieval independently gathers permission-filtered vector candidates and
+request-local `BM25Okapi` lexical candidates, then applies Reciprocal Rank Fusion (RRF,
+`k=60`) by stable `chunk_id`. BM25 builds its corpus from existing authorized chunk text,
+so it requires no dedicated database index or schema migration. Metadata, structured-entity,
+and graph-expansion candidates pass through the same fusion boundary before deterministic
+or optional cross-encoder reranking and context packing.
+
 This README intentionally stays high level. Detailed API contracts, migration notes, and operational procedures live under `docs/` and [`scripts/README.md`](./scripts/README.md).
 
 ## Run locally

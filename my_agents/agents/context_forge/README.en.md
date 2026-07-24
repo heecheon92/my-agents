@@ -23,7 +23,10 @@ flowchart TD
     Graph --> Planner[Query Cartographer]
     Planner --> Warden[Source Warden]
     Warden --> Scouts[Candidate Scouts]
-    Scouts --> Fusion[Candidate Fusion]
+    Scouts --> Vector["Vector ranking"]
+    Scouts --> Lexical["BM25Okapi lexical ranking"]
+    Vector --> Fusion["Candidate Fusion\nRRF by chunk_id"]
+    Lexical --> Fusion
     Fusion --> Judge[Evidence Judge\nDeterministic or cross-encoder]
     Judge --> Curator[Context Curator]
     Curator --> Auditor[Citation Auditor evidence]
@@ -38,14 +41,33 @@ flowchart TD
 | `contracts.py` | Dataclass contracts for requests, plans, candidates, evidence, and results |
 | `planner.py` | Query Cartographer deterministic intent and structured-entity planning |
 | `source_policy.py` | Source Warden adapter around resolved KB boundaries |
-| `candidates.py` | Candidate Scouts for authorized chunk and structured-entity retrieval |
+| `candidates.py` | Candidate Scouts for authorized vector/lexical chunks and structured-entity retrieval |
 | `debug.py` | Opt-in Rich print trace for role handoffs |
-| `fusion.py` | Candidate dedupe and source evidence preservation |
+| `fusion.py` | RRF candidate fusion by `chunk_id` and source evidence preservation |
 | `reranking.py` | Deterministic reranker, optional cross-encoder reranker, and settings-based factory |
 | `packing.py` | Context Curator high-recall packing under explicit budgets |
 | `observability.py` | Citation Auditor redacted evidence payloads |
 | `service.py` | Main `ContextForgeService.retrieve(...)` orchestration boundary |
 | `graph.py` | Thin LangGraph retrieval wrapper around `ContextForgeService.retrieve(...)`, bounded required-evidence retry, and sufficiency assessment |
+
+## Default hybrid retrieval and RRF
+
+ContextForge's default first stage builds separate vector and request-local `BM25Okapi`
+lexical rankings inside the authorized scope. Candidate Fusion converts each source rank
+to `1 / (60 + rank)` and accumulates contributions for the same `chunk_id`. A chunk found
+by both retrievers is therefore promoted consistently without directly mixing incompatible
+raw score scales.
+
+The lexical lane first applies the existing authorization filters to the full chunk corpus,
+tokenizes it with the current basic Latin/digit/Korean tokenizer, and scores it with
+`rank-bm25`'s `BM25Okapi` for each retrieval attempt. The corpus query selects only
+`chunk_id`, `document_id`, `ordinal`, and chunk text, then hydrates full retrieval models
+only for BM25 top-k rows so unused embedding/full-document payloads are not transferred
+repeatedly. It reuses existing chunks, so no dedicated database index or schema migration
+is required. The `keyword_match` source label remains for event/citation compatibility.
+The BM25 corpus/index is currently request-local with no persistent cache. This keeps
+permission and ingestion invalidation simple, but large corpora must be measured before
+adding a Postgres full-text index or a safe revision-keyed cache.
 
 ## Document metadata retrieval
 

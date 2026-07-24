@@ -17,8 +17,17 @@ from my_agents.knowledge.metadata_enrichment import (
     GeneratedDocumentMetadata,
     build_vector_search_text,
 )
-from my_agents.knowledge.models import DocumentChunkModel, DocumentMetadataProfileModel
-from my_agents.knowledge.retrieval import RetrievalService, _postgres_vector_authorized_statement
+from my_agents.knowledge.models import (
+    DocumentChunkModel,
+    DocumentMetadataProfileModel,
+)
+from my_agents.knowledge.retrieval import (
+    Bm25CorpusRow,
+    RetrievalService,
+    _authorized_bm25_corpus_statement,
+    _authorized_bm25_top_chunks_statement,
+    _postgres_vector_authorized_statement,
+)
 from my_agents.observability.metrics import capture_local_timing_phases
 from my_agents.persistence.database import get_database_session
 from my_agents.schemas import RouteDecision
@@ -354,6 +363,103 @@ def test_semantic_vector_retrieval_after_permission_filtering(monkeypatch) -> No
     assert graph.calls[-1]["rag_halt_before_response"] is True
     assert graph.calls[-1]["retrieval_route"] == "retrieval_required"
     assert graph.calls[-1]["retrieved_context"] == []
+
+
+def test_independent_lexical_retrieval_recovers_only_authorized_exact_matches(
+    monkeypatch,
+) -> None:  # noqa: ANN001
+    owner = _client(monkeypatch)
+    outsider = _client(monkeypatch)
+    owner_id = _signup_login(owner, "lexical-owner@example.com")
+    outsider_id = _signup_login(outsider, "lexical-outsider@example.com")
+    kb_id = _create_personal_knowledge_base(owner, "Lexical KB")
+    document = _create_document(
+        owner,
+        json={
+            "title": "Operations Codes",
+            "content": "The exact recovery marker is ZXQ-771.",
+            "knowledge_base_id": kb_id,
+        },
+    )
+    assert document.status_code == 201
+    document_id = document.json()["id"]
+    assert owner.post(f"/documents/{document_id}/ingest").status_code == 200
+
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        owner_results = RetrievalService(db).retrieve_lexical_scoped(
+            user_id=owner_id,
+            query="ZXQ-771",
+            limit=5,
+            knowledge_base_ids=[kb_id],
+        )
+        outsider_results = RetrievalService(db).retrieve_lexical_scoped(
+            user_id=outsider_id,
+            query="ZXQ-771",
+            limit=5,
+            knowledge_base_ids=[kb_id],
+        )
+    finally:
+        session_generator.close()
+
+    assert [item.document.id for item in owner_results] == [document_id]
+    assert [item.source for item in owner_results] == ["keyword_match"]
+    assert outsider_results == []
+
+
+def test_bm25_lexical_ranking_rewards_repeated_rare_terms() -> None:
+    rows: list[Bm25CorpusRow] = []
+    for chunk_id, content in (
+        ("z-repeated", "quokka quokka quokka habitat notes"),
+        ("a-single", "quokka habitat notes"),
+        ("filler-1", "pandas dataframe memory"),
+        ("filler-2", "postgres vector indexing"),
+        ("filler-3", "langgraph state transitions"),
+    ):
+        rows.append(
+            Bm25CorpusRow(
+                chunk_id=chunk_id,
+                document_id=f"doc-{chunk_id}",
+                ordinal=0,
+                content=content,
+            )
+        )
+
+    ranked = retrieval_module._rank_bm25_rows(  # type: ignore[attr-defined]
+        rows,
+        query="quokka",
+        limit=5,
+    )
+
+    assert [item.chunk_id for item in ranked] == ["z-repeated", "a-single"]
+    assert ranked[0].score > ranked[1].score > 0
+
+
+def test_bm25_queries_omit_heavy_embedding_and_full_document_columns() -> None:
+    corpus_statement = _authorized_bm25_corpus_statement(
+        user_id="user-1",
+        knowledge_base_ids=["kb-1"],
+    )
+    corpus_select = str(corpus_statement.compile(dialect=postgresql.dialect())).split("FROM", 1)[0]
+
+    assert "document_chunks.id" in corpus_select
+    assert "document_chunks.content" in corpus_select
+    assert "document_chunks.embedding_json" not in corpus_select
+    assert "documents.content" not in corpus_select
+
+    top_chunks_statement = _authorized_bm25_top_chunks_statement(
+        user_id="user-1",
+        chunk_ids=["chunk-1", "chunk-2"],
+        knowledge_base_ids=["kb-1"],
+    )
+    top_chunks_select = str(top_chunks_statement.compile(dialect=postgresql.dialect())).split(
+        "FROM", 1
+    )[0]
+
+    assert "document_chunks.content" in top_chunks_select
+    assert "document_chunks.embedding_json" not in top_chunks_select
+    assert "documents.content" not in top_chunks_select
 
 
 def test_retrieval_dedupes_historical_duplicate_chunks(monkeypatch) -> None:  # noqa: ANN001

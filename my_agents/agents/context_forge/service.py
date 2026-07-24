@@ -154,6 +154,7 @@ class ContextForgeService:
             payload={
                 "selected_knowledge_base_ids": list(selected_ids) if selected_ids else None,
                 "vector_limit": plan.limits.vector_limit,
+                "lexical_limit": plan.limits.lexical_limit,
                 "structured_limit": plan.limits.structured_limit,
                 "rerank_limit": plan.limits.rerank_limit,
             },
@@ -176,10 +177,11 @@ class ContextForgeService:
         debug_agent_turn(
             sender="CandidateScouts",
             receiver="CandidateFusion",
-            message="Return authorized raw candidates for dedupe and source fusion.",
+            message="Return authorized raw candidates for reciprocal rank fusion.",
             payload={
                 "raw_candidate_count": len(raw_chunks),
                 "raw_sources": sorted({item.source for item in raw_chunks}),
+                "fusion": "rrf",
                 "raw_chunk_ids": [item.chunk.id for item in raw_chunks[: plan.limits.rerank_limit]],
             },
         )

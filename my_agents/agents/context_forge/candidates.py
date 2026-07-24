@@ -24,9 +24,16 @@ class CandidateScouts:
             query=plan.rewritten_query,
             limit=plan.limits.vector_limit,
             knowledge_base_ids=knowledge_base_ids,
+            hybrid_search=True,
+        )
+        lexical_chunks = self._retrieval_service.retrieve_lexical_scoped(
+            user_id=user_id,
+            query=plan.rewritten_query,
+            limit=plan.limits.lexical_limit,
+            knowledge_base_ids=knowledge_base_ids,
         )
         if not plan.structured_entity_types:
-            return chunks
+            return [*chunks, *lexical_chunks]
         structured = self._retrieval_service.retrieve_structured_entities(
             user_id=user_id,
             query=plan.rewritten_query,
@@ -43,4 +50,4 @@ class CandidateScouts:
             )
             for item in structured
         ]
-        return [*structured_chunks, *chunks]
+        return [*structured_chunks, *chunks, *lexical_chunks]

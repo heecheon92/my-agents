@@ -67,6 +67,12 @@ flowchart TD
     Events --> DB
 ```
 
+기본 문서 검색은 권한 확인 후 vector 후보와 request-local `BM25Okapi` lexical 후보를
+독립적으로 수집하고, 같은 `chunk_id`를 기준으로 Reciprocal Rank Fusion(RRF, `k=60`)합니다.
+BM25 corpus는 기존 authorized chunk text로 만들기 때문에 별도 DB index/schema migration은
+필요하지 않습니다. Metadata, structured entity, graph-expansion 후보도 같은 fusion 경계를
+통과한 뒤 deterministic reranker 또는 optional cross-encoder와 context packing으로 이어집니다.
+
 이 README는 전체 그림만 설명합니다. 세부 API contract, migration note, 운영 절차는 `docs/`와 [`scripts/README.md`](./scripts/README.md)에 둡니다.
 
 ## 로컬 실행

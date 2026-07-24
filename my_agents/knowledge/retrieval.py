@@ -9,9 +9,10 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 
+from rank_bm25 import BM25Okapi
 from sqlalchemy import and_, desc, false, func, inspect, or_, select
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 
 from my_agents.groups.models import MembershipModel
 from my_agents.knowledge.auth import retrievable_knowledge_base_filter
@@ -51,6 +52,24 @@ class RetrievedStructuredEntity:
     source: str = "structured_entity"
 
 
+@dataclass(frozen=True)
+class Bm25CorpusRow:
+    """Lightweight authorized corpus row used before top-k model hydration."""
+
+    chunk_id: str
+    document_id: str
+    ordinal: int
+    content: str
+
+
+@dataclass(frozen=True)
+class RankedBm25Chunk:
+    """BM25 rank result that can hydrate one authorized chunk by ID."""
+
+    chunk_id: str
+    score: float
+
+
 MatchedDocumentChunkRowsCache = dict[str, list[tuple[DocumentChunkModel, DocumentModel]]]
 
 
@@ -71,6 +90,7 @@ class RetrievalService:
         query: str,
         limit: int = 5,
         knowledge_base_ids: Sequence[str] | None = None,
+        hybrid_search: bool = False,
     ) -> list[RetrievedChunk]:
         terms = _query_terms(query)
         matched_document_chunk_rows_cache: MatchedDocumentChunkRowsCache = {}
@@ -99,6 +119,7 @@ class RetrievalService:
                 query_embedding=query_embedding,
                 terms=terms,
                 knowledge_base_ids=knowledge_base_ids,
+                semantic_only=hybrid_search,
             )
         direct = [
             *metadata_matches,
@@ -111,6 +132,38 @@ class RetrievalService:
                 direct=direct,
                 knowledge_base_ids=knowledge_base_ids,
             )
+        if hybrid_search:
+            ranked_by_source = _rank_retrieval_sources([*direct, *expanded], limit=limit)
+            if not ranked_by_source and _needs_personal_document_fallback(query):
+                with track_retrieval_phase("personal_document_fallback"):
+                    return _dedupe_retrieved_chunks(
+                        self._recent_authorized_chunks(
+                            user_id=user_id,
+                            limit=limit,
+                            knowledge_base_ids=knowledge_base_ids,
+                        ),
+                        limit=limit,
+                    )
+            if _needs_document_overview(query):
+                with track_retrieval_phase("document_overview_supplement"):
+                    overview_seed = _dedupe_retrieved_chunks(
+                        sorted(
+                            ranked_by_source,
+                            key=lambda item: (-item.score, item.chunk.ordinal),
+                        ),
+                        limit=limit,
+                    )
+                    supplemented = self._with_small_document_overview_chunks(
+                        overview_seed,
+                        user_id=user_id,
+                        knowledge_base_ids=knowledge_base_ids,
+                        char_budget=6000,
+                        matched_document_chunk_rows_cache=matched_document_chunk_rows_cache,
+                    )
+                    ranked_by_source.extend(
+                        item for item in supplemented if item.source == "document_overview"
+                    )
+            return ranked_by_source
         combined: dict[str, RetrievedChunk] = {}
         for item in direct:
             existing = combined.get(item.chunk.id)
@@ -148,6 +201,42 @@ class RetrievalService:
                 )
         return _dedupe_retrieved_chunks(ranked, limit=limit)
 
+    def retrieve_lexical_scoped(
+        self,
+        *,
+        user_id: str,
+        query: str,
+        limit: int = 5,
+        knowledge_base_ids: Sequence[str] | None = None,
+    ) -> list[RetrievedChunk]:
+        """Return an independent BM25Okapi ranking over authorized chunk text."""
+        if limit <= 0:
+            return []
+        corpus_rows = self._authorized_bm25_corpus_rows(
+            user_id,
+            knowledge_base_ids=knowledge_base_ids,
+        )
+        with track_retrieval_phase("bm25_rank"):
+            ranked = _rank_bm25_rows(corpus_rows, query=query, limit=limit)
+        if not ranked:
+            return []
+        hydrated_rows = self._authorized_bm25_top_chunks(
+            user_id,
+            chunk_ids=[item.chunk_id for item in ranked],
+            knowledge_base_ids=knowledge_base_ids,
+        )
+        rows_by_chunk_id = {chunk.id: (chunk, document) for chunk, document in hydrated_rows}
+        return [
+            RetrievedChunk(
+                chunk=rows_by_chunk_id[item.chunk_id][0],
+                document=rows_by_chunk_id[item.chunk_id][1],
+                score=item.score,
+                source="keyword_match",
+            )
+            for item in ranked
+            if item.chunk_id in rows_by_chunk_id
+        ]
+
     def authorized_document_count(
         self, *, user_id: str, knowledge_base_ids: Sequence[str] | None = None
     ) -> int:
@@ -181,6 +270,10 @@ class RetrievalService:
             return []
         statement = (
             select(StructuredKnowledgeEntityModel, DocumentChunkModel, DocumentModel)
+            .options(
+                defer(DocumentChunkModel.embedding_json),
+                defer(DocumentModel.content),
+            )
             .join(
                 DocumentChunkModel,
                 StructuredKnowledgeEntityModel.chunk_id == DocumentChunkModel.id,
@@ -222,6 +315,7 @@ class RetrievalService:
         query_embedding: list[float],
         terms: set[str],
         knowledge_base_ids: Sequence[str] | None,
+        semantic_only: bool,
     ) -> list[RetrievedChunk]:
         if _uses_postgres(self._db):
             sql_matches = self._postgres_vector_authorized_matches(
@@ -230,6 +324,7 @@ class RetrievalService:
                 terms=terms,
                 knowledge_base_ids=knowledge_base_ids,
                 limit=20,
+                semantic_only=semantic_only,
             )
             if sql_matches:
                 return sql_matches
@@ -238,6 +333,7 @@ class RetrievalService:
             query_embedding=query_embedding,
             terms=terms,
             knowledge_base_ids=knowledge_base_ids,
+            semantic_only=semantic_only,
         )
 
     def _json_authorized_matches(
@@ -247,6 +343,7 @@ class RetrievalService:
         query_embedding: list[float],
         terms: set[str],
         knowledge_base_ids: Sequence[str] | None,
+        semantic_only: bool,
     ) -> list[RetrievedChunk]:
         rows = self._authorized_chunk_rows(user_id, knowledge_base_ids=knowledge_base_ids)
         if not rows:
@@ -259,7 +356,11 @@ class RetrievalService:
             if _compatible_embeddings(query_embedding, chunk_embedding):
                 cosine = _cosine_similarity(query_embedding, chunk_embedding)
                 positive_cosine = max(cosine, 0.0)
-                combined_score = (0.75 * positive_cosine) + (0.25 * keyword_rank)
+                combined_score = (
+                    positive_cosine
+                    if semantic_only
+                    else (0.75 * positive_cosine) + (0.25 * keyword_rank)
+                )
                 if combined_score > 0:
                     matches.append(
                         RetrievedChunk(
@@ -270,7 +371,7 @@ class RetrievalService:
                         )
                     )
                 continue
-            if keyword_score > 0:
+            if keyword_score > 0 and not semantic_only:
                 matches.append(
                     RetrievedChunk(
                         chunk=chunk,
@@ -292,6 +393,7 @@ class RetrievalService:
         terms: set[str],
         knowledge_base_ids: Sequence[str] | None,
         limit: int,
+        semantic_only: bool,
     ) -> list[RetrievedChunk]:
         if not query_embedding:
             return []
@@ -317,7 +419,11 @@ class RetrievalService:
             keyword_score = _keyword_score(chunk.content, terms)
             keyword_rank = _normalized_keyword_score(keyword_score, terms)
             positive_cosine = max(cosine, 0.0)
-            combined_score = (0.75 * positive_cosine) + (0.25 * keyword_rank)
+            combined_score = (
+                positive_cosine
+                if semantic_only
+                else (0.75 * positive_cosine) + (0.25 * keyword_rank)
+            )
             if combined_score > 0:
                 matches.append(
                     RetrievedChunk(
@@ -351,6 +457,10 @@ class RetrievalService:
             return []
         statement = (
             select(DocumentChunkModel, DocumentModel)
+            .options(
+                defer(DocumentChunkModel.embedding_json),
+                defer(DocumentModel.content),
+            )
             .join(DocumentModel, DocumentChunkModel.document_id == DocumentModel.id)
             .join(EntityMentionModel, EntityMentionModel.chunk_id == DocumentChunkModel.id)
             .where(
@@ -561,6 +671,7 @@ class RetrievalService:
     ) -> list[tuple[DocumentMetadataProfileModel, DocumentModel]]:
         statement = (
             select(DocumentMetadataProfileModel, DocumentModel)
+            .options(defer(DocumentModel.content))
             .join(DocumentModel, DocumentMetadataProfileModel.document_id == DocumentModel.id)
             .where(
                 _authorized_document_filter(
@@ -583,6 +694,7 @@ class RetrievalService:
         include_published_personal_kbs = _schema_has_knowledge_base_publications(self._db)
         statement = (
             select(DocumentChunkModel, DocumentModel)
+            .options(defer(DocumentModel.content))
             .join(DocumentModel, DocumentChunkModel.document_id == DocumentModel.id)
             .where(
                 _authorized_document_filter(
@@ -597,12 +709,55 @@ class RetrievalService:
         with track_retrieval_phase("authorized_chunk_rows_sql"):
             return list(self._db.execute(statement).all())
 
+    def _authorized_bm25_corpus_rows(
+        self,
+        user_id: str,
+        *,
+        knowledge_base_ids: Sequence[str] | None,
+    ) -> list[Bm25CorpusRow]:
+        statement = _authorized_bm25_corpus_statement(
+            user_id=user_id,
+            knowledge_base_ids=knowledge_base_ids,
+            include_published_personal_kbs=_schema_has_knowledge_base_publications(self._db),
+            require_standard_purpose=_schema_has_knowledge_base_purpose(self._db),
+        )
+        with track_retrieval_phase("authorized_bm25_corpus_rows_sql"):
+            return [
+                Bm25CorpusRow(
+                    chunk_id=chunk_id,
+                    document_id=document_id,
+                    ordinal=ordinal,
+                    content=content,
+                )
+                for chunk_id, document_id, ordinal, content in self._db.execute(statement).all()
+            ]
+
+    def _authorized_bm25_top_chunks(
+        self,
+        user_id: str,
+        *,
+        chunk_ids: Sequence[str],
+        knowledge_base_ids: Sequence[str] | None,
+    ) -> list[tuple[DocumentChunkModel, DocumentModel]]:
+        if not chunk_ids:
+            return []
+        statement = _authorized_bm25_top_chunks_statement(
+            user_id=user_id,
+            chunk_ids=chunk_ids,
+            knowledge_base_ids=knowledge_base_ids,
+            include_published_personal_kbs=_schema_has_knowledge_base_publications(self._db),
+            require_standard_purpose=_schema_has_knowledge_base_purpose(self._db),
+        )
+        with track_retrieval_phase("authorized_bm25_top_chunks_sql"):
+            return list(self._db.execute(statement).all())
+
     def _authorized_document_rows(
         self, user_id: str, *, knowledge_base_ids: Sequence[str] | None
     ) -> list[DocumentModel]:
         include_published_personal_kbs = _schema_has_knowledge_base_publications(self._db)
         statement = (
             select(DocumentModel)
+            .options(defer(DocumentModel.content))
             .where(
                 _authorized_document_filter(
                     user_id,
@@ -666,6 +821,10 @@ class RetrievalService:
             return []
         statement = (
             select(DocumentChunkModel, DocumentModel)
+            .options(
+                defer(DocumentChunkModel.embedding_json),
+                defer(DocumentModel.content),
+            )
             .join(DocumentModel, DocumentChunkModel.document_id == DocumentModel.id)
             .where(
                 DocumentModel.id.in_(unique_document_ids),
@@ -684,6 +843,59 @@ class RetrievalService:
             return list(self._db.execute(statement).all())
 
 
+def _authorized_bm25_corpus_statement(
+    *,
+    user_id: str,
+    knowledge_base_ids: Sequence[str] | None = None,
+    include_published_personal_kbs: bool = True,
+    require_standard_purpose: bool = True,
+):
+    return (
+        select(
+            DocumentChunkModel.id,
+            DocumentChunkModel.document_id,
+            DocumentChunkModel.ordinal,
+            DocumentChunkModel.content,
+        )
+        .join(DocumentModel, DocumentChunkModel.document_id == DocumentModel.id)
+        .where(
+            _authorized_document_filter(
+                user_id,
+                knowledge_base_ids=knowledge_base_ids,
+                include_published_personal_kbs=include_published_personal_kbs,
+                require_standard_purpose=require_standard_purpose,
+            )
+        )
+    )
+
+
+def _authorized_bm25_top_chunks_statement(
+    *,
+    user_id: str,
+    chunk_ids: Sequence[str],
+    knowledge_base_ids: Sequence[str] | None = None,
+    include_published_personal_kbs: bool = True,
+    require_standard_purpose: bool = True,
+):
+    return (
+        select(DocumentChunkModel, DocumentModel)
+        .options(
+            defer(DocumentChunkModel.embedding_json),
+            defer(DocumentModel.content),
+        )
+        .join(DocumentModel, DocumentChunkModel.document_id == DocumentModel.id)
+        .where(
+            DocumentChunkModel.id.in_(tuple(dict.fromkeys(chunk_ids))),
+            _authorized_document_filter(
+                user_id,
+                knowledge_base_ids=knowledge_base_ids,
+                include_published_personal_kbs=include_published_personal_kbs,
+                require_standard_purpose=require_standard_purpose,
+            ),
+        )
+    )
+
+
 def _postgres_vector_authorized_statement(
     *,
     user_id: str,
@@ -695,6 +907,10 @@ def _postgres_vector_authorized_statement(
     vector_distance = embedding_vector.cosine_distance(query_embedding).label("vector_distance")
     return (
         select(DocumentChunkModel, DocumentModel, vector_distance)
+        .options(
+            defer(DocumentChunkModel.embedding_json),
+            defer(DocumentModel.content),
+        )
         .join(DocumentModel, DocumentChunkModel.document_id == DocumentModel.id)
         .where(
             _authorized_document_filter(user_id),
@@ -972,6 +1188,10 @@ def _query_terms(query: str) -> set[str]:
     return {term.casefold() for term in re.findall(r"[A-Za-z0-9가-힣]+", query) if len(term) > 1}
 
 
+def _bm25_tokens(value: str) -> list[str]:
+    return [term.casefold() for term in re.findall(r"[A-Za-z0-9가-힣]+", value) if len(term) > 1]
+
+
 def _needs_personal_document_fallback(query: str) -> bool:
     normalized = query.casefold()
     return any(hint in normalized for hint in _PERSONAL_DOCUMENT_FALLBACK_HINTS)
@@ -1078,6 +1298,74 @@ def _dedupe_retrieved_chunks(
         if len(deduped) >= limit:
             break
     return deduped
+
+
+def _rank_retrieval_sources(
+    chunks: Sequence[RetrievedChunk],
+    *,
+    limit: int,
+) -> list[RetrievedChunk]:
+    """Keep bounded independent rankings so downstream RRF can observe overlap."""
+    by_source: dict[str, list[RetrievedChunk]] = {}
+    for item in chunks:
+        by_source.setdefault(item.source, []).append(item)
+    ranked: list[RetrievedChunk] = []
+    for source_chunks in by_source.values():
+        ranked.extend(
+            _dedupe_retrieved_chunks(
+                sorted(
+                    source_chunks,
+                    key=lambda item: (-item.score, item.chunk.ordinal, item.chunk.id),
+                ),
+                limit=limit,
+            )
+        )
+    return ranked
+
+
+def _rank_bm25_rows(
+    rows: Sequence[Bm25CorpusRow],
+    *,
+    query: str,
+    limit: int,
+) -> list[RankedBm25Chunk]:
+    """Build a request-local BM25Okapi corpus and rank matched authorized chunks."""
+    if limit <= 0 or not rows:
+        return []
+    query_tokens = _bm25_tokens(query)
+    if not query_tokens:
+        return []
+    tokenized_corpus = [_bm25_tokens(row.content) for row in rows]
+    if not any(tokenized_corpus):
+        return []
+    ranker = BM25Okapi(tokenized_corpus)
+    raw_scores = ranker.get_scores(query_tokens)
+    query_token_set = set(query_tokens)
+    matched = [
+        (float(raw_score), row)
+        for row, chunk_tokens, raw_score in zip(
+            rows,
+            tokenized_corpus,
+            raw_scores,
+            strict=True,
+        )
+        if query_token_set.intersection(chunk_tokens)
+    ]
+    if not matched:
+        return []
+    minimum_score = min(score for score, _row in matched)
+    positive_offset = (1e-9 - minimum_score) if minimum_score <= 0 else 0.0
+    ranked = sorted(
+        matched,
+        key=lambda item: (-item[0], item[1].ordinal, item[1].chunk_id),
+    )[:limit]
+    return [
+        RankedBm25Chunk(
+            chunk_id=row.chunk_id,
+            score=max(score + positive_offset, 1e-9),
+        )
+        for score, row in ranked
+    ]
 
 
 def _prefer_retrieved_chunk(candidate: RetrievedChunk, existing: RetrievedChunk) -> bool:

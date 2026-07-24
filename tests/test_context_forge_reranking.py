@@ -6,14 +6,18 @@ import logging
 from collections.abc import Sequence
 from typing import Any
 
+import pytest
+
 from my_agents.agents.context_forge import ContextForgeService
 from my_agents.agents.context_forge import debug as context_forge_debug
+from my_agents.agents.context_forge.candidates import CandidateScouts
 from my_agents.agents.context_forge.contracts import (
     ContextForgeRequest,
     RetrievalCandidate,
     RetrievalPlan,
 )
 from my_agents.agents.context_forge.debug import debug_agent_turn
+from my_agents.agents.context_forge.fusion import fuse_candidates
 from my_agents.agents.context_forge.reranking import (
     CrossEncoderReranker,
     DeterministicReranker,
@@ -81,6 +85,9 @@ class FakeAuthorizedRetrievalService:
             ]
         return [*metadata_matches, *direct_matches]
 
+    def retrieve_lexical_scoped(self, **_: Any) -> list[RetrievedChunk]:
+        return []
+
     def retrieve_structured_entities(self, **_: Any) -> list[object]:
         return []
 
@@ -143,6 +150,55 @@ def test_context_forge_uses_reranker_top_k_setting(monkeypatch) -> None:  # noqa
     assert len(reranker.seen_chunk_ids) == 7
 
 
+def test_candidate_scouts_gather_vector_and_lexical_rankings_independently() -> None:
+    class CapturingRetrievalService:
+        def __init__(self) -> None:
+            self.vector_limit: int | None = None
+            self.lexical_limit: int | None = None
+            self.hybrid_search = False
+
+        def retrieve_scoped(self, **kwargs: Any) -> list[RetrievedChunk]:
+            self.vector_limit = kwargs["limit"]
+            self.hybrid_search = kwargs["hybrid_search"]
+            return [
+                _retrieved_chunk(
+                    "vector-chunk",
+                    ordinal=0,
+                    content="Semantic result",
+                    score=0.9,
+                )
+            ]
+
+        def retrieve_lexical_scoped(self, **kwargs: Any) -> list[RetrievedChunk]:
+            self.lexical_limit = kwargs["limit"]
+            return [
+                _retrieved_chunk(
+                    "lexical-chunk",
+                    ordinal=1,
+                    content="Exact-term result",
+                    score=1.0,
+                    source="keyword_match",
+                )
+            ]
+
+        def retrieve_structured_entities(self, **_: Any) -> list[object]:
+            return []
+
+    retrieval_service = CapturingRetrievalService()
+    plan = _plan("exact term")
+
+    chunks = CandidateScouts(retrieval_service).gather(  # type: ignore[arg-type]
+        user_id="user-1",
+        plan=plan,
+        knowledge_base_ids=("kb-1",),
+    )
+
+    assert retrieval_service.vector_limit == plan.limits.vector_limit
+    assert retrieval_service.lexical_limit == plan.limits.lexical_limit
+    assert retrieval_service.hybrid_search is True
+    assert [chunk.source for chunk in chunks] == ["semantic_vector", "keyword_match"]
+
+
 def test_context_forge_prints_human_readable_timing_trace_when_enabled(
     monkeypatch,
     capsys,
@@ -201,6 +257,74 @@ def test_debug_agent_turn_rich_prints_handoff_when_enabled(capsys) -> None:  # n
     assert "CandidateFusion" in output
     assert "EvidenceJudge" in output
     assert "chunk-1" in output
+
+
+def test_rrf_promotes_chunk_found_by_vector_and_lexical_search() -> None:
+    vector_only = _retrieved_chunk(
+        "chunk-vector-only",
+        ordinal=0,
+        content="Strong semantic match.",
+        score=0.99,
+        source="semantic_vector",
+    )
+    shared_vector = _retrieved_chunk(
+        "chunk-shared",
+        ordinal=1,
+        content="Shared semantic and lexical match.",
+        score=0.80,
+        source="semantic_vector",
+    )
+    lexical_only = _retrieved_chunk(
+        "chunk-lexical-only",
+        ordinal=2,
+        content="Strong exact-term match.",
+        score=1.0,
+        source="keyword_match",
+    )
+    shared_lexical = _retrieved_chunk(
+        "chunk-shared",
+        ordinal=1,
+        content="Shared semantic and lexical match.",
+        score=0.75,
+        source="keyword_match",
+    )
+
+    fused = fuse_candidates([vector_only, shared_vector, lexical_only, shared_lexical])
+
+    assert [candidate.chunk.chunk.id for candidate in fused] == [
+        "chunk-shared",
+        "chunk-vector-only",
+        "chunk-lexical-only",
+    ]
+    assert fused[0].sources == ("semantic_vector", "keyword_match")
+    assert fused[0].score == pytest.approx(2 / 62)
+    assert fused[1].score == pytest.approx(1 / 61)
+    assert fused[2].score == pytest.approx(1 / 61)
+
+
+def test_rrf_merges_by_chunk_id_instead_of_rank_position() -> None:
+    vector_first = _retrieved_chunk(
+        "chunk-vector",
+        ordinal=0,
+        content="Vector first.",
+        score=0.9,
+        source="semantic_vector",
+    )
+    lexical_first = _retrieved_chunk(
+        "chunk-lexical",
+        ordinal=1,
+        content="Lexical first.",
+        score=0.9,
+        source="keyword_match",
+    )
+
+    fused = fuse_candidates([vector_first, lexical_first])
+
+    assert {candidate.chunk.chunk.id for candidate in fused} == {
+        "chunk-vector",
+        "chunk-lexical",
+    }
+    assert all(len(candidate.sources) == 1 for candidate in fused)
 
 
 def test_deterministic_reranker_preserves_fused_score_order() -> None:
@@ -367,6 +491,7 @@ def _retrieved_chunk(
     ordinal: int,
     content: str,
     score: float,
+    source: str = "semantic_vector",
 ) -> RetrievedChunk:
     document = DocumentModel(
         id="doc-" + chunk_id,
@@ -386,7 +511,12 @@ def _retrieved_chunk(
         source_page=None,
         embedding_json="[]",
     )
-    return _retrieved_chunk_from_models(chunk=chunk, document=document, score=score)
+    return _retrieved_chunk_from_models(
+        chunk=chunk,
+        document=document,
+        score=score,
+        source=source,
+    )
 
 
 def _retrieved_chunk_from_models(
@@ -394,10 +524,11 @@ def _retrieved_chunk_from_models(
     chunk: DocumentChunkModel,
     document: DocumentModel,
     score: float,
+    source: str = "semantic_vector",
 ) -> RetrievedChunk:
     return RetrievedChunk(
         chunk=chunk,
         document=document,
         score=score,
-        source="semantic_vector",
+        source=source,
     )

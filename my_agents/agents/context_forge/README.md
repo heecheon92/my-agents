@@ -23,7 +23,10 @@ flowchart TD
     Graph --> Planner[Query Cartographer]
     Planner --> Warden[Source Warden]
     Warden --> Scouts[Candidate Scouts]
-    Scouts --> Fusion[Candidate Fusion]
+    Scouts --> Vector["Vector ranking"]
+    Scouts --> Lexical["BM25Okapi lexical ranking"]
+    Vector --> Fusion["Candidate Fusion\nRRF by chunk_id"]
+    Lexical --> Fusion
     Fusion --> Judge[Evidence Judge\nDeterministic or cross-encoder]
     Judge --> Curator[Context Curator]
     Curator --> Auditor[Citation Auditor evidence]
@@ -38,14 +41,32 @@ flowchart TD
 | `contracts.py` | request, plan, candidate, evidence, result dataclass contract |
 | `planner.py` | Query Cartographer의 deterministic intent 및 structured-entity planning |
 | `source_policy.py` | resolved KB boundary를 다루는 Source Warden adapter |
-| `candidates.py` | authorized chunk와 structured entity retrieval 후보 수집 |
+| `candidates.py` | authorized vector/lexical chunk와 structured entity retrieval 후보 수집 |
 | `debug.py` | opt-in Rich print 역할 handoff trace |
-| `fusion.py` | 후보 dedupe 및 source evidence 보존 |
+| `fusion.py` | `chunk_id` 기준 RRF 후보 fusion 및 source evidence 보존 |
 | `reranking.py` | deterministic reranker, optional cross-encoder reranker, settings 기반 factory |
 | `packing.py` | 명시적 budget 기반 high-recall context packing |
 | `observability.py` | Citation Auditor용 redacted evidence payload |
 | `service.py` | `ContextForgeService.retrieve(...)` 메인 orchestration boundary |
 | `graph.py` | `ContextForgeService.retrieve(...)`, bounded required-evidence retry, sufficiency assessment를 감싸는 얇은 LangGraph retrieval wrapper |
+
+## 기본 hybrid 검색과 RRF
+
+ContextForge의 기본 first-stage 검색은 승인된 범위 안에서 vector ranking과 request-local
+`BM25Okapi` lexical ranking을 각각 만듭니다. Candidate Fusion은 각 source
+ranking의 순위를 `1 / (60 + rank)`로 변환하고 동일한 `chunk_id`에 누적합니다. 따라서
+두 검색 경로에 모두 나타난 chunk가 한 경로에서만 높은 raw score를 받은 chunk보다 안정적으로
+승격되며, 서로 다른 source score scale을 직접 섞지 않습니다.
+
+Lexical lane은 매 retrieval attempt마다 기존 authorization filter를 먼저 적용한 전체 chunk
+corpus를 기본 Latin/digit/Korean tokenization으로 나눈 뒤 `rank-bm25`의 `BM25Okapi`로
+점수화합니다. Corpus query는 `chunk_id`, `document_id`, `ordinal`, chunk text만 가져오고
+BM25 top-k row만 full retrieval model로 hydrate하므로 unused embedding/full-document payload를
+반복 전송하지 않습니다. 기존 chunk row를 그대로 사용하므로 dedicated DB index나 schema
+migration은 없습니다. `keyword_match` source label은 event/citation 호환성을 위해 유지합니다.
+현재 BM25 corpus/index는 request-local이며 persistent cache는 없습니다. 따라서 권한 경계와
+ingestion invalidation은 단순하지만, 큰 corpus에서는 corpus load/tokenization latency를 측정한
+뒤 Postgres full-text index나 안전한 revision-keyed cache를 검토해야 합니다.
 
 ## 문서 metadata 검색
 

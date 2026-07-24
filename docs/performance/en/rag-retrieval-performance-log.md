@@ -100,6 +100,48 @@ When comparing before and after, keep the scenario stable:
 
 Entries are ordered newest-to-oldest so the latest measured state is visible first.
 
+### 2026-07-24 — Lightweight BM25 corpus projection
+
+The 2026-07-24 hybrid-search change adds a request-local `BM25Okapi` corpus built from all
+authorized chunks before `chunk_id`-keyed RRF. The first live timing showed BM25 calculation
+was only `102.931 ms`, but the full-model corpus query cost `14232.460 ms` because it selected
+unused chunk embeddings and repeated full-document content through the chunk/document join.
+The follow-up fix replaces that query with a lightweight `chunk_id`, `document_id`, `ordinal`,
+and chunk-text projection, then hydrates only BM25 top-k rows while deferring unused
+`embedding_json` and full `documents.content` payloads in adjacent retrieval queries.
+
+The same-scenario post-fix run preserved the retrieval shape (`80` raw, `52` fused, `40`
+reranked, `12` injected) and measured:
+
+| Metric / Phase | Before | After | Improvement |
+| --- | ---: | ---: | ---: |
+| `total_ms` | 31778.045 | 13329.462 | 18448.583 ms / 58.1% faster |
+| `retrieval_latency_ms` | 31741.277 | 13282.737 | 18458.540 ms / 58.2% faster |
+| `candidate_gather` | 31416.879 | 1842.801 | 29574.078 ms / 94.1% faster |
+| metadata-profile matched chunk SQL | 12326.666 | 243.452 | 12083.214 ms / 98.0% faster |
+| related-entity chunk SQL | 3314.911 | 40.707 | 3274.204 ms / 98.8% faster |
+| BM25 corpus/rank/hydration | 14335.391 | 141.120 | 14194.271 ms / 99.0% faster |
+
+The post-fix process paid an `11429.167 ms` cross-encoder reranking span versus `309.478 ms`
+in the earlier warm run. That phase now dominates total latency and should be measured again
+without restarting the process to separate cached scoring from model cold start. The BM25
+data path is no longer the primary bottleneck.
+
+A second same-message request from a new conversation, without restarting the server,
+confirmed that the reranker cache is process-scoped rather than conversation-scoped:
+
+| Metric / Phase | Original full-model run | Warm post-fix run | Improvement |
+| --- | ---: | ---: | ---: |
+| `total_ms` | 31778.045 | 2522.165 | 29255.880 ms / 92.1% faster |
+| `retrieval_latency_ms` | 31741.277 | 2494.906 | 29246.371 ms / 92.1% faster |
+| `candidate_gather` | 31416.879 | 1103.555 | 30313.324 ms / 96.5% faster |
+| BM25 corpus/rank/hydration | 14335.391 | 137.710 | 14197.681 ms / 99.0% faster |
+| cross-encoder reranking | 11429.167 cold | 1383.150 warm | 10046.017 ms / 87.9% lower |
+
+The retrieval shape remained `80` raw, `52` fused, `40` reranked, and `12` injected.
+Warm total latency is now about `2.5 s`; further reranker top-k or deterministic-mode tuning
+is a product quality/speed tradeoff rather than a correction for the BM25 data path.
+
 ### RAG-PERF-2026-06-22-D: post matched-row reuse timing
 
 This same-scenario rerun happened after request-local matched-document chunk row reuse. The run

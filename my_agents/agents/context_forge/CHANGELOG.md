@@ -1,5 +1,11 @@
 # ContextForge changelog
 
+## 2026-07-24 — Make hybrid retrieval with RRF the default
+
+- **Why:** The previous first stage blended lexical overlap into semantic scores and fused candidates by strongest raw score, so exact-term matches outside vector top-k could not contribute and score scales from different retrieval sources were not rank-normalized.
+- **Behavior / contract impact:** Candidate Scouts now gather an independent permission-filtered `BM25Okapi` lexical ranking alongside existing retrieval candidates. Candidate Fusion applies Reciprocal Rank Fusion with `k=60`, accumulates by stable `chunk_id`, and preserves every contributing source. BM25 uses a request-local lightweight projection of existing authorized chunk rows, hydrates only lexical top-k models, retains the `keyword_match` compatibility label, and requires no database migration or dedicated DB index. Metadata, graph, structured, and Postgres-vector queries also defer unused full-document/embedding payloads. Deterministic reranking preserves RRF order; optional cross-encoder reranking remains a bounded second stage.
+- **Verification evidence:** `tests/test_context_forge_reranking.py` covers independent vector/lexical gathering, RRF promotion, and `chunk_id`-keyed merging. `tests/test_permission_aware_rag.py` covers BM25 term-frequency ranking, lightweight SQL projection, exact-term recovery, and authorization denial.
+
 ## 2026-06-22 — Reduce first-stage retrieval scan fan-out
 
 - **Why:** Local timing showed `candidate_gather` was dominated by five repeated authorized chunk scans and thousands of per-chunk entity mention queries, while Postgres vector search itself was fast.

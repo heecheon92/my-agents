@@ -20,6 +20,44 @@ Raw prompt, 문서 본문, document ID, chunk ID, email, token, secret은 이 �
 Route, intent, count, phase name, millisecond 값만 기록합니다.
 각 section은 최신 작업이 위에 오도록 recent-work-first 순서로 유지합니다.
 
+## 2026-07-24 — Lightweight BM25 corpus projection
+
+2026-07-24 hybrid-search 변경은 모든 authorized chunk로 request-local `BM25Okapi` corpus를
+만든 뒤 `chunk_id` 기준 RRF를 수행합니다. 첫 live timing에서 BM25 계산은 `102.931 ms`였지만,
+unused chunk embedding과 chunk/document join마다 반복되는 full document content까지 선택한
+full-model corpus query는 `14232.460 ms`였습니다. Follow-up fix는 corpus query를
+`chunk_id`, `document_id`, `ordinal`, chunk text projection으로 줄이고 BM25 top-k row만
+hydrate합니다. 인접 retrieval query도 사용하지 않는 `embedding_json`과
+`documents.content`를 defer합니다.
+
+같은 scenario의 post-fix run은 retrieval shape(`80` raw, `52` fused, `40` reranked, `12`
+injected)를 유지하면서 다음을 측정했습니다.
+
+- `total_ms`: 31778.045 → 13329.462 ms, 18448.583 ms / 58.1% faster.
+- `retrieval_latency_ms`: 31741.277 → 13282.737 ms, 18458.540 ms / 58.2% faster.
+- `candidate_gather`: 31416.879 → 1842.801 ms, 29574.078 ms / 94.1% faster.
+- metadata-profile matched chunk SQL: 12326.666 → 243.452 ms, 98.0% faster.
+- related-entity chunk SQL: 3314.911 → 40.707 ms, 98.8% faster.
+- BM25 corpus/rank/hydration: 14335.391 → 141.120 ms, 99.0% faster.
+
+Post-fix process의 cross-encoder reranking은 이전 warm run의 `309.478 ms`와 달리
+`11429.167 ms`를 사용했습니다. 이제 total latency는 이 phase가 지배하므로 process를
+restart하지 않은 같은 요청으로 다시 측정해 cached scoring과 model cold start를 분리해야
+합니다. BM25 data path는 더 이상 주 병목이 아닙니다.
+
+Server를 restart하지 않고 새 conversation에서 같은 message를 다시 보낸 warm run은
+reranker cache가 conversation이 아니라 process 범위에서 유지됨을 확인했습니다.
+
+- `total_ms`: 최초 31778.045 → warm post-fix 2522.165 ms, 92.1% faster.
+- `retrieval_latency_ms`: 31741.277 → 2494.906 ms, 92.1% faster.
+- `candidate_gather`: 31416.879 → 1103.555 ms, 96.5% faster.
+- BM25 corpus/rank/hydration: 14335.391 → 137.710 ms, 99.0% faster.
+- Cross-encoder reranking: cold 11429.167 → warm 1383.150 ms, 87.9% lower.
+
+Retrieval shape는 계속 `80` raw, `52` fused, `40` reranked, `12` injected였습니다. Warm total은
+약 `2.5 s`이며, 이후 reranker top-k 또는 deterministic mode 조정은 BM25 data-path fix가
+아니라 product quality/speed tradeoff로 다뤄야 합니다.
+
 ## 현재 작업
 
 이번 변경에서는 single retrieval attempt 안에서 authorized matched-document chunk rows를
