@@ -7,11 +7,28 @@ Render. The goal is to keep the codebase portable: moving away from Render shoul
 mean changing environment variables and tuning deploy diagnostics, not rewriting auth,
 email, or database logic.
 
+## Current Render hardware snapshot
+
+Recorded on 2026-07-24 from the owner's active Render configuration:
+
+| Setting | Current value |
+| --- | --- |
+| Render plan | Hobby (free) |
+| Service instance type | Standard (paid) |
+| CPU | 1 CPU |
+| Memory | 2 GB RAM |
+
+The Render plan and the service instance type are separate settings: the account remains on
+the free Hobby plan while the backend service uses a paid Standard instance. References to
+the Render free runtime below describe earlier deployment incidents and should not be read as
+the current hardware allocation.
+
 ## Current Render-specific findings
 
-- Render free web services have limited memory. Signup previously stopped during Argon2
+- The earlier Render free web service had limited memory. Signup previously stopped during Argon2
   password hashing when the app used the `argon2-cffi` library defaults.
-- Render free web services block outbound SMTP ports such as `25`, `465`, and `587`.
+- Render free web services blocked outbound SMTP ports such as `25`, `465`, and `587` during
+  the earlier deployment incident.
   Resend SMTP on port `587` timed out after the user row was already committed.
 - The backend itself was correctly bound to `0.0.0.0:${PORT}` and Render reached the app.
   Port binding was not the signup failure.

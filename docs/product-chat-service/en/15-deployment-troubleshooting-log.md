@@ -1,5 +1,10 @@
 # Deployment troubleshooting log
 
+> **Current Render hardware (recorded 2026-07-24):** Hobby plan (free) with a paid
+> Standard service instance providing 1 CPU and 2 GB RAM. References to “Render free” in
+> the incidents below describe the runtime used when those incidents occurred, not the
+> current service instance.
+
 ## Purpose
 
 This file records concrete deployment problems, symptoms, root causes, and fixes. It is
