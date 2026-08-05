@@ -2,7 +2,7 @@
 
 English | [한국어](./README.md)
 
-**Permission-aware Agentic RAG Backend** — the backend for an AI chat product that retrieves personal, group, and system knowledge inside explicit authorization boundaries, then preserves citations and execution evidence.
+**Permission-aware Agentic RAG Backend** — the backend for an AI chat product that retrieves personal documents, group-shared documents, and administrator-provided reference knowledge inside explicit authorization boundaries, then preserves citations and execution evidence.
 
 [Live product demo](https://www.my-agents.dev) · [Frontend repository](https://github.com/heecheon92/my-agents-frontend) · [Implementation status](./docs/implementation-tracking.md) · [Roadmap](./ROADMAP.md)
 
@@ -14,7 +14,7 @@ English | [한국어](./README.md)
 
 | Question | This project's answer |
 | --- | --- |
-| What did I build? | A FastAPI + LangGraph backend that answers from personal, group, and system knowledge with citations |
+| What did I build? | A FastAPI + LangGraph backend that answers from personal documents, group-shared documents, and administrator-provided reference knowledge with citations |
 | What made it difficult? | Permission boundaries that precede ranking, server-owned conversation state, ingestion, streaming, and operable observability |
 | What did I verify? | An offline test suite, permission regressions, production smoke paths, and before/after ingestion and retrieval profiles |
 | What is its current maturity? | A controlled alpha that demonstrates the core product loop; operational hardening and security review continue |
@@ -22,23 +22,23 @@ English | [한국어](./README.md)
 ## Engineering highlights
 
 - **Permission-first retrieval**: unauthorized chunks are excluded before ranking, graph expansion, and prompt construction.
-- **Hybrid retrieval**: pgvector and request-local `BM25Okapi` candidates are gathered independently, fused by stable `chunk_id` with RRF (`k=60`), then reranked and packed.
-- **Inspectable agent flow**: the `general_assistant` LangGraph connects a source-selection gate, RAG Agent, opt-in memory, and response nodes through explicit state.
-- **Product-owned state**: the Product DB owns conversations, runs, messages, citations, and redacted events. LangGraph state is not treated as the source of truth for user-visible transcripts.
+- **Hybrid retrieval**: pgvector vector search and BM25 lexical search gather candidates independently, fuse them by stable chunk identifiers with RRF (`k=60`), then rerank and pack the context.
+- **Inspectable orchestration**: a LangGraph state machine connects the decision to use authorized knowledge, retrieval, opt-in memory, and response composition as explicit stages.
+- **Application-owned state**: the application database owns conversations, runs, messages, citations, and redacted events. Temporary LangGraph execution state is not treated as the source of truth for user-visible transcripts.
 - **Streaming product contract**: SSE carries progress events, agent traces, answer deltas, and terminal status while the server persists the same run.
-- **Offline-first verification**: deterministic provider, embedding, and reranker boundaries keep tests independent of API keys.
+- **Offline-first verification**: deterministic test doubles can replace the LLM, embedding, and reranker boundaries, so the full test suite runs without API keys.
 
 ## Measured performance improvements
 
-These are same-scenario **local profiles**, not public SLA claims. Retrieval shape or parser/chunk/entity quality guards stayed stable across each comparison.
+These are same-scenario **local profiles**, not public SLA claims. Each experiment started after profiling an unexpectedly slow path, and the search-result shape and document-processing quality checks remained the same before and after optimization.
 
 | Area | Primary method | Before | After | Result |
 | --- | --- | ---: | ---: | ---: |
-| 195-page PDF ingestion, end to end | Overlap OpenAI metadata generation with embedding/indexing and skip `pypdf` pre-classification for native-text PDFs | 36.16s | 16.57s | about 54% faster |
-| Hybrid retrieval candidate gathering | Defer unused embedding/full-document columns and use lightweight BM25 projection plus top-k hydration | 31.42s | 1.84s | 94.1% faster |
-| BM25 corpus/rank/hydration | Replace full ORM rows with a `chunk_id`/text corpus and hydrate only BM25 top-k rows | 14.34s | 0.14s | 99.0% faster |
+| 195-page PDF ingestion, end to end | Run OpenAI metadata generation concurrently with embedding/indexing and skip an unnecessary parsing pass for native-text PDFs | 36.16s | 16.57s | about 54% faster |
+| Hybrid retrieval candidate gathering | Defer large columns that ranking does not need and fetch full records only for the final top-k candidates | 31.42s | 1.84s | 94.1% faster |
+| BM25 corpus/rank/hydration | Build the corpus from IDs and text instead of full ORM rows, then fetch only the BM25 top-k rows | 14.34s | 0.14s | 99.0% faster |
 
-Ingestion improved by overlapping OpenAI metadata generation with indexing and lazily classifying native-text PDFs. Retrieval replaced a full-model corpus query with lightweight projection plus top-k hydration and removed duplicated SQL and embedding work. The [performance logs](./docs/performance/README.md) record the exact scenarios and remaining bottlenecks.
+Ingestion now overlaps time spent waiting for an external API with local indexing work and avoids duplicate parsing when a PDF already exposes native text. Retrieval first reads only the data required for ranking, fetches full records after the top candidates are known, and removes duplicated SQL and embedding work. The [performance logs](./docs/performance/README.md) record the exact scenarios and remaining bottlenecks.
 
 ## Architecture
 
@@ -57,12 +57,11 @@ flowchart TD
     Knowledge --> DB
     Runs --> DB
 
-    Runs --> Assistant["general_assistant LangGraph"]
-    Assistant --> SourceGate{"Use authorized knowledge?"}
+    Runs --> Orchestration["LangGraph request orchestration"]
+    Orchestration --> SourceGate{"Use authorized knowledge?"}
     SourceGate -->|No| Memory["Opt-in governed memory"]
-    SourceGate -->|Yes| RAG["RAG Agent boundary"]
-    RAG --> Forge["ContextForge retrieval graph"]
-    Forge --> Permission["Permission-filtered candidates"]
+    SourceGate -->|Yes| Retrieval["Permission-aware retrieval pipeline"]
+    Retrieval --> Permission["Permission-filtered candidates"]
     Permission --> Hybrid["Vector + BM25 -> RRF -> rerank"]
     Hybrid --> Context["Packed context + evidence"]
     Context --> Memory
@@ -76,18 +75,18 @@ flowchart TD
 ### Boundaries enforced during a request
 
 1. The API layer validates session, CSRF, and group/knowledge-base access.
-2. The assistant graph's source-selection gate decides whether private retrieval is necessary.
-3. The RAG Agent calls ContextForge, while service-layer authorization limits the candidate sources.
+2. LangGraph orchestration decides whether the question requires authorized knowledge retrieval.
+3. The retrieval service limits database queries to personal, group, and administrator-provided sources that the current user may access.
 4. Vector, lexical, metadata, and structured-entity candidates pass through fusion, reranking, and context packing.
 5. The answer, citations, compact agent trace, and redacted timing/events are persisted under the same run.
 
-Agent labels describe real implementation boundaries. The current production surface is one general assistant controller with an assistant-callable RAG Agent retrieval boundary; this repository does not pretend that multiple independent specialized agents ran.
+The production runtime consists of one assistant orchestration flow with a retrieval subworkflow. The words `agent` and `graph` describe control boundaries in the code; they do not imply that several autonomous specialists run as independent services.
 
 ## Product capabilities
 
 - Email/password signup, verification, sessions, CSRF, password reset, and gated guest access
 - Invite-based group membership, manager roster, and personal-to-group publish approval/copy workflows
-- Personal, group, and root/system-managed knowledge bases with document-level authorization
+- Personal, group, and administrator-provided reference knowledge bases with document-level authorization
 - PDF, Markdown, plain text, `.xlsx`, `.pptx`, and `.docx` upload and ingestion
 - A PyMuPDF fast path with pypdf, Docling, and Tesseract fallbacks
 - pgvector + BM25 + RRF + deterministic or optional cross-encoder reranking
@@ -109,17 +108,16 @@ Agent labels describe real implementation boundaries. The current production sur
 
 ## Repository map
 
+The top-level packages are described by responsibility first so a new visitor can understand the boundaries before learning internal implementation names. Those names appear only in the code-navigation table below.
+
 ```text
 my_agents/
 ├── api/                       # FastAPI routes and thin HTTP boundaries
-├── agents/
-│   ├── general_assistant/     # Product assistant/controller LangGraph
-│   ├── rag_agent/             # Assistant-callable retrieval contract
-│   └── context_forge/         # Planning, fusion, reranking, context packing
+├── agents/                    # LangGraph orchestration and retrieval workflows
 ├── auth/ and permissions/     # Session, CSRF, group/document authorization
 ├── knowledge/                 # Upload, parsing, ingestion, retrieval
 ├── conversations/             # Server-owned transcript/run models
-├── memory/                    # Opt-in memory policy and Product DB scaffold
+├── memory/                    # Opt-in memory policy and database persistence
 └── persistence/               # SQLAlchemy database boundary
 
 tests/                         # Offline behavior and regression contracts
@@ -127,6 +125,12 @@ alembic/                       # PostgreSQL schema migrations
 docs/                          # Architecture, operations, performance evidence
 scripts/                       # Smoke, benchmark, migration, operator utilities
 ```
+
+| Behavior to inspect | Code location |
+| --- | --- |
+| Decide whether a question needs knowledge retrieval and compose the response | `my_agents/agents/general_assistant/` |
+| Define the input/output contract between the assistant and permission-aware retrieval | `my_agents/agents/rag_agent/` |
+| Plan queries, fuse hybrid candidates, rerank, and pack context | `my_agents/agents/context_forge/` |
 
 ## Run locally
 
@@ -165,10 +169,10 @@ On 2026-08-05, the full suite on this checkout reports **464 passed, 2 skipped**
 ## Security and privacy boundaries
 
 - Real secrets and local databases are not committed. `.env.example` contains placeholders only.
-- Before changing repository visibility, scan the full Git history rather than only the current tree; revoke and rotate any exposed credential even if its file was later deleted.
+- Public-release checks cover both the current tree and the full Git history; any exposed credential must be revoked and rotated even if its file was later deleted.
 - Retrieval permissions are enforced in application/service code, not through prompt instructions.
 - Metric labels and default agent events exclude raw prompts, document text, emails, and user/document IDs.
-- System-knowledge management is limited to `root`/`system` user types, with no public role-mutation API.
+- System-knowledge management is limited to privileged administrative account types, with no public role-mutation API.
 - The public demo assumes users will not upload sensitive, regulated, or irreplaceable documents.
 
 ## Current limitations and next steps
@@ -184,8 +188,8 @@ On 2026-08-05, the full suite on this checkout reports **464 passed, 2 skipped**
 
 - [Current implementation and verification status](./docs/implementation-tracking.md)
 - [Permission-aware RAG design](./docs/product-chat-service/en/06-permission-aware-rag.md)
-- [General assistant graph](./my_agents/agents/general_assistant/README.en.md)
-- [RAG Agent and ContextForge boundary](./my_agents/agents/rag_agent/README.en.md)
+- [Assistant orchestration flow](./my_agents/agents/general_assistant/README.en.md)
+- [Retrieval subworkflow and context assembly](./my_agents/agents/rag_agent/README.en.md)
 - [Performance evidence](./docs/performance/README.md)
 - [Production smoke evidence](./docs/product-chat-service/en/16-production-smoke-evidence-2026-06-06.md)
 
