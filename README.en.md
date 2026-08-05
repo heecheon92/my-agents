@@ -2,175 +2,156 @@
 
 English | [한국어](./README.md)
 
-`my-agents` is the backend for an AI chat product that answers with personal, group, and privileged system knowledge. The frontend lives in a separate repository; this repo focuses on product API boundaries for auth, permissions, knowledge bases, conversation runs, citations, and memory settings.
+**Permission-aware Agentic RAG Backend** — the backend for an AI chat product that retrieves personal, group, and system knowledge inside explicit authorization boundaries, then preserves citations and execution evidence.
 
-Start with [`docs/implementation-tracking.md`](./docs/implementation-tracking.md) for current status. Use [`ROADMAP.md`](./ROADMAP.md) for larger direction and backlog.
+[Live product demo](https://www.my-agents.dev) · [Frontend repository](https://github.com/heecheon92/my-agents-frontend) · [Implementation status](./docs/implementation-tracking.md) · [Roadmap](./ROADMAP.md)
 
-## What the product provides
+> The live service is a controlled alpha for recruiters and a small group of testers. Signup and guest access may be restricted by operating policy; this is not a claim of production-ready SaaS.
 
-- Email/password accounts, invitation-link signup, sessions, and gated guest access
-- Personal knowledge bases, invite-based group knowledge bases, and root/system-managed project knowledge
-- Document upload, ingestion, retrieval, and cited answers (PDF, Markdown, plain text, `.xlsx`, `.pptx`, `.docx`; legacy `.doc` is not supported yet)
-- Server-owned conversation/run history and streaming responses
-- OpenAI-backed responses can expose hosted web search for current or source-backed requests
-- Permission flows for group members and publish requests
-- User-controlled experimental long-term memory
+## Three-minute overview
 
-## Product boundaries
+`my-agents` is more than a small RAG example. It connects the product flow required by a real application: **authentication → authorization → document ingestion → hybrid retrieval → LangGraph execution → SSE streaming → citation/audit persistence**.
 
-- Personal knowledge and conversation history are user-owned by default.
-- Group knowledge is available only to accepted invited members.
-- System knowledge is public to authenticated chat retrieval, including guests; only
-  `root`/`system` user types can manage it.
-- `user_type` changes are operator-script-only via `scripts.set_user_type`; there is no
-  public API route for role mutation. Auth responses omit `user_type` and
-  `can_manage_system_knowledge` for normal users and guests, and only include them
-  for root/system managers.
-- Nickname is display metadata; email remains the login and invitation identifier. Invitees without an account use the token-proved email and choose only a nickname/password.
-- Standard personal, group, and system knowledge bases are lifecycle-managed through the knowledge-base API by their authorized owners/managers. Hidden `team_upload_staging` KBs stay internal and cannot be renamed or deleted through the normal management flow.
-- Document source lists stay lightweight. Use `GET /knowledge-bases/{knowledge_base_id}/documents/{document_id}/preview` when a UI needs the full Markdown/internal representation for a selected document.
-- Publish request requesters can cancel pending requests as `cancelled` and request again. Deleting a publish request's source document or source knowledge base before approval moves the request to `withdrawn`. After approval, source deletion keeps the group-owned copy, and manager deletion of the approved group copy preserves request history while clearing `published_document_id` or `published_knowledge_base_id`.
-- Whole-knowledge-base approval creates a group-owned KB copy for retrieval instead of authorizing the requester-owned source KB. Backfill old approved KB publication rows with `uv run python -m scripts.backfill_kb_publication_copies --dry-run` and then `--apply` after reviewing the summary.
-- Long-term memory is disabled by default and can be enabled from experimental settings.
-- Never commit real secrets. `.env` is local-only; `.env.example` contains safe placeholders.
+| Question | This project's answer |
+| --- | --- |
+| What did I build? | A FastAPI + LangGraph backend that answers from personal, group, and system knowledge with citations |
+| What made it difficult? | Permission boundaries that precede ranking, server-owned conversation state, ingestion, streaming, and operable observability |
+| What did I verify? | An offline test suite, permission regressions, production smoke paths, and before/after ingestion and retrieval profiles |
+| What is its current maturity? | A controlled alpha that demonstrates the core product loop; operational hardening and security review continue |
 
-## Architecture at a glance
+## Engineering highlights
+
+- **Permission-first retrieval**: unauthorized chunks are excluded before ranking, graph expansion, and prompt construction.
+- **Hybrid retrieval**: pgvector and request-local `BM25Okapi` candidates are gathered independently, fused by stable `chunk_id` with RRF (`k=60`), then reranked and packed.
+- **Inspectable agent flow**: the `general_assistant` LangGraph connects a source-selection gate, RAG Agent, opt-in memory, and response nodes through explicit state.
+- **Product-owned state**: the Product DB owns conversations, runs, messages, citations, and redacted events. LangGraph state is not treated as the source of truth for user-visible transcripts.
+- **Streaming product contract**: SSE carries progress events, agent traces, answer deltas, and terminal status while the server persists the same run.
+- **Offline-first verification**: deterministic provider, embedding, and reranker boundaries keep tests independent of API keys.
+
+## Measured performance improvements
+
+These are same-scenario **local profiles**, not public SLA claims. Retrieval shape or parser/chunk/entity quality guards stayed stable across each comparison.
+
+| Area | Primary method | Before | After | Result |
+| --- | --- | ---: | ---: | ---: |
+| 195-page PDF ingestion, end to end | Overlap OpenAI metadata generation with embedding/indexing and skip `pypdf` pre-classification for native-text PDFs | 36.16s | 16.57s | about 54% faster |
+| Hybrid retrieval candidate gathering | Defer unused embedding/full-document columns and use lightweight BM25 projection plus top-k hydration | 31.42s | 1.84s | 94.1% faster |
+| BM25 corpus/rank/hydration | Replace full ORM rows with a `chunk_id`/text corpus and hydrate only BM25 top-k rows | 14.34s | 0.14s | 99.0% faster |
+
+Ingestion improved by overlapping OpenAI metadata generation with indexing and lazily classifying native-text PDFs. Retrieval replaced a full-model corpus query with lightweight projection plus top-k hydration and removed duplicated SQL and embedding work. The [performance logs](./docs/performance/README.md) record the exact scenarios and remaining bottlenecks.
+
+## Architecture
 
 ```mermaid
 flowchart TD
-    Frontend["Separate frontend or API client"] --> API["FastAPI app"]
-    API --> Auth["Auth/session/CSRF"]
-    API --> KB["Knowledge bases + documents"]
-    API --> SystemKB["System KB manager API"]
-    API --> Runs["Conversation runs / SSE"]
-    KB --> Ingest["Ingestion + chunks + entities + embeddings"]
-    SystemKB --> Ingest
-    Runs --> Graph["General assistant LangGraph"]
-    Graph --> SourceGate["Source-selection gate"]
-    SourceGate -->|knowledge_base| RAGAgent["RAG Agent retrieval boundary"]
-    SourceGate -->|bypass| Provider
-    RAGAgent --> ContextForge["ContextForge delegated retrieval engine"]
-    ContextForge --> GraphInput["Authorized retrieved context"]
-    GraphInput --> Graph
-    Graph --> MemoryRuntime["retrieve_memory node + MemoryRuntime"]
-    MemoryRuntime --> Memory["Opt-in user memory service"]
-    MemoryRuntime --> Graph
-    Graph --> Provider["OpenAI or deterministic provider"]
-    RAGAgent --> Events["Verified agent trace + grounding checks"]
-    Graph --> Events
-    Auth --> DB[("SQLAlchemy DB")]
-    KB --> DB
-    SystemKB --> DB
-    Ingest --> DB
+    Client["Browser or API client"] --> Frontend["Separate Next.js frontend"]
+    Frontend --> API["FastAPI product API"]
+
+    API --> Auth["Auth, session, CSRF, groups"]
+    API --> Knowledge["Knowledge bases and documents"]
+    API --> Runs["Conversations, runs, SSE"]
+
+    Knowledge --> Ingestion["Parse, chunk, enrich, embed"]
+    Ingestion --> DB[("Postgres / Neon + pgvector")]
+    Auth --> DB
+    Knowledge --> DB
     Runs --> DB
+
+    Runs --> Assistant["general_assistant LangGraph"]
+    Assistant --> SourceGate{"Use authorized knowledge?"}
+    SourceGate -->|No| Memory["Opt-in governed memory"]
+    SourceGate -->|Yes| RAG["RAG Agent boundary"]
+    RAG --> Forge["ContextForge retrieval graph"]
+    Forge --> Permission["Permission-filtered candidates"]
+    Permission --> Hybrid["Vector + BM25 -> RRF -> rerank"]
+    Hybrid --> Context["Packed context + evidence"]
+    Context --> Memory
+
     Memory --> DB
-    Events --> DB
+    Memory --> Provider["OpenAI or deterministic response"]
+    Provider --> Audit["Messages, citations, redacted events"]
+    Audit --> DB
 ```
 
-Default document retrieval independently gathers permission-filtered vector candidates and
-request-local `BM25Okapi` lexical candidates, then applies Reciprocal Rank Fusion (RRF,
-`k=60`) by stable `chunk_id`. BM25 builds its corpus from existing authorized chunk text,
-so it requires no dedicated database index or schema migration. Metadata, structured-entity,
-and graph-expansion candidates pass through the same fusion boundary before deterministic
-or optional cross-encoder reranking and context packing.
+### Boundaries enforced during a request
 
-This README intentionally stays high level. Detailed API contracts, migration notes, and operational procedures live under `docs/` and [`scripts/README.md`](./scripts/README.md).
+1. The API layer validates session, CSRF, and group/knowledge-base access.
+2. The assistant graph's source-selection gate decides whether private retrieval is necessary.
+3. The RAG Agent calls ContextForge, while service-layer authorization limits the candidate sources.
+4. Vector, lexical, metadata, and structured-entity candidates pass through fusion, reranking, and context packing.
+5. The answer, citations, compact agent trace, and redacted timing/events are persisted under the same run.
+
+Agent labels describe real implementation boundaries. The current production surface is one general assistant controller with an assistant-callable RAG Agent retrieval boundary; this repository does not pretend that multiple independent specialized agents ran.
+
+## Product capabilities
+
+- Email/password signup, verification, sessions, CSRF, password reset, and gated guest access
+- Invite-based group membership, manager roster, and personal-to-group publish approval/copy workflows
+- Personal, group, and root/system-managed knowledge bases with document-level authorization
+- PDF, Markdown, plain text, `.xlsx`, `.pptx`, and `.docx` upload and ingestion
+- A PyMuPDF fast path with pypdf, Docling, and Tesseract fallbacks
+- pgvector + BM25 + RRF + deterministic or optional cross-encoder reranking
+- Server-owned conversation/run history, SSE streaming, citations, and redacted agent events
+- User-enabled experimental long-term memory with a governance lifecycle
+- Prometheus timing metrics and local Rich retrieval/ingestion profilers
+
+## Technology stack
+
+| Area | Technology |
+| --- | --- |
+| API / application | Python 3.14, FastAPI, Pydantic |
+| Agent / model | LangGraph, `langchain-openai`, `ChatOpenAI` |
+| Persistence | SQLAlchemy, Alembic, PostgreSQL/Neon, pgvector |
+| Retrieval | Vector search, BM25Okapi, RRF, optional BAAI cross-encoder |
+| Document processing | PyMuPDF, pypdf, Docling, Tesseract, openpyxl, python-pptx |
+| Streaming / observability | SSE, Prometheus metrics, redacted run events |
+| Quality / delivery | pytest, Ruff, uv, Docker, Render |
+
+## Repository map
+
+```text
+my_agents/
+├── api/                       # FastAPI routes and thin HTTP boundaries
+├── agents/
+│   ├── general_assistant/     # Product assistant/controller LangGraph
+│   ├── rag_agent/             # Assistant-callable retrieval contract
+│   └── context_forge/         # Planning, fusion, reranking, context packing
+├── auth/ and permissions/     # Session, CSRF, group/document authorization
+├── knowledge/                 # Upload, parsing, ingestion, retrieval
+├── conversations/             # Server-owned transcript/run models
+├── memory/                    # Opt-in memory policy and Product DB scaffold
+└── persistence/               # SQLAlchemy database boundary
+
+tests/                         # Offline behavior and regression contracts
+alembic/                       # PostgreSQL schema migrations
+docs/                          # Architecture, operations, performance evidence
+scripts/                       # Smoke, benchmark, migration, operator utilities
+```
 
 ## Run locally
 
-Install dependencies and create local settings:
+Prerequisites are [uv](https://docs.astral.sh/uv/) and Python 3.14.
 
 ```bash
 uv sync
 cp .env.example .env
+MY_AGENTS_RESPONSE_MODE=deterministic uv run fastapi dev main.py
 ```
 
-Use deterministic mode for credential-free tests and local smoke checks.
+Run a credential-free smoke check in another terminal:
 
 ```bash
-MY_AGENTS_RESPONSE_MODE=deterministic
+curl http://127.0.0.1:8000/health
+curl -X POST http://127.0.0.1:8000/assistant/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"message":"Plan my next backend milestone","history":[]}'
 ```
 
-Start the API:
+For real OpenAI responses, set `OPENAI_API_KEY` in `.env` and use `MY_AGENTS_RESPONSE_MODE=openai`. Application code uses the `langchain-openai` / `ChatOpenAI` boundary rather than direct provider calls.
 
-```bash
-uv run fastapi dev main.py
-```
+OpenAPI is available from a running server at `http://127.0.0.1:8000/openapi.json`. See the [frontend demo runbook](./docs/product-chat-service/en/10-frontend-demo-runbook.md) for the full product flow and PostgreSQL setup.
 
-Fallback:
-
-```bash
-uv run uvicorn main:app --reload
-```
-
-OpenAPI is available from the running server at:
-
-```text
-http://127.0.0.1:8000/openapi.json
-```
-
-Optional internal timing metrics are available through Prometheus text exposition when
-explicitly enabled:
-
-```bash
-MY_AGENTS_METRICS_ENABLED=true uv run fastapi dev main.py
-curl http://127.0.0.1:8000/metrics
-```
-
-The metrics endpoint is a maintenance/quality-analysis surface, not a product API. It
-records request, conversation-run, RAG Agent/ContextForge retrieval, embedding, reranker, and
-assistant-graph timing histograms without using raw prompts, document text, user IDs, or
-document IDs as labels. For local single-run RAG profiling, enable the Rich timing panel:
-
-```bash
-MY_AGENTS_DEBUG_RETRIEVAL_TIMING_LOGGING=true uv run fastapi dev main.py
-```
-
-That local-only debug output prints one human-readable ContextForge timing table per
-retrieval attempt, including authorization count, planning, candidate gather, fusion,
-reranking, context packing, total time, and redacted candidate counts. The
-`candidate_gather.*` rows break the slow first-stage retrieval path down into existing
-retrieval/embedding spans such as metadata matching, embedding calls, vector SQL, JSON
-fallback scans, related expansion, and overview supplement work.
-
-For local single-run ingestion profiling, enable the ingestion Rich timing panel:
-
-```bash
-MY_AGENTS_DEBUG_INGESTION_TIMING_LOGGING=true uv run fastapi dev main.py
-```
-
-That local-only debug output prints one human-readable timing table for each upload parse
-and each extraction/indexing run. The upload trace includes file read, parser dispatch,
-document persistence, and PDF subphases such as validation, checksum, classification,
-parser attempts, and quality gates; the extraction trace includes clearing stale artifacts,
-parse artifact lookup, chunking, chunk embedding, entity extraction/upsert, chunk/index
-persistence, metadata generation/embedding, and final commit. It reports counts and source
-metadata such as suffix, source type, parser, bytes, characters, pages, PDF doc type,
-chunks, entities, and relationships without printing raw filenames or document text. When
-OpenAI metadata generation is active, metadata generation runs in parallel with chunk
-embedding/indexing, so ingestion timing phases are spans and may overlap rather than adding
-up to `total_ms`.
-
-The PDF path uses lazy classification: it tries the fast PyMuPDF text extractor first and
-accepts it when the existing quality gate passes. If PyMuPDF fails or produces low-quality
-text, the parser runs the pypdf classification step and routes through pypdf, Docling,
-Tesseract, and legacy fallbacks as before.
-
-For repeatable ingestion before/after measurements, use the local benchmark harness:
-
-```bash
-uv run python scripts/measure_ingestion_performance.py \
-  --scenario pdf \
-  --repeat 3 \
-  --output /tmp/my-agents-ingestion-pdf.json
-```
-
-The benchmark runs against an isolated SQLite database with deterministic embeddings and
-metadata generation. It reports parse, persist, ingest, retrieval-smoke, total time, RSS
-delta, parser/source metadata, chunk/entity/relationship counts, and a redacted quality
-signature so ingestion optimizations can be compared without weakening retrieval quality.
-
-## Common checks
+## Verification
 
 ```bash
 uv run pytest -q
@@ -179,12 +160,33 @@ uv run ruff format --check .
 git diff --check
 ```
 
-## Further reading
+On 2026-08-05, the full suite on this checkout reports **464 passed, 2 skipped** without requiring real credentials.
 
-- Current implementation status: [`docs/implementation-tracking.md`](./docs/implementation-tracking.md)
-- Product roadmap: [`ROADMAP.md`](./ROADMAP.md)
-- Product docs: [`docs/product-chat-service/en/README.md`](./docs/product-chat-service/en/README.md)
-- Knowledge lifecycle and publish-copy contract: [`docs/product-chat-service/en/24-knowledge-lifecycle-and-publish-copy-contract.md`](./docs/product-chat-service/en/24-knowledge-lifecycle-and-publish-copy-contract.md)
-- Frontend demo runbook: [`docs/product-chat-service/en/10-frontend-demo-runbook.md`](./docs/product-chat-service/en/10-frontend-demo-runbook.md)
-- Script commands: [`scripts/README.md`](./scripts/README.md)
-- Ideas: [`docs/idea/`](./docs/idea/)
+## Security and privacy boundaries
+
+- Real secrets and local databases are not committed. `.env.example` contains placeholders only.
+- Before changing repository visibility, scan the full Git history rather than only the current tree; revoke and rotate any exposed credential even if its file was later deleted.
+- Retrieval permissions are enforced in application/service code, not through prompt instructions.
+- Metric labels and default agent events exclude raw prompts, document text, emails, and user/document IDs.
+- System-knowledge management is limited to `root`/`system` user types, with no public role-mutation API.
+- The public demo assumes users will not upload sensitive, regulated, or irreplaceable documents.
+
+## Current limitations and next steps
+
+- This is a controlled alpha, not a broadly self-service production SaaS.
+- The external ingestion worker uses database polling; durable queueing, supervision, and stale-job recovery need further work.
+- Object storage for uploaded originals, document versioning/re-ingestion, and account deletion/export are not implemented yet.
+- Cross-encoder cold starts and PDF processing latency remain constraints on small hosted instances.
+- Shared rate limiting, production security review, and automated migration/smoke gates remain necessary.
+- LangGraph Store-backed memory, HITL/resume checkpointers, non-RAG tools, and production multi-agent orchestration remain roadmap work.
+
+## Selected documentation
+
+- [Current implementation and verification status](./docs/implementation-tracking.md)
+- [Permission-aware RAG design](./docs/product-chat-service/en/06-permission-aware-rag.md)
+- [General assistant graph](./my_agents/agents/general_assistant/README.en.md)
+- [RAG Agent and ContextForge boundary](./my_agents/agents/rag_agent/README.en.md)
+- [Performance evidence](./docs/performance/README.md)
+- [Production smoke evidence](./docs/product-chat-service/en/16-production-smoke-evidence-2026-06-06.md)
+
+See [ROADMAP.md](./ROADMAP.md) for the larger direction and unfinished work, and [scripts/README.md](./scripts/README.md) for operational and migration commands.
