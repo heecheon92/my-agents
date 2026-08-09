@@ -100,7 +100,7 @@ The async slice is additive and intentionally demo-shaped, with a web/worker spl
 
 - `POST /documents/{document_id}/ingest/async` requires the same ingest permission as the sync endpoint and returns `202 Accepted`;
 - response body is an `ExtractionRunResponse` with `status=pending`, `stage=queued`, and `progress_percent=0`;
-- execution uses a fresh SQLAlchemy session and updates the same run through `running` stages (`chunking`, `embedding`, optional `indexing`, `entities`) to `completed`; local/default mode does this in-process, while `external_worker` mode leaves the run queued until `python -m my_agents.ingestion_worker` claims it;
+- execution uses a fresh SQLAlchemy session and commits the same run through `queued=0`, `claimed=1`, `chunking=15`, `embedding=45`, optional `indexing=70`, `entities=85`, `metadata=95`, and `completed=100`; local/default mode does this in-process, while `external_worker` mode leaves the run queued until `python -m my_agents.ingestion_worker` claims it;
 - frontend multi-file upload fan-out is a safe backend runtime hint exposed through `/health` as `frontend_config.documents.upload_concurrency`, backed by `MY_AGENTS_DOCUMENT_UPLOAD_CONCURRENCY` (default `3`);
 - `GET /documents/{document_id}/extraction-runs/{run_id}` requires document read access and returns the latest progress/counts;
 - failures persist `status=failed`, `stage=failed`, and a bounded display-safe `error`;
@@ -113,7 +113,7 @@ Response shape:
   "id": "run-id",
   "document_id": "document-id",
   "status": "pending|running|completed|failed",
-  "stage": "queued|chunking|embedding|indexing|entities|completed|failed",
+  "stage": "queued|claimed|chunking|embedding|indexing|entities|metadata|completed|failed",
   "progress_percent": 0,
   "chunk_count": 0,
   "entity_count": 0,
@@ -278,12 +278,13 @@ Thin permission-aware RAG and graph expansion now live in the next learning note
 - custom chunk target/overlap behavior;
 - a local skip-if-missing regression for the LangChain Academy LangGraph PDF that previously produced only boilerplate text;
 - ingestion creates chunks, entities, relationships, and extraction-run summaries;
-- async ingestion returns a queued run, supports direct polling, persists completed/failed progress, and respects document permissions;
+- async ingestion returns a queued run, supports direct polling, exposes committed monotonic intermediate progress to an independent session, persists completed/failed state, and respects document permissions;
 - parallel async ingestion of documents with shared entity names completes without select-then-insert entity deadlocks;
 - outsiders cannot create group KBs for groups they do not belong to.
 
 ## Revision history
 
+- 2026-08-09: Documented the exact committed progress sequence and added independent-session polling coverage for the external worker.
 - 2026-06-23: Added DOCX-only upload support through local Docling Markdown/block artifacts while keeping legacy `.doc` unsupported.
 - 2026-06-07: Updated parser docs for the PyMuPDF-primary PDF pipeline, Docling/Tesseract fallbacks, Mermaid rendering, and the custom chunker rationale.
 - 2026-05-30: Updated async ingestion docs for the hosted external-worker execution mode and clarified remaining durable-queue gaps.

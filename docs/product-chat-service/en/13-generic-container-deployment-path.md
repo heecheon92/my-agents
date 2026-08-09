@@ -132,8 +132,9 @@ Preview/public guardrail expectations:
   preserving existing verified-user login/session behavior.
 - `MY_AGENTS_GUEST_ACCESS_ENABLED=false` unless the reviewer-facing provider-free
   guest flow is intentionally open. When enabled, the defaults are 15-minute
-  one-time code TTL, 24-hour guest access/session TTL, one conversation, five
-  prompts, and three document creates/uploads.
+  one-time code TTL, 24-hour guest access/session TTL, three conversations, twenty
+  prompts, and five document creates/uploads. Confirm the effective deployment with
+  `GET /auth/guest/policy`.
 - `MY_AGENTS_AUTH_EMAIL_MODE=smtp`.
 - `MY_AGENTS_SESSION_COOKIE_SECURE=true` for HTTPS.
 - `MY_AGENTS_CORS_ALLOWED_ORIGINS` must be exact HTTPS frontend origins; wildcard

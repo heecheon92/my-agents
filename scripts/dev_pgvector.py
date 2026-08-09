@@ -57,7 +57,7 @@ class PgvectorConfig:
 
 
 class CommandError(RuntimeError):
-    """Raised when a local Docker or uv command fails."""
+    """Raised when a local Docker or Python command fails."""
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -147,13 +147,13 @@ def write_env_file(config: PgvectorConfig) -> None:
 def run_migrations(config: PgvectorConfig) -> None:
     """Run Alembic migrations against the local pgvector database."""
     env = _backend_env(config)
-    run(["uv", "run", "alembic", "upgrade", "head"], env=env)
+    run([sys.executable, "-m", "alembic", "upgrade", "head"], env=env)
 
 
 def run_external_migration_smoke(config: PgvectorConfig) -> None:
     """Run the gated Postgres migration smoke against the local pgvector database."""
     env = _backend_env(config)
-    run(["uv", "run", "pytest", "tests/test_migrations.py", "-q"], env=env)
+    run([sys.executable, "-m", "pytest", "tests/test_migrations.py", "-q"], env=env)
 
 
 def run(
@@ -230,7 +230,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--migrate",
         action="store_true",
-        help="After up, run uv run alembic upgrade head against the local pgvector DB.",
+        help="After up, run Alembic upgrade head against the local pgvector DB.",
     )
     parser.set_defaults(write_env_file=True)
     return parser

@@ -1,5 +1,11 @@
 # RAG Agent changelog
 
+## 2026-08-09 — Freeze the display-safe trace contract
+
+- Why: the frontend needs a stable localized activity timeline without guessing event/stage fields or rendering arbitrary stored JSON.
+- Behavior/contract impact: `agent_trace` now has closed stage/event/status vocabularies and an allowlisted evidence schema; the persisted-event serializer recursively filters uncontracted fields.
+- Verification: covered by `tests/test_agent_event_contract.py`, `tests/test_api_error_contract.py`, and conversation API tests.
+
 ## 2026-06-16 — Promote RAG Agent to the assistant retrieval boundary
 
 - Why: `general_assistant` should be able to decide inside its own graph whether to retrieve document evidence, while keeping ContextForge as the permission-first implementation detail.

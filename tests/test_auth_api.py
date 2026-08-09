@@ -841,6 +841,10 @@ def test_login_rejects_invalid_credentials_without_session(monkeypatch) -> None:
     )
 
     assert response.status_code == 401
+    assert response.json() == {
+        "detail": "invalid email or password",
+        "code": "invalid_credentials",
+    }
     assert client.get("/auth/me").status_code == 401
 
 

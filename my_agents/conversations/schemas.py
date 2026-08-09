@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_serializer
 
+from my_agents.agents.rag_agent.contracts import RagAgentStageId
 from my_agents.knowledge.routing import AnswerMode, DocumentScope, RetrievalRoute
 from my_agents.knowledge.schemas import CitationResponse, KnowledgeBaseSelection
 from my_agents.schemas import RouteDecision
@@ -48,17 +49,46 @@ class AgentTraceText(BaseModel):
     ko: str
 
 
+class AgentTraceEvidence(BaseModel):
+    """Closed allowlist of display-safe evidence fields for agent trace stages."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    retrieval_route: RetrievalRoute | None = None
+    answer_mode: AnswerMode | None = None
+    document_scope: DocumentScope | None = None
+    intent: str | None = Field(default=None, max_length=160)
+    structured_entity_types: list[str] | None = None
+    resolved_knowledge_base_count: int | None = Field(default=None, ge=0)
+    candidate_count: int | None = Field(default=None, ge=0)
+    authorized_context_count: int | None = Field(default=None, ge=0)
+    reranker: str | None = Field(default=None, max_length=160)
+    injected_count: int | None = Field(default=None, ge=0)
+    rejected_count: int | None = Field(default=None, ge=0)
+    budget_truncated: bool | None = None
+    route_label: str | None = Field(default=None, max_length=160)
+    retrieved_chunk_count: int | None = Field(default=None, ge=0)
+    citation_count: int | None = Field(default=None, ge=0)
+    reply_length: int | None = Field(default=None, ge=0)
+    clarification_required: bool | None = None
+
+    @model_serializer(mode="wrap")
+    def serialize_compact_evidence(self, serializer):  # noqa: ANN001, ANN201
+        """Omit fields that do not belong to this trace stage."""
+        return {name: value for name, value in serializer(self).items() if value is not None}
+
+
 class AgentTraceStep(BaseModel):
     """Frontend-safe localized trace step without hidden chain-of-thought."""
 
     model_config = ConfigDict(extra="forbid")
 
-    id: str
-    event_type: str
+    id: RagAgentStageId
+    event_type: Literal["retrieval_completed", "graph_invoked", "answer_composed"]
     status: Literal["completed", "skipped", "waiting", "failed"]
     title: AgentTraceText
     description: AgentTraceText
-    evidence: dict[str, Any] = Field(default_factory=dict)
+    evidence: AgentTraceEvidence = Field(default_factory=AgentTraceEvidence)
 
 
 class ConversationRunWarning(BaseModel):
@@ -143,11 +173,156 @@ class AgentRunSummaryResponse(BaseModel):
     created_at: datetime
 
 
-class AgentEventResponse(BaseModel):
+class AgentEventPayload(BaseModel):
+    """Base for persisted event payloads exposed through the display-safe API."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class KnowledgeSelectionEventPayload(AgentEventPayload):
+    knowledge_base_selection: KnowledgeBaseSelection = Field(default_factory=KnowledgeBaseSelection)
+    resolved_knowledge_base_ids: list[str] = Field(default_factory=list)
+    resolved_knowledge_base_count: int = Field(default=0, ge=0)
+    ambient_system_knowledge_base_count: int = Field(default=0, ge=0)
+
+
+class RunStartedEventPayload(KnowledgeSelectionEventPayload):
+    run_id: str
+    conversation_id: str
+    status: Literal["running"] = "running"
+
+
+class UserMessageStoredEventPayload(AgentEventPayload):
+    message_id: str
+    content_length: int = Field(ge=0)
+
+
+class RetrievalCompletedEventPayload(KnowledgeSelectionEventPayload):
+    retrieval_route: RetrievalRoute = "no_retrieval"
+    answer_mode: AnswerMode = "general_knowledge"
+    document_scope: DocumentScope = "unknown"
+    authorized_context_count: int = Field(default=0, ge=0)
+    semantic_vector_count: int = Field(default=0, ge=0)
+    keyword_match_count: int = Field(default=0, ge=0)
+    document_metadata_count: int = Field(default=0, ge=0)
+    document_metadata_profile_count: int = Field(default=0, ge=0)
+    graph_expansion_count: int = Field(default=0, ge=0)
+    fallback_count: int = Field(default=0, ge=0)
+    latency_ms: float = Field(default=0, ge=0)
+    retrieval_attempt_count: int = Field(default=1, ge=1)
+    retrieval_retry_count: int = Field(default=0, ge=0)
+    insufficient_evidence: bool = False
+    candidate_count: int | None = Field(default=None, ge=0)
+    injected_count: int | None = Field(default=None, ge=0)
+    rejected_count: int | None = Field(default=None, ge=0)
+    structured_entity_count: int | None = Field(default=None, ge=0)
+    structured_entity_types: list[str] = Field(default_factory=list)
+    budget_truncated: bool | None = None
+    contextforge_intent: str | None = Field(default=None, max_length=160)
+    contextforge_reranker: str | None = Field(default=None, max_length=160)
+    agent_trace: list[AgentTraceStep] = Field(default_factory=list)
+
+
+class GraphInvokedEventPayload(KnowledgeSelectionEventPayload):
+    route_label: str = Field(default="general_assistant", max_length=160)
+    retrieval_route: RetrievalRoute = "no_retrieval"
+    answer_mode: AnswerMode = "general_knowledge"
+    document_scope: DocumentScope = "unknown"
+    message_count: int = Field(default=0, ge=0)
+    retrieved_chunk_count: int = Field(default=0, ge=0)
+    memory_count: int | None = Field(default=None, ge=0)
+    memory_conflict_count: int | None = Field(default=None, ge=0)
+    memory_categories: list[str] = Field(default_factory=list)
+    memory_provenance_types: list[str] = Field(default_factory=list)
+    agent_trace: list[AgentTraceStep] = Field(default_factory=list)
+
+
+class AnswerComposedEventPayload(KnowledgeSelectionEventPayload):
+    citation_count: int = Field(default=0, ge=0)
+    reply_length: int = Field(default=0, ge=0)
+    retrieval_route: RetrievalRoute = "no_retrieval"
+    answer_mode: AnswerMode = "general_knowledge"
+    document_scope: DocumentScope = "unknown"
+    clarification_required: bool = False
+    insufficient_evidence: bool = False
+    agent_trace: list[AgentTraceStep] = Field(default_factory=list)
+
+
+class RunCancelRequestedEventPayload(AgentEventPayload):
+    run_id: str
+    status: Literal["cancelling"] = "cancelling"
+
+
+class RunCancelledEventPayload(AgentEventPayload):
+    run_id: str
+    conversation_id: str | None = None
+    status: Literal["cancelled"] = "cancelled"
+    partial_reply_persisted: bool = False
+    stale_active_run_cleanup: Literal[True] | None = None
+
+
+class RunFailedEventPayload(AgentEventPayload):
+    safe_error_type: str = Field(default="RunFailed", max_length=160)
+    safe_reason: str | None = Field(default=None, max_length=160)
+    stale_active_run_cleanup: Literal[True] | None = None
+
+
+class AgentEventResponseBase(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: str
     run_id: str
     sequence: int
-    event_type: str
-    payload: dict
+
+
+class RunStartedAgentEventResponse(AgentEventResponseBase):
+    event_type: Literal["run_started"]
+    payload: RunStartedEventPayload
+
+
+class UserMessageStoredAgentEventResponse(AgentEventResponseBase):
+    event_type: Literal["user_message_stored"]
+    payload: UserMessageStoredEventPayload
+
+
+class RetrievalCompletedAgentEventResponse(AgentEventResponseBase):
+    event_type: Literal["retrieval_completed"]
+    payload: RetrievalCompletedEventPayload
+
+
+class GraphInvokedAgentEventResponse(AgentEventResponseBase):
+    event_type: Literal["graph_invoked"]
+    payload: GraphInvokedEventPayload
+
+
+class AnswerComposedAgentEventResponse(AgentEventResponseBase):
+    event_type: Literal["answer_composed"]
+    payload: AnswerComposedEventPayload
+
+
+class RunCancelRequestedAgentEventResponse(AgentEventResponseBase):
+    event_type: Literal["run_cancel_requested"]
+    payload: RunCancelRequestedEventPayload
+
+
+class RunCancelledAgentEventResponse(AgentEventResponseBase):
+    event_type: Literal["run_cancelled"]
+    payload: RunCancelledEventPayload
+
+
+class RunFailedAgentEventResponse(AgentEventResponseBase):
+    event_type: Literal["run_failed"]
+    payload: RunFailedEventPayload
+
+
+type AgentEventResponse = Annotated[
+    RunStartedAgentEventResponse
+    | UserMessageStoredAgentEventResponse
+    | RetrievalCompletedAgentEventResponse
+    | GraphInvokedAgentEventResponse
+    | AnswerComposedAgentEventResponse
+    | RunCancelRequestedAgentEventResponse
+    | RunCancelledAgentEventResponse
+    | RunFailedAgentEventResponse,
+    Field(discriminator="event_type"),
+]

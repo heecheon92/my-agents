@@ -49,6 +49,7 @@ from my_agents.api.conversations.serializers import (
     completed_run_response,
     knowledge_base_selection_payload,
 )
+from my_agents.api.errors import APIErrorCode, APIHTTPException
 from my_agents.conversations.models import (
     AgentEventType,
     AgentRunModel,
@@ -112,7 +113,11 @@ def complete_sync_conversation_run(
             conversation_id=conversation_id,
             error_type=type(exc).__name__,
         )
-        raise HTTPException(status_code=503, detail="conversation run failed") from exc
+        raise APIHTTPException(
+            status_code=503,
+            detail="conversation run failed",
+            code=APIErrorCode.CONVERSATION_RUN_FAILED,
+        ) from exc
     except Exception as exc:
         fail_active_run(
             db=db,
@@ -120,7 +125,11 @@ def complete_sync_conversation_run(
             conversation_id=conversation_id,
             error_type=type(exc).__name__,
         )
-        raise HTTPException(status_code=502, detail="conversation run failed") from exc
+        raise APIHTTPException(
+            status_code=502,
+            detail="conversation run failed",
+            code=APIErrorCode.CONVERSATION_RUN_FAILED,
+        ) from exc
 
 
 def _complete_sync_conversation_run(
@@ -201,7 +210,11 @@ def _complete_sync_conversation_run(
             memory_source_snapshot=memory_source_snapshot,
         )
         record_run_metric("failed")
-        raise HTTPException(status_code=status_code, detail="conversation run failed") from original
+        raise APIHTTPException(
+            status_code=status_code,
+            detail="conversation run failed",
+            code=APIErrorCode.CONVERSATION_RUN_FAILED,
+        ) from original
     except ResponseProviderConfigurationError as exc:
         persist_failed_run(
             db=db,
@@ -210,7 +223,11 @@ def _complete_sync_conversation_run(
             error_type=type(exc).__name__,
         )
         record_run_metric("failed")
-        raise HTTPException(status_code=503, detail="conversation run failed") from exc
+        raise APIHTTPException(
+            status_code=503,
+            detail="conversation run failed",
+            code=APIErrorCode.CONVERSATION_RUN_FAILED,
+        ) from exc
     except Exception as exc:
         persist_failed_run(
             db=db,
@@ -219,7 +236,11 @@ def _complete_sync_conversation_run(
             error_type=type(exc).__name__,
         )
         record_run_metric("failed")
-        raise HTTPException(status_code=502, detail="conversation run failed") from exc
+        raise APIHTTPException(
+            status_code=502,
+            detail="conversation run failed",
+            code=APIErrorCode.CONVERSATION_RUN_FAILED,
+        ) from exc
 
     retrieval_context = retrieval_context_from_graph_state(result)
     retrieval_route = retrieval_context.decision.route
@@ -524,9 +545,10 @@ def assert_no_active_run(db: Session, conversation_id: str) -> None:
         .limit(1)
     )
     if active_run is not None:
-        raise HTTPException(
+        raise APIHTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="conversation run already active",
+            code=APIErrorCode.CONVERSATION_RUN_ALREADY_ACTIVE,
         )
 
 

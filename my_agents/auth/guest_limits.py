@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from fastapi import HTTPException, status
+from fastapi import status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from my_agents.api.errors import APIErrorCode, APIHTTPException
 from my_agents.auth.contracts import Principal
 from my_agents.auth.models import UserModel
 from my_agents.conversations.models import ConversationModel, MessageModel, MessageRole
@@ -26,7 +27,11 @@ def assert_guest_access_active(db: Session, principal: Principal) -> None:
         or user.guest_expires_at is None
         or _as_utc(user.guest_expires_at) <= datetime.now(UTC)
     ):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="guest access expired")
+        raise APIHTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="guest access expired",
+            code=APIErrorCode.GUEST_ACCESS_EXPIRED,
+        )
 
 
 def assert_guest_can_create_conversation(
@@ -44,9 +49,10 @@ def assert_guest_can_create_conversation(
         .where(ConversationModel.owner_user_id == principal.user_id)
     )
     if (count or 0) >= settings.guest_max_conversations:
-        raise HTTPException(
+        raise APIHTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="guest conversation limit reached",
+            code=APIErrorCode.GUEST_CONVERSATION_LIMIT_REACHED,
         )
 
 
@@ -69,9 +75,10 @@ def assert_guest_can_send_prompt(
         )
     )
     if (count or 0) >= settings.guest_max_prompts:
-        raise HTTPException(
+        raise APIHTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="guest prompt limit reached",
+            code=APIErrorCode.GUEST_PROMPT_LIMIT_REACHED,
         )
 
 
@@ -90,9 +97,10 @@ def assert_guest_can_create_document(
         .where(DocumentModel.owner_user_id == principal.user_id)
     )
     if (count or 0) >= settings.guest_max_document_uploads:
-        raise HTTPException(
+        raise APIHTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="guest document limit reached",
+            code=APIErrorCode.GUEST_DOCUMENT_LIMIT_REACHED,
         )
 
 

@@ -1,6 +1,6 @@
 ---
 created: 2026-05-17
-updated: 2026-05-17
+updated: 2026-08-09
 status: active
 topics:
   - sqlalchemy
@@ -10,6 +10,8 @@ topics:
 related_code:
   - my_agents/persistence/database.py
   - my_agents/persistence/models.py
+  - scripts/dev_pgvector.py
+  - .vscode/tasks.json
   - alembic/env.py
   - alembic/versions/20260517_0001_initial_service_schema.py
 ---
@@ -56,6 +58,21 @@ uv run alembic upgrade head
 
 Neon may show a default query that creates `playing_with_neon`. That table is unrelated to this app. For this project, the schema should come from Alembic migrations.
 
+## Debugging a model/schema mismatch
+
+An error such as `psycopg.errors.UndefinedColumn` means the running Python model and the selected database schema disagree. In the 2026-08-09 local case, the model selected `source_knowledge_base_name_snapshot`, but the pgvector database was still at revision `20260615_0028`; revision `20260624_0029` adds that column.
+
+The important diagnostic sequence is:
+
+1. Identify the database used by the running process. A VS Code launch profile may override `.env`.
+2. Compare the database's current Alembic revision with the repository head.
+3. Run the missing migration against that exact database.
+4. Retry the endpoint; changing frontend rendering cannot repair a missing backend column.
+
+`create_all()` is not a substitute here: it creates missing tables but does not evolve an existing table by adding newly mapped columns.
+
+The VS Code pgvector task previously invoked `uv` through a non-interactive task shell. A GUI-launched VS Code process may not inherit the Nix/Homebrew shell path, producing `command not found: uv` before migrations run. Making the task execute the Python extension's selected interpreter, then using `sys.executable` for nested Alembic and pytest commands, keeps the whole operation in one known environment without changing user dotfiles.
+
 ## How this project tests migrations safely
 
 The default migration smoke test creates a temporary SQLite database, runs Alembic to
@@ -82,4 +99,5 @@ Answer these before an interview:
 
 ## Revision history
 
+- 2026-08-09: Added the stale-schema and GUI task PATH failure investigation and interpreter-reuse fix.
 - 2026-05-17: Created after adding Alembic/Postgres readiness for the product chat service.

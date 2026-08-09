@@ -12,6 +12,7 @@ from my_agents.api.assistant import GraphRunner, assistant_router, get_graph_run
 from my_agents.api.auth import auth_router
 from my_agents.api.conversations import conversations_router
 from my_agents.api.documents import documents_router
+from my_agents.api.errors import APIErrorResponse, install_api_error_handlers
 from my_agents.api.groups import group_invitations_router, groups_router
 from my_agents.api.health import health_router
 from my_agents.api.knowledge_bases import knowledge_bases_router
@@ -27,7 +28,21 @@ def create_app() -> FastAPI:
     settings = get_settings()
     configure_operational_logging()
     configure_debug_logging(settings)
-    app = FastAPI(title="my-agents", version="0.1.0")
+    app = FastAPI(
+        title="my-agents",
+        version="0.1.0",
+        responses={
+            "default": {
+                "model": APIErrorResponse,
+                "description": "Machine-readable error with backward-compatible detail.",
+            },
+            422: {
+                "model": APIErrorResponse,
+                "description": "Request validation failed.",
+            },
+        },
+    )
+    install_api_error_handlers(app)
     _log_runtime_configuration(settings)
     _install_deployment_request_logging(app)
     if settings.metrics_enabled:

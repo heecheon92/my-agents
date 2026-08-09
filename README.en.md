@@ -85,6 +85,7 @@ The production runtime consists of one assistant orchestration flow with a retri
 ## Product capabilities
 
 - Email/password signup, verification, sessions, CSRF, password reset, and gated guest access
+- Public `GET /auth/guest/policy` data for the deployed guest TTLs, usage limits, and code-delivery mode
 - Invite-based group membership, manager roster, and personal-to-group publish approval/copy workflows
 - Personal, group, and administrator-provided reference knowledge bases with document-level authorization
 - PDF, Markdown, plain text, `.xlsx`, `.pptx`, and `.docx` upload and ingestion
@@ -153,7 +154,16 @@ curl -X POST http://127.0.0.1:8000/assistant/chat \
 
 For real OpenAI responses, set `OPENAI_API_KEY` in `.env` and use `MY_AGENTS_RESPONSE_MODE=openai`. Application code uses the `langchain-openai` / `ChatOpenAI` boundary rather than direct provider calls.
 
+The VS Code `FastAPI: uvicorn main:app (local pgvector)` profile runs its pre-launch migration with the interpreter selected by the Python extension. It does not depend on a shell command finding `uv` in a GUI-launched VS Code process, so select this repository's `.venv` interpreter before using the profile.
+
 OpenAPI is available from a running server at `http://127.0.0.1:8000/openapi.json`. See the [frontend demo runbook](./docs/product-chat-service/en/10-frontend-demo-runbook.md) for the full product flow and PostgreSQL setup.
+
+### Frontend API contracts
+
+- HTTP and validation errors return a stable machine-readable `code` alongside the existing `detail`. UIs should localize from `code` and treat `detail` as diagnostic copy.
+- `GET /conversations/{conversation_id}/runs/{run_id}/events` is a closed OpenAPI union discriminated by `event_type`. Persisted event types are `run_started`, `user_message_stored`, `retrieval_completed`, `graph_invoked`, `answer_composed`, `run_cancel_requested`, `run_cancelled`, and `run_failed`.
+- Persisted event payloads and `agent_trace` expose only fields accepted by event- and stage-specific allowlist schemas. `answer_delta`, `run_completed`, and `run_error` are stream-only SSE events and are not members of the persisted-event union.
+- Async ingestion commits observable progress as `queued=0`, `claimed=1`, `chunking=15`, `embedding=45`, optional `indexing=70`, `entities=85`, `metadata=95`, and `completed=100`.
 
 ## Verification
 
@@ -164,14 +174,14 @@ uv run ruff format --check .
 git diff --check
 ```
 
-On 2026-08-05, the full suite on this checkout reports **464 passed, 2 skipped** without requiring real credentials.
+On 2026-08-09, the full suite on this checkout reports **474 passed, 2 skipped** without requiring real credentials.
 
 ## Security and privacy boundaries
 
 - Real secrets and local databases are not committed. `.env.example` contains placeholders only.
 - Public-release checks cover both the current tree and the full Git history; any exposed credential must be revoked and rotated even if its file was later deleted.
 - Retrieval permissions are enforced in application/service code, not through prompt instructions.
-- Metric labels and default agent events exclude raw prompts, document text, emails, and user/document IDs.
+- Metric labels and default agent events exclude raw prompts, document text, emails, credentials, and provider traces. The event response boundary allowlists nested `agent_trace.evidence` fields as well.
 - System-knowledge management is limited to privileged administrative account types, with no public role-mutation API.
 - The public demo assumes users will not upload sensitive, regulated, or irreplaceable documents.
 

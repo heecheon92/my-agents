@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, Upl
 from sqlalchemy import delete, or_, select
 from sqlalchemy.orm import Session
 
+from my_agents.api.errors import APIHTTPException, document_upload_error_code
 from my_agents.auth.contracts import Principal
 from my_agents.auth.dependencies import get_current_principal
 from my_agents.auth.guest_limits import assert_guest_access_active, assert_guest_can_create_document
@@ -238,7 +239,14 @@ async def upload_document_in_knowledge_base(
             else status.HTTP_400_BAD_REQUEST
         )
         timing.emit(outcome="failed", error_type=exc.__class__.__name__)
-        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+        raise APIHTTPException(
+            status_code=status_code,
+            detail=str(exc),
+            code=document_upload_error_code(
+                str(exc),
+                unsupported_media_type=isinstance(exc, UnsupportedDocumentUploadError),
+            ),
+        ) from exc
     source_filename = file.filename.strip() if file.filename else None
     with timing.phase("document.persist"):
         document = DocumentModel(

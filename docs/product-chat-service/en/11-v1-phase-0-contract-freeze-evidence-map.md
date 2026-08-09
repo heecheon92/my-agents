@@ -81,7 +81,8 @@ Generated from `MY_AGENTS_ENV_FILE= MY_AGENTS_RESPONSE_MODE=deterministic my_age
 | `POST` | `/auth/password-reset/request` | `PasswordResetRequest` | `202 AcceptedResponse` | non-enumerating reset request |
 | `POST` | `/auth/password-reset/confirm` | `PasswordResetConfirmRequest` | `204` | password reset and session revocation |
 | `POST` | `/auth/guest/request` | `GuestAccessRequest` | `200 AcceptedResponse` | env-gated public-demo guest request acknowledgement |
-| `POST` | `/auth/guest/login` | `GuestLoginRequest` | `200 LoginResponse` plus session cookie | operator-issued guest-code redemption |
+| `GET` | `/auth/guest/policy` | none | `200 GuestAccessPolicyResponse` | unauthenticated effective guest availability, delivery mode, TTL, and usage limits |
+| `POST` | `/auth/guest/login` | `GuestLoginRequest` | `200 LoginResponse` plus session cookie | one-time guest-code redemption |
 | `GET` | `/auth/dev/outbox` | none | `200 array[DevAuthEmailMessageResponse]` | local deterministic smoke only; not product BFF allowlist |
 | `POST` | `/groups` | `GroupCreateRequest` | `201 GroupResponse` | group scope creation |
 | `GET` | `/groups` | none | `200 array[GroupResponse]` | group list for current user |

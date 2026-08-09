@@ -55,6 +55,7 @@ def cancel_run(
 @router.get(
     "/{conversation_id}/runs/{run_id}/events",
     response_model=list[AgentEventResponse],
+    response_model_exclude_none=True,
 )
 def list_run_events(
     conversation_id: str,

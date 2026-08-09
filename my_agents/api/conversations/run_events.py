@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 from langchain_core.messages import BaseMessage
+from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -17,7 +18,30 @@ from my_agents.api.conversations.agent_trace import (
 )
 from my_agents.api.conversations.serializers import knowledge_base_selection_payload
 from my_agents.conversations.models import AgentEventModel, AgentEventType
-from my_agents.conversations.schemas import AgentEventResponse, ConversationClarificationRequest
+from my_agents.conversations.schemas import (
+    AgentEventPayload,
+    AgentEventResponse,
+    AgentTraceEvidence,
+    AgentTraceStep,
+    AgentTraceText,
+    AnswerComposedAgentEventResponse,
+    AnswerComposedEventPayload,
+    ConversationClarificationRequest,
+    GraphInvokedAgentEventResponse,
+    GraphInvokedEventPayload,
+    RetrievalCompletedAgentEventResponse,
+    RetrievalCompletedEventPayload,
+    RunCancelledAgentEventResponse,
+    RunCancelledEventPayload,
+    RunCancelRequestedAgentEventResponse,
+    RunCancelRequestedEventPayload,
+    RunFailedAgentEventResponse,
+    RunFailedEventPayload,
+    RunStartedAgentEventResponse,
+    RunStartedEventPayload,
+    UserMessageStoredAgentEventResponse,
+    UserMessageStoredEventPayload,
+)
 from my_agents.knowledge.auth import KnowledgeBaseSelectionContext
 from my_agents.knowledge.retrieval import RetrievedChunk
 from my_agents.knowledge.routing import AnswerMode, RetrievalRoutingDecision
@@ -254,13 +278,109 @@ def event_model(
 
 
 def event_response(event: AgentEventModel) -> AgentEventResponse:
-    return AgentEventResponse(
-        id=event.id,
-        run_id=event.run_id,
-        sequence=event.sequence,
-        event_type=event.event_type,
-        payload=json.loads(event.payload_json),
-    )
+    """Return the closed, display-safe contract for one persisted event.
+
+    Stored payloads are deliberately filtered through an event-specific allowlist.
+    This keeps historical or accidentally persisted internal keys away from clients.
+    """
+    event_type = AgentEventType(event.event_type)
+    raw_payload = json.loads(event.payload_json)
+    common = {"id": event.id, "run_id": event.run_id, "sequence": event.sequence}
+    match event_type:
+        case AgentEventType.RUN_STARTED:
+            return RunStartedAgentEventResponse(
+                **common,
+                event_type=event_type.value,
+                payload=_safe_event_payload(RunStartedEventPayload, raw_payload),
+            )
+        case AgentEventType.USER_MESSAGE_STORED:
+            return UserMessageStoredAgentEventResponse(
+                **common,
+                event_type=event_type.value,
+                payload=_safe_event_payload(UserMessageStoredEventPayload, raw_payload),
+            )
+        case AgentEventType.RETRIEVAL_COMPLETED:
+            return RetrievalCompletedAgentEventResponse(
+                **common,
+                event_type=event_type.value,
+                payload=_safe_event_payload(RetrievalCompletedEventPayload, raw_payload),
+            )
+        case AgentEventType.GRAPH_INVOKED:
+            return GraphInvokedAgentEventResponse(
+                **common,
+                event_type=event_type.value,
+                payload=_safe_event_payload(GraphInvokedEventPayload, raw_payload),
+            )
+        case AgentEventType.ANSWER_COMPOSED:
+            return AnswerComposedAgentEventResponse(
+                **common,
+                event_type=event_type.value,
+                payload=_safe_event_payload(AnswerComposedEventPayload, raw_payload),
+            )
+        case AgentEventType.RUN_CANCEL_REQUESTED:
+            return RunCancelRequestedAgentEventResponse(
+                **common,
+                event_type=event_type.value,
+                payload=_safe_event_payload(RunCancelRequestedEventPayload, raw_payload),
+            )
+        case AgentEventType.RUN_CANCELLED:
+            return RunCancelledAgentEventResponse(
+                **common,
+                event_type=event_type.value,
+                payload=_safe_event_payload(RunCancelledEventPayload, raw_payload),
+            )
+        case AgentEventType.RUN_FAILED:
+            return RunFailedAgentEventResponse(
+                **common,
+                event_type=event_type.value,
+                payload=_safe_event_payload(RunFailedEventPayload, raw_payload),
+            )
+    raise AssertionError(f"unhandled agent event type: {event_type}")
+
+
+def _safe_event_payload[PayloadT: AgentEventPayload](
+    payload_type: type[PayloadT],
+    raw_payload: object,
+) -> PayloadT:
+    if not isinstance(raw_payload, dict):
+        raw_payload = {}
+    allowed_fields = payload_type.model_fields.keys()
+    filtered = {key: value for key, value in raw_payload.items() if key in allowed_fields}
+    if "agent_trace" in filtered:
+        filtered["agent_trace"] = _safe_agent_trace(filtered["agent_trace"])
+    return payload_type.model_validate(filtered)
+
+
+def _safe_agent_trace(raw_trace: object) -> list[AgentTraceStep]:
+    if not isinstance(raw_trace, list):
+        return []
+    safe_steps: list[AgentTraceStep] = []
+    for raw_step in raw_trace:
+        if not isinstance(raw_step, dict):
+            continue
+        filtered_step = {
+            key: value for key, value in raw_step.items() if key in AgentTraceStep.model_fields
+        }
+        raw_evidence = filtered_step.get("evidence")
+        if isinstance(raw_evidence, dict):
+            filtered_step["evidence"] = {
+                key: value
+                for key, value in raw_evidence.items()
+                if key in AgentTraceEvidence.model_fields
+            }
+        for text_field in ("title", "description"):
+            raw_text = filtered_step.get(text_field)
+            if isinstance(raw_text, dict):
+                filtered_step[text_field] = {
+                    key: value
+                    for key, value in raw_text.items()
+                    if key in AgentTraceText.model_fields
+                }
+        try:
+            safe_steps.append(AgentTraceStep.model_validate(filtered_step))
+        except ValidationError:
+            continue
+    return safe_steps
 
 
 def sse_event(event_name: str, payload: dict) -> str:

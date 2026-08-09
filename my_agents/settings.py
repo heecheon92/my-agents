@@ -238,19 +238,19 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("MY_AGENTS_GUEST_ACCESS_TTL_SECONDS"),
     )
     guest_max_conversations: int = Field(
-        default=1,
+        default=3,
         ge=1,
         le=100,
         validation_alias=AliasChoices("MY_AGENTS_GUEST_MAX_CONVERSATIONS"),
     )
     guest_max_prompts: int = Field(
-        default=5,
+        default=20,
         ge=1,
         le=1000,
         validation_alias=AliasChoices("MY_AGENTS_GUEST_MAX_PROMPTS"),
     )
     guest_max_document_uploads: int = Field(
-        default=3,
+        default=5,
         ge=1,
         le=100,
         validation_alias=AliasChoices(

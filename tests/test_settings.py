@@ -262,9 +262,9 @@ def test_service_foundation_settings_have_safe_defaults(
     assert settings.guest_code_auto_approval is False
     assert settings.guest_code_ttl_seconds == 900
     assert settings.guest_access_ttl_seconds == 86400
-    assert settings.guest_max_conversations == 1
-    assert settings.guest_max_prompts == 5
-    assert settings.guest_max_document_uploads == 3
+    assert settings.guest_max_conversations == 3
+    assert settings.guest_max_prompts == 20
+    assert settings.guest_max_document_uploads == 5
     assert settings.active_run_stale_after_seconds == 120
 
 

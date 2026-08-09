@@ -655,7 +655,10 @@ def test_delete_conversation_rejects_active_run(monkeypatch) -> None:  # noqa: A
     response = client.delete(f"/conversations/{conversation_id}")
 
     assert response.status_code == 409
-    assert response.json() == {"detail": "conversation run already active"}
+    assert response.json() == {
+        "detail": "conversation run already active",
+        "code": "conversation_run_already_active",
+    }
     assert client.get(f"/conversations/{conversation_id}").status_code == 200
     assert _row_count(ConversationModel) == 1
     assert _row_count(AgentRunModel) == 1
@@ -738,7 +741,10 @@ def test_assistant_message_replay_rejects_non_assistant_message(monkeypatch) -> 
     )
 
     assert response.status_code == 409
-    assert response.json() == {"detail": "message is not an assistant message"}
+    assert response.json() == {
+        "detail": "message is not an assistant message",
+        "code": "conflict",
+    }
 
 
 def test_assistant_message_replay_hides_missing_or_foreign_message(monkeypatch) -> None:  # noqa: ANN001
@@ -761,9 +767,9 @@ def test_assistant_message_replay_hides_missing_or_foreign_message(monkeypatch) 
     )
 
     assert missing.status_code == 404
-    assert missing.json() == {"detail": "message not found"}
+    assert missing.json() == {"detail": "message not found", "code": "resource_not_found"}
     assert foreign.status_code == 404
-    assert foreign.json() == {"detail": "message not found"}
+    assert foreign.json() == {"detail": "message not found", "code": "resource_not_found"}
 
 
 def test_assistant_message_replay_prunes_later_transcript_and_regenerates(monkeypatch) -> None:  # noqa: ANN001
@@ -868,7 +874,10 @@ def test_assistant_message_replay_failure_preserves_existing_transcript(monkeypa
     response = client.post(f"/conversations/{conversation_id}/messages/{first_assistant_id}/replay")
 
     assert response.status_code == 502
-    assert response.json() == {"detail": "conversation run failed"}
+    assert response.json() == {
+        "detail": "conversation run failed",
+        "code": "conversation_run_failed",
+    }
     transcript = client.get(f"/conversations/{conversation_id}/messages")
     assert [(message["role"], message["content"]) for message in transcript.json()] == [
         ("user", "First"),
@@ -1447,7 +1456,10 @@ def test_failed_conversation_run_is_persisted_with_redacted_event(monkeypatch) -
     runs = client.get(f"/conversations/{conversation_id}/runs")
 
     assert response.status_code == 502
-    assert response.json() == {"detail": "conversation run failed"}
+    assert response.json() == {
+        "detail": "conversation run failed",
+        "code": "conversation_run_failed",
+    }
     assert runs.status_code == 200
     failed_run = runs.json()[0]
     assert failed_run["status"] == "failed"
@@ -1498,7 +1510,10 @@ def test_active_run_rejects_parallel_conversation_run(monkeypatch) -> None:  # n
     response = client.post(f"/conversations/{conversation_id}/runs", json={"message": "Second"})
 
     assert response.status_code == 409
-    assert response.json() == {"detail": "conversation run already active"}
+    assert response.json() == {
+        "detail": "conversation run already active",
+        "code": "conversation_run_already_active",
+    }
     assert graph.calls == []
 
 
@@ -1666,7 +1681,10 @@ def test_sync_post_start_failure_terminalizes_run(monkeypatch) -> None:  # noqa:
     )
 
     assert failed.status_code == 502
-    assert failed.json() == {"detail": "conversation run failed"}
+    assert failed.json() == {
+        "detail": "conversation run failed",
+        "code": "conversation_run_failed",
+    }
     failed_run = client.get(f"/conversations/{conversation_id}/runs").json()[0]
     assert failed_run["status"] == "failed"
     events = client.get(f"/conversations/{conversation_id}/runs/{failed_run['run_id']}/events")

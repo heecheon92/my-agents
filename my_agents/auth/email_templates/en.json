@@ -9,7 +9,7 @@
   },
   "guest_access_code": {
     "subject": "Your my-agents guest access code",
-    "body": "Your my-agents guest demo access code is:\n\n{code}\n\nThis one-time code expires at {expires_at}.\nAfter login, the guest session is limited to 24 hours, one conversation, five prompts, and three document uploads.\n\nIf you did not request guest access, you can ignore this email."
+    "body": "Your my-agents guest demo access code is:\n\n{code}\n\nThis one-time code expires at {expires_at}.\nCurrent guest session and usage limits are shown in the product.\n\nIf you did not request guest access, you can ignore this email."
   },
   "group_invitation": {
     "subject": "You're invited to a my-agents group",

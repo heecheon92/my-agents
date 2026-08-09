@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from my_agents.api.errors import APIErrorCode, APIHTTPException
 from my_agents.auth.abuse import AuthAbuseProtector, AuthRateLimitExceededError
 from my_agents.auth.contracts import (
     Principal,
@@ -29,6 +30,7 @@ from my_agents.auth.schemas import (
     AccountNicknameUpdateRequest,
     AccountPasswordUpdateRequest,
     DevAuthEmailMessageResponse,
+    GuestAccessPolicyResponse,
     GuestAccessRequest,
     GuestLoginRequest,
     LoginRequest,
@@ -59,6 +61,24 @@ from my_agents.settings import Settings, get_settings
 logger = logging.getLogger(__name__)
 
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+@auth_router.get("/guest/policy", response_model=GuestAccessPolicyResponse)
+def guest_access_policy(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> GuestAccessPolicyResponse:
+    """Return the active, public-safe guest access contract without authentication."""
+    return GuestAccessPolicyResponse(
+        enabled=settings.guest_access_enabled,
+        code_delivery_mode=(
+            "automatic_email" if settings.guest_code_auto_approval else "manual_approval"
+        ),
+        code_ttl_seconds=settings.guest_code_ttl_seconds,
+        session_ttl_seconds=settings.guest_access_ttl_seconds,
+        max_conversations=settings.guest_max_conversations,
+        max_prompts=settings.guest_max_prompts,
+        max_document_uploads=settings.guest_max_document_uploads,
+    )
 
 
 @auth_router.post(
@@ -288,9 +308,10 @@ def login(
     except InvalidCredentialsError as exc:
         abuse_guard.record_attempt(action="login_email", identifier=email_identifier)
         abuse_guard.record_attempt(action="login_client", identifier=client_identifier)
-        raise HTTPException(
+        raise APIHTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="invalid email or password",
+            code=APIErrorCode.INVALID_CREDENTIALS,
         ) from exc
     except UnverifiedEmailError as exc:
         raise HTTPException(

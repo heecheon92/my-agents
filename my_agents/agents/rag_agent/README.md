@@ -52,7 +52,8 @@ sequenceDiagram
 - `retrieved_context`는 이미 권한 확인이 끝난 prompt-safe compact context입니다.
 - `clarification_required` 또는 required retrieval의 insufficient evidence는 `general_assistant` graph를 answer node 전에 멈추게 합니다.
 - `completed`, `skipped`, `waiting`은 frontend trace state이며 hidden chain-of-thought가 아닙니다.
-- Evidence는 count, label, boolean 중심입니다. Raw prompt, snippet, provider error, message content는 verifier가 거부합니다.
+- `agent_trace`의 stage ID, event type, status, 한/영 copy, evidence field는 stable typed API contract입니다.
+- Evidence는 allowlist된 route/mode, count, bounded label, boolean 중심입니다. Raw prompt, snippet, provider error, message content는 verifier와 API response serializer가 거부합니다.
 
 ## Capability / boundary metadata
 

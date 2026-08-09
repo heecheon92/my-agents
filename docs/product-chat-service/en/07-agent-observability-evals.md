@@ -32,13 +32,21 @@ those rows from:
 GET /conversations/{conversation_id}/runs/{run_id}/events
 ```
 
-The current events are intentionally high-level:
+The persisted endpoint is a closed discriminated OpenAPI union. Its complete
+`event_type` vocabulary is:
 
 1. `run_started`
 2. `user_message_stored`
 3. `retrieval_completed`
 4. `graph_invoked`
 5. `answer_composed`
+6. `run_cancel_requested`
+7. `run_cancelled`
+8. `run_failed`
+
+`answer_delta`, `run_completed`, and `run_error` belong only to the SSE streaming
+contract. They are not persisted `AgentEventModel` types and must not be added to a
+client's `GET .../events` enum.
 
 They are enough to show a visible service surface: the UI can say that the backend opened a run, stored
 the message, made a retrieval-routing decision, retrieved authorized context when needed,
@@ -46,7 +54,24 @@ invoked the graph when appropriate, and composed a cited or general answer.
 If graph invocation fails, the service stores a failed run and emits `run_failed` with only
 safe error metadata before returning a client-safe error response. If a streaming run is
 cooperatively cancelled, the service emits `run_cancel_requested`/`run_cancelled` without
-persisting partial assistant text.
+persisting partial assistant text. Every response variant has its own typed payload
+model, and `AgentEventResponse` uses `event_type` as its OpenAPI discriminator.
+
+The stable `agent_trace` shape is:
+
+```json
+{
+  "id": "query_cartographer|source_warden|candidate_scouts|evidence_judge|context_curator|assistant_graph|answer_composer",
+  "event_type": "retrieval_completed|graph_invoked|answer_composed",
+  "status": "completed|skipped|waiting|failed",
+  "title": { "en": "...", "ko": "..." },
+  "description": { "en": "...", "ko": "..." },
+  "evidence": { "authorized_context_count": 2 }
+}
+```
+
+`evidence` is not an arbitrary object in the public schema. It is a closed allowlist of
+routes, modes, stage labels, counts, bounded labels, and booleans.
 
 ## Redaction boundary
 
@@ -61,7 +86,11 @@ flowchart LR
     Events --> UI[Frontend activity timeline]
 ```
 
-Citations remain the explicit provenance channel for document snippets. Events explain
+Citations remain the explicit provenance channel for document snippets. At response
+serialization time, stored payload JSON is filtered through the matching event model;
+the same boundary recursively filters trace steps, localized text, and evidence. Unknown
+or accidentally stored keys such as `prompt`, `provider_trace`, `credentials`, or
+chain-of-thought fields therefore cannot reach this endpoint. Events explain
 what happened; citations explain which authorized knowledge supported the answer.
 
 ## Internal Prometheus timing metrics
@@ -169,8 +198,12 @@ claims testable: grounding, permission safety, redaction, and basic performance 
 `tests/test_conversations_api.py` also verifies that failed graph invocation stores
 `status=failed` plus a redacted `run_failed` event.
 
+`tests/test_agent_event_contract.py` verifies the OpenAPI-facing serializer strips
+uncontracted top-level and nested evidence fields before returning persisted events.
+
 ## Revision history
 
+- 2026-08-09: Froze the persisted event vocabulary as a discriminated OpenAPI union and added event/stage-specific response allowlists.
 - 2026-06-17: Added future Fast / Balanced / Thorough retrieval UX quality profile guidance.
 - 2026-06-16: Recorded future Prometheus/Grafana operations metrics and Langfuse/LangSmith LLM observability goals.
 - 2026-06-16: Added opt-in internal Prometheus timing metrics for maintenance and performance-quality analysis.

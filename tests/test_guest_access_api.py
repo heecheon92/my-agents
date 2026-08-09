@@ -69,6 +69,10 @@ def _client(
     monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
     monkeypatch.setenv("MY_AGENTS_SESSION_COOKIE_SECURE", "false")
     monkeypatch.setenv("MY_AGENTS_GUEST_ACCESS_ENABLED", "true" if guest_enabled else "false")
+    # Keep enforcement tests small while production-oriented defaults allow a fuller demo.
+    monkeypatch.setenv("MY_AGENTS_GUEST_MAX_CONVERSATIONS", "1")
+    monkeypatch.setenv("MY_AGENTS_GUEST_MAX_PROMPTS", "5")
+    monkeypatch.setenv("MY_AGENTS_GUEST_MAX_DOCUMENT_UPLOADS", "3")
     app = create_app()
     app.dependency_overrides[get_graph_runner] = lambda: graph or GuestSpyGraph()
     return TestClient(app)
@@ -147,6 +151,44 @@ def test_guest_access_is_disabled_by_default(monkeypatch) -> None:  # noqa: ANN0
     assert code_response.json()["detail"] == "guest access disabled"
     assert login_response.status_code == 403
     assert login_response.json()["detail"] == "guest access disabled"
+
+
+def test_guest_policy_is_public_and_uses_runtime_settings(monkeypatch) -> None:  # noqa: ANN001
+    monkeypatch.setenv("MY_AGENTS_GUEST_ACCESS_ENABLED", "true")
+    monkeypatch.setenv("MY_AGENTS_GUEST_CODE_AUTO_APPROVAL", "true")
+    monkeypatch.setenv("MY_AGENTS_GUEST_CODE_TTL_SECONDS", "600")
+    monkeypatch.setenv("MY_AGENTS_GUEST_ACCESS_TTL_SECONDS", "43200")
+    monkeypatch.setenv("MY_AGENTS_GUEST_MAX_CONVERSATIONS", "4")
+    monkeypatch.setenv("MY_AGENTS_GUEST_MAX_PROMPTS", "24")
+    monkeypatch.setenv("MY_AGENTS_GUEST_MAX_DOCUMENT_UPLOADS", "6")
+    client = TestClient(create_app())
+
+    response = client.get("/auth/guest/policy")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "enabled": True,
+        "code_delivery_mode": "automatic_email",
+        "code_ttl_seconds": 600,
+        "session_ttl_seconds": 43200,
+        "max_conversations": 4,
+        "max_prompts": 24,
+        "max_document_uploads": 6,
+    }
+
+
+def test_guest_policy_reports_manual_approval_when_auto_approval_is_off(
+    monkeypatch,
+) -> None:  # noqa: ANN001
+    monkeypatch.setenv("MY_AGENTS_GUEST_ACCESS_ENABLED", "false")
+    monkeypatch.setenv("MY_AGENTS_GUEST_CODE_AUTO_APPROVAL", "false")
+    client = TestClient(create_app())
+
+    response = client.get("/auth/guest/policy")
+
+    assert response.status_code == 200
+    assert response.json()["enabled"] is False
+    assert response.json()["code_delivery_mode"] == "manual_approval"
 
 
 def test_guest_request_records_email_without_returning_code(monkeypatch) -> None:  # noqa: ANN001
@@ -259,6 +301,7 @@ def test_guest_prompt_cap_applies_to_chat_runs(monkeypatch) -> None:  # noqa: AN
     assert [response.status_code for response in responses] == [200, 200, 200, 200, 200]
     assert limited.status_code == 429
     assert limited.json()["detail"] == "guest prompt limit reached"
+    assert limited.json()["code"] == "guest_prompt_limit_reached"
 
 
 def test_guest_interrupted_prompt_counts_toward_prompt_cap(monkeypatch) -> None:  # noqa: ANN001

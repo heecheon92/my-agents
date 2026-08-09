@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from my_agents.api.errors import APIErrorCode, APIHTTPException
 from my_agents.auth.contracts import Principal
 from my_agents.auth.dependencies import get_configured_auth_email_sender, get_current_principal
 from my_agents.auth.email import AuthEmailSender
@@ -795,9 +796,10 @@ def _get_publish_request_or_404(
 
 def _require_pending_publish_request(publish_request: KnowledgePublishRequestModel) -> None:
     if publish_request.status != KnowledgePublishRequestStatus.PENDING.value:
-        raise HTTPException(
+        raise APIHTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="publish request already reviewed",
+            code=APIErrorCode.PUBLISH_REQUEST_ALREADY_REVIEWED,
         )
 
 

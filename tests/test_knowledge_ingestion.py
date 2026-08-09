@@ -28,7 +28,11 @@ from my_agents.knowledge.extraction import (
     _deterministic_embedding,
     _extract_entity_names,
 )
-from my_agents.knowledge.ingestion_worker import process_pending_extraction_runs_once
+from my_agents.knowledge.ingestion_worker import (
+    claim_next_pending_extraction_run,
+    execute_claimed_extraction_run,
+    process_pending_extraction_runs_once,
+)
 from my_agents.knowledge.metadata_enrichment import (
     DocumentMetadataProfile,
     GeneratedDocumentMetadata,
@@ -839,6 +843,61 @@ def test_async_ingest_can_be_processed_by_external_worker(monkeypatch) -> None: 
     assert completed.status_code == 200
     assert completed.json()["status"] == "completed"
     assert completed.json()["chunk_count"] >= 1
+
+
+def test_external_worker_progress_is_visible_to_independent_polling(monkeypatch, tmp_path) -> None:  # noqa: ANN001
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'app.db'}"
+    monkeypatch.setenv("MY_AGENTS_INGESTION_EXECUTION_MODE", "external_worker")
+    client = _file_client(monkeypatch, tmp_path)
+    _signup_login(client, "progress-worker-owner@example.com")
+    kb_id = _create_personal_knowledge_base(client, "Progress Worker KB")
+    document = _create_document(
+        client,
+        json={
+            "title": "Observable progress",
+            "content": "FastAPI ingestion progress.\n\nLangGraph indexing progress.",
+            "knowledge_base_id": kb_id,
+        },
+    )
+    document_id = document.json()["id"]
+    queued = client.post(f"/documents/{document_id}/ingest/async")
+    run_id = queued.json()["id"]
+
+    claimed_run_id = claim_next_pending_extraction_run(database_url=database_url)
+    claimed = client.get(f"/documents/{document_id}/extraction-runs/{run_id}").json()
+    assert claimed_run_id == run_id
+    assert (claimed["stage"], claimed["progress_percent"]) == ("claimed", 1)
+
+    observed_progress = [1]
+    original_mark_progress = extraction_module.KnowledgeExtractionService._mark_progress
+
+    def mark_and_observe(self, run, *, status, stage, percent):  # noqa: ANN001
+        original_mark_progress(
+            self,
+            run,
+            status=status,
+            stage=stage,
+            percent=percent,
+        )
+        polled = client.get(f"/documents/{document_id}/extraction-runs/{run_id}")
+        assert polled.status_code == 200
+        assert polled.json()["stage"] == stage
+        assert polled.json()["progress_percent"] == percent
+        observed_progress.append(percent)
+
+    monkeypatch.setattr(
+        extraction_module.KnowledgeExtractionService,
+        "_mark_progress",
+        mark_and_observe,
+    )
+
+    result = execute_claimed_extraction_run(database_url=database_url, run_id=run_id)
+    completed = client.get(f"/documents/{document_id}/extraction-runs/{run_id}").json()
+    observed_progress.append(completed["progress_percent"])
+
+    assert result.status == "completed"
+    assert observed_progress == [1, 15, 45, 85, 95, 100]
+    assert observed_progress == sorted(set(observed_progress))
 
 
 def test_async_ingest_persists_failed_status_with_safe_error(monkeypatch) -> None:  # noqa: ANN001

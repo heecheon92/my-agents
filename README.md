@@ -85,6 +85,7 @@ flowchart TD
 ## 주요 기능
 
 - Email/password signup, verification, session, CSRF, password reset, gated guest access
+- 배포 환경의 실제 guest TTL, 사용량 한도, 코드 전달 방식을 제공하는 public `GET /auth/guest/policy`
 - 초대 기반 group membership, manager roster, personal-to-group publish approval/copy workflow
 - 개인, 그룹, 관리자 제공 공통 knowledge base와 document-level authorization
 - PDF, Markdown, plain text, `.xlsx`, `.pptx`, `.docx` upload/ingestion
@@ -153,7 +154,16 @@ curl -X POST http://127.0.0.1:8000/assistant/chat \
 
 실제 OpenAI 응답을 사용하려면 `.env`에 `OPENAI_API_KEY`를 설정하고 `MY_AGENTS_RESPONSE_MODE=openai`를 사용합니다. Application code는 OpenAI를 직접 호출하지 않고 `langchain-openai` / `ChatOpenAI` 경계를 사용합니다.
 
+VS Code의 `FastAPI: uvicorn main:app (local pgvector)` profile은 Python extension에서 선택한 interpreter로 pre-launch migration을 실행합니다. GUI에서 시작한 VS Code의 `PATH`에 `uv`가 없어도 동작하도록 shell command에 의존하지 않으므로, 사용 전에 이 repository의 `.venv` interpreter를 선택하세요.
+
 OpenAPI는 실행 중인 서버의 `http://127.0.0.1:8000/openapi.json`에서 확인할 수 있습니다. 전체 product demo와 Postgres 설정은 [frontend demo runbook](./docs/product-chat-service/ko/10-frontend-demo-runbook.md)을 참고하세요.
+
+### 프론트엔드 API contract
+
+- HTTP/validation 오류는 기존 `detail`과 함께 안정적인 machine-readable `code`를 반환합니다. UI는 `code`를 번역 key로 사용하고 `detail`은 진단용 문구로 취급해야 합니다.
+- `GET /conversations/{conversation_id}/runs/{run_id}/events`는 `event_type` discriminator를 가진 closed OpenAPI union입니다. Persisted event type은 `run_started`, `user_message_stored`, `retrieval_completed`, `graph_invoked`, `answer_composed`, `run_cancel_requested`, `run_cancelled`, `run_failed`입니다.
+- Persisted event payload와 `agent_trace`는 event/stage별 allowlist schema를 통과한 field만 반환합니다. `answer_delta`, `run_completed`, `run_error`는 streaming 전용 SSE event이며 persisted event union에는 포함되지 않습니다.
+- Async ingestion progress는 `queued=0`, `claimed=1`, `chunking=15`, `embedding=45`, optional `indexing=70`, `entities=85`, `metadata=95`, `completed=100`으로 DB에 commit되며 polling endpoint에서 관찰할 수 있습니다.
 
 ## 검증
 
@@ -164,14 +174,14 @@ uv run ruff format --check .
 git diff --check
 ```
 
-2026-08-05 현재 checkout에서 전체 test suite는 **464 passed, 2 skipped**이며 실제 credential을 요구하지 않습니다.
+2026-08-09 현재 checkout에서 전체 test suite는 **474 passed, 2 skipped**이며 실제 credential을 요구하지 않습니다.
 
 ## 보안과 개인정보 경계
 
 - 실제 secret과 local database는 commit하지 않습니다. `.env.example`에는 placeholder만 둡니다.
 - Public-release 검사는 current tree와 Git 전체 history를 모두 대상으로 하며, 발견된 credential은 파일 삭제 여부와 관계없이 폐기·재발급하는 것을 원칙으로 합니다.
 - Retrieval permission은 prompt 지시가 아니라 application/service layer에서 적용합니다.
-- Metrics label과 기본 agent event에는 raw prompt, document text, email, user/document ID를 넣지 않습니다.
+- Metrics label과 기본 agent event에는 raw prompt, document text, email, credential, provider trace를 넣지 않습니다. Event response boundary는 중첩된 `agent_trace.evidence`까지 allowlist로 filter합니다.
 - System knowledge 관리 권한은 privileged administrative account type으로 제한하며 public role-mutation API를 제공하지 않습니다.
 - 공개 데모에는 민감하거나 규제 대상이거나 대체 불가능한 문서를 업로드하지 않는 것을 전제로 합니다.
 

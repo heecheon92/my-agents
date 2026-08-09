@@ -11,6 +11,7 @@ from my_agents.auth.contracts import UserType
 
 AuthEmailLanguage = Literal["ko", "en"]
 AccountApprovalStatus = Literal["approved", "pending", "rejected"]
+GuestCodeDeliveryMode = Literal["automatic_email", "manual_approval"]
 
 
 class SignupRequest(BaseModel):
@@ -176,6 +177,20 @@ class AcceptedResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     status: str = "accepted"
+
+
+class GuestAccessPolicyResponse(BaseModel):
+    """Public, runtime-derived guest access policy for honest UI copy."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool
+    code_delivery_mode: GuestCodeDeliveryMode
+    code_ttl_seconds: int = Field(ge=60)
+    session_ttl_seconds: int = Field(ge=60)
+    max_conversations: int = Field(ge=1)
+    max_prompts: int = Field(ge=1)
+    max_document_uploads: int = Field(ge=1)
 
 
 class DevAuthEmailMessageResponse(BaseModel):

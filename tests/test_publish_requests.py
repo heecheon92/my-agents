@@ -435,6 +435,7 @@ def test_requester_can_cancel_pending_document_publish_request_and_request_again
     assert second_request.json()["id"] != request_id
     approve_cancelled = owner.post(f"/groups/{group_id}/publish-requests/{request_id}/approve")
     assert approve_cancelled.status_code == 409
+    assert approve_cancelled.json()["code"] == "publish_request_already_reviewed"
 
 
 def test_requester_can_cancel_pending_whole_kb_publish_request_and_request_again(

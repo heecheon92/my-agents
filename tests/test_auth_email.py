@@ -258,8 +258,7 @@ def test_resend_http_sender_sends_guest_access_code(monkeypatch) -> None:  # noq
             "Your my-agents guest demo access code is:\n\n"
             "guest-code-123\n\n"
             "This one-time code expires at 2026-06-06T12:30:00+00:00.\n"
-            "After login, the guest session is limited to 24 hours, one conversation, "
-            "five prompts, and three document uploads.\n\n"
+            "Current guest session and usage limits are shown in the product.\n\n"
             "If you did not request guest access, you can ignore this email."
         ),
     }
@@ -317,7 +316,7 @@ def test_guest_access_code_email_defaults_to_korean() -> None:
     assert message.subject == "my-agents 게스트 데모 접근 코드"
     assert "my-agents 게스트 데모 접근 코드는 다음과 같습니다." in message.body
     assert "guest-code-123" in message.body
-    assert "대화 1개, 프롬프트 5개, 문서 업로드 3개" in message.body
+    assert "현재 게스트 세션 및 사용량 제한은 제품 화면에서 확인할 수 있습니다." in message.body
 
 
 def test_group_invitation_email_defaults_to_korean() -> None:

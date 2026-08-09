@@ -40,9 +40,10 @@ The backend owns a first-party auth/session path:
 9. `GET /auth/me` resolves the current `Principal` from the session cookie.
 10. `POST /auth/password-reset/request` sends a reset token without revealing whether the account exists.
 11. `POST /auth/password-reset/confirm` consumes the reset token, changes the password, and revokes existing sessions.
-12. `POST /auth/guest/request` records a requester email when guest access is enabled and never returns a guest code to the browser.
-13. The operator can issue a short-lived one-time code with `scripts/issue_guest_access_code.py`; the script always prints the code and can also send it with `--send-email`, using Korean copy by default or English copy with `--lang en`.
-14. `POST /auth/guest/login` redeems the code once and issues the normal app session cookie plus CSRF token for an explicit guest identity.
+12. Unauthenticated `GET /auth/guest/policy` exposes the effective guest availability, code-delivery mode, TTLs, and usage limits as public-safe data.
+13. `POST /auth/guest/request` accepts a requester email when guest access is enabled and never returns a guest code to the browser. With `MY_AGENTS_GUEST_CODE_AUTO_APPROVAL=true`, it generates and emails the code before acknowledging success; otherwise it records the request for manual approval.
+14. In manual mode, the operator can issue a short-lived one-time code with `scripts/issue_guest_access_code.py`; the script always prints the code and can also send it with `--send-email`, using Korean copy by default or English copy with `--lang en`.
+15. `POST /auth/guest/login` redeems the code once and issues the normal app session cookie plus CSRF token for an explicit guest identity.
 
 The default local/test email sender is intentionally offline. It records verification and
 reset emails in process memory for tests and local development. Preview/public demos
@@ -117,12 +118,15 @@ The Phase 1 public-demo boundary is intentionally explicit:
 - `MY_AGENTS_AUTH_SIGNUP_ENABLED=false` blocks new backend signups as a public-demo
   kill switch while preserving existing verified-user login/session behavior.
 - `MY_AGENTS_GUEST_ACCESS_ENABLED=true` opens email-gated guest requests for the
-  public demo. Guest codes are manually issued for requester emails, one-time, guest sessions expire after
+  public demo. Guest codes are one-time and are emailed automatically only when
+  `MY_AGENTS_GUEST_CODE_AUTO_APPROVAL=true`; otherwise approval remains manual. Guest sessions expire after
   `MY_AGENTS_GUEST_ACCESS_TTL_SECONDS` (default 24 hours), and guest responses use
   `email: null`, `is_guest: true`, and `guest_expires_at` instead of presenting a
   fake visitor email as a real account.
-- Guest public-demo limits are server-owned: `MY_AGENTS_GUEST_MAX_CONVERSATIONS=1`,
-  `MY_AGENTS_GUEST_MAX_PROMPTS=5`, and `MY_AGENTS_GUEST_MAX_DOCUMENT_UPLOADS=3`.
+- Guest public-demo limits are server-owned. Repo defaults are
+  `MY_AGENTS_GUEST_MAX_CONVERSATIONS=3`, `MY_AGENTS_GUEST_MAX_PROMPTS=20`, and
+  `MY_AGENTS_GUEST_MAX_DOCUMENT_UPLOADS=5`; deployments can override them.
+  `GET /auth/guest/policy` is the UI source of truth for the effective values.
   Limit failures return safe `429` details; expired guest access returns a safe
   auth failure. Guests cannot create password-reset/email-verification tokens and
   are blocked from the dev auth outbox even if that local-only endpoint is enabled.
@@ -161,7 +165,8 @@ Those are later milestones or explicit non-goals for v0.
 - guest codes redeem once, create a guest session, and make `/auth/me` return an
   explicit guest shape;
 - expired guest codes/sessions are rejected;
-- guests are capped at one conversation, five prompts, and three documents/uploads;
+- guest limits are enforced from runtime settings and the same effective values are
+  returned by the public guest-policy endpoint;
 - guests do not create password-reset/email-verification tokens and cannot use the
   local dev auth outbox;
 - invalid login does not create an authenticated session;
@@ -179,6 +184,7 @@ Explain this in an interview:
 
 ## Revision history
 
+- 2026-08-09: Added the public runtime guest-policy contract, documented automatic email delivery mode, and raised evaluator-oriented repo defaults to 3 conversations, 20 prompts, and 5 document uploads.
 - 2026-05-30: Updated the auth email boundary docs for the hosted Resend HTTP path while keeping SMTP as an alternate transport.
 - 2026-05-26: Changed public guest access to email-gated requests plus manual operator code issue.
 - 2026-05-21: Added provider-free public-demo guest access contract and limits.

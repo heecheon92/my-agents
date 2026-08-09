@@ -1,6 +1,6 @@
 # Implementation tracking
 
-Last updated: 2026-07-14
+Last updated: 2026-08-09
 Status owner: repo-tracked source of truth for cross-machine agent handoff
 
 This file exists because `.omx/` is local runtime state and is not shared across machines. When working with an agent on any machine, start here before re-discovering project status from the codebase.
@@ -54,6 +54,9 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
 - Legacy/dev assistant smoke endpoint: `POST /assistant/chat`
 - Product conversation-run surface under `/conversations`
 - Auth, groups, documents, knowledge bases, and run events are registered routes.
+- HTTP and validation failures preserve `detail` and add stable machine-readable `code`
+  values, with specific frontend localization keys for high-value auth, guest-limit,
+  upload-size, publish-review, and run-lifecycle failures.
 - Opt-in internal Prometheus timing endpoint: `GET /metrics` is exposed only when
   `MY_AGENTS_METRICS_ENABLED=true`.
 
@@ -84,10 +87,11 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
 - Local in-process auth abuse protection covers repeated signup, bad login, reset request, and invalid lifecycle-token attempts.
 - `MY_AGENTS_AUTH_SIGNUP_ENABLED=false` blocks new public-demo signups without changing existing login/session behavior.
 - Provider-free guest access is env-gated by `MY_AGENTS_GUEST_ACCESS_ENABLED=false`
-  by default. When enabled, public requests record an email without returning a
-  code; operators issue one-time codes manually for explicit ephemeral guest
-  identities with normal app session cookies, 24-hour expiry, one conversation,
-  five prompts, and three document creates/uploads.
+  by default. When enabled, public requests never return a code; they either email
+  one automatically or enter manual approval according to
+  `MY_AGENTS_GUEST_CODE_AUTO_APPROVAL`. `GET /auth/guest/policy` exposes the
+  effective public policy. Repo defaults are 24-hour expiry, three conversations,
+  twenty prompts, and five document creates/uploads, while deployments may override them.
 - `users.user_type` distinguishes `normal`, `root`, and `system` platform privilege
   from registered/guest `account_type`; auth responses expose read-only `user_type`
   and `can_manage_system_knowledge` only for root/system managers, and mutation is
@@ -113,6 +117,9 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
 - SSE conversation-run stream emits redacted progress events, retrieval-route/answer-mode metadata, compact localized ko/en `agent_trace` steps, `answer_delta` assistant text chunks, and a final run response.
 - Assistant-message replay now also supports an SSE stream path, so regeneration can show live progress and answer deltas while preserving the old transcript unless the replay completes successfully.
 - Run summaries and run activity events are persisted and readable.
+- Persisted activity events use a closed, `event_type`-discriminated OpenAPI union;
+  every event payload and nested `agent_trace.evidence` object passes through a typed
+  allowlist before leaving the API.
 - Failure path records a failed run with redacted event metadata.
 - Conversation-run timing histograms cover sync and streaming outcomes for internal
   performance review when metrics are enabled.
@@ -159,6 +166,35 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
 - Reusable LangGraph practice conventions, pattern docs, and runnable simulated-agent implementations now live in `~/Git/Playground/langgraph-playground`.
 
 ## Latest verification evidence
+
+Guest policy and email delivery verification on 2026-08-09:
+
+- The automatic-approval request path, using the production Resend credential and
+  verified `my-agents.dev` sender against Resend's `delivered@resend.dev` test
+  recipient, returned `200 accepted`; Resend reported the message as `delivered`.
+- A separate request through the production Vercel BFF returned `200 accepted`, but
+  produced no matching Resend event. The checked production config snapshot also has
+  `MY_AGENTS_GUEST_CODE_AUTO_APPROVAL=false`, so hosted automatic delivery was not
+  active at verification time. Enable the flag in the hosted service and redeploy or
+  restart before the frontend promises immediate code delivery.
+- The production BFF currently rejects `GET /auth/guest/policy` as a path outside its
+  allowlist; add the path when the backend contract is deployed.
+
+Frontend contract hardening on 2026-08-09:
+
+```text
+uv run pytest -q
+474 passed, 2 skipped, 9 warnings in 70.70s
+
+uv run ruff check . --no-cache
+All checks passed!
+
+uv run ruff format --check .
+218 files already formatted
+
+git diff --check
+passed
+```
 
 Internal timing metrics implementation on 2026-06-16:
 
@@ -501,6 +537,8 @@ limits.
 
 | Date | Milestone | Evidence |
 | --- | --- | --- |
+| 2026-08-09 | Added an unauthenticated runtime guest-policy contract, removed stale numeric limits from guest email copy, and raised repo defaults to 3 conversations, 20 prompts, and 5 document uploads. Provider delivery passed with a Resend test recipient, while hosted automatic approval remained inactive pending its deployment flag. | `my_agents/api/auth.py`; `my_agents/auth/schemas.py`; `my_agents/settings.py`; auth email templates; `tests/test_guest_access_api.py`; `tests/test_auth_email.py`; README pair; auth/deployment docs. |
+| 2026-08-09 | Added stable additive API error codes, froze the persisted agent-event vocabulary and display-safe payload/trace schemas, and proved external-worker ingestion progress is visible through independent polling sessions. | `my_agents/api/errors.py`; `my_agents/conversations/schemas.py`; `my_agents/api/conversations/run_events.py`; `tests/test_api_error_contract.py`; `tests/test_agent_event_contract.py`; `tests/test_knowledge_ingestion.py`; README pair; observability/ingestion docs. |
 | 2026-07-24 | Made permission-filtered hybrid retrieval the ContextForge default with independent vector and request-local BM25Okapi rankings fused by RRF over stable `chunk_id`, without a database migration. | `pyproject.toml`; `uv.lock`; `my_agents/knowledge/retrieval.py`; `my_agents/agents/context_forge/candidates.py`; `my_agents/agents/context_forge/fusion.py`; `tests/test_context_forge_reranking.py`; `tests/test_permission_aware_rag.py`; README and ContextForge README pairs. |
 | 2026-06-25 | Added generic/repo-local performance workflow support, ingestion benchmark tooling, redacted ingestion timing panels, OpenAI metadata/embedding overlap, and lazy PDF classification; local Aliro PDF profile improved from 36.16s to 16.57s end-to-end while preserving parser/source/chunk/entity/relationship counts. | `.codex/skills/performance-optimizer/`; `.codex/skills/rag-performance-optimizer/SKILL.md`; `scripts/measure_ingestion_performance.py`; `my_agents/knowledge/timing.py`; `my_agents/knowledge/uploads.py`; `my_agents/knowledge/pdf_uploads.py`; `my_agents/knowledge/extraction.py`; `tests/test_knowledge_ingestion.py`; `tests/test_settings.py`; README pair; ingestion docs; performance logs; full suite `459 passed, 1 skipped`. |
 | 2026-06-23 | Added DOCX-only upload, Markdown parse artifacts, ingestion/citation coverage, and legacy `.doc` rejection. | `my_agents/knowledge/office_uploads.py`; upload route descriptions; `tests/test_office_uploads.py`; `tests/test_knowledge_ingestion.py`; `tests/test_publish_requests.py`; ingestion docs. |

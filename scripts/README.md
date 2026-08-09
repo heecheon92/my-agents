@@ -91,6 +91,12 @@ Starts and wires a local Docker pgvector database for backend development. The
 script intentionally manages only a disposable local Docker container. It does
 not contact hosted providers or deploy anything.
 
+The checked-in VS Code tasks launch this helper with the Python extension's
+selected interpreter and the helper reuses that interpreter for Alembic and
+pytest. This avoids depending on whether a GUI-launched VS Code process inherited
+the shell path containing `uv`. Select this repository's `.venv` interpreter in
+VS Code before using the `FastAPI: uvicorn main:app (local pgvector)` profile.
+
 Common commands:
 
 ```bash

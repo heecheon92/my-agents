@@ -52,7 +52,8 @@ sequenceDiagram
 - `retrieved_context` is already-authorized, prompt-safe compact context.
 - `clarification_required` and required retrieval with insufficient evidence stop the `general_assistant` graph before answer nodes.
 - `completed`, `skipped`, and `waiting` are frontend trace states, not hidden chain-of-thought.
-- Evidence values are counts, labels, and booleans only; raw prompts, snippets, provider errors, and message content are rejected by the verifier.
+- The `agent_trace` stage IDs, event types, statuses, bilingual copy, and evidence fields are a stable typed API contract.
+- Evidence is limited to allowlisted routes/modes, counts, bounded labels, and booleans; raw prompts, snippets, provider errors, and message content are rejected by both the verifier and API response serializer.
 
 ## Capability or boundary metadata
 
