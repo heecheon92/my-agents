@@ -11,6 +11,12 @@ from my_agents.conversations.models import (
     MessageModel,
     MessageRole,
 )
+from my_agents.document_workspace.models import (
+    AgentRunAttachmentModel,
+    ConversationArtifactModel,
+    ConversationAttachmentModel,
+    DocumentWorkspaceModel,
+)
 from my_agents.knowledge.models import CitationModel
 from my_agents.memory.service import UserMemoryService
 
@@ -103,6 +109,16 @@ def prune_conversation_from_message(
         commit=False,
     )
     if run_ids_to_prune:
+        db.execute(
+            delete(ConversationArtifactModel).where(
+                ConversationArtifactModel.run_id.in_(run_ids_to_prune)
+            )
+        )
+        db.execute(
+            delete(AgentRunAttachmentModel).where(
+                AgentRunAttachmentModel.run_id.in_(run_ids_to_prune)
+            )
+        )
         db.execute(delete(CitationModel).where(CitationModel.run_id.in_(run_ids_to_prune)))
         db.execute(delete(AgentEventModel).where(AgentEventModel.run_id.in_(run_ids_to_prune)))
         db.execute(delete(AgentRunModel).where(AgentRunModel.id.in_(run_ids_to_prune)))
@@ -127,9 +143,25 @@ def delete_conversation_tree(db: Session, conversation: ConversationModel) -> No
         commit=False,
     )
     if run_ids:
+        db.execute(
+            delete(ConversationArtifactModel).where(ConversationArtifactModel.run_id.in_(run_ids))
+        )
+        db.execute(
+            delete(AgentRunAttachmentModel).where(AgentRunAttachmentModel.run_id.in_(run_ids))
+        )
         db.execute(delete(CitationModel).where(CitationModel.run_id.in_(run_ids)))
         db.execute(delete(AgentEventModel).where(AgentEventModel.run_id.in_(run_ids)))
         db.execute(delete(AgentRunModel).where(AgentRunModel.id.in_(run_ids)))
+    db.execute(
+        delete(DocumentWorkspaceModel).where(
+            DocumentWorkspaceModel.conversation_id == conversation.id
+        )
+    )
+    db.execute(
+        delete(ConversationAttachmentModel).where(
+            ConversationAttachmentModel.conversation_id == conversation.id
+        )
+    )
     db.execute(delete(MessageModel).where(MessageModel.conversation_id == conversation.id))
     db.delete(conversation)
     db.commit()

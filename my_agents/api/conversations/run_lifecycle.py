@@ -68,7 +68,7 @@ from my_agents.knowledge.retrieval import RetrievedChunk
 from my_agents.knowledge.routing import AnswerMode, RetrievalRoutingDecision
 from my_agents.observability.metrics import observe_conversation_run
 from my_agents.schemas import RouteDecision
-from my_agents.settings import get_settings
+from my_agents.settings import ReasoningEffort, ReasoningMode, get_settings
 
 ACTIVE_RUN_STATUSES = (RunStatus.RUNNING.value, RunStatus.CANCELLING.value)
 _GROUNDING_VERIFIER = DeterministicRagAgentGroundingVerifier()
@@ -84,6 +84,7 @@ def complete_sync_conversation_run(
     run: AgentRunModel,
     selection_context: KnowledgeBaseSelectionContext,
     graph_runner: GraphRunner,
+    document_workspace_runtime: object | None = None,
     warnings: list[ConversationRunWarning] | None = None,
 ) -> ConversationRunResponse:
     try:
@@ -96,6 +97,7 @@ def complete_sync_conversation_run(
             run=run,
             selection_context=selection_context,
             graph_runner=graph_runner,
+            document_workspace_runtime=document_workspace_runtime,
             warnings=warnings,
         )
     except HTTPException:
@@ -142,6 +144,7 @@ def _complete_sync_conversation_run(
     run: AgentRunModel,
     selection_context: KnowledgeBaseSelectionContext,
     graph_runner: GraphRunner,
+    document_workspace_runtime: object | None = None,
     warnings: list[ConversationRunWarning] | None = None,
 ) -> ConversationRunResponse:
     run_started = perf_counter()
@@ -166,6 +169,9 @@ def _complete_sync_conversation_run(
         db=db,
         user_id=user_id,
         selection_context=selection_context,
+        document_workspace_runtime=document_workspace_runtime,
+        reasoning_mode=run.reasoning_mode,  # type: ignore[arg-type]
+        reasoning_effort=run.reasoning_effort,  # type: ignore[arg-type]
     )
     try:
         result = invoke_graph_runner_collecting_updates(
@@ -389,6 +395,8 @@ def persist_completed_run(
     retrieval_evidence: RetrievalEvidence | None = None,
     memory_source_snapshot: str | None = None,
 ) -> ConversationRunResponse:
+    from my_agents.document_workspace.service import artifacts_for_run, attachments_for_run
+
     assistant_message = MessageModel(
         conversation_id=conversation_id,
         role=MessageRole.ASSISTANT.value,
@@ -460,6 +468,8 @@ def persist_completed_run(
             retrieval_evidence=retrieval_evidence,
             clarification_required=clarification is not None,
         ),
+        attachments=attachments_for_run(db, run.id),
+        artifacts=artifacts_for_run(db, run.id),
     )
 
 
@@ -602,11 +612,15 @@ def start_run(
     user_message_id: str,
     message_content_length: int,
     selection_context: KnowledgeBaseSelectionContext,
+    reasoning_mode: ReasoningMode,
+    reasoning_effort: ReasoningEffort,
 ) -> AgentRunModel:
     run = AgentRunModel(
         conversation_id=conversation_id,
         user_id=user_id,
         status=RunStatus.RUNNING.value,
+        reasoning_mode=reasoning_mode,
+        reasoning_effort=reasoning_effort,
         knowledge_base_selection_mode=selection_context.mode,
         selected_knowledge_base_ids_json=json.dumps(
             list(selection_context.knowledge_base_ids), sort_keys=True
@@ -626,6 +640,8 @@ def start_run(
             "run_id": run.id,
             "conversation_id": conversation_id,
             "status": run.status,
+            "reasoning_mode": reasoning_mode,
+            "reasoning_effort": reasoning_effort,
             **knowledge_base_selection_payload(selection_context),
         },
         commit=False,

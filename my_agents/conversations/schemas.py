@@ -5,12 +5,17 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_serializer
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer
 
 from my_agents.agents.rag_agent.contracts import RagAgentStageId
+from my_agents.document_workspace.schemas import (
+    ConversationArtifactResponse,
+    ConversationAttachmentResponse,
+)
 from my_agents.knowledge.routing import AnswerMode, DocumentScope, RetrievalRoute
 from my_agents.knowledge.schemas import CitationResponse, KnowledgeBaseSelection
 from my_agents.schemas import RouteDecision
+from my_agents.settings import ReasoningEffort, ReasoningMode
 
 
 class ConversationCreateRequest(BaseModel):
@@ -121,13 +126,28 @@ class ConversationRunRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     message: str = Field(min_length=1)
+    reasoning_mode: ReasoningMode | None = None
+    reasoning_effort: ReasoningEffort | None = None
     knowledge_base_selection: KnowledgeBaseSelection = Field(default_factory=KnowledgeBaseSelection)
+    attachment_ids: list[Annotated[str, Field(min_length=1, max_length=36)]] = Field(
+        default_factory=list,
+        max_length=10,
+    )
+
+    @field_validator("attachment_ids")
+    @classmethod
+    def attachment_ids_are_unique(cls, value: list[str]) -> list[str]:
+        if len(value) != len(set(value)):
+            raise ValueError("attachment_ids must be unique")
+        return value
 
 
 class ConversationReplayRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     knowledge_base_selection: KnowledgeBaseSelection | None = None
+    reasoning_mode: ReasoningMode | None = None
+    reasoning_effort: ReasoningEffort | None = None
 
 
 class ConversationRunResponse(BaseModel):
@@ -138,6 +158,8 @@ class ConversationRunResponse(BaseModel):
     reply: str
     route: RouteDecision
     handled_by: str
+    reasoning_mode: ReasoningMode = "standard"
+    reasoning_effort: ReasoningEffort = "medium"
     retrieval_route: RetrievalRoute
     answer_mode: AnswerMode
     document_scope: DocumentScope
@@ -149,6 +171,8 @@ class ConversationRunResponse(BaseModel):
     warnings: list[ConversationRunWarning] = Field(default_factory=list)
     clarification: ConversationClarificationRequest | None = None
     agent_trace: list[AgentTraceStep] = Field(default_factory=list)
+    attachments: list[ConversationAttachmentResponse] = Field(default_factory=list)
+    artifacts: list[ConversationArtifactResponse] = Field(default_factory=list)
 
 
 class ConversationRunCancelResponse(BaseModel):
@@ -166,6 +190,8 @@ class AgentRunSummaryResponse(BaseModel):
     conversation_id: str
     status: str
     route_label: str | None
+    reasoning_mode: ReasoningMode
+    reasoning_effort: ReasoningEffort
     knowledge_base_selection: KnowledgeBaseSelection
     resolved_knowledge_base_ids: list[str] = Field(default_factory=list)
     resolved_knowledge_base_count: int = 0
@@ -190,6 +216,8 @@ class RunStartedEventPayload(KnowledgeSelectionEventPayload):
     run_id: str
     conversation_id: str
     status: Literal["running"] = "running"
+    reasoning_mode: ReasoningMode = "standard"
+    reasoning_effort: ReasoningEffort = "medium"
 
 
 class UserMessageStoredEventPayload(AgentEventPayload):
@@ -248,6 +276,24 @@ class AnswerComposedEventPayload(KnowledgeSelectionEventPayload):
     agent_trace: list[AgentTraceStep] = Field(default_factory=list)
 
 
+class AttachmentsReadyEventPayload(AgentEventPayload):
+    attachment_count: int = Field(ge=1)
+    total_bytes: int = Field(ge=1)
+
+
+class DocumentWorkspaceStartedEventPayload(AgentEventPayload):
+    attachment_count: int = Field(ge=1)
+    workspace_expires_at: datetime
+
+
+class ArtifactCreatedEventPayload(AgentEventPayload):
+    artifact_id: str
+    filename: str = Field(max_length=512)
+    content_type: str = Field(max_length=255)
+    byte_size: int | None = Field(default=None, ge=0)
+    expires_at: datetime
+
+
 class RunCancelRequestedEventPayload(AgentEventPayload):
     run_id: str
     status: Literal["cancelling"] = "cancelling"
@@ -300,6 +346,21 @@ class AnswerComposedAgentEventResponse(AgentEventResponseBase):
     payload: AnswerComposedEventPayload
 
 
+class AttachmentsReadyAgentEventResponse(AgentEventResponseBase):
+    event_type: Literal["attachments_ready"]
+    payload: AttachmentsReadyEventPayload
+
+
+class DocumentWorkspaceStartedAgentEventResponse(AgentEventResponseBase):
+    event_type: Literal["document_workspace_started"]
+    payload: DocumentWorkspaceStartedEventPayload
+
+
+class ArtifactCreatedAgentEventResponse(AgentEventResponseBase):
+    event_type: Literal["artifact_created"]
+    payload: ArtifactCreatedEventPayload
+
+
 class RunCancelRequestedAgentEventResponse(AgentEventResponseBase):
     event_type: Literal["run_cancel_requested"]
     payload: RunCancelRequestedEventPayload
@@ -320,6 +381,9 @@ type AgentEventResponse = Annotated[
     | UserMessageStoredAgentEventResponse
     | RetrievalCompletedAgentEventResponse
     | GraphInvokedAgentEventResponse
+    | AttachmentsReadyAgentEventResponse
+    | DocumentWorkspaceStartedAgentEventResponse
+    | ArtifactCreatedAgentEventResponse
     | AnswerComposedAgentEventResponse
     | RunCancelRequestedAgentEventResponse
     | RunCancelledAgentEventResponse

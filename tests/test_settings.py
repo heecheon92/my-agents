@@ -19,7 +19,8 @@ def test_settings_default_to_openai_when_api_key_is_available(
     settings = Settings(_env_file=None)
 
     assert settings.response_mode == "openai"
-    assert settings.openai_model == "gpt-5.5"
+    assert settings.openai_model == "gpt-5.6-sol"
+    assert settings.openai_reasoning_effort == "medium"
     assert settings.openai_api_key_value() == "test-key"
 
 
@@ -76,6 +77,44 @@ def test_openai_settings_accept_model_and_tuning_overrides(
     assert settings.openai_max_output_tokens == 123
     assert settings.openai_reasoning_effort == "low"
     assert settings.openai_verbosity == "low"
+
+
+def test_document_workspace_defaults_are_disabled_and_bounded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
+    monkeypatch.delenv("MY_AGENTS_DOCUMENT_WORKSPACE_ENABLED", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.document_workspace_enabled is False
+    assert settings.document_workspace_model == "gpt-5.6-sol"
+    assert settings.document_workspace_max_files_per_run == 3
+    assert settings.document_workspace_max_combined_bytes == 20 * 1024 * 1024
+    assert settings.document_workspace_idle_ttl_seconds == 1200
+    assert settings.document_workspace_file_ttl_seconds == 3600
+
+
+def test_enabled_document_workspace_requires_openai_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
+    monkeypatch.setenv("MY_AGENTS_DOCUMENT_WORKSPACE_ENABLED", "true")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("MY_AGENTS_OPENAI_API_KEY", raising=False)
+
+    with pytest.raises(ValidationError, match="DOCUMENT_WORKSPACE_ENABLED=true"):
+        Settings(_env_file=None)
+
+
+def test_document_workspace_idle_ttl_requires_whole_minutes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
+    monkeypatch.setenv("MY_AGENTS_DOCUMENT_WORKSPACE_IDLE_TTL_SECONDS", "61")
+
+    with pytest.raises(ValidationError, match="must use whole minutes"):
+        Settings(_env_file=None)
 
 
 def test_embedding_settings_default_to_deterministic(monkeypatch: pytest.MonkeyPatch) -> None:

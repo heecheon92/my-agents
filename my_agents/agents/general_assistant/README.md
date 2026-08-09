@@ -134,7 +134,9 @@ Memory service는 이 agent folder 밖의 `my_agents/memory/`와 `my_agents/api/
 
 ## OpenAI hosted tools를 추가할 위치
 
-OpenAI Responses API의 `web_search` 같은 built-in tool은 **그래프 노드가 아니라 `responders.py`의 OpenAI provider 경계**에 추가하는 것이 가장 좋습니다.
+OpenAI Responses API의 `web_search` 같은 일반 답변 built-in tool은 **그래프 노드가 아니라 `responders.py`의 OpenAI provider 경계**에 둡니다. 단, 임시 파일이 선택된 run은 `document_workspace_runtime`을 LangGraph runtime context로 받아 마지막 응답 node에서 격리된 document workspace adapter를 호출합니다. 이 adapter는 `ChatOpenAI`가 아직 노출하지 않는 Files, Containers, Hosted Shell, Skills API 때문에 필요한 의도적인 예외입니다.
+
+같은 runtime context는 run에 저장된 effective `reasoning_mode`와 `reasoning_effort`도 마지막 response node로 전달합니다. 일반 답변은 `ChatOpenAI.invoke(..., reasoning={...})`, attachment 답변은 document-workspace Responses API adapter에 같은 값을 전달합니다. Source-selection gate는 비용과 routing 안정성을 위해 client override를 받지 않고 server default effort와 `standard` mode를 사용합니다. Guest override 차단과 GPT-5.6 `pro` 검증은 graph 진입 전 API boundary에서 수행합니다.
 
 이유:
 
@@ -142,6 +144,7 @@ OpenAI Responses API의 `web_search` 같은 built-in tool은 **그래프 노드�
 - `respond_general`, `respond_research` 같은 노드는 provider 세부사항을 몰라도 됩니다.
 - OpenAI 전용 기능은 `OpenAIResponseProvider` 안에 모아 provider 교체/테스트가 쉬워집니다.
 - route-specific tool policy를 한 곳에서 테스트할 수 있습니다.
+- 첨부가 있는 turn은 명시적으로 선택된 KB가 없으면 private KB retrieval을 우회하고 임시 첨부를 source로 사용합니다. 명시적 KB 선택이 있으면 기존 permission-first RAG context도 함께 전달합니다.
 
 ## Web search policy
 

@@ -53,6 +53,8 @@ class AssistantState(TypedDict, total=False):
     answer_mode: AnswerMode
     document_scope: DocumentScope
     debug_empty_openai_response: bool
+    document_artifacts: list[dict[str, object]]
+    document_workspace_expires_at: str
 
 
 def classify_request(state: AssistantState) -> AssistantState:
@@ -84,6 +86,16 @@ def decide_retrieval_source(
             "use graph_context_for_run for conversation runs or build_legacy_chat_graph "
             "for unauthenticated no-KB chat."
         )
+    if (
+        context.get("document_workspace_runtime") is not None
+        and selection_context.mode != "selected"
+    ):
+        return {
+            "retrieval_source_decision": RetrievalSourceDecision(
+                source="bypass",
+                reason=("temporary conversation attachments are the explicit source for this turn"),
+            )
+        }
     decider = _retrieval_source_decider(context.get("retrieval_source_decider"))
     decision = decider.decide(
         messages=_state_messages(state.get("messages", [])),
@@ -109,13 +121,11 @@ def _state_messages(messages: Sequence[Any]) -> list[BaseMessage]:
     return [message for message in messages if isinstance(message, BaseMessage)]
 
 
-def respond_general(state: AssistantState) -> AssistantState:
-    return {
-        "reply": _compose_reply(
-            state,
-            _general_response_guidance(state),
-        )
-    }
+def respond_general(
+    state: AssistantState,
+    runtime: Runtime[AssistantRuntimeContext],
+) -> AssistantState:
+    return _compose_reply(state, runtime, _general_response_guidance(state))
 
 
 def _general_response_guidance(state: AssistantState) -> str:
@@ -129,19 +139,50 @@ def _general_response_guidance(state: AssistantState) -> str:
     return "I can help organize the request and suggest a practical next step."
 
 
-def respond_research(state: AssistantState) -> AssistantState:
-    return {
-        "reply": _compose_reply(
-            state,
-            "A useful research pass is to list source questions, prefer primary docs, "
-            "and capture findings with links.",
-        )
-    }
+def respond_research(
+    state: AssistantState,
+    runtime: Runtime[AssistantRuntimeContext],
+) -> AssistantState:
+    return _compose_reply(
+        state,
+        runtime,
+        "A useful research pass is to list source questions, prefer primary docs, "
+        "and capture findings with links.",
+    )
 
 
-def _compose_reply(state: AssistantState, guidance: str) -> str:
+def _compose_reply(
+    state: AssistantState,
+    runtime: Runtime[AssistantRuntimeContext],
+    guidance: str,
+) -> AssistantState:
     route = state["route"]
-    return get_response_provider().compose_reply(
+    runtime_context = runtime.context or {}
+    reasoning_mode = runtime_context.get("reasoning_mode", "standard")
+    reasoning_effort = runtime_context.get("reasoning_effort", "medium")
+    workspace_runtime = runtime_context.get("document_workspace_runtime")
+    workspace_compose_reply = getattr(workspace_runtime, "compose_reply", None)
+    if callable(workspace_compose_reply):
+        result = workspace_compose_reply(
+            messages=state.get("messages", []),
+            route=route,
+            capability=state["capability"],
+            guidance=guidance,
+            retrieved_context=state.get("retrieved_context", []),
+            memory_context=state.get("memory_context", []),
+            source_conflicts=state.get("source_conflicts", []),
+            answer_mode=state.get("answer_mode", "general_knowledge"),
+            reasoning_mode=reasoning_mode,
+            reasoning_effort=reasoning_effort,
+        )
+        return {
+            "reply": result.reply,
+            "document_artifacts": [
+                artifact.model_dump(mode="json") for artifact in result.artifacts
+            ],
+            "document_workspace_expires_at": result.workspace_expires_at.isoformat(),
+        }
+    reply = get_response_provider().compose_reply(
         messages=state.get("messages", []),
         route=route,
         capability=state["capability"],
@@ -151,7 +192,10 @@ def _compose_reply(state: AssistantState, guidance: str) -> str:
         source_conflicts=state.get("source_conflicts", []),
         answer_mode=state.get("answer_mode", "general_knowledge"),
         debug_empty_response=state.get("debug_empty_openai_response", False),
+        reasoning_mode=reasoning_mode,
+        reasoning_effort=reasoning_effort,
     )
+    return {"reply": reply}
 
 
 def build_graph():

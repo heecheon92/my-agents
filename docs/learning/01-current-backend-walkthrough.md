@@ -1,6 +1,6 @@
 ---
 created: 2026-05-14
-updated: 2026-05-14
+updated: 2026-08-09
 status: active
 topics:
   - fastapi
@@ -333,7 +333,7 @@ OpenAI mode uses `langchain-openai` and `ChatOpenAI`:
 ```text
 MY_AGENTS_RESPONSE_MODE=openai
 OPENAI_API_KEY=...
-MY_AGENTS_OPENAI_MODEL=gpt-5.5
+MY_AGENTS_OPENAI_MODEL=gpt-5.6-sol
 ```
 
 The provider builds LangChain messages:
@@ -500,3 +500,4 @@ The behavior is still small. The boundaries are there so future features do not 
 - 2026-05-14: Created the initial backend walkthrough for the v0 FastAPI + LangGraph assistant foundation.
 - 2026-05-14: Updated after restructuring agent code, adopting LangChain message types, adding CLI chat, enabling CLI streaming, and making OpenAI the default response mode.
 - 2026-05-14: Added Mermaid diagrams for the request lifecycle and LangGraph node flow.
+- 2026-08-09: Updated the current default OpenAI model to GPT-5.6 Sol.

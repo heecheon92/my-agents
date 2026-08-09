@@ -10,7 +10,8 @@ from pydantic import AliasChoices, Field, SecretStr, field_validator, model_vali
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ResponseMode = Literal["deterministic", "openai"]
-ReasoningEffort = Literal["low", "medium", "high", "xhigh"]
+ReasoningMode = Literal["standard", "pro"]
+ReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"]
 TextVerbosity = Literal["low", "medium", "high"]
 SameSitePolicy = Literal["lax", "strict", "none"]
 DeploymentEnvironment = Literal["local", "preview", "production"]
@@ -45,7 +46,7 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("OPENAI_API_KEY", "MY_AGENTS_OPENAI_API_KEY"),
     )
     openai_model: str = Field(
-        default="gpt-5.5",
+        default="gpt-5.6-sol",
         min_length=1,
         validation_alias=AliasChoices("MY_AGENTS_OPENAI_MODEL"),
     )
@@ -61,13 +62,58 @@ class Settings(BaseSettings):
         le=4096,
         validation_alias=AliasChoices("MY_AGENTS_OPENAI_MAX_OUTPUT_TOKENS"),
     )
-    openai_reasoning_effort: ReasoningEffort | None = Field(
-        default=None,
+    openai_reasoning_effort: ReasoningEffort = Field(
+        default="medium",
         validation_alias=AliasChoices("MY_AGENTS_OPENAI_REASONING_EFFORT"),
     )
     openai_verbosity: TextVerbosity | None = Field(
         default=None,
         validation_alias=AliasChoices("MY_AGENTS_OPENAI_VERBOSITY"),
+    )
+    document_workspace_enabled: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("MY_AGENTS_DOCUMENT_WORKSPACE_ENABLED"),
+    )
+    document_workspace_model: str = Field(
+        default="gpt-5.6-sol",
+        min_length=1,
+        validation_alias=AliasChoices("MY_AGENTS_DOCUMENT_WORKSPACE_MODEL"),
+    )
+    document_workspace_max_output_tokens: int = Field(
+        default=4000,
+        ge=64,
+        le=32768,
+        validation_alias=AliasChoices("MY_AGENTS_DOCUMENT_WORKSPACE_MAX_OUTPUT_TOKENS"),
+    )
+    document_workspace_timeout_seconds: float = Field(
+        default=300.0,
+        gt=0,
+        le=900,
+        validation_alias=AliasChoices("MY_AGENTS_DOCUMENT_WORKSPACE_TIMEOUT_SECONDS"),
+    )
+    document_workspace_max_files_per_run: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        validation_alias=AliasChoices("MY_AGENTS_DOCUMENT_WORKSPACE_MAX_FILES_PER_RUN"),
+    )
+    document_workspace_max_combined_bytes: int = Field(
+        default=20 * 1024 * 1024,
+        ge=1024,
+        le=50 * 1024 * 1024,
+        validation_alias=AliasChoices("MY_AGENTS_DOCUMENT_WORKSPACE_MAX_COMBINED_BYTES"),
+    )
+    document_workspace_idle_ttl_seconds: int = Field(
+        default=1200,
+        ge=60,
+        le=3600,
+        validation_alias=AliasChoices("MY_AGENTS_DOCUMENT_WORKSPACE_IDLE_TTL_SECONDS"),
+    )
+    document_workspace_file_ttl_seconds: int = Field(
+        default=3600,
+        ge=3600,
+        le=2_592_000,
+        validation_alias=AliasChoices("MY_AGENTS_DOCUMENT_WORKSPACE_FILE_TTL_SECONDS"),
     )
     embedding_mode: EmbeddingMode = Field(
         default="deterministic",
@@ -428,7 +474,7 @@ class Settings(BaseSettings):
             return None
         return value
 
-    @field_validator("openai_reasoning_effort", "openai_verbosity", mode="before")
+    @field_validator("openai_verbosity", mode="before")
     @classmethod
     def empty_optional_string_is_none(cls, value: object) -> object:
         """Allow optional `.env` tuning keys to be present but blank."""
@@ -550,6 +596,12 @@ class Settings(BaseSettings):
             raise ValueError(
                 "OPENAI_API_KEY is required when MY_AGENTS_DOCUMENT_METADATA_ENRICHMENT_MODE=openai"
             )
+        if self.document_workspace_enabled and self.openai_api_key is None:
+            raise ValueError(
+                "OPENAI_API_KEY is required when MY_AGENTS_DOCUMENT_WORKSPACE_ENABLED=true"
+            )
+        if self.document_workspace_idle_ttl_seconds % 60:
+            raise ValueError("MY_AGENTS_DOCUMENT_WORKSPACE_IDLE_TTL_SECONDS must use whole minutes")
         if self.session_cookie_samesite == "none" and not self.session_cookie_secure:
             raise ValueError(
                 "MY_AGENTS_SESSION_COOKIE_SECURE=true is required when "

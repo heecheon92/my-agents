@@ -11,6 +11,7 @@ from rich.logging import RichHandler
 from my_agents.api.assistant import GraphRunner, assistant_router, get_graph_runner
 from my_agents.api.auth import auth_router
 from my_agents.api.conversations import conversations_router
+from my_agents.api.document_workspace import document_workspace_router
 from my_agents.api.documents import documents_router
 from my_agents.api.errors import APIErrorResponse, install_api_error_handlers
 from my_agents.api.groups import group_invitations_router, groups_router
@@ -18,6 +19,7 @@ from my_agents.api.health import health_router
 from my_agents.api.knowledge_bases import knowledge_bases_router
 from my_agents.api.memories import memories_router
 from my_agents.api.metrics import metrics_router
+from my_agents.api.reasoning import reasoning_router
 from my_agents.diagnostics import deploy_log, safe_database_url_summary, safe_email_domain
 from my_agents.observability.metrics import observe_http_request
 from my_agents.settings import Settings, get_settings
@@ -55,6 +57,7 @@ def create_app() -> FastAPI:
             allow_credentials=True,
             allow_methods=["DELETE", "GET", "OPTIONS", "PATCH", "POST"],
             allow_headers=["Content-Type", settings.csrf_header_name],
+            expose_headers=["Content-Disposition"],
         )
     app.include_router(health_router)
     app.include_router(auth_router)
@@ -63,6 +66,8 @@ def create_app() -> FastAPI:
     app.include_router(group_invitations_router)
     app.include_router(knowledge_bases_router)
     app.include_router(documents_router)
+    app.include_router(document_workspace_router)
+    app.include_router(reasoning_router)
     app.include_router(memories_router)
     app.include_router(assistant_router)
     if settings.metrics_enabled:

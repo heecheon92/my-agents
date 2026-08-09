@@ -29,6 +29,8 @@
 21. [System knowledge base와 user type 계약](./21-system-knowledge-base-user-type.md)
 22. [Economic access, usage metering, credits architecture (영어 원문)](../en/23-economic-access-metering-and-credits-architecture.md)
 23. [지식 관리 lifecycle와 publish copy 계약](./24-knowledge-lifecycle-and-publish-copy-contract.md)
+24. [OpenAI hosted document workspace](./25-openai-document-workspace.md)
+25. [Run reasoning 설정 계약](./26-run-reasoning-preferences.md)
 
 ## 관련 maintenance ledger
 

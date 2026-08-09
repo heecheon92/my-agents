@@ -12,6 +12,7 @@ from langgraph.runtime import Runtime
 from my_agents.agents.rag_agent import RagAgentRuntime
 from my_agents.knowledge.auth import KnowledgeBaseSelectionContext
 from my_agents.memory.runtime import MemoryRuntime, memory_item_context
+from my_agents.settings import ReasoningEffort, ReasoningMode
 
 
 class AssistantRuntimeContext(TypedDict, total=False):
@@ -22,6 +23,9 @@ class AssistantRuntimeContext(TypedDict, total=False):
     rag_runtime: RagAgentRuntime
     retrieval_source_decider: object
     knowledge_base_selection: KnowledgeBaseSelectionContext
+    document_workspace_runtime: object
+    reasoning_mode: ReasoningMode
+    reasoning_effort: ReasoningEffort
 
 
 def retrieve_memory_context(

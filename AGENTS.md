@@ -30,7 +30,11 @@ The graph currently has one production assistant/router path. Route labels and c
 
 - No frontend files, UI framework setup, or browser app scaffolding in this repo.
 - No provider sprawl. The only planned LLM provider is OpenAI.
-- Use `langchain-openai` / `ChatOpenAI` for OpenAI model access, not direct provider calls in application code.
+- Use `langchain-openai` / `ChatOpenAI` for ordinary OpenAI model access. The one
+  approved exception is `my_agents/document_workspace/provider.py`, whose narrow
+  OpenAI SDK adapter is required for Files, Containers, Hosted Shell, and Skills
+  surfaces not exposed through `ChatOpenAI`; keep that exception isolated and mocked
+  in offline tests.
 - Keep deterministic mode available for tests and offline smoke checks. The normal local response mode is OpenAI-backed and requires `OPENAI_API_KEY` before chat requests can succeed.
 - Never commit real secrets. Do not read or print `.env` contents unless the user explicitly asks and understands the risk.
 - Keep `.env.example` safe and secret-free.
@@ -59,6 +63,10 @@ MY_AGENTS_OPENAI_MAX_OUTPUT_TOKENS=300
 MY_AGENTS_OPENAI_REASONING_EFFORT=low
 MY_AGENTS_OPENAI_VERBOSITY=low
 ```
+
+The optional temporary document workspace is disabled by default, forbidden to
+guest sessions, and uses `gpt-5.6-sol` plus an OpenAI-hosted, network-disabled
+container. Its full knobs and retention limits are documented in `.env.example`.
 
 For memory architecture, do not treat LangGraph checkpointers as conversation history or long-term memory. Product DB remains the source of truth for visible transcripts/runs/citations/audit and memory governance; LangGraph Store should become the target long-term memory runtime; run-scoped checkpointers are for HITL/resume execution state only. OpenAI `previous_response_id` may be stored as one field inside compact graph/run state, but should not replace application state.
 

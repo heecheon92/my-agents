@@ -304,6 +304,30 @@ def test_guest_prompt_cap_applies_to_chat_runs(monkeypatch) -> None:  # noqa: AN
     assert limited.json()["code"] == "guest_prompt_limit_reached"
 
 
+def test_guest_reasoning_preferences_are_fixed_by_the_server(monkeypatch) -> None:  # noqa: ANN001
+    monkeypatch.setenv("MY_AGENTS_OPENAI_REASONING_EFFORT", "low")
+    client = _client(monkeypatch)
+    _guest_login(client)
+    capability = client.get("/capabilities/reasoning")
+    conversation_id = client.post("/conversations", json={"title": "Guest reasoning"}).json()["id"]
+
+    response = client.post(
+        f"/conversations/{conversation_id}/runs",
+        json={
+            "message": "Try costly reasoning",
+            "reasoning_mode": "pro",
+            "reasoning_effort": "max",
+        },
+    )
+
+    assert capability.status_code == 200
+    assert capability.json()["customizable"] is False
+    assert capability.json()["default_effort"] == "low"
+    assert response.status_code == 200
+    assert response.json()["reasoning_mode"] == "standard"
+    assert response.json()["reasoning_effort"] == "low"
+
+
 def test_guest_interrupted_prompt_counts_toward_prompt_cap(monkeypatch) -> None:  # noqa: ANN001
     client = _client(monkeypatch, graph=GuestCancellingStreamingGraph())
     _guest_login(client)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langchain_openai import ChatOpenAI
 
 from my_agents.agents.general_assistant.responders import (
     DeterministicResponseProvider,
@@ -18,13 +19,15 @@ class FakeChatModel:
     def __init__(self) -> None:
         self.calls: list[list[BaseMessage]] = []
         self.bound_tools: list[list[dict[str, str]]] = []
+        self.invoke_kwargs: list[dict] = []
 
     def bind_tools(self, tools: list[dict[str, str]]) -> FakeChatModel:
         self.bound_tools.append(tools)
         return self
 
-    def invoke(self, messages: list[BaseMessage]) -> AIMessage:
+    def invoke(self, messages: list[BaseMessage], **kwargs) -> AIMessage:  # noqa: ANN003
         self.calls.append(messages)
+        self.invoke_kwargs.append(kwargs)
         return AIMessage(content="LangChain OpenAI drafted reply.")
 
 
@@ -65,6 +68,7 @@ def test_openai_provider_passes_gpt_variant_and_optional_tuning(
     assert reply == "LangChain OpenAI drafted reply."
     assert chat_model.bound_tools == [[{"type": "web_search"}]]
     assert len(chat_model.calls) == 1
+    assert chat_model.invoke_kwargs == [{"reasoning": {"effort": "low"}}]
     messages = chat_model.calls[0]
     assert isinstance(messages[0], SystemMessage)
     assert isinstance(messages[-1], HumanMessage)
@@ -75,8 +79,38 @@ def test_openai_provider_passes_gpt_variant_and_optional_tuning(
     assert model_args["max_completion_tokens"] == 123
     assert model_args["use_responses_api"] is True
     assert model_args["output_version"] == "responses/v1"
-    assert model_args["reasoning_effort"] == "low"
+    assert "reasoning_effort" not in model_args
     assert model_args["verbosity"] == "low"
+
+
+def test_openai_provider_passes_per_run_pro_reasoning_to_responses_payload() -> None:
+    settings = Settings(_env_file=None, OPENAI_API_KEY="test-key")
+    chat_model = FakeChatModel()
+    provider = OpenAIResponseProvider(settings=settings, chat_model=chat_model)
+
+    provider.compose_reply(
+        messages=[HumanMessage(content="Review this difficult migration")],
+        route=RouteDecision(label="general_assistant", explanation="review request"),
+        guidance="Identify failure modes.",
+        reasoning_mode="pro",
+        reasoning_effort="max",
+    )
+
+    assert chat_model.invoke_kwargs == [{"reasoning": {"mode": "pro", "effort": "max"}}]
+
+
+def test_installed_chat_openai_preserves_reasoning_object_in_request_payload() -> None:
+    settings = Settings(_env_file=None, OPENAI_API_KEY="test-key")
+    model = ChatOpenAI(**_build_chat_model_args(settings))
+
+    payload = model._get_request_payload(  # noqa: SLF001 - boundary compatibility test
+        [HumanMessage(content="Review this plan")],
+        reasoning={"mode": "pro", "effort": "max"},
+    )
+
+    assert payload["model"] == "gpt-5.6-sol"
+    assert payload["reasoning"] == {"mode": "pro", "effort": "max"}
+    assert "reasoning_effort" not in payload
 
 
 def test_deterministic_provider_discloses_capability_boundaries() -> None:

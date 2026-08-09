@@ -27,6 +27,10 @@ from my_agents.conversations.schemas import (
     ConversationRunWarning,
     MessageResponse,
 )
+from my_agents.document_workspace.schemas import (
+    ConversationArtifactResponse,
+    ConversationAttachmentResponse,
+)
 from my_agents.knowledge.auth import KnowledgeBaseSelectionContext
 from my_agents.knowledge.models import CitationModel, DocumentChunkModel, DocumentModel
 from my_agents.knowledge.retrieval import RetrievedChunk
@@ -34,6 +38,7 @@ from my_agents.knowledge.routing import AnswerMode, RetrievalRoutingDecision
 from my_agents.knowledge.schemas import CitationResponse, KnowledgeBaseSelection
 from my_agents.knowledge.source_locations import parse_source_location_json
 from my_agents.schemas import RouteDecision
+from my_agents.settings import ReasoningEffort, ReasoningMode
 
 
 def coerce_route(route: RouteDecision | dict) -> RouteDecision:
@@ -111,12 +116,16 @@ def run_summary_response(run: AgentRunModel) -> AgentRunSummaryResponse:
         conversation_id=run.conversation_id,
         status=run.status,
         route_label=run.route_label,
+        reasoning_mode=_run_reasoning_mode(run),
+        reasoning_effort=_run_reasoning_effort(run),
         **source_payload,
         created_at=run.created_at,
     )
 
 
 def run_detail_response(db: Session, run: AgentRunModel) -> ConversationRunResponse:
+    from my_agents.document_workspace.service import artifacts_for_run, attachments_for_run
+
     if run.route_label is None or run.route_explanation is None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="run is not completed")
     if run.assistant_message_id is None:
@@ -140,6 +149,8 @@ def run_detail_response(db: Session, run: AgentRunModel) -> ConversationRunRespo
         reply=assistant_message.content,
         route=RouteDecision(label=run.route_label, explanation=run.route_explanation),
         handled_by="personal_assistant_graph",
+        reasoning_mode=_run_reasoning_mode(run),
+        reasoning_effort=_run_reasoning_effort(run),
         retrieval_route=run.retrieval_route or "no_retrieval",
         answer_mode=run.answer_mode or "general_knowledge",
         document_scope=run.document_scope or "unknown",
@@ -149,6 +160,8 @@ def run_detail_response(db: Session, run: AgentRunModel) -> ConversationRunRespo
         agent_trace=agent_trace_steps_from_event_payloads(
             json.loads(event.payload_json) for event in events
         ),
+        attachments=attachments_for_run(db, run.id),
+        artifacts=artifacts_for_run(db, run.id),
     )
 
 
@@ -165,6 +178,8 @@ def completed_run_response(
     warnings: list[ConversationRunWarning] | None = None,
     clarification: ConversationClarificationRequest | None = None,
     agent_trace: list[AgentTraceStep] | None = None,
+    attachments: list[ConversationAttachmentResponse] | None = None,
+    artifacts: list[ConversationArtifactResponse] | None = None,
 ) -> ConversationRunResponse:
     return ConversationRunResponse(
         run_id=run.id,
@@ -172,6 +187,8 @@ def completed_run_response(
         reply=reply,
         route=route,
         handled_by="personal_assistant_graph",
+        reasoning_mode=_run_reasoning_mode(run),
+        reasoning_effort=_run_reasoning_effort(run),
         retrieval_route=retrieval_decision.route,
         answer_mode=answer_mode,
         document_scope=retrieval_decision.document_scope,
@@ -203,7 +220,20 @@ def completed_run_response(
             )
             for citation, item in zip(citations, retrieved_chunks, strict=True)
         ],
+        attachments=attachments or [],
+        artifacts=artifacts or [],
     )
+
+
+def _run_reasoning_mode(run: AgentRunModel) -> ReasoningMode:
+    return "pro" if run.reasoning_mode == "pro" else "standard"
+
+
+def _run_reasoning_effort(run: AgentRunModel) -> ReasoningEffort:
+    value = run.reasoning_effort
+    if value in {"none", "minimal", "low", "medium", "high", "xhigh", "max"}:
+        return value  # type: ignore[return-value]
+    return "medium"
 
 
 def _run_clarification_request(run: AgentRunModel) -> ConversationClarificationRequest | None:

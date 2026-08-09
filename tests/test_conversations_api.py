@@ -259,6 +259,58 @@ def test_conversation_run_uses_server_owned_history(monkeypatch) -> None:  # noq
     assert trace[-1]["evidence"]["citation_count"] == 0
 
 
+def test_registered_run_persists_and_exposes_reasoning_preferences(monkeypatch) -> None:  # noqa: ANN001
+    monkeypatch.setenv("MY_AGENTS_OPENAI_REASONING_EFFORT", "low")
+    client = _client(monkeypatch, SpyGraph())
+    _signup_login(client, "reasoning@example.com")
+
+    capability = client.get("/capabilities/reasoning")
+    assert capability.status_code == 200
+    assert capability.json() == {
+        "customizable": True,
+        "default_mode": "standard",
+        "default_effort": "low",
+        "supported_modes": ["standard", "pro"],
+        "supported_efforts": ["none", "minimal", "low", "medium", "high", "xhigh", "max"],
+        "chat": {"model": "gpt-5.6-sol", "pro_supported": True},
+        "document_workspace": {"model": "gpt-5.6-sol", "pro_supported": True},
+    }
+
+    conversation_id = client.post("/conversations", json={"title": "Reasoning preferences"}).json()[
+        "id"
+    ]
+    response = client.post(
+        f"/conversations/{conversation_id}/runs",
+        json={"message": "Review this plan", "reasoning_mode": "pro", "reasoning_effort": "max"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["reasoning_mode"] == "pro"
+    assert payload["reasoning_effort"] == "max"
+    assert client.get(f"/conversations/{conversation_id}/runs").json()[0]["reasoning_mode"] == "pro"
+    events = client.get(f"/conversations/{conversation_id}/runs/{payload['run_id']}/events").json()
+    started = next(item for item in events if item["event_type"] == "run_started")
+    assert started["payload"]["reasoning_mode"] == "pro"
+    assert started["payload"]["reasoning_effort"] == "max"
+
+
+def test_pro_reasoning_rejects_pre_gpt_5_6_model_before_run_starts(monkeypatch) -> None:  # noqa: ANN001
+    monkeypatch.setenv("MY_AGENTS_OPENAI_MODEL", "gpt-5.5")
+    client = _client(monkeypatch, SpyGraph())
+    _signup_login(client, "reasoning-old-model@example.com")
+    conversation_id = client.post("/conversations", json={"title": "Old model"}).json()["id"]
+
+    response = client.post(
+        f"/conversations/{conversation_id}/runs",
+        json={"message": "Use pro", "reasoning_mode": "pro"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["code"] == "reasoning_mode_not_supported"
+    assert client.get(f"/conversations/{conversation_id}/messages").json() == []
+
+
 def test_general_prompt_skips_retrieval_service(monkeypatch) -> None:  # noqa: ANN001
     graph = SpyGraph()
     client = _client(monkeypatch, graph)
@@ -777,7 +829,10 @@ def test_assistant_message_replay_prunes_later_transcript_and_regenerates(monkey
     client = _client(monkeypatch, graph)
     _signup_login(client, "replay-success@example.com")
     conversation_id = client.post("/conversations", json={"title": "Replay success"}).json()["id"]
-    first = client.post(f"/conversations/{conversation_id}/runs", json={"message": "First"})
+    first = client.post(
+        f"/conversations/{conversation_id}/runs",
+        json={"message": "First", "reasoning_mode": "pro", "reasoning_effort": "high"},
+    )
     second = client.post(f"/conversations/{conversation_id}/runs", json={"message": "Second"})
     first_run_id = first.json()["run_id"]
     second_run_id = second.json()["run_id"]
@@ -789,6 +844,8 @@ def test_assistant_message_replay_prunes_later_transcript_and_regenerates(monkey
     replay_payload = response.json()
     assert replay_payload["run_id"] not in {first_run_id, second_run_id}
     assert replay_payload["reply"] == "saw 1 messages"
+    assert replay_payload["reasoning_mode"] == "pro"
+    assert replay_payload["reasoning_effort"] == "high"
     assert [message.content for message in graph.calls[-1]["messages"]] == ["First"]
 
     transcript = client.get(f"/conversations/{conversation_id}/messages")
@@ -1165,7 +1222,7 @@ def test_streaming_conversation_run_emits_events_and_persists_result(monkeypatch
     with client.stream(
         "POST",
         f"/conversations/{conversation_id}/runs/stream",
-        json={"message": "Stream this"},
+        json={"message": "Stream this", "reasoning_mode": "pro", "reasoning_effort": "xhigh"},
     ) as response:
         assert response.status_code == 200
         assert response.headers["content-type"].startswith("text/event-stream")
@@ -1186,12 +1243,16 @@ def test_streaming_conversation_run_emits_events_and_persists_result(monkeypatch
     assert started["conversation_id"] == conversation_id
     assert started["knowledge_base_selection"] == {"mode": "all", "knowledge_base_ids": []}
     assert started["resolved_knowledge_base_count"] >= 0
+    assert started["reasoning_mode"] == "pro"
+    assert started["reasoning_effort"] == "xhigh"
 
     completed = events[-1]["data"]
     assert completed["conversation_id"] == conversation_id
     assert completed["reply"] == "saw 1 messages"
     assert completed["handled_by"] == "personal_assistant_graph"
     assert completed["route"]["label"] == "general_assistant"
+    assert completed["reasoning_mode"] == "pro"
+    assert completed["reasoning_effort"] == "xhigh"
     assert graph.calls[0]["conversation_id"] == conversation_id
     assert [step["id"] for step in completed["agent_trace"]][-2:] == [
         "assistant_graph",

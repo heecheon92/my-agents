@@ -26,7 +26,13 @@ from my_agents.conversations.schemas import (
     AgentTraceText,
     AnswerComposedAgentEventResponse,
     AnswerComposedEventPayload,
+    ArtifactCreatedAgentEventResponse,
+    ArtifactCreatedEventPayload,
+    AttachmentsReadyAgentEventResponse,
+    AttachmentsReadyEventPayload,
     ConversationClarificationRequest,
+    DocumentWorkspaceStartedAgentEventResponse,
+    DocumentWorkspaceStartedEventPayload,
     GraphInvokedAgentEventResponse,
     GraphInvokedEventPayload,
     RetrievalCompletedAgentEventResponse,
@@ -310,6 +316,24 @@ def event_response(event: AgentEventModel) -> AgentEventResponse:
                 **common,
                 event_type=event_type.value,
                 payload=_safe_event_payload(GraphInvokedEventPayload, raw_payload),
+            )
+        case AgentEventType.ATTACHMENTS_READY:
+            return AttachmentsReadyAgentEventResponse(
+                **common,
+                event_type=event_type.value,
+                payload=_safe_event_payload(AttachmentsReadyEventPayload, raw_payload),
+            )
+        case AgentEventType.DOCUMENT_WORKSPACE_STARTED:
+            return DocumentWorkspaceStartedAgentEventResponse(
+                **common,
+                event_type=event_type.value,
+                payload=_safe_event_payload(DocumentWorkspaceStartedEventPayload, raw_payload),
+            )
+        case AgentEventType.ARTIFACT_CREATED:
+            return ArtifactCreatedAgentEventResponse(
+                **common,
+                event_type=event_type.value,
+                payload=_safe_event_payload(ArtifactCreatedEventPayload, raw_payload),
             )
         case AgentEventType.ANSWER_COMPOSED:
             return AnswerComposedAgentEventResponse(

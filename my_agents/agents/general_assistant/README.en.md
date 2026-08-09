@@ -134,7 +134,9 @@ See [`docs/product-chat-service/en/19-langgraph-native-memory-migration.md`](../
 
 ## Where to add OpenAI hosted tools
 
-OpenAI Responses API built-in tools such as `web_search` should be added at the **OpenAI provider boundary in `responders.py`, not directly inside graph nodes**.
+General-answer OpenAI Responses API tools such as `web_search` belong at the **OpenAI provider boundary in `responders.py`, not directly inside graph nodes**. A run with selected temporary files is the deliberate exception: it receives `document_workspace_runtime` through LangGraph runtime context, and the final response node invokes the isolated document-workspace adapter. That adapter is needed because `ChatOpenAI` does not yet expose the required Files, Containers, Hosted Shell, and Skills surfaces.
+
+The same runtime context carries the run's persisted effective `reasoning_mode` and `reasoning_effort` into the final response node. Ordinary answers pass them through `ChatOpenAI.invoke(..., reasoning={...})`; attachment answers pass the same values to the document-workspace Responses API adapter. The source-selection gate deliberately stays on server-default effort and `standard` mode so a client preference cannot alter internal routing cost or behavior. Guest override enforcement and GPT-5.6 `pro` validation happen at the API boundary before graph execution.
 
 Reasons:
 
@@ -142,6 +144,7 @@ Reasons:
 - Nodes such as `respond_general` and `respond_research` do not need to know provider-specific details.
 - OpenAI-specific behavior stays inside `OpenAIResponseProvider`, making replacement and testing easier.
 - route-specific tool policy can be tested in one place.
+- Attachment turns bypass private-KB retrieval unless the client explicitly selects KBs, making the temporary attachments the turn's source while still allowing permission-filtered RAG context when deliberately requested.
 
 ## Web search policy
 

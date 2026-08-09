@@ -17,6 +17,7 @@ from my_agents.agents.general_assistant.memory_recall import latest_human_text, 
 from my_agents.agents.general_assistant.responders import ResponseProviderConfigurationError
 from my_agents.knowledge.auth import KnowledgeBaseSelectionContext
 from my_agents.knowledge.routing import route_retrieval
+from my_agents.reasoning import openai_reasoning_payload
 from my_agents.settings import Settings, get_settings
 
 RetrievalSource = Literal["knowledge_base", "bypass"]
@@ -253,7 +254,12 @@ class OpenAIRetrievalSourceDecider:
                         f"{_selection_context_payload(selection_context)}"
                     )
                 ),
-            ]
+            ],
+            reasoning=openai_reasoning_payload(
+                model=self._settings.openai_model,
+                mode="standard",
+                effort=self._settings.openai_reasoning_effort,
+            ),
         )
         parsed = _parse_decision_response(_message_content_text(response))
         if parsed is not None:
@@ -282,8 +288,6 @@ def _build_gate_model_args(settings: Settings) -> dict[str, Any]:
         "use_responses_api": True,
         "output_version": "responses/v1",
     }
-    if settings.openai_reasoning_effort is not None:
-        args["reasoning_effort"] = settings.openai_reasoning_effort
     if settings.openai_verbosity is not None:
         args["verbosity"] = settings.openai_verbosity
     return args

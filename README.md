@@ -152,7 +152,11 @@ curl -X POST http://127.0.0.1:8000/assistant/chat \
   -d '{"message":"Plan my next backend milestone","history":[]}'
 ```
 
-실제 OpenAI 응답을 받으려면 `.env`에 `OPENAI_API_KEY`를 넣고 `MY_AGENTS_RESPONSE_MODE=openai`로 실행합니다. 애플리케이션 코드는 OpenAI를 직접 호출하지 않고 `langchain-openai`의 `ChatOpenAI` 경계를 거칩니다.
+실제 OpenAI 응답을 받으려면 `.env`에 `OPENAI_API_KEY`를 넣고 `MY_AGENTS_RESPONSE_MODE=openai`로 실행합니다. 일반 응답은 `langchain-openai`의 `ChatOpenAI` 경계를 거칩니다. 선택 기능인 임시 document workspace만 Files, Containers, Hosted Shell, Skills를 사용하기 위해 격리된 OpenAI SDK adapter를 사용합니다.
+
+일반 계정의 run 요청은 선택적으로 `reasoning_mode`(`standard` 또는 `pro`)와 `reasoning_effort`(`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`)를 받을 수 있습니다. 생략하면 mode는 `standard`, effort는 `MY_AGENTS_OPENAI_REASONING_EFFORT`를 사용합니다. Guest가 값을 보내더라도 서버는 `standard`와 환경변수 기본 effort로 고정합니다. 실제 기본값과 model 지원 여부는 `GET /capabilities/reasoning`에서 확인할 수 있습니다. `pro`는 GPT-5.6 model에서만 허용됩니다. 세부 계약은 [run reasoning 설정 계약](./docs/product-chat-service/ko/26-run-reasoning-preferences.md)에 있습니다.
+
+`MY_AGENTS_DOCUMENT_WORKSPACE_ENABLED=true`로 켜면 승인된 일반 계정은 대화에 임시 파일을 첨부해 GPT-5.6 Sol로 분석하고, 인증된 spreadsheet 결과(`.xlsx`, `.csv`, `.tsv`)를 내려받을 수 있습니다. Guest에는 열리지 않으며, 업로드마다 OpenAI 전송 동의가 필요합니다. 파일 본문은 Product DB에 저장하지 않고 OpenAI `user_data` file과 network-disabled hosted container에만 제한 시간 동안 둡니다. 세부 계약은 [OpenAI document workspace 설계](./docs/product-chat-service/ko/25-openai-document-workspace.md)를 봅니다.
 
 VS Code의 `FastAPI: uvicorn main:app (local pgvector)` 프로필은 실행 전에 마이그레이션을 돌리는데, 이때 셸에서 `uv`를 찾는 대신 Python 확장이 선택한 인터프리터를 그대로 씁니다. GUI로 켠 VS Code의 `PATH`에 `uv`가 없어도 동작하도록 만든 구성이므로, 쓰기 전에 이 저장소의 `.venv` 인터프리터를 선택해 두세요.
 
@@ -161,7 +165,9 @@ OpenAPI 문서는 서버를 띄운 뒤 `http://127.0.0.1:8000/openapi.json`에�
 ### 프론트엔드가 의존하는 계약
 
 - HTTP·검증 오류는 기존 `detail`과 함께 기계가 읽을 수 있는 `code`를 반환합니다. UI는 `code`를 번역 키로 쓰고 `detail`은 진단용으로만 취급해야 합니다.
-- `GET /conversations/{conversation_id}/runs/{run_id}/events`는 `event_type`으로 구분되는 닫힌 union입니다. 저장되는 이벤트는 `run_started`, `user_message_stored`, `retrieval_completed`, `graph_invoked`, `answer_composed`, `run_cancel_requested`, `run_cancelled`, `run_failed`입니다.
+- `GET /conversations/{conversation_id}/runs/{run_id}/events`는 `event_type`으로 구분되는 닫힌 union입니다. 저장되는 이벤트는 `run_started`, `user_message_stored`, `retrieval_completed`, `graph_invoked`, `attachments_ready`, `document_workspace_started`, `artifact_created`, `answer_composed`, `run_cancel_requested`, `run_cancelled`, `run_failed`입니다.
+- `GET /capabilities/document-workspace`는 현재 enable/eligibility, 허용 형식, 제한, retention을 반환합니다. 첨부는 `POST/GET/DELETE /conversations/{conversation_id}/attachments`, 결과물은 `GET /conversations/{conversation_id}/artifacts`와 해당 download URL을 사용합니다. Run 요청의 `attachment_ids`가 실제 실행 대상을 고릅니다.
+- `GET /capabilities/reasoning`은 현재 model, server default effort, 허용 enum, guest customization 가능 여부를 반환합니다. Run/replay 요청의 선택적 `reasoning_mode`와 `reasoning_effort`는 effective 값으로 run에 저장되고 응답 및 `run_started` event에 다시 제공됩니다.
 - 저장된 이벤트의 payload와 `agent_trace`는 이벤트·단계별 허용 목록을 통과한 필드만 내보냅니다. `answer_delta`, `run_completed`, `run_error`는 스트리밍 전용이라 저장되는 이벤트 union에는 들어가지 않습니다.
 - 비동기 수집 진행률은 `queued=0`, `claimed=1`, `chunking=15`, `embedding=45`, 선택적으로 `indexing=70`, `entities=85`, `metadata=95`, `completed=100`으로 저장되며 폴링 엔드포인트에서 읽을 수 있습니다. 시간이 아니라 단계 도달을 나타내는 값입니다.
 
@@ -174,7 +180,7 @@ uv run ruff format --check .
 git diff --check
 ```
 
-2026-08-09 기준 이 체크아웃에서 전체 테스트는 **474 passed, 2 skipped**이며, 실제 자격 증명이 없어도 돌아갑니다.
+2026-08-09 기준 이 체크아웃에서 전체 테스트는 **487 passed, 2 skipped**이며, 실제 자격 증명이 없어도 돌아갑니다.
 
 ## 보안과 개인정보 경계
 

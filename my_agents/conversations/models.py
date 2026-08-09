@@ -36,6 +36,9 @@ class AgentEventType(StrEnum):
     USER_MESSAGE_STORED = "user_message_stored"
     RETRIEVAL_COMPLETED = "retrieval_completed"
     GRAPH_INVOKED = "graph_invoked"
+    ATTACHMENTS_READY = "attachments_ready"
+    DOCUMENT_WORKSPACE_STARTED = "document_workspace_started"
+    ARTIFACT_CREATED = "artifact_created"
     ANSWER_COMPOSED = "answer_composed"
     RUN_CANCEL_REQUESTED = "run_cancel_requested"
     RUN_CANCELLED = "run_cancelled"
@@ -82,6 +85,8 @@ class AgentRunModel(Base):
     )
     user_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False)
+    reasoning_mode: Mapped[str] = mapped_column(String(20), default="standard", nullable=False)
+    reasoning_effort: Mapped[str] = mapped_column(String(20), default="medium", nullable=False)
     route_label: Mapped[str | None] = mapped_column(String(80), nullable=True)
     route_explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
     retrieval_route: Mapped[str | None] = mapped_column(String(40), nullable=True)

@@ -12,10 +12,13 @@ from my_agents.api.conversations.run_lifecycle import (
     assert_no_active_run,
     cleanup_stale_active_runs,
     complete_sync_conversation_run,
+    fail_active_run,
     start_run,
 )
 from my_agents.api.conversations.serializers import run_detail_response, run_summary_response
 from my_agents.api.conversations.transcripts import messages_for_conversation, store_user_message
+from my_agents.api.document_workspace import get_document_workspace_provider
+from my_agents.api.reasoning import resolve_reasoning_preferences
 from my_agents.auth.contracts import Principal
 from my_agents.auth.dependencies import get_current_principal
 from my_agents.auth.guest_limits import assert_guest_access_active, assert_guest_can_send_prompt
@@ -24,6 +27,11 @@ from my_agents.conversations.schemas import (
     AgentRunSummaryResponse,
     ConversationRunRequest,
     ConversationRunResponse,
+)
+from my_agents.document_workspace.provider import DocumentWorkspaceProvider
+from my_agents.document_workspace.service import (
+    assert_document_workspace_access,
+    prepare_document_workspace_runtime,
 )
 from my_agents.knowledge.auth import resolve_conversation_knowledge_context
 from my_agents.persistence.database import get_database_session
@@ -40,6 +48,10 @@ def run_conversation(
     db: Annotated[Session, Depends(get_database_session)],
     graph_runner: Annotated[GraphRunner, Depends(get_graph_runner)],
     settings: Annotated[Settings, Depends(get_settings)],
+    document_workspace_provider: Annotated[
+        DocumentWorkspaceProvider | None,
+        Depends(get_document_workspace_provider),
+    ],
 ) -> ConversationRunResponse:
     assert_guest_can_send_prompt(db, principal, settings)
     get_authorized_conversation(db, conversation_id, principal.user_id)
@@ -49,6 +61,17 @@ def run_conversation(
         principal=principal,
         requested_selection=request.knowledge_base_selection,
     )
+    if request.attachment_ids:
+        assert_document_workspace_access(settings=settings, principal=principal)
+        if document_workspace_provider is None:
+            raise RuntimeError("document workspace provider is unavailable")
+    reasoning = resolve_reasoning_preferences(
+        settings=settings,
+        principal=principal,
+        requested_mode=request.reasoning_mode,
+        requested_effort=request.reasoning_effort,
+        uses_document_workspace=bool(request.attachment_ids),
+    )
     user_message = store_user_message(db, conversation_id, request.message)
     run = start_run(
         db=db,
@@ -57,7 +80,30 @@ def run_conversation(
         user_message_id=user_message.id,
         message_content_length=len(request.message.strip()),
         selection_context=selection_context,
+        reasoning_mode=reasoning.mode,
+        reasoning_effort=reasoning.effort,
     )
+    document_workspace_runtime = None
+    if request.attachment_ids:
+        assert document_workspace_provider is not None
+        try:
+            document_workspace_runtime = prepare_document_workspace_runtime(
+                db=db,
+                provider=document_workspace_provider,
+                settings=settings,
+                principal=principal,
+                conversation_id=conversation_id,
+                run_id=run.id,
+                attachment_ids=request.attachment_ids,
+            )
+        except Exception as exc:
+            fail_active_run(
+                db=db,
+                run_id=run.id,
+                conversation_id=conversation_id,
+                error_type=type(exc).__name__,
+            )
+            raise
     messages = messages_for_conversation(db, conversation_id)
     return complete_sync_conversation_run(
         db=db,
@@ -68,6 +114,7 @@ def run_conversation(
         run=run,
         selection_context=selection_context,
         graph_runner=graph_runner,
+        document_workspace_runtime=document_workspace_runtime,
     )
 
 

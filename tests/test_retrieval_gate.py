@@ -17,8 +17,9 @@ class FakeGateChatModel:
         self._response = response
         self.calls: list[list[BaseMessage]] = []
 
-    def invoke(self, messages: list[BaseMessage]) -> AIMessage:
+    def invoke(self, messages: list[BaseMessage], **kwargs) -> AIMessage:  # noqa: ANN003
         self.calls.append(messages)
+        assert kwargs["reasoning"]["mode"] == "standard"
         return AIMessage(content=self._response)
 
 

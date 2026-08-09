@@ -9,6 +9,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from my_agents.agents.general_assistant.classifier import classify_messages
@@ -33,6 +34,7 @@ from my_agents.api.conversations.retrieval_context import (
 from my_agents.api.conversations.run_events import (
     answer_composed_payload,
     append_run_event,
+    event_response,
     graph_invoked_payload,
     sse_event,
     update_graph_invoked_event_memory_snapshot,
@@ -55,17 +57,25 @@ from my_agents.api.conversations.serializers import (
     knowledge_base_selection_payload,
 )
 from my_agents.api.conversations.transcripts import messages_for_conversation, store_user_message
+from my_agents.api.document_workspace import get_document_workspace_provider
+from my_agents.api.reasoning import resolve_reasoning_preferences
 from my_agents.auth.contracts import Principal
 from my_agents.auth.dependencies import get_current_principal
 from my_agents.auth.guest_limits import assert_guest_can_send_prompt
-from my_agents.conversations.models import AgentEventType
+from my_agents.conversations.models import AgentEventModel, AgentEventType
 from my_agents.conversations.schemas import ConversationRunRequest
+from my_agents.document_workspace.provider import DocumentWorkspaceProvider
+from my_agents.document_workspace.service import (
+    assert_document_workspace_access,
+    prepare_document_workspace_runtime,
+)
 from my_agents.knowledge.auth import (
     KnowledgeBaseSelectionContext,
     resolve_conversation_knowledge_context,
 )
 from my_agents.observability.metrics import observe_conversation_run
 from my_agents.persistence.database import get_database_session
+from my_agents.reasoning import EffectiveReasoningPreferences
 from my_agents.settings import Settings, get_settings
 
 router = APIRouter()
@@ -99,6 +109,10 @@ def stream_conversation_run(
     db: Annotated[Session, Depends(get_database_session)],
     graph_runner: Annotated[GraphRunner, Depends(get_graph_runner)],
     settings: Annotated[Settings, Depends(get_settings)],
+    document_workspace_provider: Annotated[
+        DocumentWorkspaceProvider | None,
+        Depends(get_document_workspace_provider),
+    ],
 ) -> StreamingResponse:
     """Stream redacted conversation-run progress as Server-Sent Events.
 
@@ -117,14 +131,29 @@ def stream_conversation_run(
         principal=principal,
         requested_selection=request.knowledge_base_selection,
     )
+    if request.attachment_ids:
+        assert_document_workspace_access(settings=settings, principal=principal)
+        if document_workspace_provider is None:
+            raise RuntimeError("document workspace provider is unavailable")
+    reasoning = resolve_reasoning_preferences(
+        settings=settings,
+        principal=principal,
+        requested_mode=request.reasoning_mode,
+        requested_effort=request.reasoning_effort,
+        uses_document_workspace=bool(request.attachment_ids),
+    )
     return StreamingResponse(
         conversation_run_events(
             db=db,
             conversation_id=conversation_id,
             request=request,
             user_id=principal.user_id,
+            principal=principal,
             selection_context=selection_context,
             graph_runner=graph_runner,
+            settings=settings,
+            document_workspace_provider=document_workspace_provider,
+            reasoning=reasoning,
         ),
         media_type="text/event-stream",
     )
@@ -136,9 +165,22 @@ def conversation_run_events(
     conversation_id: str,
     request: ConversationRunRequest,
     user_id: str,
+    principal: Principal | None = None,
     selection_context: KnowledgeBaseSelectionContext,
     graph_runner: GraphRunner,
+    settings: Settings | None = None,
+    document_workspace_provider: DocumentWorkspaceProvider | None = None,
+    reasoning: EffectiveReasoningPreferences | None = None,
 ) -> Iterator[str]:
+    principal = principal or Principal(user_id=user_id, session_id="stream-runtime")
+    settings = settings or get_settings()
+    reasoning = reasoning or resolve_reasoning_preferences(
+        settings=settings,
+        principal=principal,
+        requested_mode=request.reasoning_mode,
+        requested_effort=request.reasoning_effort,
+        uses_document_workspace=bool(request.attachment_ids),
+    )
     user_message = store_user_message(db, conversation_id, request.message)
     message_content_length = len(request.message.strip())
     run = start_run(
@@ -148,6 +190,8 @@ def conversation_run_events(
         user_message_id=user_message.id,
         message_content_length=message_content_length,
         selection_context=selection_context,
+        reasoning_mode=reasoning.mode,
+        reasoning_effort=reasoning.effort,
     )
     run_started = perf_counter()
     retrieval_route = "unknown"
@@ -169,6 +213,8 @@ def conversation_run_events(
                 "run_id": run.id,
                 "conversation_id": conversation_id,
                 "status": run.status,
+                "reasoning_mode": reasoning.mode,
+                "reasoning_effort": reasoning.effort,
                 **knowledge_base_selection_payload(selection_context),
             },
         )
@@ -177,6 +223,25 @@ def conversation_run_events(
             content_length=message_content_length,
         )
         yield sse_event(AgentEventType.USER_MESSAGE_STORED.value, user_message_payload)
+
+        document_workspace_runtime = None
+        if request.attachment_ids:
+            if document_workspace_provider is None:
+                raise RuntimeError("document workspace provider is unavailable")
+            document_workspace_runtime = prepare_document_workspace_runtime(
+                db=db,
+                provider=document_workspace_provider,
+                settings=settings,
+                principal=principal,
+                conversation_id=conversation_id,
+                run_id=run.id,
+                attachment_ids=request.attachment_ids,
+            )
+            yield from _workspace_sse_events(
+                db,
+                run.id,
+                {AgentEventType.ATTACHMENTS_READY.value},
+            )
 
         messages = messages_for_conversation(db, conversation_id)
         graph_input = graph_input_for_run(
@@ -188,6 +253,9 @@ def conversation_run_events(
             db=db,
             user_id=user_id,
             selection_context=selection_context,
+            document_workspace_runtime=document_workspace_runtime,
+            reasoning_mode=reasoning.mode,
+            reasoning_effort=reasoning.effort,
         )
         retrieval_context: ConversationRetrievalContext | None = None
         memory_snapshot = graph_memory_source_snapshot_json(graph_input)
@@ -463,6 +531,15 @@ def conversation_run_events(
             yield cancelled_sse_event(db, run.id)
             record_run_metric("cancelled")
             return
+        if document_workspace_runtime is not None:
+            yield from _workspace_sse_events(
+                db,
+                run.id,
+                {
+                    AgentEventType.DOCUMENT_WORKSPACE_STARTED.value,
+                    AgentEventType.ARTIFACT_CREATED.value,
+                },
+            )
         response = persist_completed_run(
             db=db,
             run_id=run.id,
@@ -537,6 +614,27 @@ def conversation_run_events(
             yield sse_event("run_error", {"run_id": run_id, "status_code": 502})
         record_run_metric("failed")
         return
+
+
+def _workspace_sse_events(
+    db: Session,
+    run_id: str,
+    event_types: set[str],
+) -> Iterator[str]:
+    events = db.scalars(
+        select(AgentEventModel)
+        .where(
+            AgentEventModel.run_id == run_id,
+            AgentEventModel.event_type.in_(event_types),
+        )
+        .order_by(AgentEventModel.sequence)
+    ).all()
+    for event in events:
+        response = event_response(event)
+        yield sse_event(
+            response.event_type,
+            response.payload.model_dump(mode="json"),
+        )
 
 
 def _log_stream_failure(

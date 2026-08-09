@@ -7,7 +7,7 @@ from pathlib import Path
 
 from scripts import migrate_database as migrate_database_script
 
-LATEST_REVISION = "20260624_0029"
+LATEST_REVISION = "20260809_0031"
 
 
 def _env_file(tmp_path: Path, database_url: str) -> Path:

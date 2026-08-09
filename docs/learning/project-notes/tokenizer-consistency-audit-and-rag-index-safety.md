@@ -1,6 +1,6 @@
 ---
 created: 2026-07-14
-updated: 2026-07-14
+updated: 2026-08-09
 status: active
 topics:
   - tokenization
@@ -56,7 +56,7 @@ reading or printing secrets.
 
 | Boundary | Current behavior | Consistency assessment |
 | --- | --- | --- |
-| Chat generation | `ChatOpenAI` sends text to `gpt-5.5` through the Responses API. OpenAI applies the hosted model tokenizer. | Correct boundary; the app should not substitute an unrelated local tokenizer. |
+| Chat generation | `ChatOpenAI` sends text to the configured GPT model (`gpt-5.6-sol` by default) through the Responses API. OpenAI applies the hosted model tokenizer. | Correct boundary; the app should not substitute an unrelated local tokenizer. |
 | Embeddings | `OpenAIEmbeddings` uses `text-embedding-3-small`; installed `tiktoken` maps it to `cl100k_base` for length-safe embedding input handling. | Correct for new document/query calls using the same configuration. |
 | Reranking | `sentence-transformers.CrossEncoder` tokenizes `(query, chunk)` pairs with the selected cross-encoder tokenizer. | Correct model boundary, but model choice and truncation policy need work. |
 | Document chunking | Extraction targets 1,500 characters with 200-character overlap. | Language-dependent proxy, not a reliable downstream token budget. |
@@ -206,3 +206,4 @@ The execution order and completion checklist are tracked as a critical next move
 
 - 2026-07-14: Created from the tokenizer consistency audit and promoted the remaining RAG safety work
   to the critical next-move roadmap.
+- 2026-08-09: Refreshed the chat-generation row for the GPT-5.6 Sol default.

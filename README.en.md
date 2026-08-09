@@ -152,7 +152,11 @@ curl -X POST http://127.0.0.1:8000/assistant/chat \
   -d '{"message":"Plan my next backend milestone","history":[]}'
 ```
 
-For real OpenAI responses, set `OPENAI_API_KEY` in `.env` and use `MY_AGENTS_RESPONSE_MODE=openai`. Application code uses the `langchain-openai` / `ChatOpenAI` boundary rather than direct provider calls.
+For real OpenAI responses, set `OPENAI_API_KEY` in `.env` and use `MY_AGENTS_RESPONSE_MODE=openai`. Ordinary responses use the `langchain-openai` / `ChatOpenAI` boundary. The optional temporary document workspace is the isolated exception: it uses a narrow OpenAI SDK adapter for Files, Containers, Hosted Shell, and Skills.
+
+Registered-account run requests may optionally provide `reasoning_mode` (`standard` or `pro`) and `reasoning_effort` (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`). When omitted, mode is `standard` and effort comes from `MY_AGENTS_OPENAI_REASONING_EFFORT`. Even if a guest submits different values, the server fixes the run to `standard` and the environment default effort. `GET /capabilities/reasoning` reports the effective default and configured-model support. `pro` is accepted only for GPT-5.6 models. See the [run reasoning preference contract](./docs/product-chat-service/en/26-run-reasoning-preferences.md).
+
+With `MY_AGENTS_DOCUMENT_WORKSPACE_ENABLED=true`, approved registered accounts can attach temporary files to a conversation, analyze them with GPT-5.6 Sol, and download certified spreadsheet outputs (`.xlsx`, `.csv`, `.tsv`). Guests are ineligible and every upload requires explicit consent to transfer the file to OpenAI. File bytes are never stored in the Product DB; they remain only in expiring OpenAI `user_data` files and a network-disabled hosted container. See the [OpenAI document workspace design](./docs/product-chat-service/en/25-openai-document-workspace.md) for the full contract.
 
 The VS Code `FastAPI: uvicorn main:app (local pgvector)` profile runs its pre-launch migration with the interpreter selected by the Python extension. It does not depend on a shell command finding `uv` in a GUI-launched VS Code process, so select this repository's `.venv` interpreter before using the profile.
 
@@ -161,7 +165,9 @@ OpenAPI is available from a running server at `http://127.0.0.1:8000/openapi.jso
 ### Frontend API contracts
 
 - HTTP and validation errors return a stable machine-readable `code` alongside the existing `detail`. UIs should localize from `code` and treat `detail` as diagnostic copy.
-- `GET /conversations/{conversation_id}/runs/{run_id}/events` is a closed OpenAPI union discriminated by `event_type`. Persisted event types are `run_started`, `user_message_stored`, `retrieval_completed`, `graph_invoked`, `answer_composed`, `run_cancel_requested`, `run_cancelled`, and `run_failed`.
+- `GET /conversations/{conversation_id}/runs/{run_id}/events` is a closed OpenAPI union discriminated by `event_type`. Persisted event types are `run_started`, `user_message_stored`, `retrieval_completed`, `graph_invoked`, `attachments_ready`, `document_workspace_started`, `artifact_created`, `answer_composed`, `run_cancel_requested`, `run_cancelled`, and `run_failed`.
+- `GET /capabilities/document-workspace` reports effective enablement, eligibility, accepted formats, limits, and retention. Attachments use `POST/GET/DELETE /conversations/{conversation_id}/attachments`; artifacts use `GET /conversations/{conversation_id}/artifacts` and their download URLs. A run's `attachment_ids` selects the files used for that execution.
+- `GET /capabilities/reasoning` reports configured models, the server-default effort, stable enums, and whether the current account may customize them. Optional run/replay `reasoning_mode` and `reasoning_effort` values are persisted as effective run metadata and returned in responses and the `run_started` event.
 - Persisted event payloads and `agent_trace` expose only fields accepted by event- and stage-specific allowlist schemas. `answer_delta`, `run_completed`, and `run_error` are stream-only SSE events and are not members of the persisted-event union.
 - Async ingestion commits observable progress as `queued=0`, `claimed=1`, `chunking=15`, `embedding=45`, optional `indexing=70`, `entities=85`, `metadata=95`, and `completed=100`. These mark stages reached, not elapsed time.
 
@@ -174,7 +180,7 @@ uv run ruff format --check .
 git diff --check
 ```
 
-On 2026-08-09, the full suite on this checkout reports **474 passed, 2 skipped** without requiring real credentials.
+On 2026-08-09, the full suite on this checkout reports **487 passed, 2 skipped** without requiring real credentials.
 
 ## Security and privacy boundaries
 

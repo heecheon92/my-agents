@@ -135,6 +135,7 @@ def result_fields_from_update(update: dict[str, Any]) -> dict[str, Any]:
             "source_conflicts",
             "retrieved_chunk_ids",
             "retrieved_context",
+            "document_artifacts",
         ):
             value = node_update.get(field_name)
             if isinstance(value, list):
@@ -145,6 +146,7 @@ def result_fields_from_update(update: dict[str, Any]) -> dict[str, Any]:
             "retrieval_route",
             "answer_mode",
             "document_scope",
+            "document_workspace_expires_at",
         ):
             if field_name in node_update:
                 fields[field_name] = node_update[field_name]

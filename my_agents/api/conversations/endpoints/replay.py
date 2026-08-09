@@ -60,6 +60,7 @@ from my_agents.api.conversations.transcripts import (
     prune_conversation_from_message,
     run_for_assistant_message,
 )
+from my_agents.api.reasoning import resolve_reasoning_preferences
 from my_agents.auth.contracts import Principal
 from my_agents.auth.dependencies import get_current_principal
 from my_agents.auth.guest_limits import assert_guest_can_send_prompt
@@ -76,7 +77,7 @@ from my_agents.knowledge.auth import (
 from my_agents.knowledge.models import DocumentModel
 from my_agents.knowledge.schemas import KnowledgeBaseSelection
 from my_agents.persistence.database import get_database_session
-from my_agents.settings import Settings, get_settings
+from my_agents.settings import ReasoningEffort, ReasoningMode, Settings, get_settings
 
 router = APIRouter()
 
@@ -90,6 +91,8 @@ class ReplayContext:
     original_run: AgentRunModel | None
     replay_warnings: list[ConversationRunWarning]
     selection_context: KnowledgeBaseSelectionContext
+    reasoning_mode: ReasoningMode
+    reasoning_effort: ReasoningEffort
 
 
 @router.post(
@@ -127,6 +130,8 @@ def replay_assistant_message(
         user_message_id=replay_context.preceding_message.id,
         message_content_length=len(replay_context.preceding_message.content.strip()),
         selection_context=replay_context.selection_context,
+        reasoning_mode=replay_context.reasoning_mode,
+        reasoning_effort=replay_context.reasoning_effort,
     )
     messages = base_messages_from_persisted(replay_context.prefix_messages)
     response = complete_sync_conversation_run(
@@ -251,6 +256,15 @@ def replay_context_for_request(
         if original_run is not None
         else request.knowledge_base_selection or KnowledgeBaseSelection()
     )
+    reasoning = resolve_reasoning_preferences(
+        settings=settings,
+        principal=principal,
+        requested_mode=request.reasoning_mode,
+        requested_effort=request.reasoning_effort,
+        uses_document_workspace=False,
+        fallback_mode=(original_run.reasoning_mode if original_run is not None else None),
+        fallback_effort=(original_run.reasoning_effort if original_run is not None else None),
+    )
     return ReplayContext(
         target_message=target_message,
         removed_messages=persisted_messages[target_index:],
@@ -263,6 +277,8 @@ def replay_context_for_request(
             principal=principal,
             requested_selection=requested_selection,
         ),
+        reasoning_mode=reasoning.mode,
+        reasoning_effort=reasoning.effort,
     )
 
 
@@ -281,6 +297,8 @@ def replay_conversation_run_events(
         user_message_id=replay_context.preceding_message.id,
         message_content_length=len(replay_context.preceding_message.content.strip()),
         selection_context=replay_context.selection_context,
+        reasoning_mode=replay_context.reasoning_mode,
+        reasoning_effort=replay_context.reasoning_effort,
     )
     try:
         yield sse_event(
@@ -289,6 +307,8 @@ def replay_conversation_run_events(
                 "run_id": run.id,
                 "conversation_id": conversation_id,
                 "status": run.status,
+                "reasoning_mode": replay_context.reasoning_mode,
+                "reasoning_effort": replay_context.reasoning_effort,
                 **knowledge_base_selection_payload(replay_context.selection_context),
             },
         )
@@ -309,6 +329,8 @@ def replay_conversation_run_events(
             db=db,
             user_id=user_id,
             selection_context=replay_context.selection_context,
+            reasoning_mode=replay_context.reasoning_mode,
+            reasoning_effort=replay_context.reasoning_effort,
         )
         retrieval_context: ConversationRetrievalContext | None = None
         memory_snapshot = graph_memory_source_snapshot_json(graph_input)

@@ -13,6 +13,7 @@ from my_agents.api.assistant import GraphRunner
 from my_agents.knowledge.auth import KnowledgeBaseSelectionContext
 from my_agents.memory.runtime import SqlAlchemyMemoryRuntime
 from my_agents.observability.metrics import track_graph_invocation
+from my_agents.settings import ReasoningEffort, ReasoningMode
 
 
 class GraphRunnerExecutionError(RuntimeError):
@@ -34,18 +35,26 @@ def graph_context_for_run(
     db: Session,
     user_id: str,
     selection_context: KnowledgeBaseSelectionContext,
+    document_workspace_runtime: object | None = None,
+    reasoning_mode: ReasoningMode = "standard",
+    reasoning_effort: ReasoningEffort = "medium",
 ) -> dict[str, object]:
     """Build LangGraph runtime context for one conversation run.
 
     The context carries non-checkpointed runtime dependencies. This keeps memory recall
     graph-owned without storing DB sessions or adapter objects in graph state.
     """
-    return {
+    context: dict[str, object] = {
         "user_id": user_id,
         "memory_runtime": SqlAlchemyMemoryRuntime(db),
         "rag_runtime": SqlAlchemyRagAgentRuntime(db),
         "knowledge_base_selection": selection_context,
+        "reasoning_mode": reasoning_mode,
+        "reasoning_effort": reasoning_effort,
     }
+    if document_workspace_runtime is not None:
+        context["document_workspace_runtime"] = document_workspace_runtime
+    return context
 
 
 def invoke_graph_runner(

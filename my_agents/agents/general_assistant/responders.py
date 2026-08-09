@@ -20,8 +20,9 @@ from my_agents.agents.general_assistant.context import (
     format_memory_context,
 )
 from my_agents.knowledge.routing import AnswerMode
+from my_agents.reasoning import openai_reasoning_payload
 from my_agents.schemas import RouteDecision
-from my_agents.settings import Settings, get_settings
+from my_agents.settings import ReasoningEffort, ReasoningMode, Settings, get_settings
 
 _SYSTEM_PROMPT = (
     "You are the reply-generation component of a backend-only FastAPI + LangGraph "
@@ -54,6 +55,8 @@ class ResponseProvider(Protocol):
         source_conflicts: Sequence[dict[str, Any]] = (),
         answer_mode: AnswerMode = "general_knowledge",
         debug_empty_response: bool = False,
+        reasoning_mode: ReasoningMode = "standard",
+        reasoning_effort: ReasoningEffort | None = None,
     ) -> str:
         """Return a user-facing reply for the classified request."""
         ...
@@ -74,8 +77,12 @@ class DeterministicResponseProvider:
         source_conflicts: Sequence[dict[str, Any]] = (),
         answer_mode: AnswerMode = "general_knowledge",
         debug_empty_response: bool = False,
+        reasoning_mode: ReasoningMode = "standard",
+        reasoning_effort: ReasoningEffort | None = None,
     ) -> str:
         _ = debug_empty_response
+        _ = reasoning_mode
+        _ = reasoning_effort
         _ = messages
         context_sentence = _deterministic_context_sentence(
             retrieved_context, memory_context, answer_mode
@@ -112,6 +119,8 @@ class OpenAIResponseProvider:
         source_conflicts: Sequence[dict[str, Any]] = (),
         answer_mode: AnswerMode = "general_knowledge",
         debug_empty_response: bool = False,
+        reasoning_mode: ReasoningMode = "standard",
+        reasoning_effort: ReasoningEffort | None = None,
     ) -> str:
         model = self._chat_model
         tools = _tools_for_route(route)
@@ -129,7 +138,12 @@ class OpenAIResponseProvider:
                 memory_context=memory_context,
                 source_conflicts=source_conflicts,
                 answer_mode=answer_mode,
-            )
+            ),
+            reasoning=openai_reasoning_payload(
+                model=self._settings.openai_model,
+                mode=reasoning_mode,
+                effort=reasoning_effort or self._settings.openai_reasoning_effort,
+            ),
         )
         return _extract_message_content(
             response,
@@ -261,8 +275,6 @@ def _build_chat_model_args(settings: Settings) -> dict[str, Any]:
         "use_responses_api": True,
         "output_version": "responses/v1",
     }
-    if settings.openai_reasoning_effort is not None:
-        args["reasoning_effort"] = settings.openai_reasoning_effort
     if settings.openai_verbosity is not None:
         args["verbosity"] = settings.openai_verbosity
     return args

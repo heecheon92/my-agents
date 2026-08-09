@@ -29,6 +29,8 @@ They live outside `docs/learning/` because `docs/learning/` is reserved for the 
 22. [General Assistant and RAG Agent architecture change report](./22-general-assistant-rag-agent-architecture-change-report.md)
 23. [Economic access, usage metering, and credits architecture](./23-economic-access-metering-and-credits-architecture.md)
 24. [Knowledge lifecycle and publish-copy contract](./24-knowledge-lifecycle-and-publish-copy-contract.md)
+25. [OpenAI-hosted document workspace](./25-openai-document-workspace.md)
+26. [Run reasoning preferences](./26-run-reasoning-preferences.md)
 
 ## Related maintenance ledgers
 
