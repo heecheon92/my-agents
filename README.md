@@ -2,43 +2,43 @@
 
 [English](./README.en.md) | 한국어
 
-**Permission-aware Agentic RAG Backend** — 개인 문서, 그룹 공유 문서, 관리자가 제공한 공통 지식 문서를 권한 경계 안에서 검색하고, 출처와 실행 과정을 함께 남기는 AI 채팅 제품의 백엔드입니다.
+**Permission-aware Agentic RAG Backend** — 개인 문서, 그룹에 공유된 문서, 관리자가 등록한 공통 문서를 권한 경계 안에서만 검색하고, 답변과 함께 근거와 실행 기록을 남기는 AI 채팅 서비스의 백엔드입니다.
 
-[라이브 제품 데모](https://www.my-agents.dev) · [프론트엔드 저장소](https://github.com/heecheon92/my-agents-frontend) · [구현 현황](./docs/implementation-tracking.md) · [로드맵](./ROADMAP.md)
+[서비스 바로가기](https://www.my-agents.dev) · [프론트엔드 저장소](https://github.com/heecheon92/my-agents-frontend) · [구현 현황](./docs/implementation-tracking.md) · [로드맵](./ROADMAP.md)
 
-> 라이브 서비스는 채용 담당자와 소규모 테스터를 위한 controlled alpha입니다. 가입과 guest access는 운영 정책에 따라 제한될 수 있으며, production-ready SaaS를 의미하지 않습니다.
+> 배포해서 운영 중이지만 누구나 즉시 가입할 수 있는 형태는 아닙니다. 가입은 직접 승인하고 있고, 승인을 기다리지 않고 둘러보려면 게스트로 접속하면 됩니다.
 
 ## 3분 요약
 
-`my-agents`는 단순한 RAG 예제가 아니라, 실제 제품에서 필요한 **인증 → 권한 확인 → 문서 수집 → hybrid retrieval → LangGraph 실행 → SSE streaming → citation/audit 저장** 흐름을 한 백엔드에 연결한 프로젝트입니다.
+`my-agents`는 RAG 예제가 아니라, 실제 서비스에 필요한 **인증 → 권한 확인 → 문서 수집 → 하이브리드 검색 → LangGraph 실행 → SSE 스트리밍 → 인용·감사 기록 저장** 흐름을 하나의 백엔드로 이어 붙인 프로젝트입니다.
 
 | 질문 | 이 프로젝트의 답 |
 | --- | --- |
-| 무엇을 만들었나? | 개인 문서, 그룹 공유 문서, 관리자 제공 공통 지식 문서를 이용해 출처가 있는 답변을 생성하는 FastAPI + LangGraph 백엔드 |
-| 무엇이 어려웠나? | 검색 품질보다 먼저 적용해야 하는 권한 경계, server-owned 대화 상태, 문서 ingestion, streaming, 운영 가능한 관측성 |
-| 무엇을 직접 검증했나? | offline test suite, permission regression, production smoke, ingestion/retrieval before-after 성능 측정 |
-| 현재 수준은? | 핵심 제품 흐름을 시연할 수 있는 controlled alpha; 운영 안정화와 보안 검토는 계속 진행 중 |
+| 무엇을 만들었나 | 개인 문서, 그룹 공유 문서, 관리자가 등록한 공통 문서를 근거로 출처가 붙은 답변을 만드는 FastAPI + LangGraph 백엔드 |
+| 무엇이 어려웠나 | 검색 품질보다 먼저 지켜야 하는 권한 경계, 서버가 소유하는 대화 상태, 문서 수집, 스트리밍, 그리고 실제로 운영에 쓸 수 있는 관측 지표 |
+| 무엇을 직접 검증했나 | 외부 키 없이 도는 테스트, 권한 회귀 테스트, 운영 환경 스모크, 수집·검색 전후 성능 측정 |
+| 지금 어디까지 왔나 | 핵심 흐름은 배포해서 돌아가고 있고, 부하 대응과 보안 점검은 계속 다듬는 중 |
 
 ## 핵심 엔지니어링 포인트
 
-- **Permission-first retrieval**: 권한 없는 chunk는 ranking, graph expansion, prompt 구성 전에 제외합니다.
-- **Hybrid retrieval**: pgvector vector search와 BM25 lexical search에서 후보를 독립적으로 수집하고, 안정적인 chunk identifier 기준 RRF(`k=60`)로 결합한 뒤 reranking/context packing을 수행합니다.
-- **Inspectable orchestration**: LangGraph state machine이 authorized knowledge 사용 여부 판단, retrieval, opt-in memory, response composition을 명시적인 단계로 연결합니다.
-- **Application-owned state**: conversation, run, message, citation, redacted event는 application database가 소유합니다. LangGraph의 일시적인 실행 state를 사용자 transcript의 source of truth로 사용하지 않습니다.
-- **Streaming product contract**: SSE로 진행 이벤트, agent trace, answer delta, 완료/실패 상태를 전달하고 같은 결과를 서버에 저장합니다.
-- **Offline-first verification**: LLM, embedding, reranker를 deterministic test double로 교체할 수 있어 전체 테스트가 API key 없이 실행됩니다.
+- **권한을 가장 먼저 적용하는 검색**: 볼 수 없는 청크는 순위 계산, 그래프 확장, 프롬프트 구성에 들어가기 전에 걸러냅니다.
+- **하이브리드 검색**: pgvector 벡터 검색과 BM25 키워드 검색이 각각 후보를 모으고, 청크 식별자를 기준으로 RRF(`k=60`)로 합친 뒤 재순위와 컨텍스트 구성을 거칩니다.
+- **들여다볼 수 있는 오케스트레이션**: LangGraph 상태 머신이 권한 있는 문서를 쓸지 판단하는 단계, 검색, 사용자가 켠 메모리, 답변 구성을 각각 눈에 보이는 단계로 연결합니다.
+- **상태는 애플리케이션이 소유**: 대화, 실행, 메시지, 인용, 가려진 이벤트는 애플리케이션 데이터베이스가 소유합니다. LangGraph의 일시적인 실행 상태를 사용자에게 보여줄 기록의 기준으로 삼지 않습니다.
+- **스트리밍도 계약의 일부**: SSE로 진행 상황, 에이전트 실행 흐름, 답변 조각, 완료·실패 상태를 내보내고, 같은 내용을 서버에도 저장합니다.
+- **키 없이 도는 검증**: LLM, 임베딩, 재순위 모델을 결정적인 테스트 대역으로 바꿔 끼울 수 있어서 전체 테스트가 API 키 없이 돌아갑니다.
 
-## 측정된 성능 개선
+## 측정한 성능 개선
 
-아래 수치는 공개 SLA가 아니라 동일 시나리오를 비교한 **local profile**입니다. 각 실험은 예상보다 느린 구간을 profiling으로 확인한 뒤 수행했으며, 최적화 전후에 검색 결과 구조와 문서 처리 품질 검사를 동일하게 유지했습니다.
+아래 수치는 공개 SLA가 아니라, 같은 시나리오를 로컬에서 측정해 비교한 값입니다. 모두 프로파일링으로 예상보다 느린 구간을 확인한 뒤 손을 댔고, 최적화 전후로 검색 결과의 구성과 문서 처리 품질 검사는 똑같이 유지했습니다.
 
-| 영역 | 적용 방법 | Before | After | 결과 |
+| 구간 | 무엇을 바꿨나 | 이전 | 이후 | 결과 |
 | --- | --- | ---: | ---: | ---: |
-| 195-page PDF ingestion end-to-end | OpenAI metadata 생성과 embedding/indexing을 동시에 실행하고, native-text PDF의 불필요한 사전 parsing pass를 생략 | 36.16s | 16.57s | 약 54% 개선 |
-| Hybrid retrieval candidate gathering | ranking에 필요하지 않은 큰 column의 조회를 미루고, 최종 top-k 후보의 전체 record만 가져오도록 변경 | 31.42s | 1.84s | 94.1% 개선 |
-| BM25 corpus/rank/hydration | 모든 chunk의 전체 ORM row 대신 ID와 text만으로 corpus를 만들고, BM25 top-k row만 추가 조회 | 14.34s | 0.14s | 99.0% 개선 |
+| 195쪽 PDF 수집 전체 | OpenAI 메타데이터 생성과 임베딩·색인을 함께 돌리고, 텍스트가 이미 들어 있는 PDF에서 불필요한 사전 파싱을 생략 | 36.16s | 16.57s | 약 54% 단축 |
+| 하이브리드 검색 후보 수집 | 순위 계산에 필요 없는 큰 컬럼은 나중에 읽고, 최종 상위 후보만 전체 레코드를 가져오도록 변경 | 31.42s | 1.84s | 94.1% 단축 |
+| BM25 코퍼스 구성·순위·보강 | 모든 청크의 ORM 레코드 대신 ID와 본문만으로 코퍼스를 만들고, 상위 결과만 추가로 조회 | 14.34s | 0.14s | 99.0% 단축 |
 
-Ingestion은 외부 API 응답을 기다리는 시간과 local indexing 작업을 겹쳐 실행하고, 이미 text extraction이 가능한 PDF에는 중복 parsing을 피했습니다. Retrieval은 ranking에 필요한 최소 데이터만 먼저 읽고 상위 후보의 전체 record를 나중에 가져오도록 바꾸면서 중복 SQL/embedding 작업도 제거했습니다. 상세 측정 조건과 남은 병목은 [performance logs](./docs/performance/README.md)에 기록합니다.
+문서 수집은 외부 API 응답을 기다리는 시간과 로컬 색인 작업을 겹쳐 돌리고, 이미 텍스트를 꺼낼 수 있는 PDF는 두 번 파싱하지 않습니다. 검색은 순위를 매기는 데 필요한 최소한만 먼저 읽고 상위 후보가 정해진 다음에 전체 레코드를 가져오도록 바꾸면서, 중복으로 돌던 SQL과 임베딩 작업도 함께 걷어냈습니다. 측정 조건과 아직 남은 병목은 [성능 기록](./docs/performance/README.md)에 정리해 두었습니다.
 
 ## 아키텍처
 
@@ -72,44 +72,44 @@ flowchart TD
     Audit --> DB
 ```
 
-### 요청 흐름에서 지키는 경계
+### 요청 하나가 지나가면서 지키는 경계
 
-1. API layer가 session, CSRF, group/knowledge-base access를 확인합니다.
-2. LangGraph orchestration이 질문에 authorized knowledge 검색이 필요한지 결정합니다.
-3. Retrieval service가 현재 사용자에게 허용된 개인, 그룹, 관리자 제공 source로 database query 범위를 제한합니다.
-4. Vector, lexical, metadata, structured-entity 후보가 fusion/reranking/context packing을 통과합니다.
-5. 답변과 citation, compact agent trace, redacted timing/event가 같은 run에 저장됩니다.
+1. API 계층이 세션, CSRF, 그룹과 지식 베이스 접근 권한을 확인합니다.
+2. LangGraph 오케스트레이션이 이 질문에 문서 검색이 필요한지 판단합니다.
+3. 검색 서비스가 지금 이 사용자가 볼 수 있는 개인·그룹·관리자 제공 문서로만 조회 범위를 좁힙니다.
+4. 벡터, 키워드, 메타데이터, 구조화된 엔티티 후보가 결합과 재순위, 컨텍스트 구성을 거칩니다.
+5. 답변과 인용, 요약된 실행 흐름, 가려진 시간·이벤트 기록이 같은 실행에 함께 저장됩니다.
 
-현재 production runtime은 하나의 assistant orchestration과 그 안에서 실행되는 retrieval subworkflow로 구성됩니다. `agent`와 `graph`라는 표현은 코드의 제어 경계를 설명하며, 여러 autonomous specialist가 독립 서비스로 실행된다는 의미는 아닙니다.
+운영 환경에서 도는 것은 어시스턴트 오케스트레이션 하나와 그 안에서 실행되는 검색 서브워크플로입니다. 코드에 쓰인 `agent`와 `graph`는 제어 경계를 가리키는 이름이지, 여러 에이전트가 각각 독립된 서비스로 돌아간다는 뜻은 아닙니다.
 
 ## 주요 기능
 
-- Email/password signup, verification, session, CSRF, password reset, gated guest access
-- 배포 환경의 실제 guest TTL, 사용량 한도, 코드 전달 방식을 제공하는 public `GET /auth/guest/policy`
-- 초대 기반 group membership, manager roster, personal-to-group publish approval/copy workflow
-- 개인, 그룹, 관리자 제공 공통 knowledge base와 document-level authorization
-- PDF, Markdown, plain text, `.xlsx`, `.pptx`, `.docx` upload/ingestion
-- PyMuPDF fast path와 pypdf, Docling, Tesseract fallback
-- pgvector + BM25 + RRF + deterministic/optional cross-encoder reranking
-- Server-owned conversation/run history, SSE streaming, citations, redacted agent events
-- 사용자가 직접 켜는 experimental long-term memory와 governance lifecycle
-- Prometheus timing metrics와 local Rich retrieval/ingestion profiler
+- 이메일·비밀번호 가입, 이메일 인증, 세션, CSRF, 비밀번호 재설정, 승인을 거치는 게스트 접속
+- 배포된 환경의 실제 게스트 유효 시간, 사용 한도, 코드 전달 방식을 알려 주는 공개 엔드포인트 `GET /auth/guest/policy`
+- 초대로만 맺어지는 그룹 멤버십, 관리자 명단, 개인 문서를 그룹으로 공유 요청하고 승인·복사하는 흐름
+- 개인, 그룹, 관리자 제공 지식 베이스와 문서 단위 권한 관리
+- PDF, Markdown, 일반 텍스트, `.xlsx`, `.pptx`, `.docx` 업로드와 수집
+- PyMuPDF를 먼저 시도하고 pypdf, Docling, Tesseract로 넘어가는 처리 경로
+- pgvector와 BM25를 RRF로 합치고, 결정적 방식 또는 선택적 cross-encoder로 재순위
+- 서버가 소유하는 대화·실행 기록, SSE 스트리밍, 인용, 가려진 에이전트 이벤트
+- 사용자가 직접 켜는 실험적인 장기 메모리와 관리 절차
+- Prometheus 지표와 로컬에서 쓰는 Rich 기반 검색·수집 프로파일러
 
 ## 기술 스택
 
 | 영역 | 기술 |
 | --- | --- |
-| API / application | Python 3.14, FastAPI, Pydantic |
-| Agent / model | LangGraph, `langchain-openai`, `ChatOpenAI` |
-| Persistence | SQLAlchemy, Alembic, PostgreSQL/Neon, pgvector |
-| Retrieval | Vector search, BM25Okapi, RRF, optional BAAI cross-encoder |
-| Document processing | PyMuPDF, pypdf, Docling, Tesseract, openpyxl, python-pptx |
-| Streaming / observability | SSE, Prometheus metrics, redacted run events |
-| Quality / delivery | pytest, Ruff, uv, Docker, Render |
+| API / 애플리케이션 | Python 3.14, FastAPI, Pydantic |
+| 에이전트 / 모델 | LangGraph, `langchain-openai`, `ChatOpenAI` |
+| 저장소 | SQLAlchemy, Alembic, PostgreSQL/Neon, pgvector |
+| 검색 | 벡터 검색, BM25Okapi, RRF, 선택적 BAAI cross-encoder |
+| 문서 처리 | PyMuPDF, pypdf, Docling, Tesseract, openpyxl, python-pptx |
+| 스트리밍 / 관측 | SSE, Prometheus, 가려진 실행 이벤트 |
+| 품질 / 배포 | pytest, Ruff, uv, Docker, Render |
 
 ## 프로젝트 구조
 
-첫 방문자가 책임 경계를 먼저 이해할 수 있도록 상위 package를 기능 중심으로 정리했습니다. 내부 구현 이름은 아래의 코드 탐색 표에서만 사용합니다.
+처음 보는 사람이 내부 이름보다 책임 경계를 먼저 파악할 수 있도록 상위 패키지를 역할 중심으로 적었습니다. 내부 구현 이름은 아래 코드 위치 표에서만 씁니다.
 
 ```text
 my_agents/
@@ -129,13 +129,13 @@ scripts/                       # Smoke, benchmark, migration, operator utilities
 
 | 확인하려는 동작 | 코드 위치 |
 | --- | --- |
-| 질문이 knowledge retrieval을 필요로 하는지 판단하고 답변을 구성하는 흐름 | `my_agents/agents/general_assistant/` |
-| Assistant와 permission-aware retrieval 사이의 입력/출력 contract | `my_agents/agents/rag_agent/` |
-| Query planning, hybrid candidate fusion, reranking, context packing | `my_agents/agents/context_forge/` |
+| 질문에 문서 검색이 필요한지 판단하고 답변을 구성하는 흐름 | `my_agents/agents/general_assistant/` |
+| 어시스턴트와 권한 기반 검색 사이에 오가는 입력과 출력 | `my_agents/agents/rag_agent/` |
+| 질의 계획, 후보 결합, 재순위, 컨텍스트 구성 | `my_agents/agents/context_forge/` |
 
-## 로컬 실행
+## 로컬에서 실행하기
 
-사전 요구사항은 [uv](https://docs.astral.sh/uv/)와 Python 3.14입니다.
+[uv](https://docs.astral.sh/uv/)와 Python 3.14이 필요합니다.
 
 ```bash
 uv sync
@@ -143,7 +143,7 @@ cp .env.example .env
 MY_AGENTS_RESPONSE_MODE=deterministic uv run fastapi dev main.py
 ```
 
-다른 터미널에서 credential 없는 smoke check를 실행합니다.
+다른 터미널에서 키 없이 동작을 확인합니다.
 
 ```bash
 curl http://127.0.0.1:8000/health
@@ -152,18 +152,18 @@ curl -X POST http://127.0.0.1:8000/assistant/chat \
   -d '{"message":"Plan my next backend milestone","history":[]}'
 ```
 
-실제 OpenAI 응답을 사용하려면 `.env`에 `OPENAI_API_KEY`를 설정하고 `MY_AGENTS_RESPONSE_MODE=openai`를 사용합니다. Application code는 OpenAI를 직접 호출하지 않고 `langchain-openai` / `ChatOpenAI` 경계를 사용합니다.
+실제 OpenAI 응답을 받으려면 `.env`에 `OPENAI_API_KEY`를 넣고 `MY_AGENTS_RESPONSE_MODE=openai`로 실행합니다. 애플리케이션 코드는 OpenAI를 직접 호출하지 않고 `langchain-openai`의 `ChatOpenAI` 경계를 거칩니다.
 
-VS Code의 `FastAPI: uvicorn main:app (local pgvector)` profile은 Python extension에서 선택한 interpreter로 pre-launch migration을 실행합니다. GUI에서 시작한 VS Code의 `PATH`에 `uv`가 없어도 동작하도록 shell command에 의존하지 않으므로, 사용 전에 이 repository의 `.venv` interpreter를 선택하세요.
+VS Code의 `FastAPI: uvicorn main:app (local pgvector)` 프로필은 실행 전에 마이그레이션을 돌리는데, 이때 셸에서 `uv`를 찾는 대신 Python 확장이 선택한 인터프리터를 그대로 씁니다. GUI로 켠 VS Code의 `PATH`에 `uv`가 없어도 동작하도록 만든 구성이므로, 쓰기 전에 이 저장소의 `.venv` 인터프리터를 선택해 두세요.
 
-OpenAPI는 실행 중인 서버의 `http://127.0.0.1:8000/openapi.json`에서 확인할 수 있습니다. 전체 product demo와 Postgres 설정은 [frontend demo runbook](./docs/product-chat-service/ko/10-frontend-demo-runbook.md)을 참고하세요.
+OpenAPI 문서는 서버를 띄운 뒤 `http://127.0.0.1:8000/openapi.json`에서 볼 수 있습니다. 프론트엔드까지 붙여 전체 흐름을 돌려 보는 방법과 PostgreSQL 설정은 [프론트엔드 연동 실행 안내](./docs/product-chat-service/ko/10-frontend-demo-runbook.md)에 있습니다.
 
-### 프론트엔드 API contract
+### 프론트엔드가 의존하는 계약
 
-- HTTP/validation 오류는 기존 `detail`과 함께 안정적인 machine-readable `code`를 반환합니다. UI는 `code`를 번역 key로 사용하고 `detail`은 진단용 문구로 취급해야 합니다.
-- `GET /conversations/{conversation_id}/runs/{run_id}/events`는 `event_type` discriminator를 가진 closed OpenAPI union입니다. Persisted event type은 `run_started`, `user_message_stored`, `retrieval_completed`, `graph_invoked`, `answer_composed`, `run_cancel_requested`, `run_cancelled`, `run_failed`입니다.
-- Persisted event payload와 `agent_trace`는 event/stage별 allowlist schema를 통과한 field만 반환합니다. `answer_delta`, `run_completed`, `run_error`는 streaming 전용 SSE event이며 persisted event union에는 포함되지 않습니다.
-- Async ingestion progress는 `queued=0`, `claimed=1`, `chunking=15`, `embedding=45`, optional `indexing=70`, `entities=85`, `metadata=95`, `completed=100`으로 DB에 commit되며 polling endpoint에서 관찰할 수 있습니다.
+- HTTP·검증 오류는 기존 `detail`과 함께 기계가 읽을 수 있는 `code`를 반환합니다. UI는 `code`를 번역 키로 쓰고 `detail`은 진단용으로만 취급해야 합니다.
+- `GET /conversations/{conversation_id}/runs/{run_id}/events`는 `event_type`으로 구분되는 닫힌 union입니다. 저장되는 이벤트는 `run_started`, `user_message_stored`, `retrieval_completed`, `graph_invoked`, `answer_composed`, `run_cancel_requested`, `run_cancelled`, `run_failed`입니다.
+- 저장된 이벤트의 payload와 `agent_trace`는 이벤트·단계별 허용 목록을 통과한 필드만 내보냅니다. `answer_delta`, `run_completed`, `run_error`는 스트리밍 전용이라 저장되는 이벤트 union에는 들어가지 않습니다.
+- 비동기 수집 진행률은 `queued=0`, `claimed=1`, `chunking=15`, `embedding=45`, 선택적으로 `indexing=70`, `entities=85`, `metadata=95`, `completed=100`으로 저장되며 폴링 엔드포인트에서 읽을 수 있습니다. 시간이 아니라 단계 도달을 나타내는 값입니다.
 
 ## 검증
 
@@ -174,33 +174,33 @@ uv run ruff format --check .
 git diff --check
 ```
 
-2026-08-09 현재 checkout에서 전체 test suite는 **474 passed, 2 skipped**이며 실제 credential을 요구하지 않습니다.
+2026-08-09 기준 이 체크아웃에서 전체 테스트는 **474 passed, 2 skipped**이며, 실제 자격 증명이 없어도 돌아갑니다.
 
 ## 보안과 개인정보 경계
 
-- 실제 secret과 local database는 commit하지 않습니다. `.env.example`에는 placeholder만 둡니다.
-- Public-release 검사는 current tree와 Git 전체 history를 모두 대상으로 하며, 발견된 credential은 파일 삭제 여부와 관계없이 폐기·재발급하는 것을 원칙으로 합니다.
-- Retrieval permission은 prompt 지시가 아니라 application/service layer에서 적용합니다.
-- Metrics label과 기본 agent event에는 raw prompt, document text, email, credential, provider trace를 넣지 않습니다. Event response boundary는 중첩된 `agent_trace.evidence`까지 allowlist로 filter합니다.
-- System knowledge 관리 권한은 privileged administrative account type으로 제한하며 public role-mutation API를 제공하지 않습니다.
-- 공개 데모에는 민감하거나 규제 대상이거나 대체 불가능한 문서를 업로드하지 않는 것을 전제로 합니다.
+- 실제 비밀 값과 로컬 데이터베이스는 커밋하지 않습니다. `.env.example`에는 자리 표시자만 둡니다.
+- 공개 전 점검은 현재 트리뿐 아니라 Git 전체 이력을 함께 봅니다. 노출된 자격 증명은 파일을 지웠더라도 폐기하고 다시 발급하는 것을 원칙으로 합니다.
+- 검색 권한은 프롬프트 지시가 아니라 애플리케이션과 서비스 코드에서 강제합니다.
+- 지표 라벨과 기본 이벤트에는 원본 프롬프트, 문서 본문, 이메일, 자격 증명, 모델 제공자 추적 정보를 넣지 않습니다. 이벤트 응답 경계는 중첩된 `agent_trace.evidence`까지 허용 목록으로 걸러냅니다.
+- 공통 문서 관리 권한은 별도의 관리자 계정 유형으로 제한하며, 역할을 바꾸는 공개 API는 두지 않습니다.
+- 공개된 서비스이므로, 민감하거나 규제 대상이거나 잃어버리면 곤란한 문서는 올리지 않는 것을 전제로 합니다.
 
-## 현재 한계와 다음 작업
+## 지금의 한계와 다음 작업
 
-- Controlled alpha이며 broad self-service production SaaS가 아닙니다.
-- External ingestion worker는 DB polling 기반입니다. Durable queue, supervision, stale-job recovery가 더 필요합니다.
-- Uploaded original을 위한 object storage, document versioning/re-ingestion, account deletion/export가 아직 없습니다.
-- Cross-encoder cold start와 작은 hosted instance의 PDF processing latency가 남아 있습니다.
-- Shared rate limiting, production security review, automated migration/smoke gate가 필요합니다.
-- LangGraph Store 기반 memory runtime, HITL/resume checkpointer, non-RAG tools, production multi-agent orchestration은 roadmap 단계입니다.
+- 가입을 직접 승인하는 방식이라 누구나 바로 쓰는 셀프서비스 형태는 아닙니다.
+- 외부 수집 워커가 데이터베이스 폴링으로 동작합니다. 안정적인 큐, 워커 감시, 멈춘 작업 복구가 더 필요합니다.
+- 업로드한 원본을 위한 오브젝트 스토리지, 문서 버전 관리와 재수집, 계정 삭제와 내보내기는 아직 없습니다.
+- cross-encoder를 처음 띄울 때의 지연과, 작은 인스턴스에서의 PDF 처리 시간이 남아 있습니다.
+- 여러 인스턴스에서 공유하는 요청 제한, 운영 보안 점검, 마이그레이션·스모크 자동화가 필요합니다.
+- LangGraph Store 기반 메모리, 사람이 개입해 이어서 실행하는 체크포인터, 검색 외 도구, 여러 에이전트를 운영에서 함께 돌리는 구성은 로드맵 단계입니다.
 
 ## 핵심 문서
 
-- [현재 구현과 검증 상태](./docs/implementation-tracking.md)
-- [Permission-aware RAG 설계](./docs/product-chat-service/ko/06-permission-aware-rag.md)
-- [Assistant orchestration flow](./my_agents/agents/general_assistant/README.md)
-- [Retrieval subworkflow와 context assembly](./my_agents/agents/rag_agent/README.md)
+- [구현과 검증 현황](./docs/implementation-tracking.md)
+- [권한 기반 RAG 설계](./docs/product-chat-service/ko/06-permission-aware-rag.md)
+- [어시스턴트 오케스트레이션 흐름](./my_agents/agents/general_assistant/README.md)
+- [검색 서브워크플로와 컨텍스트 구성](./my_agents/agents/rag_agent/README.md)
 - [성능 측정 기록](./docs/performance/README.md)
-- [Production smoke evidence](./docs/product-chat-service/en/16-production-smoke-evidence-2026-06-06.md)
+- [운영 환경 스모크 기록](./docs/product-chat-service/en/16-production-smoke-evidence-2026-06-06.md)
 
-더 큰 방향과 미완료 항목은 [ROADMAP.md](./ROADMAP.md), 운영/마이그레이션 명령은 [scripts/README.md](./scripts/README.md)에서 확인할 수 있습니다.
+더 큰 방향과 남은 일은 [ROADMAP.md](./ROADMAP.md)에, 운영과 마이그레이션 명령은 [scripts/README.md](./scripts/README.md)에 있습니다.

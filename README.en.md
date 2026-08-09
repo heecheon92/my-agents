@@ -4,9 +4,9 @@ English | [한국어](./README.md)
 
 **Permission-aware Agentic RAG Backend** — the backend for an AI chat product that retrieves personal documents, group-shared documents, and administrator-provided reference knowledge inside explicit authorization boundaries, then preserves citations and execution evidence.
 
-[Live product demo](https://www.my-agents.dev) · [Frontend repository](https://github.com/heecheon92/my-agents-frontend) · [Implementation status](./docs/implementation-tracking.md) · [Roadmap](./ROADMAP.md)
+[Live service](https://www.my-agents.dev) · [Frontend repository](https://github.com/heecheon92/my-agents-frontend) · [Implementation status](./docs/implementation-tracking.md) · [Roadmap](./ROADMAP.md)
 
-> The live service is a controlled alpha for recruiters and a small group of testers. Signup and guest access may be restricted by operating policy; this is not a claim of production-ready SaaS.
+> The service is deployed and running, but signup is not instant: new accounts are approved manually. Guest access is available without waiting for approval.
 
 ## Three-minute overview
 
@@ -17,7 +17,7 @@ English | [한국어](./README.md)
 | What did I build? | A FastAPI + LangGraph backend that answers from personal documents, group-shared documents, and administrator-provided reference knowledge with citations |
 | What made it difficult? | Permission boundaries that precede ranking, server-owned conversation state, ingestion, streaming, and operable observability |
 | What did I verify? | An offline test suite, permission regressions, production smoke paths, and before/after ingestion and retrieval profiles |
-| What is its current maturity? | A controlled alpha that demonstrates the core product loop; operational hardening and security review continue |
+| Where is it now? | The core product loop is deployed and running; operational hardening and security review continue |
 
 ## Engineering highlights
 
@@ -163,7 +163,7 @@ OpenAPI is available from a running server at `http://127.0.0.1:8000/openapi.jso
 - HTTP and validation errors return a stable machine-readable `code` alongside the existing `detail`. UIs should localize from `code` and treat `detail` as diagnostic copy.
 - `GET /conversations/{conversation_id}/runs/{run_id}/events` is a closed OpenAPI union discriminated by `event_type`. Persisted event types are `run_started`, `user_message_stored`, `retrieval_completed`, `graph_invoked`, `answer_composed`, `run_cancel_requested`, `run_cancelled`, and `run_failed`.
 - Persisted event payloads and `agent_trace` expose only fields accepted by event- and stage-specific allowlist schemas. `answer_delta`, `run_completed`, and `run_error` are stream-only SSE events and are not members of the persisted-event union.
-- Async ingestion commits observable progress as `queued=0`, `claimed=1`, `chunking=15`, `embedding=45`, optional `indexing=70`, `entities=85`, `metadata=95`, and `completed=100`.
+- Async ingestion commits observable progress as `queued=0`, `claimed=1`, `chunking=15`, `embedding=45`, optional `indexing=70`, `entities=85`, `metadata=95`, and `completed=100`. These mark stages reached, not elapsed time.
 
 ## Verification
 
@@ -183,11 +183,11 @@ On 2026-08-09, the full suite on this checkout reports **474 passed, 2 skipped**
 - Retrieval permissions are enforced in application/service code, not through prompt instructions.
 - Metric labels and default agent events exclude raw prompts, document text, emails, credentials, and provider traces. The event response boundary allowlists nested `agent_trace.evidence` fields as well.
 - System-knowledge management is limited to privileged administrative account types, with no public role-mutation API.
-- The public demo assumes users will not upload sensitive, regulated, or irreplaceable documents.
+- The service is publicly reachable, so it assumes users will not upload sensitive, regulated, or irreplaceable documents.
 
 ## Current limitations and next steps
 
-- This is a controlled alpha, not a broadly self-service production SaaS.
+- Signup is manually approved, so this is not a self-service product yet.
 - The external ingestion worker uses database polling; durable queueing, supervision, and stale-job recovery need further work.
 - Object storage for uploaded originals, document versioning/re-ingestion, and account deletion/export are not implemented yet.
 - Cross-encoder cold starts and PDF processing latency remain constraints on small hosted instances.
