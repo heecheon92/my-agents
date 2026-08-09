@@ -27,7 +27,8 @@ They live outside `docs/learning/` because `docs/learning/` is reserved for the 
 20. [Nickname signup and member roster contract](./20-nickname-signup-member-roster-contract.md)
 21. [System knowledge base and user type contract](./21-system-knowledge-base-user-type.md)
 22. [General Assistant and RAG Agent architecture change report](./22-general-assistant-rag-agent-architecture-change-report.md)
-23. [Knowledge lifecycle and publish-copy contract](./24-knowledge-lifecycle-and-publish-copy-contract.md)
+23. [Economic access, usage metering, and credits architecture](./23-economic-access-metering-and-credits-architecture.md)
+24. [Knowledge lifecycle and publish-copy contract](./24-knowledge-lifecycle-and-publish-copy-contract.md)
 
 ## Related maintenance ledgers
 
