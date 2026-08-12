@@ -13,6 +13,9 @@
 - Route labels are paired with `AgentCapability` metadata so replies can honestly reflect available tools, data sources, and side effects.
 - Current route-specific response nodes do not mean separate hosted specialist agents executed.
 - OpenAI reply generation goes through `langchain-openai` `ChatOpenAI`.
+- The always-present responder system prompt identifies the assistant as part of
+  `my-agents` at `https://my-agents.dev`; changing product facts still come from
+  authorized context instead of being guessed or frozen into that identity prompt.
 - deterministic mode remains available for tests and offline smoke checks.
 
 ## File structure

@@ -83,6 +83,28 @@ def test_openai_provider_passes_gpt_variant_and_optional_tuning(
     assert model_args["verbosity"] == "low"
 
 
+def test_openai_provider_has_stable_my_agents_product_identity() -> None:
+    settings = Settings(_env_file=None, OPENAI_API_KEY="test-key")
+    chat_model = FakeChatModel()
+    provider = OpenAIResponseProvider(settings=settings, chat_model=chat_model)
+
+    provider.compose_reply(
+        messages=[HumanMessage(content="너는 뭐야?")],
+        route=RouteDecision(label="general_assistant", explanation="identity question"),
+        guidance="Answer the user's question directly.",
+    )
+
+    system_prompt = str(chat_model.calls[0][0].content)
+    assert "You are the assistant inside my-agents" in system_prompt
+    assert "https://my-agents.dev" in system_prompt
+    assert 'when the user says "this service", "here", "this app"' in system_prompt
+    assert "rely on the provided context rather than guessing" in system_prompt
+    assert "Korean is the primary language; match the user's language" in system_prompt
+    assert "do not claim that a separate specialized agent ran" in system_prompt
+    assert "backend-only" not in system_prompt
+    assert "vercel.app" not in system_prompt
+
+
 def test_openai_provider_passes_per_run_pro_reasoning_to_responses_payload() -> None:
     settings = Settings(_env_file=None, OPENAI_API_KEY="test-key")
     chat_model = FakeChatModel()

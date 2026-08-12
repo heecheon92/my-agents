@@ -13,6 +13,9 @@
 - 라우트 라벨은 `AgentCapability` metadata와 연결되어 사용 가능한 tool, data source, side effect를 정직하게 전달합니다.
 - 현재 라우트별 response node는 별도의 hosted 전문 에이전트 실행을 의미하지 않습니다.
 - OpenAI 응답 생성은 `langchain-openai`의 `ChatOpenAI`를 통해 수행합니다.
+- 항상 포함되는 responder system prompt는 어시스턴트를 `https://my-agents.dev`의
+  `my-agents` 내부 어시스턴트로 식별합니다. 바뀔 수 있는 제품 정보는 이 정체성
+  prompt에 고정하거나 추측하지 않고, 권한이 확인된 context에서 가져옵니다.
 - deterministic 모드는 테스트와 오프라인 smoke check를 위해 유지합니다.
 
 ## 파일 구조

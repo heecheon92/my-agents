@@ -96,6 +96,8 @@ The production runtime consists of one assistant orchestration flow with a retri
 - A PyMuPDF fast path with pypdf, Docling, and Tesseract fallbacks
 - pgvector + BM25 + RRF + deterministic or optional cross-encoder reranking
 - Server-owned conversation/run history, SSE streaming, citations, and redacted agent events
+- A stable `my-agents` assistant identity anchored to the canonical
+  `https://my-agents.dev` domain, with changing product facts grounded in authorized context
 - User-enabled experimental long-term memory with a governance lifecycle
 - Prometheus timing metrics and local Rich retrieval/ingestion profilers
 

@@ -96,6 +96,8 @@ KB/document/chunk ID, filename, snippet, citation을 생략합니다.
 - PyMuPDF를 먼저 시도하고 pypdf, Docling, Tesseract로 넘어가는 처리 경로
 - pgvector와 BM25를 RRF로 합치고, 결정적 방식 또는 선택적 cross-encoder로 재순위
 - 서버가 소유하는 대화·실행 기록, SSE 스트리밍, 인용, 가려진 에이전트 이벤트
+- 공식 도메인 `https://my-agents.dev`에 연결된 일관된 `my-agents` 어시스턴트
+  정체성과, 바뀔 수 있는 제품 정보를 권한이 확인된 context에 근거해 답하는 정책
 - 사용자가 직접 켜는 실험적인 장기 메모리와 관리 절차
 - Prometheus 지표와 로컬에서 쓰는 Rich 기반 검색·수집 프로파일러
 
