@@ -63,10 +63,7 @@ def test_openapi_exposes_kb_first_document_and_chat_selection_contract() -> None
     }
     assert run_response_schema["properties"]["resolved_knowledge_base_count"]["type"] == "integer"
     assert run_response_schema["properties"]["resolved_knowledge_base_ids"]["type"] == "array"
-    assert (
-        run_response_schema["properties"]["ambient_system_knowledge_base_count"]["type"]
-        == "integer"
-    )
+    assert "ambient_system_knowledge_base_count" not in run_response_schema["properties"]
     assert run_summary_schema["properties"]["resolved_knowledge_base_count"]["type"] == "integer"
     assert selection_schema["properties"]["mode"]["enum"] == ["all", "selected"]
     assert selection_schema["properties"]["knowledge_base_ids"]["type"] == "array"

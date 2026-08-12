@@ -7,7 +7,7 @@ ContextForge, which remains the permission-first retrieval engine.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -138,19 +138,29 @@ def chunks_used_for_answer(
     ]
 
 
-def retrieved_context_for_graph(retrieved_chunks: list[RetrievedChunk]) -> list[dict[str, object]]:
-    """Return prompt-safe retrieved context dictionaries for assistant state."""
-    return [
-        {
-            "document_id": item.document.id,
-            "chunk_id": item.chunk.id,
-            "knowledge_base_id": item.document.knowledge_base_id,
-            "title": item.document.title,
-            "snippet": item.chunk.content[:_RETRIEVED_CONTEXT_SNIPPET_CHARS],
-            "source_page": item.chunk.source_page,
-            "source_location_json": parse_source_location_json(item.chunk.source_location_json),
-            "source_filename": item.document.source_filename,
-            "source": item.source,
-        }
-        for item in retrieved_chunks
-    ]
+def retrieved_context_for_graph(
+    retrieved_chunks: list[RetrievedChunk],
+    *,
+    hidden_knowledge_base_ids: Collection[str] = (),
+) -> list[dict[str, object]]:
+    """Return prompt-safe context, omitting provenance for hidden system sources."""
+    hidden_ids = set(hidden_knowledge_base_ids)
+    context: list[dict[str, object]] = []
+    for item in retrieved_chunks:
+        if item.document.knowledge_base_id in hidden_ids:
+            context.append({"snippet": item.chunk.content[:_RETRIEVED_CONTEXT_SNIPPET_CHARS]})
+            continue
+        context.append(
+            {
+                "document_id": item.document.id,
+                "chunk_id": item.chunk.id,
+                "knowledge_base_id": item.document.knowledge_base_id,
+                "title": item.document.title,
+                "snippet": item.chunk.content[:_RETRIEVED_CONTEXT_SNIPPET_CHARS],
+                "source_page": item.chunk.source_page,
+                "source_location_json": parse_source_location_json(item.chunk.source_location_json),
+                "source_filename": item.document.source_filename,
+                "source": item.source,
+            }
+        )
+    return context

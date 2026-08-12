@@ -166,7 +166,6 @@ class ConversationRunResponse(BaseModel):
     knowledge_base_selection: KnowledgeBaseSelection
     resolved_knowledge_base_ids: list[str] = Field(default_factory=list)
     resolved_knowledge_base_count: int = 0
-    ambient_system_knowledge_base_count: int = 0
     citations: list[CitationResponse] = Field(default_factory=list)
     warnings: list[ConversationRunWarning] = Field(default_factory=list)
     clarification: ConversationClarificationRequest | None = None
@@ -195,7 +194,6 @@ class AgentRunSummaryResponse(BaseModel):
     knowledge_base_selection: KnowledgeBaseSelection
     resolved_knowledge_base_ids: list[str] = Field(default_factory=list)
     resolved_knowledge_base_count: int = 0
-    ambient_system_knowledge_base_count: int = 0
     created_at: datetime
 
 
@@ -209,7 +207,6 @@ class KnowledgeSelectionEventPayload(AgentEventPayload):
     knowledge_base_selection: KnowledgeBaseSelection = Field(default_factory=KnowledgeBaseSelection)
     resolved_knowledge_base_ids: list[str] = Field(default_factory=list)
     resolved_knowledge_base_count: int = Field(default=0, ge=0)
-    ambient_system_knowledge_base_count: int = Field(default=0, ge=0)
 
 
 class RunStartedEventPayload(KnowledgeSelectionEventPayload):

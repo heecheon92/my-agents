@@ -1,5 +1,11 @@
 # RAG Agent changelog
 
+## 2026-08-12 — Separate ambient system context from visible provenance
+
+- Why: system knowledge should influence answers without appearing as a user-visible document source.
+- Behavior/contract impact: prompt context for ambient system chunks retains only snippet text, internal citation rows remain auditable, and public run/detail/event/citation contracts omit system provenance and ambient counts.
+- Verification: covered by system-knowledge contract tests, responder prompt tests, OpenAPI contract tests, and conversation API tests.
+
 ## 2026-08-09 — Freeze the display-safe trace contract
 
 - Why: the frontend needs a stable localized activity timeline without guessing event/stage fields or rendering arbitrary stored JSON.

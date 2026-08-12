@@ -272,8 +272,8 @@ def test_registered_run_persists_and_exposes_reasoning_preferences(monkeypatch) 
         "default_effort": "low",
         "supported_modes": ["standard", "pro"],
         "supported_efforts": ["none", "minimal", "low", "medium", "high", "xhigh", "max"],
-        "chat": {"model": "gpt-5.6-sol", "pro_supported": True},
-        "document_workspace": {"model": "gpt-5.6-sol", "pro_supported": True},
+        "chat": {"pro_supported": True},
+        "document_workspace": {"pro_supported": True},
     }
 
     conversation_id = client.post("/conversations", json={"title": "Reasoning preferences"}).json()[

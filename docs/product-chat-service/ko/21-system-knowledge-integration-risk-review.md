@@ -8,8 +8,8 @@ scope를 만들지 않습니다.
 
 ## 유지해야 할 계약 경계
 
-- **System knowledge는 인증된 사용자를 위한 공개 retrieval context입니다.** Registered
-  user와 guest의 project facts 질문에 답할 수 있지만 user memory가 아닙니다.
+- **System knowledge는 ambient internal retrieval context입니다.** Registered user와
+  guest의 답변에 영향을 줄 수 있지만 user memory도, user-visible source class도 아닙니다.
 - **관리 화면 가시성과 채팅 retrieval은 분리됩니다.** Normal user와 guest는 채팅에서
   system context를 받을 수 있지만 source-management surface에서 system KB 이름이나 ID를
   enumerate하면 안 됩니다.
@@ -30,8 +30,8 @@ scope를 만들지 않습니다.
    - Normal/guest `/knowledge-bases` 응답에서 system row가 제외됩니다.
    - Normal/guest가 system KB/document ID를 추측해 직접 접근할 때 주변 기존 route와 같은
      concealed unauthorized style을 사용합니다.
-   - Contract가 의도적으로 safe field를 추가하지 않는 한 conversation/run public metadata가
-     ambient system KB 이름이나 ID를 노출하지 않습니다.
+   - Conversation/run/event public metadata와 citation은 ambient system KB 이름, ID, count,
+     document/chunk ID, filename, snippet을 노출하지 않습니다.
 2. **Migration and identity defaults**
    - `users.user_type`은 non-null이고 `normal`로 default/backfill되며 `account_type`, guest
      expiry, approval field를 변경하지 않습니다.
@@ -55,10 +55,12 @@ scope를 만들지 않습니다.
    - Personal KB owner-only create/list/document-write 동작이 계속 통과합니다.
    - Group KB visibility와 publish-review flow는 membership/invitation scope를 유지합니다.
    - Hidden team-upload-staging KB는 일반 list와 retrieval surface에서 계속 제외됩니다.
-6. **Evidence/source honesty**
-   - System KB snippet은 memory가 아니라 retrieved project knowledge로 표시됩니다.
-   - General assistant docs와 prompt는 memory, document retrieval, conflict를 분리된 source
-     channel로 유지합니다.
+6. **Evidence/source boundary**
+   - System KB snippet은 model과 internal audit record에는 유지하지만 user-facing citation과
+     source metadata에서는 제거합니다.
+   - Personal/group citation은 기존 provenance와 함께 계속 표시합니다.
+   - General assistant docs와 prompt는 memory, document retrieval, conflict를 분리된 internal
+     source channel로 유지합니다.
 
 ## 권장 verification bundle
 

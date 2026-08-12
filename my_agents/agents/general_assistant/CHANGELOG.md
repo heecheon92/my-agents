@@ -3,6 +3,12 @@
 This changelog records why the production-surface `general_assistant` agent folder needed
 meaningful behavior, graph-state, provider, or documentation changes.
 
+## 2026-08-12 — Hide ambient system-knowledge provenance from users
+
+- **Why:** System knowledge was intended as ambient model context, but prompt context and public citations exposed its source identity.
+- **Behavior/contract impact:** System chunks still reach answer composition, but graph/provider context keeps only their snippet text and explicitly forbids inferring omitted provenance. Personal/group provenance remains unchanged; the conversation API separately filters system citations and metadata from public responses.
+- **Verification:** `tests/test_responders.py` and `tests/test_system_knowledge_base_user_type.py` cover snippet injection without system KB/document/source metadata.
+
 ## 2026-06-22 — Add source-selection gate and bind hosted web search without language-specific hints
 
 - **Why:** App-side English keyword hints missed explicit web-search or no-KB requests written in other languages, and unconditional graph-owned RAG setup made common/web turns pass through ContextForge even when the user asked not to use saved documents.

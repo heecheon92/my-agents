@@ -2,7 +2,7 @@
 
 English | [한국어](./README.md)
 
-**Permission-aware Agentic RAG Backend** — the backend for an AI chat product that retrieves personal documents, group-shared documents, and administrator-provided reference knowledge inside explicit authorization boundaries, then preserves citations and execution evidence.
+**Permission-aware Agentic RAG Backend** — the backend for an AI chat product that retrieves personal documents, group-shared documents, and administrator-provided reference knowledge inside explicit authorization boundaries, then preserves user-visible citations and internal execution evidence.
 
 [Live service](https://www.my-agents.dev) · [Frontend repository](https://github.com/heecheon92/my-agents-frontend) · [Implementation status](./docs/implementation-tracking.md) · [Roadmap](./ROADMAP.md)
 
@@ -14,7 +14,7 @@ English | [한국어](./README.md)
 
 | Question | This project's answer |
 | --- | --- |
-| What did I build? | A FastAPI + LangGraph backend that answers from personal documents, group-shared documents, and administrator-provided reference knowledge with citations |
+| What did I build? | A FastAPI + LangGraph backend that answers from personal documents, group-shared documents, and ambient administrator-provided reference knowledge, with citations for user-visible sources |
 | What made it difficult? | Permission boundaries that precede ranking, server-owned conversation state, ingestion, streaming, and operable observability |
 | What did I verify? | An offline test suite, permission regressions, production smoke paths, and before/after ingestion and retrieval profiles |
 | Where is it now? | The core product loop is deployed and running; operational hardening and security review continue |
@@ -79,6 +79,10 @@ flowchart TD
 3. The retrieval service limits database queries to personal, group, and administrator-provided sources that the current user may access.
 4. Vector, lexical, metadata, and structured-entity candidates pass through fusion, reranking, and context packing.
 5. The answer, citations, compact agent trace, and redacted timing/events are persisted under the same run.
+
+Administrator-provided system knowledge is ambient model context, not a user-visible source.
+Its provenance remains in internal audit records, while public run, event, and citation
+responses omit its KB/document/chunk identifiers, filenames, snippets, and citations.
 
 The production runtime consists of one assistant orchestration flow with a retrieval subworkflow. The words `agent` and `graph` describe control boundaries in the code; they do not imply that several autonomous specialists run as independent services.
 
@@ -167,7 +171,7 @@ OpenAPI is available from a running server at `http://127.0.0.1:8000/openapi.jso
 - HTTP and validation errors return a stable machine-readable `code` alongside the existing `detail`. UIs should localize from `code` and treat `detail` as diagnostic copy.
 - `GET /conversations/{conversation_id}/runs/{run_id}/events` is a closed OpenAPI union discriminated by `event_type`. Persisted event types are `run_started`, `user_message_stored`, `retrieval_completed`, `graph_invoked`, `attachments_ready`, `document_workspace_started`, `artifact_created`, `answer_composed`, `run_cancel_requested`, `run_cancelled`, and `run_failed`.
 - `GET /capabilities/document-workspace` reports effective enablement, eligibility, accepted formats, limits, and retention. Attachments use `POST/GET/DELETE /conversations/{conversation_id}/attachments`; artifacts use `GET /conversations/{conversation_id}/artifacts` and their download URLs. A run's `attachment_ids` selects the files used for that execution.
-- `GET /capabilities/reasoning` reports configured models, the server-default effort, stable enums, and whether the current account may customize them. Optional run/replay `reasoning_mode` and `reasoning_effort` values are persisted as effective run metadata and returned in responses and the `run_started` event.
+- `GET /capabilities/reasoning` reports per-surface Pro support, the server-default effort, stable enums, and whether the current account may customize them. It intentionally omits raw provider model identifiers. Optional run/replay `reasoning_mode` and `reasoning_effort` values are persisted as effective run metadata and returned in responses and the `run_started` event.
 - Persisted event payloads and `agent_trace` expose only fields accepted by event- and stage-specific allowlist schemas. `answer_delta`, `run_completed`, and `run_error` are stream-only SSE events and are not members of the persisted-event union.
 - Async ingestion commits observable progress as `queued=0`, `claimed=1`, `chunking=15`, `embedding=45`, optional `indexing=70`, `entities=85`, `metadata=95`, and `completed=100`. These mark stages reached, not elapsed time.
 

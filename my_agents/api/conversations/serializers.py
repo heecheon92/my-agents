@@ -32,7 +32,13 @@ from my_agents.document_workspace.schemas import (
     ConversationAttachmentResponse,
 )
 from my_agents.knowledge.auth import KnowledgeBaseSelectionContext
-from my_agents.knowledge.models import CitationModel, DocumentChunkModel, DocumentModel
+from my_agents.knowledge.models import (
+    CitationModel,
+    DocumentChunkModel,
+    DocumentModel,
+    KnowledgeBaseModel,
+    KnowledgeBaseScope,
+)
 from my_agents.knowledge.retrieval import RetrievedChunk
 from my_agents.knowledge.routing import AnswerMode, RetrievalRoutingDecision
 from my_agents.knowledge.schemas import CitationResponse, KnowledgeBaseSelection
@@ -65,9 +71,6 @@ def knowledge_base_selection_payload(
         ),
         "resolved_knowledge_base_ids": list(selection_context.resolved_knowledge_base_ids),
         "resolved_knowledge_base_count": selection_context.resolved_count,
-        "ambient_system_knowledge_base_count": (
-            selection_context.ambient_system_knowledge_base_count
-        ),
     }
 
 
@@ -136,6 +139,7 @@ def run_detail_response(db: Session, run: AgentRunModel) -> ConversationRunRespo
     citations = db.scalars(
         select(CitationModel).where(CitationModel.run_id == run.id).order_by(CitationModel.id)
     ).all()
+    citations = user_visible_citations(db, citations)
     events = db.scalars(
         select(AgentEventModel)
         .where(AgentEventModel.run_id == run.id)
@@ -181,6 +185,11 @@ def completed_run_response(
     attachments: list[ConversationAttachmentResponse] | None = None,
     artifacts: list[ConversationArtifactResponse] | None = None,
 ) -> ConversationRunResponse:
+    visible_pairs = user_visible_citation_pairs(
+        citations, retrieved_chunks, selection_context=selection_context
+    )
+    visible_citations = [citation for citation, _ in visible_pairs]
+    visible_chunks = [item for _, item in visible_pairs]
     return ConversationRunResponse(
         run_id=run.id,
         conversation_id=run.conversation_id,
@@ -199,11 +208,11 @@ def completed_run_response(
         if agent_trace is not None
         else conversation_agent_trace_steps(
             route=route,
-            retrieved_chunks=retrieved_chunks,
+            retrieved_chunks=visible_chunks,
             retrieval_decision=retrieval_decision,
             answer_mode=answer_mode,
             selection_context=selection_context,
-            citation_count=len(citations),
+            citation_count=len(visible_citations),
             reply=reply,
             clarification_required=clarification is not None,
         ),
@@ -218,10 +227,55 @@ def completed_run_response(
                 source_location_json=parse_source_location_json(item.chunk.source_location_json),
                 source_filename=item.document.source_filename,
             )
-            for citation, item in zip(citations, retrieved_chunks, strict=True)
+            for citation, item in visible_pairs
         ],
         attachments=attachments or [],
         artifacts=artifacts or [],
+    )
+
+
+def user_visible_citation_pairs(
+    citations: list[CitationModel],
+    retrieved_chunks: list[RetrievedChunk],
+    *,
+    selection_context: KnowledgeBaseSelectionContext,
+) -> list[tuple[CitationModel, RetrievedChunk]]:
+    """Hide ambient system provenance while preserving it in internal storage."""
+    pairs = list(zip(citations, retrieved_chunks, strict=True))
+    hidden_knowledge_base_ids = set(selection_context.ambient_system_knowledge_base_ids)
+    return [
+        pair
+        for pair in pairs
+        if pair[1].document.knowledge_base_id not in hidden_knowledge_base_ids
+    ]
+
+
+def user_visible_citations(
+    db: Session,
+    citations: list[CitationModel],
+) -> list[CitationModel]:
+    """Return citations whose source provenance is safe for user-facing APIs."""
+    hidden_document_ids = _system_knowledge_document_ids(
+        db, {citation.document_id for citation in citations}
+    )
+    return [citation for citation in citations if citation.document_id not in hidden_document_ids]
+
+
+def _system_knowledge_document_ids(db: Session, document_ids: set[str]) -> set[str]:
+    if not document_ids:
+        return set()
+    return set(
+        db.scalars(
+            select(DocumentModel.id)
+            .join(
+                KnowledgeBaseModel,
+                DocumentModel.knowledge_base_id == KnowledgeBaseModel.id,
+            )
+            .where(
+                DocumentModel.id.in_(document_ids),
+                KnowledgeBaseModel.scope == KnowledgeBaseScope.SYSTEM.value,
+            )
+        ).all()
     )
 
 

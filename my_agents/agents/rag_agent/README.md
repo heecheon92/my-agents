@@ -49,7 +49,9 @@ sequenceDiagram
 - Public retrieval-agent 이름은 `RAG Agent`입니다.
 - Internal delegated implementation 이름은 `ContextForge`입니다.
 - `rag_retrieval_result`는 graph runtime object이며 그대로 frontend나 checkpoint에 노출하지 않습니다.
-- `retrieved_context`는 이미 권한 확인이 끝난 prompt-safe compact context입니다.
+- `retrieved_context`는 이미 권한 확인이 끝난 prompt-safe compact context입니다. Ambient
+  system entry는 답변에 쓸 snippet만 포함하며, KB/document/chunk/title/filename/page와
+  retrieval-source provenance는 provider invocation 전에 생략합니다.
 - `clarification_required` 또는 required retrieval의 insufficient evidence는 `general_assistant` graph를 answer node 전에 멈추게 합니다.
 - `completed`, `skipped`, `waiting`은 frontend trace state이며 hidden chain-of-thought가 아닙니다.
 - `agent_trace`의 stage ID, event type, status, 한/영 copy, evidence field는 stable typed API contract입니다.
@@ -61,7 +63,7 @@ sequenceDiagram
 
 ## Service layer와의 관계
 
-Conversation API는 user/conversation/knowledge-base selection과 DB-backed `SqlAlchemyRagAgentRuntime`을 LangGraph runtime context로 전달합니다. `general_assistant`가 graph 안에서 RAG Agent를 호출하고, API layer는 graph state에서 retrieval result를 읽어 `retrieval_completed`, citation, grounding event를 persist합니다. Auth, source selection, ingestion, persistence, citation rows, provider execution은 계속 service module에 남습니다.
+Conversation API는 user/conversation/knowledge-base selection과 DB-backed `SqlAlchemyRagAgentRuntime`을 LangGraph runtime context로 전달합니다. `general_assistant`가 graph 안에서 RAG Agent를 호출하고, API layer는 graph state에서 retrieval result를 읽어 `retrieval_completed`, citation, grounding event를 persist합니다. System citation row는 internal audit data로 유지하고 public run/event/citation serializer에서는 provenance를 제거합니다. Auth, source selection, ingestion, persistence, citation rows, provider execution은 계속 service module에 남습니다.
 
 ## 확장 가이드
 

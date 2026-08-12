@@ -41,7 +41,7 @@ Completed run response, run-detail response, run summary, display-safe `run_star
 
 ## Capability discovery와 guest 정책
 
-인증된 client는 `GET /capabilities/reasoning`을 호출할 수 있습니다. Stable option list, active default effort, chat/document-workspace model, 각 model의 `pro` 지원 여부, 현재 principal의 `customizable` 값을 반환합니다.
+인증된 client는 `GET /capabilities/reasoning`을 호출할 수 있습니다. Stable option list, active default effort, chat/document-workspace surface의 `pro` 지원 여부, 현재 principal의 `customizable` 값을 반환합니다. Client에는 capability flag만 필요하고 deployment inventory는 필요하지 않으므로 raw provider model identifier는 의도적으로 제외합니다.
 
 Guest는 두 값을 올리거나 내릴 수 없습니다. Guest가 다른 값을 보내도 backend가 무시하고 `standard`와 `MY_AGENTS_OPENAI_REASONING_EFFORT`를 강제합니다. 이는 frontend control을 disable하는 정도가 아니라 authorization 및 cost policy입니다. Frontend는 `customizable=false`일 때 control을 숨길 수 있습니다.
 

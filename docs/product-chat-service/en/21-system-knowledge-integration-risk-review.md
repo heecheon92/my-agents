@@ -6,8 +6,9 @@ product scope beyond the consensus plan.
 
 ## Contract boundaries to preserve
 
-- **System knowledge is public authenticated retrieval context.** It may answer
-  project-fact questions for registered users and guests, but it is not user memory.
+- **System knowledge is ambient internal retrieval context.** It may influence answers
+  for registered users and guests, but it is neither user memory nor a user-visible
+  source class.
 - **Management visibility is separate from chat retrieval.** Normal users and guests can
   receive system context in chat, but must not enumerate system KB names or IDs through
   source-management surfaces.
@@ -29,8 +30,8 @@ Use this before final integration sign-off:
    - Normal and guest `/knowledge-bases` responses exclude system rows.
    - Normal and guest direct guesses for system KB/document IDs use the same concealed
      unauthorized style as adjacent existing routes.
-   - Conversation/run public metadata does not expose ambient system KB names or IDs unless
-     the contract deliberately adds a safe field.
+   - Conversation/run/event public metadata and citations do not expose ambient system
+     KB names, IDs, counts, document/chunk IDs, filenames, or snippets.
 2. **Migration and identity defaults**
    - `users.user_type` is non-null, defaults/backfills to `normal`, and does not mutate
      `account_type`, guest expiry, or approval fields.
@@ -55,10 +56,12 @@ Use this before final integration sign-off:
    - Group KB visibility and publish-review flows remain membership/invitation scoped.
    - Hidden team-upload-staging KBs remain excluded from ordinary list and retrieval
      surfaces.
-6. **Evidence/source honesty**
-   - System KB snippets are labeled as retrieved project knowledge, not memory.
+6. **Evidence/source boundary**
+   - System KB snippets remain available to the model and internal audit records but are
+     removed from user-facing citations and source metadata.
+   - Personal/group citations remain visible and keep their normal provenance.
    - General assistant docs and prompts keep memory, document retrieval, and conflicts as
-     separate source channels.
+     separate internal source channels.
 
 ## Suggested verification bundle
 

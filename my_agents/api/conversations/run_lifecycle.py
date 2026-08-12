@@ -48,6 +48,7 @@ from my_agents.api.conversations.serializers import (
     coerce_route,
     completed_run_response,
     knowledge_base_selection_payload,
+    user_visible_citation_pairs,
 )
 from my_agents.api.errors import APIErrorCode, APIHTTPException
 from my_agents.conversations.models import (
@@ -427,12 +428,17 @@ def persist_completed_run(
         for item in retrieved_chunks
     ]
     db.add_all(citations)
+    visible_pairs = user_visible_citation_pairs(
+        citations, retrieved_chunks, selection_context=selection_context
+    )
+    visible_citations = [citation for citation, _ in visible_pairs]
+    visible_chunks = [item for _, item in visible_pairs]
     append_run_event(
         db,
         run.id,
         AgentEventType.ANSWER_COMPOSED,
         answer_composed_payload(
-            citation_count=len(citations),
+            citation_count=len(visible_citations),
             reply=reply,
             retrieval_decision=retrieval_decision,
             answer_mode=answer_mode,
@@ -459,11 +465,11 @@ def persist_completed_run(
         clarification=clarification,
         agent_trace=conversation_agent_trace_steps(
             route=route,
-            retrieved_chunks=retrieved_chunks,
+            retrieved_chunks=visible_chunks,
             retrieval_decision=retrieval_decision,
             answer_mode=answer_mode,
             selection_context=selection_context,
-            citation_count=len(citations),
+            citation_count=len(visible_citations),
             reply=reply,
             retrieval_evidence=retrieval_evidence,
             clarification_required=clarification is not None,

@@ -200,6 +200,7 @@ def test_selected_personal_chat_keeps_ambient_system_knowledge(monkeypatch) -> N
     payload = run.json()
     assert payload["retrieval_route"] in {"retrieval_optional", "retrieval_required"}
     assert payload["resolved_knowledge_base_count"] == 1
-    assert payload["ambient_system_knowledge_base_count"] >= 1
+    assert "ambient_system_knowledge_base_count" not in payload
+    assert payload["citations"] == []
     assert system_kb.json()["id"] not in payload["resolved_knowledge_base_ids"]
     assert "memory" not in str(payload.get("source_snapshot", {})).lower()

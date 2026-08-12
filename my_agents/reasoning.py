@@ -29,12 +29,11 @@ class EffectiveReasoningPreferences:
     effort: ReasoningEffort
 
 
-class ReasoningModelCapability(BaseModel):
-    """Reasoning-mode support for one configured OpenAI model role."""
+class ReasoningSurfaceCapability(BaseModel):
+    """Reasoning-mode support for one provider-facing response surface."""
 
     model_config = ConfigDict(extra="forbid")
 
-    model: str
     pro_supported: bool
 
 
@@ -48,8 +47,8 @@ class ReasoningCapabilityResponse(BaseModel):
     default_effort: ReasoningEffort
     supported_modes: list[ReasoningMode]
     supported_efforts: list[ReasoningEffort]
-    chat: ReasoningModelCapability
-    document_workspace: ReasoningModelCapability
+    chat: ReasoningSurfaceCapability
+    document_workspace: ReasoningSurfaceCapability
 
 
 def effective_reasoning_preferences(
@@ -84,12 +83,10 @@ def reasoning_capability_response(
         default_effort=settings.openai_reasoning_effort,
         supported_modes=list(SUPPORTED_REASONING_MODES),
         supported_efforts=list(SUPPORTED_REASONING_EFFORTS),
-        chat=ReasoningModelCapability(
-            model=settings.openai_model,
+        chat=ReasoningSurfaceCapability(
             pro_supported=model_supports_reasoning_mode(settings.openai_model),
         ),
-        document_workspace=ReasoningModelCapability(
-            model=settings.document_workspace_model,
+        document_workspace=ReasoningSurfaceCapability(
             pro_supported=model_supports_reasoning_mode(settings.document_workspace_model),
         ),
     )

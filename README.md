@@ -2,7 +2,7 @@
 
 [English](./README.en.md) | 한국어
 
-**Permission-aware Agentic RAG Backend** — 개인 문서, 그룹에 공유된 문서, 관리자가 등록한 공통 문서를 권한 경계 안에서만 검색하고, 답변과 함께 근거와 실행 기록을 남기는 AI 채팅 서비스의 백엔드입니다.
+**Permission-aware Agentic RAG Backend** — 개인 문서, 그룹에 공유된 문서, 관리자가 등록한 공통 문서를 권한 경계 안에서만 검색하고, 사용자에게 보이는 인용과 내부 실행 기록을 남기는 AI 채팅 서비스의 백엔드입니다.
 
 [서비스 바로가기](https://www.my-agents.dev) · [프론트엔드 저장소](https://github.com/heecheon92/my-agents-frontend) · [구현 현황](./docs/implementation-tracking.md) · [로드맵](./ROADMAP.md)
 
@@ -14,7 +14,7 @@
 
 | 질문 | 이 프로젝트의 답 |
 | --- | --- |
-| 무엇을 만들었나 | 개인 문서, 그룹 공유 문서, 관리자가 등록한 공통 문서를 근거로 출처가 붙은 답변을 만드는 FastAPI + LangGraph 백엔드 |
+| 무엇을 만들었나 | 개인 문서, 그룹 공유 문서, 관리자가 등록한 ambient 공통 문서를 바탕으로 답하고, 사용자에게 보이는 출처에만 인용을 붙이는 FastAPI + LangGraph 백엔드 |
 | 무엇이 어려웠나 | 검색 품질보다 먼저 지켜야 하는 권한 경계, 서버가 소유하는 대화 상태, 문서 수집, 스트리밍, 그리고 실제로 운영에 쓸 수 있는 관측 지표 |
 | 무엇을 직접 검증했나 | 외부 키 없이 도는 테스트, 권한 회귀 테스트, 운영 환경 스모크, 수집·검색 전후 성능 측정 |
 | 지금 어디까지 왔나 | 핵심 흐름은 배포해서 돌아가고 있고, 부하 대응과 보안 점검은 계속 다듬는 중 |
@@ -79,6 +79,10 @@ flowchart TD
 3. 검색 서비스가 지금 이 사용자가 볼 수 있는 개인·그룹·관리자 제공 문서로만 조회 범위를 좁힙니다.
 4. 벡터, 키워드, 메타데이터, 구조화된 엔티티 후보가 결합과 재순위, 컨텍스트 구성을 거칩니다.
 5. 답변과 인용, 요약된 실행 흐름, 가려진 시간·이벤트 기록이 같은 실행에 함께 저장됩니다.
+
+관리자가 제공한 system knowledge는 사용자에게 보이는 source가 아니라 ambient model
+context입니다. 출처는 내부 audit record에 유지하되, public run/event/citation response에서는
+KB/document/chunk ID, filename, snippet, citation을 생략합니다.
 
 운영 환경에서 도는 것은 어시스턴트 오케스트레이션 하나와 그 안에서 실행되는 검색 서브워크플로입니다. 코드에 쓰인 `agent`와 `graph`는 제어 경계를 가리키는 이름이지, 여러 에이전트가 각각 독립된 서비스로 돌아간다는 뜻은 아닙니다.
 
@@ -167,7 +171,7 @@ OpenAPI 문서는 서버를 띄운 뒤 `http://127.0.0.1:8000/openapi.json`에�
 - HTTP·검증 오류는 기존 `detail`과 함께 기계가 읽을 수 있는 `code`를 반환합니다. UI는 `code`를 번역 키로 쓰고 `detail`은 진단용으로만 취급해야 합니다.
 - `GET /conversations/{conversation_id}/runs/{run_id}/events`는 `event_type`으로 구분되는 닫힌 union입니다. 저장되는 이벤트는 `run_started`, `user_message_stored`, `retrieval_completed`, `graph_invoked`, `attachments_ready`, `document_workspace_started`, `artifact_created`, `answer_composed`, `run_cancel_requested`, `run_cancelled`, `run_failed`입니다.
 - `GET /capabilities/document-workspace`는 현재 enable/eligibility, 허용 형식, 제한, retention을 반환합니다. 첨부는 `POST/GET/DELETE /conversations/{conversation_id}/attachments`, 결과물은 `GET /conversations/{conversation_id}/artifacts`와 해당 download URL을 사용합니다. Run 요청의 `attachment_ids`가 실제 실행 대상을 고릅니다.
-- `GET /capabilities/reasoning`은 현재 model, server default effort, 허용 enum, guest customization 가능 여부를 반환합니다. Run/replay 요청의 선택적 `reasoning_mode`와 `reasoning_effort`는 effective 값으로 run에 저장되고 응답 및 `run_started` event에 다시 제공됩니다.
+- `GET /capabilities/reasoning`은 surface별 Pro 지원 여부, server default effort, 허용 enum, guest customization 가능 여부를 반환하며 raw provider model identifier는 의도적으로 제외합니다. Run/replay 요청의 선택적 `reasoning_mode`와 `reasoning_effort`는 effective 값으로 run에 저장되고 응답 및 `run_started` event에 다시 제공됩니다.
 - 저장된 이벤트의 payload와 `agent_trace`는 이벤트·단계별 허용 목록을 통과한 필드만 내보냅니다. `answer_delta`, `run_completed`, `run_error`는 스트리밍 전용이라 저장되는 이벤트 union에는 들어가지 않습니다.
 - 비동기 수집 진행률은 `queued=0`, `claimed=1`, `chunking=15`, `embedding=45`, 선택적으로 `indexing=70`, `entities=85`, `metadata=95`, `completed=100`으로 저장되며 폴링 엔드포인트에서 읽을 수 있습니다. 시간이 아니라 단계 도달을 나타내는 값입니다.
 

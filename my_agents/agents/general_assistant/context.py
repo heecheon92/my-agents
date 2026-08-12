@@ -19,7 +19,7 @@ SourceKind = Literal["conversation", "memory", "document", "general_knowledge"]
 class DocumentSourceContext:
     """Authorized document context prepared by the service layer for answer grounding."""
 
-    title: str
+    title: str | None
     snippet: str
     knowledge_base_id: str | None = None
     retrieval_source: str | None = None
@@ -172,7 +172,8 @@ def _source_kind(value: object) -> SourceKind:
 
 
 def _document_context(item: Mapping[str, Any]) -> DocumentSourceContext:
-    title = str(item.get("title") or "Untitled document")
+    raw_title = item.get("title")
+    title = str(raw_title) if raw_title else None
     snippet = str(item.get("snippet") or "").strip()
     filename = item.get("source_filename")
     knowledge_base_id = item.get("knowledge_base_id")

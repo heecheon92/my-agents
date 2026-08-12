@@ -20,6 +20,7 @@ Start here:
 14. [Hybrid retrieval with BM25, vector search, and RRF](./13-bm25-vector-search-rrf-hybrid-retrieval.md)
 
 This directory is the owner's learning path archive. The root numbered notes are personal learning logs. Focused project-specific notes can live in subfolders, such as [`project-notes/`](./project-notes/). Project architecture docs that are not primarily learning logs live outside this directory, for example [`docs/product-chat-service/en/`](../product-chat-service/).
+15. [Ambient System Knowledge and User-Visible Provenance](./14-ambient-system-knowledge-and-user-visible-provenance.md)
 
 ## Learning-doc workflow
 

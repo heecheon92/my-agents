@@ -49,7 +49,9 @@ sequenceDiagram
 - The public retrieval-agent name is `RAG Agent`.
 - The internal delegated implementation name is `ContextForge`.
 - `rag_retrieval_result` is a graph runtime object; do not expose it directly to frontend clients or checkpoints.
-- `retrieved_context` is already-authorized, prompt-safe compact context.
+- `retrieved_context` is already-authorized, prompt-safe compact context. Ambient system
+  entries contain only answerable snippet text; their KB/document/chunk/title/filename/page
+  and retrieval-source provenance is omitted before provider invocation.
 - `clarification_required` and required retrieval with insufficient evidence stop the `general_assistant` graph before answer nodes.
 - `completed`, `skipped`, and `waiting` are frontend trace states, not hidden chain-of-thought.
 - The `agent_trace` stage IDs, event types, statuses, bilingual copy, and evidence fields are a stable typed API contract.
@@ -61,7 +63,7 @@ This package is the production RAG Agent boundary. It exposes a graph/tool seam 
 
 ## Relationship to service layers
 
-Conversation APIs pass user/conversation/knowledge-base selection plus a DB-backed `SqlAlchemyRagAgentRuntime` through LangGraph runtime context. `general_assistant` invokes the RAG Agent inside the graph, and the API layer reads retrieval results from graph state to persist `retrieval_completed`, citations, and grounding events. Auth, source selection, ingestion, persistence, citation rows, and provider execution remain in service modules.
+Conversation APIs pass user/conversation/knowledge-base selection plus a DB-backed `SqlAlchemyRagAgentRuntime` through LangGraph runtime context. `general_assistant` invokes the RAG Agent inside the graph, and the API layer reads retrieval results from graph state to persist `retrieval_completed`, citations, and grounding events. System citation rows remain internal audit data; public run/event/citation serializers remove their provenance. Auth, source selection, ingestion, persistence, citation rows, and provider execution remain in service modules.
 
 ## Extension guidance
 

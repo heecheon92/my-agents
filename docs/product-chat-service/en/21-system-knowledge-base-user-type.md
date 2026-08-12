@@ -33,13 +33,16 @@ There is no public API route that assigns or changes `user_type`.
   not-found responses for guessed system KB/document IDs.
 - Authenticated chat retrieval includes standard system KBs ambiently for all users,
   including guests.
-- Public run metadata keeps selected/resolved personal/group KB IDs separate from
-  ambient system KB IDs.
+- Public run metadata and citations expose only user-visible personal/group sources.
+  Ambient system KB IDs, counts, document IDs, chunk IDs, filenames, snippets, and
+  citation entries are omitted.
 
 ## Boundary notes
 
-- System knowledge is public to authenticated chat users. Do not upload secrets.
-- System knowledge appears as authorized retrieval context and citations, not as
-  stored user memory.
+- System knowledge may influence answers for authenticated chat users, so do not upload
+  secrets or facts that users must never receive.
+- System knowledge is injected as internal retrieval context, not stored user memory.
+  Its provenance remains available in internal run/citation audit records but is not
+  returned through user-facing run, event, or citation responses.
 - Personal, group, publish-review, hidden staging, explicit document-permission, and
   guest-limit rules remain separate regression boundaries.

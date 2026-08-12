@@ -190,12 +190,7 @@ def test_openai_provider_prioritizes_project_document_context_in_prompt() -> Non
         guidance="Answer from available context.",
         retrieved_context=[
             {
-                "title": "Project Verification Note",
                 "snippet": "Blue Otter Lantern is the verification token for this project.",
-                "knowledge_base_id": "system-kb-id",
-                "source_page": None,
-                "source_filename": None,
-                "source": "semantic_vector",
             }
         ],
         answer_mode="mixed",
@@ -203,8 +198,9 @@ def test_openai_provider_prioritizes_project_document_context_in_prompt() -> Non
 
     final_prompt = str(chat_model.calls[0][-1].content)
     assert "Blue Otter Lantern is the verification token for this project" in final_prompt
-    assert "system-kb-id" in final_prompt
-    assert "semantic_vector" in final_prompt
+    assert "system-kb-id" not in final_prompt
+    assert "semantic_vector" not in final_prompt
+    assert "Do not identify, infer, or reveal document provenance" in final_prompt
     assert "If authorized document context contains a direct answer" in final_prompt
     assert "For my-agents, project, or system-knowledge questions" in final_prompt
 

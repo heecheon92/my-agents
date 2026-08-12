@@ -41,7 +41,7 @@ The completed run response, run-detail response, run summaries, and display-safe
 
 ## Capability discovery and guest policy
 
-Authenticated clients can call `GET /capabilities/reasoning`. It returns the stable option lists, active default effort, the configured chat and document-workspace models, whether each supports `pro`, and `customizable` for the current principal.
+Authenticated clients can call `GET /capabilities/reasoning`. It returns the stable option lists, active default effort, whether the chat and document-workspace surfaces support `pro`, and `customizable` for the current principal. Raw provider model identifiers are intentionally omitted because clients need capability flags, not deployment inventory.
 
 Guests cannot raise or lower either setting. The backend ignores guest-submitted values and enforces `standard` plus `MY_AGENTS_OPENAI_REASONING_EFFORT`; this is an authorization and cost policy, not only a disabled frontend control. The frontend may hide the controls when `customizable=false`.
 

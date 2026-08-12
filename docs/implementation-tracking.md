@@ -1,6 +1,6 @@
 # Implementation tracking
 
-Last updated: 2026-08-09
+Last updated: 2026-08-12
 Status owner: repo-tracked source of truth for cross-machine agent handoff
 
 This file exists because `.omx/` is local runtime state and is not shared across machines. When working with an agent on any machine, start here before re-discovering project status from the codebase.
@@ -141,7 +141,9 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
 - Authorized retrieved context plus `answer_mode` is now produced by the RAG Agent call inside the general assistant graph; the `rag_agent` contract graph still verifies compact trace stages and grounding checks before citation-backed replies are persisted.
 - System knowledge bases (`scope=system`) are manager-only for CRUD/document
   operations but ambiently included in authenticated chat retrieval, including guest
-  sessions, without exposing ambient system KB IDs in public selected/resolved metadata.
+  sessions. Their chunks and provenance remain available to the model and internal audit,
+  while public run/event/citation responses omit system KB counts, IDs, filenames, snippets,
+  and citations.
 - ContextForge, retrieval phases, embedding provider calls, reranker calls, and
   graph invocation timings are recorded as opt-in internal Prometheus histograms.
 

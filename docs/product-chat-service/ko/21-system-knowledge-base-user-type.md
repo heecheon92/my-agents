@@ -36,13 +36,16 @@ uv run python -m scripts.ops account set-user-type --email owner@example.com --u
   concealed not-found 응답을 받습니다.
 - Authenticated chat retrieval은 guest를 포함한 모든 사용자에게 standard system KB를
   ambient context로 포함합니다.
-- Public run metadata는 사용자가 선택/해결한 personal/group KB ID와 ambient system KB ID를
-  분리합니다.
+- Public run metadata와 citation은 사용자에게 보이는 personal/group source만 노출합니다.
+  Ambient system KB ID/count, document ID, chunk ID, filename, snippet, citation entry는
+  생략합니다.
 
 ## 경계 메모
 
-- System knowledge는 authenticated chat user에게 공개됩니다. secret을 업로드하지 마세요.
-- System knowledge는 authorized retrieval context와 citation으로 나타나며, stored user
-  memory가 아닙니다.
+- System knowledge는 authenticated chat user의 답변에 영향을 줄 수 있으므로, 사용자가
+  절대 받아서는 안 되는 secret이나 fact를 업로드하면 안 됩니다.
+- System knowledge는 stored user memory가 아니라 internal retrieval context로 주입됩니다.
+  출처는 내부 run/citation audit record에 유지하지만 user-facing run, event, citation
+  response에는 반환하지 않습니다.
 - Personal, group, publish-review, hidden staging, explicit document permission, guest-limit
   규칙은 별도 regression boundary로 유지합니다.

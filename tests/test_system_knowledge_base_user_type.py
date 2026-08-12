@@ -5,11 +5,12 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from my_agents.api import create_app
 from my_agents.api.assistant import get_graph_runner
 from my_agents.auth.models import UserModel
-from my_agents.knowledge.models import DocumentModel, KnowledgeBaseModel
+from my_agents.knowledge.models import CitationModel, DocumentModel, KnowledgeBaseModel
 from my_agents.persistence.database import get_database_session
 from my_agents.schemas import RouteDecision
 
@@ -164,8 +165,35 @@ def test_system_documents_are_manager_only_but_ambient_in_chat_retrieval(monkeyp
     assert payload["knowledge_base_selection"] == {"mode": "all", "knowledge_base_ids": []}
     assert payload["resolved_knowledge_base_ids"] == []
     assert payload["resolved_knowledge_base_count"] == 0
-    assert {citation["knowledge_base_id"] for citation in payload["citations"]} == {system_id}
-    assert graph.calls[-1]["retrieved_context"][0]["document_id"] == document_id
+    assert "ambient_system_knowledge_base_count" not in payload
+    assert payload["citations"] == []
+    injected_context = graph.calls[-1]["retrieved_context"][0]
+    assert set(injected_context) == {"snippet"}
+    assert "SystemOnlyFact" in injected_context["snippet"]
+
+    detail = normal.get(f"/conversations/{conversation_id}/runs/{payload['run_id']}")
+    events = normal.get(f"/conversations/{conversation_id}/runs/{payload['run_id']}/events")
+    assert detail.status_code == 200
+    assert detail.json()["citations"] == []
+    assert "ambient_system_knowledge_base_count" not in detail.json()
+    assert events.status_code == 200
+    assert all(
+        "ambient_system_knowledge_base_count" not in event["payload"] for event in events.json()
+    )
+    answer_event = next(
+        event for event in events.json() if event["event_type"] == "answer_composed"
+    )
+    assert answer_event["payload"]["citation_count"] == 0
+
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        stored_citations = db.scalars(
+            select(CitationModel).where(CitationModel.run_id == payload["run_id"])
+        ).all()
+        assert [citation.document_id for citation in stored_citations] == [document_id]
+    finally:
+        session_generator.close()
 
 
 def test_system_kb_project_context_injects_small_smoke_fact(monkeypatch) -> None:  # noqa: ANN001
@@ -200,11 +228,9 @@ def test_system_kb_project_context_injects_small_smoke_fact(monkeypatch) -> None
     payload = run.json()
     assert payload["retrieval_route"] == "retrieval_optional"
     assert payload["answer_mode"] == "mixed"
-    assert {citation["knowledge_base_id"] for citation in payload["citations"]} == {system_id}
-    assert any("Blue Otter Lantern" in citation["snippet"] for citation in payload["citations"])
+    assert payload["citations"] == []
     injected_context = graph.calls[-1]["retrieved_context"][0]
-    assert injected_context["document_id"] == document_id
-    assert injected_context["knowledge_base_id"] == system_id
+    assert set(injected_context) == {"snippet"}
     assert "Blue Otter Lantern" in injected_context["snippet"]
 
 
@@ -272,10 +298,13 @@ def test_selected_personal_kb_retrieval_keeps_system_kb_ambient_and_unlisted(mon
     }
     assert payload["resolved_knowledge_base_ids"] == [personal_id]
     assert payload["resolved_knowledge_base_count"] == 1
-    assert {citation["knowledge_base_id"] for citation in payload["citations"]} == {
-        personal_id,
-        system_id,
-    }
+    assert {citation["knowledge_base_id"] for citation in payload["citations"]} == {personal_id}
+    retrieved_context = graph.calls[-1]["retrieved_context"]
+    assert {item.get("knowledge_base_id") for item in retrieved_context} == {personal_id, None}
+    hidden_context = next(
+        item for item in retrieved_context if "AmbientSystemFact" in item["snippet"]
+    )
+    assert set(hidden_context) == {"snippet"}
 
 
 def test_system_kb_delete_removes_documents_and_dependent_rows(monkeypatch) -> None:  # noqa: ANN001

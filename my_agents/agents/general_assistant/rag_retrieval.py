@@ -62,7 +62,12 @@ def graph_state_from_rag_result(result: RagAgentRetrievalResult) -> dict[str, ob
     return {
         "rag_retrieval_result": result,
         "retrieved_chunk_ids": [item.chunk.id for item in used_chunks],
-        "retrieved_context": retrieved_context_for_graph(used_chunks),
+        "retrieved_context": retrieved_context_for_graph(
+            used_chunks,
+            hidden_knowledge_base_ids=(
+                result.knowledge_base_selection.ambient_system_knowledge_base_ids
+            ),
+        ),
         "retrieval_route": result.decision.route,
         "answer_mode": result.answer_mode,
         "document_scope": result.decision.document_scope,
