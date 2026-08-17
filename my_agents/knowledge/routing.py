@@ -125,15 +125,19 @@ def route_retrieval(
         if user_selectable_document_count is None
         else user_selectable_document_count
     )
-    if (
-        _has_any(normalized, _AMBIGUOUS_DOCUMENT_REFERENCES)
-        and clarification_document_count is not None
-        and clarification_document_count > 1
-        and not _has_specific_document_reference(query)
+    if _has_any(normalized, _AMBIGUOUS_DOCUMENT_REFERENCES) and not (
+        _has_specific_document_reference(query)
     ):
+        if clarification_document_count is not None and clarification_document_count > 1:
+            return RetrievalRoutingDecision(
+                route="clarification_required",
+                reason="ambiguous document reference with multiple user-selectable documents",
+                rewritten_query=query,
+                document_scope="unknown",
+            )
         return RetrievalRoutingDecision(
-            route="clarification_required",
-            reason="ambiguous document reference with multiple authorized documents",
+            route="retrieval_required",
+            reason="ambiguous document reference requires authorized document retrieval",
             rewritten_query=query,
             document_scope="unknown",
         )

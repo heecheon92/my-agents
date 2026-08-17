@@ -189,7 +189,7 @@ uv run ruff format --check .
 git diff --check
 ```
 
-2026-08-17 기준 이 체크아웃의 전체 offline test는 **497 passed, 3 skipped**이며 실제 자격 증명이 없어도 돌아갑니다. Gated PostgreSQL checkpoint restart smoke도 local pgvector profile에서 통과합니다.
+2026-08-17 기준 이 체크아웃의 전체 offline test는 **498 passed, 3 skipped**이며 실제 자격 증명이 없어도 돌아갑니다. Gated PostgreSQL checkpoint restart smoke도 local pgvector profile에서 통과합니다.
 
 ## 보안과 개인정보 경계
 

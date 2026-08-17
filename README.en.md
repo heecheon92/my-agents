@@ -189,7 +189,7 @@ uv run ruff format --check .
 git diff --check
 ```
 
-On 2026-08-17, the full offline suite on this checkout reports **497 passed, 3 skipped** without requiring real credentials. The gated PostgreSQL checkpoint restart smoke also passes against the local pgvector profile.
+On 2026-08-17, the full offline suite on this checkout reports **498 passed, 3 skipped** without requiring real credentials. The gated PostgreSQL checkpoint restart smoke also passes against the local pgvector profile.
 
 ## Security and privacy boundaries
 
