@@ -12,6 +12,7 @@ from my_agents.api import create_app
 from my_agents.api.assistant import get_graph_runner
 from my_agents.auth.models import UserModel
 from my_agents.knowledge.models import KnowledgeBaseModel
+from my_agents.knowledge.retrieval import RetrievalService
 from my_agents.persistence.database import get_database_session
 from my_agents.schemas import RouteDecision
 
@@ -155,6 +156,59 @@ def test_system_kb_document_writes_are_manager_only(monkeypatch) -> None:  # noq
 
     normal_direct_delete = normal_client.delete(f"/documents/{system_doc['id']}")
     assert normal_direct_delete.status_code == 404
+
+
+def test_system_kb_documents_are_ambient_not_user_selectable(monkeypatch) -> None:  # noqa: ANN001
+    root_client = _client(monkeypatch)
+    normal_client = _client(monkeypatch)
+    root_user_id = _signup_login(root_client, "root-source-choice-system-kb@example.com")
+    normal_user_id = _signup_login(normal_client, "normal-source-choice-system-kb@example.com")
+    _set_user_type(root_user_id, "root")
+
+    system_kb = root_client.post(
+        "/knowledge-bases", json={"name": "Ambient Source", "scope": "system"}
+    ).json()
+    system_document = root_client.post(
+        f"/knowledge-bases/{system_kb['id']}/documents",
+        json={"title": "Hidden ambient source", "content": "Ambient project context."},
+    ).json()
+    personal_kb = normal_client.post(
+        "/knowledge-bases", json={"name": "Controllable Source", "scope": "personal"}
+    ).json()
+    personal_document = normal_client.post(
+        f"/knowledge-bases/{personal_kb['id']}/documents",
+        json={"title": "Visible personal source", "content": "User-controlled context."},
+    ).json()
+
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        service = RetrievalService(db)
+        options, total = service.authorized_document_options(
+            user_id=normal_user_id,
+            knowledge_base_ids=(personal_kb["id"], system_kb["id"]),
+        )
+        all_options, all_total = service.authorized_document_options(
+            user_id=normal_user_id,
+            knowledge_base_ids=None,
+        )
+
+        assert total == 1
+        assert [option.document_id for option in options] == [personal_document["id"]]
+        assert all_total == 1
+        assert [option.document_id for option in all_options] == [personal_document["id"]]
+        assert service.document_is_user_selectable(
+            user_id=normal_user_id,
+            document_id=personal_document["id"],
+            knowledge_base_ids=(personal_kb["id"], system_kb["id"]),
+        )
+        assert not service.document_is_user_selectable(
+            user_id=normal_user_id,
+            document_id=system_document["id"],
+            knowledge_base_ids=(personal_kb["id"], system_kb["id"]),
+        )
+    finally:
+        session_generator.close()
 
 
 def test_selected_personal_chat_keeps_ambient_system_knowledge(monkeypatch) -> None:  # noqa: ANN001

@@ -174,7 +174,7 @@ OpenAPI is available from a running server at `http://127.0.0.1:8000/openapi.jso
 
 - HTTP and validation errors return a stable machine-readable `code` alongside the existing `detail`. UIs should localize from `code` and treat `detail` as diagnostic copy.
 - `GET /conversations/{conversation_id}/runs/{run_id}/events` is a closed OpenAPI union discriminated by `event_type`. Persisted event types include `run_interrupted` and `run_resumed` in addition to the existing run, retrieval, graph, workspace, answer, cancellation, and failure events.
-- With checkpointer support enabled, run creation returns either `200 completed` or `202 waiting_for_input`. A waiting document-selection interaction is refresh-safe through the run detail/options endpoints and resumes through `/runs/{run_id}/resume` or `/resume/stream` without consuming another guest prompt. Interaction and resume payloads require the protocol-neutral `schema_version=1` and semantic `type`; see the [agent-to-frontend interaction contract](./docs/product-chat-service/en/27-agent-frontend-interaction-contract.md).
+- With checkpointer support enabled, run creation returns either `200 completed` or `202 waiting_for_input`. A waiting document-selection interaction is refresh-safe through the run detail/options endpoints and resumes through `/runs/{run_id}/resume` or `/resume/stream` without consuming another guest prompt. Options include only user-controllable personal/group documents; ambient system knowledge remains automatically injected and is never selectable. Interaction and resume payloads require the protocol-neutral `schema_version=1` and semantic `type`; see the [agent-to-frontend interaction contract](./docs/product-chat-service/en/27-agent-frontend-interaction-contract.md).
 - `GET /capabilities/document-workspace` reports effective enablement, eligibility, accepted formats, limits, and retention. Attachments use `POST/GET/DELETE /conversations/{conversation_id}/attachments`; artifacts use `GET /conversations/{conversation_id}/artifacts` and their download URLs. A run's `attachment_ids` selects the files used for that execution.
 - `GET /capabilities/reasoning` reports per-surface Pro support, the server-default effort, stable enums, and whether the current account may customize them. It intentionally omits raw provider model identifiers. Optional run/replay `reasoning_mode` and `reasoning_effort` values are persisted as effective run metadata and returned in responses and the `run_started` event.
 - Persisted event payloads and `agent_trace` expose only fields accepted by event- and stage-specific allowlist schemas. `answer_delta`, `run_completed`, and `run_error` are stream-only SSE events and are not members of the persisted-event union.
@@ -189,7 +189,7 @@ uv run ruff format --check .
 git diff --check
 ```
 
-On 2026-08-17, the full offline suite on this checkout reports **495 passed, 3 skipped** without requiring real credentials. The gated PostgreSQL checkpoint restart smoke also passes against the local pgvector profile.
+On 2026-08-17, the full offline suite on this checkout reports **497 passed, 3 skipped** without requiring real credentials. The gated PostgreSQL checkpoint restart smoke also passes against the local pgvector profile.
 
 ## Security and privacy boundaries
 

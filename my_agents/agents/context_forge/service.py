@@ -76,12 +76,25 @@ class ContextForgeService:
                         knowledge_base_ids=selected_ids,
                     )
                 )
-        timing.update(authorized_document_count=document_count)
+        with timing.phase("user_selectable_document_count"):
+            user_selectable_document_count = (
+                1
+                if request.selected_document_id is not None
+                else self._retrieval_service.user_selectable_document_count(
+                    user_id=request.user_id,
+                    knowledge_base_ids=selected_ids,
+                )
+            )
+        timing.update(
+            authorized_document_count=document_count,
+            user_selectable_document_count=user_selectable_document_count,
+        )
         with timing.phase("query_planning"):
             plan = self._planner.plan(
                 message=request.query,
                 history=request.messages,
                 authorized_document_count=document_count,
+                user_selectable_document_count=user_selectable_document_count,
             )
         timing.update(
             route=plan.route_decision.route,
@@ -99,6 +112,7 @@ class ContextForgeService:
                 "rewritten_query": plan.rewritten_query,
                 "structured_entity_types": list(plan.structured_entity_types),
                 "authorized_document_count": document_count,
+                "user_selectable_document_count": user_selectable_document_count,
             },
         )
         if plan.route_decision.route in {"no_retrieval", "clarification_required"}:

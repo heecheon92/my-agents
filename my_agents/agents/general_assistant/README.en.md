@@ -139,6 +139,8 @@ When document-selection HITL is enabled, `clarification_required` routes through
 
 The public waiting payload and its typed resume answer use the versioned, protocol-neutral contract in [`docs/product-chat-service/en/27-agent-frontend-interaction-contract.md`](../../../docs/product-chat-service/en/27-agent-frontend-interaction-contract.md). Add future user-input states through that semantic interaction boundary; graph nodes must not prescribe frontend components or layout.
 
+Document-selection options include only user-controllable personal/group documents. Ambient system knowledge remains automatically injected internal context, never a visible or selectable source, and the resume boundary rejects a system document ID even if a client submits one directly.
+
 ## Where to add OpenAI hosted tools
 
 General-answer OpenAI Responses API tools such as `web_search` belong at the **OpenAI provider boundary in `responders.py`, not directly inside graph nodes**. A run with selected temporary files is the deliberate exception: it receives `document_workspace_runtime` through LangGraph runtime context, and the final response node invokes the isolated document-workspace adapter. That adapter is needed because `ChatOpenAI` does not yet expose the required Files, Containers, Hosted Shell, and Skills surfaces.

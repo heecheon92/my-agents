@@ -46,6 +46,16 @@ def test_ambiguous_document_reference_requires_clarification_with_multiple_docs(
     assert decision.document_scope == "unknown"
 
 
+def test_ambient_system_documents_do_not_create_user_clarification() -> None:
+    decision = route_retrieval(
+        message="이 문서 기준으로 개선점을 알려줘",
+        authorized_document_count=3,
+        user_selectable_document_count=1,
+    )
+
+    assert decision.route == "retrieval_required"
+
+
 def test_filename_like_document_reference_skips_clarification_with_multiple_docs() -> None:
     decision = route_retrieval(
         message="그럼 NCT06159946_Prot_000 이 문서에 대해 설명해줘",

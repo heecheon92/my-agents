@@ -122,6 +122,7 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
   allowlist before leaving the API.
 - Failure path records a failed run with redacted event metadata.
 - Opt-in document-selection HITL exposes a required `schema_version=1` semantic interaction contract, persists refresh-safe waiting state in Product DB, and resumes only through a type-specific answer. Frontend waiting-state support remains a hard gate before enabling the checkpointer in a shared environment.
+- Document-selection options are a narrower user-control boundary than retrieval: personal/group documents may be chosen, while ambient system knowledge remains automatically injected, hidden from the option list, and invalid as a submitted resume selection.
 - Conversation-run timing histograms cover sync and streaming outcomes for internal
   performance review when metrics are enabled.
 

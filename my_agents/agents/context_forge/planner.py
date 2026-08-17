@@ -44,11 +44,13 @@ class QueryCartographer:
         message: str,
         history: Sequence[BaseMessage],
         authorized_document_count: int | None,
+        user_selectable_document_count: int | None = None,
     ) -> RetrievalPlan:
         decision = route_retrieval(
             message=message,
             history=list(history),
             authorized_document_count=authorized_document_count,
+            user_selectable_document_count=user_selectable_document_count,
         )
         normalized = message.casefold()
         structured_entity_types = _structured_entity_types(normalized)

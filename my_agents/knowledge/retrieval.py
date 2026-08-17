@@ -266,6 +266,24 @@ class RetrievalService:
                 or 0
             )
 
+    def user_selectable_document_count(
+        self, *, user_id: str, knowledge_base_ids: Sequence[str] | None = None
+    ) -> int:
+        """Count personal/group documents that may participate in user clarification."""
+        with track_retrieval_phase("user_selectable_document_count_sql"):
+            return (
+                self._db.scalar(
+                    select(func.count(DocumentModel.id.distinct())).where(
+                        _user_selectable_document_filter(
+                            user_id,
+                            knowledge_base_ids=knowledge_base_ids,
+                            require_standard_purpose=_schema_has_knowledge_base_purpose(self._db),
+                        )
+                    )
+                )
+                or 0
+            )
+
     def authorized_document_options(
         self,
         *,
@@ -274,8 +292,12 @@ class RetrievalService:
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[AuthorizedDocumentOption], int]:
-        """Return a bounded page of documents in the current authorized scope."""
-        predicate = _authorized_document_filter(
+        """Return user-controllable personal/group options for source clarification.
+
+        Ambient system knowledge may support every answer, but it is not a user-visible
+        or user-selectable source axis and must never appear in this list.
+        """
+        predicate = _user_selectable_document_filter(
             user_id,
             knowledge_base_ids=knowledge_base_ids,
             require_standard_purpose=_schema_has_knowledge_base_purpose(self._db),
@@ -345,19 +367,19 @@ class RetrievalService:
         ranked.sort(key=lambda item: (-item.score, item.chunk.ordinal))
         return ranked[:limit]
 
-    def document_is_authorized(
+    def document_is_user_selectable(
         self,
         *,
         user_id: str,
         document_id: str,
         knowledge_base_ids: Sequence[str] | None = None,
     ) -> bool:
-        """Revalidate one selected document against the current retrieval scope."""
+        """Revalidate one user-controllable document against the current scope."""
         return bool(
             self._db.scalar(
                 select(DocumentModel.id).where(
                     DocumentModel.id == document_id,
-                    _authorized_document_filter(
+                    _user_selectable_document_filter(
                         user_id,
                         knowledge_base_ids=knowledge_base_ids,
                         require_standard_purpose=_schema_has_knowledge_base_purpose(self._db),
@@ -1086,6 +1108,25 @@ def _authorized_document_filter(
             require_standard_purpose=require_standard_purpose,
         ),
         or_(*readable_document_predicates),
+    )
+
+
+def _user_selectable_document_filter(
+    user_id: str,
+    *,
+    knowledge_base_ids: Sequence[str] | None = None,
+    require_standard_purpose: bool = True,
+):
+    """Exclude ambient system knowledge from every user-controlled source choice."""
+    return and_(
+        _authorized_document_filter(
+            user_id,
+            knowledge_base_ids=knowledge_base_ids,
+            require_standard_purpose=require_standard_purpose,
+        ),
+        ~DocumentModel.knowledge_base_id.in_(
+            _system_knowledge_base_ids(require_standard_purpose=require_standard_purpose)
+        ),
     )
 
 

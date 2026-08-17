@@ -17,6 +17,9 @@ AG-UI or A2UI as a dependency.
 
 - Backend interactions are semantic, versioned, JSON-serializable, and safe to display.
 - Backend payloads never name React components, layouts, colors, controls, or CSS.
+- Ambient system knowledge is automatically injected server context, not a
+  user-controllable source axis. System KBs and documents must never appear as interaction
+  options, and a forged resume answer naming one is rejected.
 - Frontend components are selected through a local interaction renderer registry.
 - Activity events do not replace pending interaction state.
 - Product DB run detail is the refresh-safe public source of truth; LangGraph checkpoints
@@ -69,6 +72,12 @@ waiting response.
 
 ## Lifecycle and durability
 
+The default chat source mode remains all authorized personal/group KBs plus ambient system
+knowledge. The interaction is not a replacement KB picker. It appears only when an
+ambiguous document reference has more than one user-selectable document in the current
+scope. One selectable document is resolved automatically, even when ambient system
+documents also exist. A client-selected KB subset narrows the eligible document options.
+
 ```mermaid
 sequenceDiagram
     participant UI as Frontend
@@ -101,7 +110,9 @@ stream backpressure.
 The interaction can be reconstructed after refresh from `GET
 /conversations/{conversation_id}/runs/{run_id}`. SSE is a transition signal, not the only
 copy of state. Options are authorization-filtered when listed and the selected document
-is authorized again when resumed.
+is authorized again when resumed. The option boundary is narrower than retrieval: it
+contains only user-controllable personal/group documents, while ambient system knowledge
+continues to support the answer automatically and without visible provenance.
 
 ## Versioning and compatibility
 
@@ -140,7 +151,8 @@ redaction, versioning, localization, and accessibility rules.
 1. Define a typed semantic model under `my_agents/interactions/` with `extra="forbid"`.
 2. Add it to the `PendingInteraction` extension point and define a type-specific answer.
 3. Persist only the public-safe interaction; keep framework checkpoint state private.
-4. Revalidate authorization, expiry, and current resource state during resume.
+4. Revalidate authorization, expiry, current resource state, and that the answer names a
+   user-controllable source rather than ambient system knowledge during resume.
 5. Extend OpenAPI, REST/SSE events, and stable error-code coverage.
 6. Add a frontend parser member, registry entry, localized copy, accessible renderer, and
    unsupported fallback coverage.

@@ -17,6 +17,9 @@ A2UI dependency를 추가하지 않습니다.
 
 - Backend interaction은 semantic, versioned, JSON-serializable, display-safe해야 합니다.
 - Backend payload는 React component, layout, color, control, CSS 이름을 전달하지 않습니다.
+- Ambient system knowledge는 서버가 자동으로 주입하는 context이지 사용자가 고르는
+  source axis가 아닙니다. System KB와 document는 option에 노출하지 않고, 이를 지정한
+  forged resume answer도 거절합니다.
 - Frontend는 local interaction renderer registry로 component를 선택합니다.
 - Activity event는 pending interaction state를 대신하지 않습니다.
 - Product DB run detail이 새로고침 가능한 public source of truth이고, LangGraph
@@ -69,6 +72,12 @@ response가 들어갑니다.
 
 ## Lifecycle과 durability
 
+기본 chat source mode는 계속 모든 authorized personal/group KB와 ambient system
+knowledge입니다. 이 interaction은 새로운 필수 KB picker가 아닙니다. 현재 scope에
+user-selectable document가 둘 이상이고 document reference가 모호할 때만 나타납니다.
+Ambient system document가 있더라도 selectable document가 하나면 자동으로 결정합니다.
+Client가 KB subset을 명시적으로 골랐다면 option도 그 범위로 제한합니다.
+
 ```mermaid
 sequenceDiagram
     participant UI as Frontend
@@ -100,7 +109,9 @@ stream backpressure처럼 재시도하지 말고 interaction이 끝날 때까지
 
 `GET /conversations/{conversation_id}/runs/{run_id}`로 새로고침 뒤 interaction을 복구할 수
 있습니다. SSE는 state 전환 신호이지 유일한 state 사본이 아닙니다. Option 목록을 읽을
-때 권한을 거르고, resume 때 선택한 document의 현재 권한을 다시 검사합니다.
+때 권한을 거르고, resume 때 선택한 document의 현재 권한을 다시 검사합니다. Option
+boundary는 retrieval보다 좁아서 사용자가 통제하는 personal/group document만 포함합니다.
+Ambient system knowledge는 visible provenance나 선택 control 없이 계속 자동 주입됩니다.
 
 ## Version과 호환성
 
@@ -138,7 +149,8 @@ accessibility 규칙을 그대로 지켜야 합니다.
 2. `PendingInteraction` extension point에 추가하고 type-specific answer를 정의합니다.
 3. Public-safe interaction만 Product DB에 저장하고 framework checkpoint state는 비공개로
    둡니다.
-4. Resume 때 authorization, expiry, 현재 resource state를 다시 검증합니다.
+4. Resume 때 authorization, expiry, 현재 resource state와 함께 ambient system knowledge가
+   아닌 user-controllable source인지 다시 검증합니다.
 5. OpenAPI, REST/SSE event, stable error-code coverage를 확장합니다.
 6. Frontend parser member, registry entry, localized copy, accessible renderer, unsupported
    fallback test를 함께 추가합니다.

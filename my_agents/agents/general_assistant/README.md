@@ -139,6 +139,8 @@ Document-selection HITL을 켜면 `clarification_required`가 `prepare_document_
 
 Public waiting payload와 typed resume answer는 [`docs/product-chat-service/ko/27-agent-frontend-interaction-contract.md`](../../../docs/product-chat-service/ko/27-agent-frontend-interaction-contract.md)의 versioned protocol-neutral 계약을 따릅니다. 앞으로 사용자 입력이 필요한 state도 이 semantic interaction boundary로 추가하고, graph node가 frontend component나 layout을 지정해서는 안 됩니다.
 
+Document-selection option에는 사용자가 통제하는 personal/group document만 포함합니다. Ambient system knowledge는 계속 자동으로 주입되는 internal context이며 visible/selectable source가 아닙니다. Client가 system document ID를 직접 보내더라도 resume boundary가 거절합니다.
+
 ## OpenAI hosted tools를 추가할 위치
 
 OpenAI Responses API의 `web_search` 같은 일반 답변 built-in tool은 **그래프 노드가 아니라 `responders.py`의 OpenAI provider 경계**에 둡니다. 단, 임시 파일이 선택된 run은 `document_workspace_runtime`을 LangGraph runtime context로 받아 마지막 응답 node에서 격리된 document workspace adapter를 호출합니다. 이 adapter는 `ChatOpenAI`가 아직 노출하지 않는 Files, Containers, Hosted Shell, Skills API 때문에 필요한 의도적인 예외입니다.

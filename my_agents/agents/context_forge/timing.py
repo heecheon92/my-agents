@@ -103,6 +103,7 @@ def _summary_table(summary: dict[str, object]) -> Table:
         "intent",
         "reranker",
         "authorized_document_count",
+        "user_selectable_document_count",
         "raw_candidate_count",
         "fused_candidate_count",
         "reranked_candidate_count",

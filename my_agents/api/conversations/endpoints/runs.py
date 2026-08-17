@@ -214,7 +214,7 @@ def resume_conversation_run(
             code=APIErrorCode.LANGGRAPH_PERSISTENCE_UNAVAILABLE,
         )
     selection_context = run_knowledge_base_context(run)
-    if not RetrievalService(db).document_is_authorized(
+    if not RetrievalService(db).document_is_user_selectable(
         user_id=principal.user_id,
         document_id=request.document_id,
         knowledge_base_ids=selection_context.retrieval_knowledge_base_ids,
