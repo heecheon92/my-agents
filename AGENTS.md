@@ -70,6 +70,8 @@ container. Its full knobs and retention limits are documented in `.env.example`.
 
 For memory architecture, do not treat LangGraph checkpointers as conversation history or long-term memory. Product DB remains the source of truth for visible transcripts/runs/citations/audit and memory governance. The opt-in PostgresStore is a rebuildable semantic projection whose candidates must be revalidated against Product DB rows; the opt-in PostgresSaver uses `run_id` only for bounded HITL/resume execution state. OpenAI `previous_response_id` may be stored as one field inside compact graph/run state, but should not replace application state.
 
+All agent-requested user input must use the versioned, semantic contract in `docs/product-chat-service/en/27-agent-frontend-interaction-contract.md`. Backend interactions describe required input, never frontend components or layout. Keep activity events separate from pending interaction state, require typed answers, and add future AG-UI/A2UI support only as a boundary adapter rather than a Product DB domain model.
+
 ## Dependency policy
 
 - Use `uv` for dependency management.

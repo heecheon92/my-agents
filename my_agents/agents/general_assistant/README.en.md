@@ -137,6 +137,8 @@ See [`docs/product-chat-service/en/19-langgraph-native-memory-migration.md`](../
 
 When document-selection HITL is enabled, `clarification_required` routes through `prepare_document_selection -> request_document_selection`. The interrupt exposes only safe document metadata. Resume supplies an exact document ID, revalidates current authorization, and runs selected-document retrieval before the normal memory and response nodes. Runtime DB sessions, provider clients, ORM models, and document-workspace adapters are never checkpointed.
 
+The public waiting payload and its typed resume answer use the versioned, protocol-neutral contract in [`docs/product-chat-service/en/27-agent-frontend-interaction-contract.md`](../../../docs/product-chat-service/en/27-agent-frontend-interaction-contract.md). Add future user-input states through that semantic interaction boundary; graph nodes must not prescribe frontend components or layout.
+
 ## Where to add OpenAI hosted tools
 
 General-answer OpenAI Responses API tools such as `web_search` belong at the **OpenAI provider boundary in `responders.py`, not directly inside graph nodes**. A run with selected temporary files is the deliberate exception: it receives `document_workspace_runtime` through LangGraph runtime context, and the final response node invokes the isolated document-workspace adapter. That adapter is needed because `ChatOpenAI` does not yet expose the required Files, Containers, Hosted Shell, and Skills surfaces.

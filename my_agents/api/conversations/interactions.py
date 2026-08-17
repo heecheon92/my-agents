@@ -14,8 +14,8 @@ from my_agents.auth.models import UserModel
 from my_agents.conversations.models import AgentEventType, AgentRunModel, RunStatus
 from my_agents.conversations.schemas import (
     ConversationRunInterruptedResponse,
-    PendingDocumentSelection,
 )
+from my_agents.interactions.schemas import PendingDocumentSelection
 from my_agents.observability.metrics import record_langgraph_persistence_operation
 
 logger = logging.getLogger(__name__)
@@ -66,6 +66,7 @@ def persist_waiting_document_selection(
             "run_id": run.id,
             "status": RunStatus.WAITING_FOR_INPUT.value,
             "interaction_id": interaction.interaction_id,
+            "interaction_schema_version": interaction.schema_version,
             "interaction_type": interaction.type,
             "option_count": interaction.option_count,
             "expires_at": expires_at.isoformat(),

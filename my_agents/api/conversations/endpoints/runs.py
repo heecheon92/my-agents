@@ -43,14 +43,17 @@ from my_agents.conversations.schemas import (
     ConversationRunInterruptedResponse,
     ConversationRunRequest,
     ConversationRunResult,
-    ConversationRunResumeRequest,
-    DocumentSelectionOption,
-    DocumentSelectionOptionsResponse,
 )
 from my_agents.document_workspace.provider import DocumentWorkspaceProvider
 from my_agents.document_workspace.service import (
     assert_document_workspace_access,
     prepare_document_workspace_runtime,
+)
+from my_agents.interactions.schemas import (
+    INTERACTION_SCHEMA_VERSION,
+    ConversationRunResumeRequest,
+    DocumentSelectionOption,
+    DocumentSelectionOptionsResponse,
 )
 from my_agents.knowledge.auth import resolve_conversation_knowledge_context
 from my_agents.knowledge.retrieval import RetrievalService
@@ -247,6 +250,7 @@ def resume_conversation_run(
             "run_id": run.id,
             "status": RunStatus.RUNNING.value,
             "interaction_id": request.interaction_id,
+            "interaction_schema_version": request.schema_version,
             "interaction_type": "document_selection",
         },
         commit=False,
@@ -313,7 +317,9 @@ def list_document_selection_options(
     )
     next_offset = offset + len(options)
     return DocumentSelectionOptionsResponse(
+        schema_version=INTERACTION_SCHEMA_VERSION,
         interaction_id=interaction_id,
+        type="document_selection",
         option_count=total,
         options=[DocumentSelectionOption(**option.__dict__) for option in options],
         next_cursor=str(next_offset) if next_offset < total else None,

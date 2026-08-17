@@ -169,6 +169,7 @@ def test_checkpointed_graph_interrupts_and_resumes_document_selection() -> None:
 
     interrupted = graph.invoke(state, config=config, context=context)
 
+    assert interrupted["__interrupt__"][0].value["schema_version"] == 1
     assert interrupted["__interrupt__"][0].value["type"] == "document_selection"
     assert interrupted["__interrupt__"][0].value["options"][0]["document_id"] == "doc-1"
     assert "rag_retrieval_result" not in graph.get_state(config).values

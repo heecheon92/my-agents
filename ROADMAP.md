@@ -68,6 +68,7 @@ Current honest status:
 - [x] Opt-in Product DB-backed long-term memory governance scaffold with settings, CRUD, suggest-confirm, provenance, staleness, and redacted run snapshots.
 - [x] Opt-in PostgresStore semantic memory projection with Product DB governance validation and reconciliation; the separate `memory_graph` extraction/suggest-confirm workflow remains planned.
 - [x] Opt-in run-scoped PostgresSaver for bounded document-selection HITL/resume state; Product DB remains conversation history and audit truth.
+- [x] Versioned protocol-neutral interaction contract for durable document selection, with typed resume answers, refresh recovery, and a documented AG-UI/A2UI adapter boundary.
 - [ ] Real tool/function capabilities exposed through the graph.
 - [ ] Production multi-agent orchestration surface.
 - [later] Additional specialized production agents beyond the current general assistant.

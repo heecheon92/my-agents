@@ -188,6 +188,8 @@ boundary로 사용하고, 제한된 최근 6개 message window와 primitive retr
 checkpoint합니다. Terminal run의 checkpoint는 삭제합니다. 모호한 document request는
 `waiting_for_input`으로 멈추고 authorized document selection을 노출한 뒤, 현재 permission을 다시
 확인하고 같은 run을 재개할 수 있습니다.
+Public waiting/resume payload는 [Agent와 frontend 사이의 interaction 계약](./27-agent-frontend-interaction-contract.md)의
+versioned semantic contract를 따릅니다.
 
 ## Non-goals
 

@@ -19,6 +19,7 @@ from my_agents.agents.rag_agent import (
     rag_result_snapshot_for_graph,
     retrieved_context_for_graph,
 )
+from my_agents.interactions.schemas import INTERACTION_SCHEMA_VERSION
 from my_agents.knowledge.routing import RetrievalRoutingDecision
 
 
@@ -159,6 +160,7 @@ def request_document_selection(state: Mapping[str, Any]) -> dict[str, object]:
         raise RuntimeError("document selection requires a run_id")
     response = interrupt(
         {
+            "schema_version": INTERACTION_SCHEMA_VERSION,
             "interaction_id": f"{run_id}:document_selection",
             "type": "document_selection",
             "reason_code": "ambiguous_document_reference",

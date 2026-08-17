@@ -137,6 +137,8 @@ Memory service는 이 agent folder 밖의 `my_agents/memory/`와 `my_agents/api/
 
 Document-selection HITL을 켜면 `clarification_required`가 `prepare_document_selection -> request_document_selection`으로 이어집니다. Interrupt에는 안전한 document metadata만 담습니다. Resume은 정확한 document ID를 받아 현재 권한을 다시 확인한 뒤 selected-document retrieval을 실행하고 기존 memory/response node로 진행합니다. Runtime DB session, provider client, ORM model, document-workspace adapter는 checkpoint에 넣지 않습니다.
 
+Public waiting payload와 typed resume answer는 [`docs/product-chat-service/ko/27-agent-frontend-interaction-contract.md`](../../../docs/product-chat-service/ko/27-agent-frontend-interaction-contract.md)의 versioned protocol-neutral 계약을 따릅니다. 앞으로 사용자 입력이 필요한 state도 이 semantic interaction boundary로 추가하고, graph node가 frontend component나 layout을 지정해서는 안 됩니다.
+
 ## OpenAI hosted tools를 추가할 위치
 
 OpenAI Responses API의 `web_search` 같은 일반 답변 built-in tool은 **그래프 노드가 아니라 `responders.py`의 OpenAI provider 경계**에 둡니다. 단, 임시 파일이 선택된 run은 `document_workspace_runtime`을 LangGraph runtime context로 받아 마지막 응답 node에서 격리된 document workspace adapter를 호출합니다. 이 adapter는 `ChatOpenAI`가 아직 노출하지 않는 Files, Containers, Hosted Shell, Skills API 때문에 필요한 의도적인 예외입니다.

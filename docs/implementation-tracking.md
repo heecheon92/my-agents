@@ -1,6 +1,6 @@
 # Implementation tracking
 
-Last updated: 2026-08-12
+Last updated: 2026-08-17
 Status owner: repo-tracked source of truth for cross-machine agent handoff
 
 This file exists because `.omx/` is local runtime state and is not shared across machines. When working with an agent on any machine, start here before re-discovering project status from the codebase.
@@ -121,6 +121,7 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
   every event payload and nested `agent_trace.evidence` object passes through a typed
   allowlist before leaving the API.
 - Failure path records a failed run with redacted event metadata.
+- Opt-in document-selection HITL exposes a required `schema_version=1` semantic interaction contract, persists refresh-safe waiting state in Product DB, and resumes only through a type-specific answer. Frontend waiting-state support remains a hard gate before enabling the checkpointer in a shared environment.
 - Conversation-run timing histograms cover sync and streaming outcomes for internal
   performance review when metrics are enabled.
 

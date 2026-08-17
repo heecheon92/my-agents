@@ -31,6 +31,7 @@ They live outside `docs/learning/` because `docs/learning/` is reserved for the 
 24. [Knowledge lifecycle and publish-copy contract](./24-knowledge-lifecycle-and-publish-copy-contract.md)
 25. [OpenAI-hosted document workspace](./25-openai-document-workspace.md)
 26. [Run reasoning preferences](./26-run-reasoning-preferences.md)
+27. [Agent-to-frontend interaction contract](./27-agent-frontend-interaction-contract.md)
 
 ## Related maintenance ledgers
 

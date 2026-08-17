@@ -71,13 +71,13 @@ from my_agents.conversations.models import AgentEventModel, AgentEventType, Agen
 from my_agents.conversations.schemas import (
     ConversationRunInterruptedResponse,
     ConversationRunRequest,
-    ConversationRunResumeRequest,
 )
 from my_agents.document_workspace.provider import DocumentWorkspaceProvider
 from my_agents.document_workspace.service import (
     assert_document_workspace_access,
     prepare_document_workspace_runtime,
 )
+from my_agents.interactions.schemas import ConversationRunResumeRequest
 from my_agents.knowledge.auth import (
     KnowledgeBaseSelectionContext,
     resolve_conversation_knowledge_context,

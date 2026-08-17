@@ -12,6 +12,7 @@ from my_agents.document_workspace.schemas import (
     ConversationArtifactResponse,
     ConversationAttachmentResponse,
 )
+from my_agents.interactions.schemas import PendingDocumentSelection
 from my_agents.knowledge.routing import AnswerMode, DocumentScope, RetrievalRoute
 from my_agents.knowledge.schemas import CitationResponse, KnowledgeBaseSelection
 from my_agents.schemas import RouteDecision
@@ -175,35 +176,6 @@ class ConversationRunResponse(BaseModel):
     artifacts: list[ConversationArtifactResponse] = Field(default_factory=list)
 
 
-class DocumentSelectionOption(BaseModel):
-    """Display-safe authorized document option for one paused run."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    document_id: str
-    title: str
-    source_filename: str | None = None
-    knowledge_base_id: str | None = None
-    knowledge_base_name: str | None = None
-
-
-class PendingDocumentSelection(BaseModel):
-    """Public interaction payload persisted separately from checkpoint internals."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    interaction_id: str
-    type: Literal["document_selection"] = "document_selection"
-    reason_code: Literal["ambiguous_document_reference"] = "ambiguous_document_reference"
-    message_key: Literal["clarification.document_scope.select_source"] = (
-        "clarification.document_scope.select_source"
-    )
-    expires_at: datetime
-    option_count: int = Field(ge=0)
-    options: list[DocumentSelectionOption] = Field(default_factory=list, max_length=50)
-    next_cursor: str | None = None
-
-
 class ConversationRunInterruptedResponse(BaseModel):
     """Refresh-safe response for a graph waiting on user input."""
 
@@ -213,26 +185,6 @@ class ConversationRunInterruptedResponse(BaseModel):
     run_id: str
     conversation_id: str
     interaction: PendingDocumentSelection
-
-
-class ConversationRunResumeRequest(BaseModel):
-    """Resume one pending document-selection interaction."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    interaction_id: str = Field(min_length=1, max_length=80)
-    document_id: str = Field(min_length=1, max_length=36)
-
-
-class DocumentSelectionOptionsResponse(BaseModel):
-    """One refresh-safe page of currently authorized document options."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    interaction_id: str
-    option_count: int = Field(ge=0)
-    options: list[DocumentSelectionOption] = Field(default_factory=list, max_length=50)
-    next_cursor: str | None = None
 
 
 type ConversationRunResult = ConversationRunResponse | ConversationRunInterruptedResponse
@@ -366,6 +318,7 @@ class RunInterruptedEventPayload(AgentEventPayload):
     run_id: str
     status: Literal["waiting_for_input"] = "waiting_for_input"
     interaction_id: str
+    interaction_schema_version: Literal[1]
     interaction_type: Literal["document_selection"] = "document_selection"
     option_count: int = Field(ge=0)
     expires_at: datetime
@@ -375,6 +328,7 @@ class RunResumedEventPayload(AgentEventPayload):
     run_id: str
     status: Literal["running"] = "running"
     interaction_id: str
+    interaction_schema_version: Literal[1]
     interaction_type: Literal["document_selection"] = "document_selection"
 
 

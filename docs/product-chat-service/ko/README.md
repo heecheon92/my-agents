@@ -31,6 +31,7 @@
 23. [지식 관리 lifecycle와 publish copy 계약](./24-knowledge-lifecycle-and-publish-copy-contract.md)
 24. [OpenAI hosted document workspace](./25-openai-document-workspace.md)
 25. [Run reasoning 설정 계약](./26-run-reasoning-preferences.md)
+26. [Agent와 frontend 사이의 interaction 계약](./27-agent-frontend-interaction-contract.md)
 
 ## 관련 maintenance ledger
 

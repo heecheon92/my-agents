@@ -510,13 +510,25 @@ def test_checkpointed_document_selection_interrupts_and_resumes_same_run(monkeyp
     assert interrupted.status_code == 202
     pending = interrupted.json()
     assert pending["status"] == "waiting_for_input"
+    assert pending["interaction"]["schema_version"] == 1
     assert pending["interaction"]["type"] == "document_selection"
     assert pending["interaction"]["option_count"] == 2
+
+    options = client.get(
+        f"/conversations/{conversation_id}/runs/{pending['run_id']}"
+        f"/interactions/{pending['interaction']['interaction_id']}/options"
+    )
+    assert options.status_code == 200
+    assert options.json()["schema_version"] == 1
+    assert options.json()["type"] == "document_selection"
+    assert options.json()["option_count"] == 2
 
     resumed = client.post(
         f"/conversations/{conversation_id}/runs/{pending['run_id']}/resume",
         json={
+            "schema_version": 1,
             "interaction_id": pending["interaction"]["interaction_id"],
+            "type": "document_selection",
             "document_id": documents[0]["id"],
         },
     )
@@ -529,6 +541,10 @@ def test_checkpointed_document_selection_interrupts_and_resumes_same_run(monkeyp
     detail = client.get(f"/conversations/{conversation_id}/runs/{pending['run_id']}")
     assert detail.status_code == 200
     assert detail.json()["status"] == "completed"
+    events = client.get(f"/conversations/{conversation_id}/runs/{pending['run_id']}/events").json()
+    for event_type in ("run_interrupted", "run_resumed"):
+        payload = next(event["payload"] for event in events if event["event_type"] == event_type)
+        assert payload["interaction_schema_version"] == 1
 
     stream_conversation_id = client.post(
         "/conversations", json={"title": "Checkpointed selection stream"}
@@ -552,7 +568,9 @@ def test_checkpointed_document_selection_interrupts_and_resumes_same_run(monkeyp
         "POST",
         (f"/conversations/{stream_conversation_id}/runs/{stream_pending['run_id']}/resume/stream"),
         json={
+            "schema_version": 1,
             "interaction_id": stream_pending["interaction"]["interaction_id"],
+            "type": "document_selection",
             "document_id": documents[1]["id"],
         },
     ) as response:

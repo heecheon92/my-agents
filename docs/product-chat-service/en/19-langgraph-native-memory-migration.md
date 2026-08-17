@@ -218,6 +218,8 @@ Implemented behind `MY_AGENTS_CHECKPOINTER_ENABLED`. The assistant workflow uses
 primitive retrieval/interaction snapshots, and deletes terminal-run checkpoints.
 Ambiguous document requests can pause as `waiting_for_input`, expose an authorized
 document selection, and resume the same run after revalidating current permission.
+The public waiting/resume payload follows the versioned semantic contract in
+[Agent-to-frontend interaction contract](./27-agent-frontend-interaction-contract.md).
 
 ## Non-goals
 
