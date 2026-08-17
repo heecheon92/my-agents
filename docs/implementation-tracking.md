@@ -387,7 +387,7 @@ Earlier hosted smoke status on 2026-06-03:
 - Most route labels are capability metadata and response paths, not separate production specialist agents.
 - Tool workflows beyond hosted web search are not implemented as production graph capabilities yet.
 - Memory runtime migration is in progress. Recall orchestration now runs inside `general_assistant` through a graph-owned `retrieve_memory` node and `MemoryRuntime` adapter, but the active adapter still wraps SQLAlchemy/Product DB memory service. Target migration remains LangGraph Store-backed active memory search plus a separate `memory_graph`, with Product DB retained for governance/audit.
-- No human-in-the-loop interrupts/checkpointed product workflow yet; when added, checkpointer state should be run-scoped execution state rather than conversation history or long-term memory.
+- Document-selection HITL and run-scoped PostgresSaver are implemented behind `MY_AGENTS_CHECKPOINTER_ENABLED`; PostgresStore semantic recall remains a Product DB-governed projection behind its own flag. Both require explicit setup/reconciliation before activation, and neither replaces Product DB transcripts or audit records.
 
 ### Deployment/ops
 

@@ -7,7 +7,7 @@ from collections.abc import Iterator
 from time import perf_counter
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -18,6 +18,11 @@ from my_agents.api.assistant import GraphRunner, get_graph_runner
 from my_agents.api.conversations.auth import get_authorized_conversation
 from my_agents.api.conversations.graph_invocation import graph_context_for_run
 from my_agents.api.conversations.graph_streaming import fallback_answer_deltas, stream_graph_items
+from my_agents.api.conversations.interactions import (
+    delete_checkpoint_thread,
+    graph_interrupt_payload,
+    persist_waiting_document_selection,
+)
 from my_agents.api.conversations.retrieval_context import (
     ConversationRetrievalContext,
     chunks_used_for_answer,
@@ -62,8 +67,12 @@ from my_agents.api.reasoning import resolve_reasoning_preferences
 from my_agents.auth.contracts import Principal
 from my_agents.auth.dependencies import get_current_principal
 from my_agents.auth.guest_limits import assert_guest_can_send_prompt
-from my_agents.conversations.models import AgentEventModel, AgentEventType
-from my_agents.conversations.schemas import ConversationRunRequest
+from my_agents.conversations.models import AgentEventModel, AgentEventType, AgentRunModel, RunStatus
+from my_agents.conversations.schemas import (
+    ConversationRunInterruptedResponse,
+    ConversationRunRequest,
+    ConversationRunResumeRequest,
+)
 from my_agents.document_workspace.provider import DocumentWorkspaceProvider
 from my_agents.document_workspace.service import (
     assert_document_workspace_access,
@@ -80,6 +89,41 @@ from my_agents.settings import Settings, get_settings
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+@router.post("/{conversation_id}/runs/{run_id}/resume/stream")
+def stream_resumed_conversation_run(
+    conversation_id: str,
+    run_id: str,
+    request: ConversationRunResumeRequest,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    db: Annotated[Session, Depends(get_database_session)],
+    graph_runner: Annotated[GraphRunner, Depends(get_graph_runner)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> StreamingResponse:
+    """Resume a paused run and expose the result through the existing SSE vocabulary."""
+    from my_agents.api.conversations.endpoints.runs import resume_conversation_run
+
+    def events() -> Iterator[str]:
+        http_response = Response()
+        result = resume_conversation_run(
+            conversation_id=conversation_id,
+            run_id=run_id,
+            request=request,
+            response=http_response,
+            principal=principal,
+            db=db,
+            graph_runner=graph_runner,
+            settings=settings,
+        )
+        if isinstance(result, ConversationRunInterruptedResponse):
+            yield sse_event("run_interrupted", result.model_dump(mode="json"))
+            return
+        for sequence, delta in enumerate(fallback_answer_deltas(result.reply), start=1):
+            yield sse_event("answer_delta", {"delta": delta, "sequence": sequence})
+        yield sse_event("run_completed", result.model_dump(mode="json"))
+
+    return StreamingResponse(events(), media_type="text/event-stream")
 
 
 @router.post(
@@ -248,6 +292,7 @@ def conversation_run_events(
             messages=messages,
             user_id=user_id,
             conversation_id=conversation_id,
+            run_id=run.id,
         )
         graph_context = graph_context_for_run(
             db=db,
@@ -274,7 +319,7 @@ def conversation_run_events(
                 if item.kind == "update":
                     if item.result:
                         if retrieval_context is None and graph_has_retrieval_context(item.result):
-                            retrieval_context = retrieval_context_from_graph_state(item.result)
+                            retrieval_context = retrieval_context_from_graph_state(item.result, db)
                             retrieval_route = retrieval_context.decision.route
                             answer_mode = retrieval_context.answer_mode
                             retrieval_payload = record_retrieval_completed_event(
@@ -315,7 +360,7 @@ def conversation_run_events(
                     and item.result is not None
                     and graph_has_retrieval_context(item.result)
                 ):
-                    retrieval_context = retrieval_context_from_graph_state(item.result)
+                    retrieval_context = retrieval_context_from_graph_state(item.result, db)
                     retrieval_route = retrieval_context.decision.route
                     answer_mode = retrieval_context.answer_mode
                     retrieval_payload = record_retrieval_completed_event(
@@ -415,7 +460,7 @@ def conversation_run_events(
         if result is None:
             raise RuntimeError("conversation graph stream ended without a final result")
         if retrieval_context is None:
-            retrieval_context = retrieval_context_from_graph_state(result)
+            retrieval_context = retrieval_context_from_graph_state(result, db)
             retrieval_route = retrieval_context.decision.route
             answer_mode = retrieval_context.answer_mode
             retrieval_payload = record_retrieval_completed_event(db, run.id, retrieval_context)
@@ -424,6 +469,22 @@ def conversation_run_events(
                 yield cancelled_sse_event(db, run.id)
                 record_run_metric("cancelled")
                 return
+        if graph_interrupt_payload(result) is not None:
+            route = coerce_route(result.get("route") or classify_messages(messages))
+            run.route_label = route.label
+            run.route_explanation = route.explanation
+            run.retrieval_route = retrieval_context.decision.route
+            run.answer_mode = retrieval_context.answer_mode
+            run.document_scope = retrieval_context.decision.document_scope
+            interrupted = persist_waiting_document_selection(
+                db=db,
+                run=run,
+                graph_state=result,
+                wait_seconds=settings.hitl_wait_seconds,
+            )
+            yield sse_event("run_interrupted", interrupted.model_dump(mode="json"))
+            record_run_metric("waiting_for_input")
+            return
         if retrieval_context.decision.route == "clarification_required":
             route = coerce_route(result.get("route") or classify_messages(messages))
             clarification = clarification_request(retrieval_context.decision)
@@ -451,6 +512,7 @@ def conversation_run_events(
                     clarification=clarification,
                 ),
             )
+            delete_checkpoint_thread(graph_runner, run.id)
             yield sse_event("run_completed", response.model_dump(mode="json"))
             record_run_metric("clarification")
             return
@@ -480,6 +542,7 @@ def conversation_run_events(
                     insufficient_evidence=True,
                 ),
             )
+            delete_checkpoint_thread(graph_runner, run.id)
             yield sse_event("run_completed", response.model_dump(mode="json"))
             record_run_metric("insufficient_evidence")
             return
@@ -565,9 +628,13 @@ def conversation_run_events(
                 insufficient_evidence=completion_insufficient_evidence,
             ),
         )
+        delete_checkpoint_thread(graph_runner, run.id)
         yield sse_event("run_completed", response.model_dump(mode="json"))
         record_run_metric("completed")
     except GeneratorExit:
+        current_run = db.get(AgentRunModel, run.id, populate_existing=True)
+        if current_run is not None and current_run.status == RunStatus.WAITING_FOR_INPUT.value:
+            raise
         if is_run_active(db, run.id):
             cancelled_sse_event(db, run.id)
         record_run_metric("cancelled")

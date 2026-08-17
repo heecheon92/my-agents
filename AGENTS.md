@@ -68,7 +68,7 @@ The optional temporary document workspace is disabled by default, forbidden to
 guest sessions, and uses `gpt-5.6-sol` plus an OpenAI-hosted, network-disabled
 container. Its full knobs and retention limits are documented in `.env.example`.
 
-For memory architecture, do not treat LangGraph checkpointers as conversation history or long-term memory. Product DB remains the source of truth for visible transcripts/runs/citations/audit and memory governance; LangGraph Store should become the target long-term memory runtime; run-scoped checkpointers are for HITL/resume execution state only. OpenAI `previous_response_id` may be stored as one field inside compact graph/run state, but should not replace application state.
+For memory architecture, do not treat LangGraph checkpointers as conversation history or long-term memory. Product DB remains the source of truth for visible transcripts/runs/citations/audit and memory governance. The opt-in PostgresStore is a rebuildable semantic projection whose candidates must be revalidated against Product DB rows; the opt-in PostgresSaver uses `run_id` only for bounded HITL/resume execution state. OpenAI `previous_response_id` may be stored as one field inside compact graph/run state, but should not replace application state.
 
 ## Dependency policy
 
@@ -123,7 +123,7 @@ Prefer this sequence:
 1. Preserve deterministic classify/router contract.
 2. Keep OpenAI-backed reply behavior as the normal local mode while preserving deterministic tests.
 3. Keep current opt-in Product DB memory as a governance scaffold while migrating runtime recall/extraction toward LangGraph-native Store + `memory_graph`.
-4. Add run-scoped LangGraph checkpointer support only for HITL/resume execution state after graph state is compact.
+4. Extend the implemented run-scoped checkpointer only with bounded, typed HITL/resume interactions; never checkpoint ORM/runtime objects or use `conversation_id` as the thread boundary.
 5. Store OpenAI `previous_response_id` only after graph/run state exists.
 6. Add real tool/function capabilities one at a time with tests.
 7. Add durable storage only when the behavior requires it.

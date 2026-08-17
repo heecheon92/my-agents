@@ -87,7 +87,7 @@ def build_graph():
     graph.add_edge(START, "plan_workflow")
     graph.add_edge("plan_workflow", "verify_workflow")
     graph.add_edge("verify_workflow", END)
-    return graph.compile()
+    return graph.compile(checkpointer=False)
 
 
 @lru_cache(maxsize=1)

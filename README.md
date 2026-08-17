@@ -164,6 +164,8 @@ curl -X POST http://127.0.0.1:8000/assistant/chat \
 
 `MY_AGENTS_DOCUMENT_WORKSPACE_ENABLED=true`로 켜면 승인된 일반 계정은 대화에 임시 파일을 첨부해 GPT-5.6 Sol로 분석하고, 인증된 spreadsheet 결과(`.xlsx`, `.csv`, `.tsv`)를 내려받을 수 있습니다. Guest에는 열리지 않으며, 업로드마다 OpenAI 전송 동의가 필요합니다. 파일 본문은 Product DB에 저장하지 않고 OpenAI `user_data` file과 network-disabled hosted container에만 제한 시간 동안 둡니다. 세부 계약은 [OpenAI document workspace 설계](./docs/product-chat-service/ko/25-openai-document-workspace.md)를 봅니다.
 
+LangGraph persistence는 PostgreSQL에서만 켜는 opt-in 기능입니다. `MY_AGENTS_CHECKPOINTER_ENABLED=true`이면 문서 범위가 모호한 run이 `202 waiting_for_input`으로 멈추고, process restart 뒤에도 사용자가 권한 있는 문서를 선택해 같은 run을 재개할 수 있습니다. `MY_AGENTS_MEMORY_STORE_ENABLED=true`이면 PostgresStore가 semantic memory candidate search를 담당하지만, consent/status/sensitivity/provenance/source staleness는 계속 Product DB row가 강제합니다. 두 flag를 켜기 전에 `uv run python -m scripts.langgraph_persistence setup`과 zero-drift memory reconciliation을 실행합니다.
+
 VS Code의 `FastAPI: uvicorn main:app (local pgvector)` 프로필은 실행 전에 마이그레이션을 돌리는데, 이때 셸에서 `uv`를 찾는 대신 Python 확장이 선택한 인터프리터를 그대로 씁니다. GUI로 켠 VS Code의 `PATH`에 `uv`가 없어도 동작하도록 만든 구성이므로, 쓰기 전에 이 저장소의 `.venv` 인터프리터를 선택해 두세요.
 
 OpenAPI 문서는 서버를 띄운 뒤 `http://127.0.0.1:8000/openapi.json`에서 볼 수 있습니다. 프론트엔드까지 붙여 전체 흐름을 돌려 보는 방법과 PostgreSQL 설정은 [프론트엔드 연동 실행 안내](./docs/product-chat-service/ko/10-frontend-demo-runbook.md)에 있습니다.
@@ -171,7 +173,8 @@ OpenAPI 문서는 서버를 띄운 뒤 `http://127.0.0.1:8000/openapi.json`에�
 ### 프론트엔드가 의존하는 계약
 
 - HTTP·검증 오류는 기존 `detail`과 함께 기계가 읽을 수 있는 `code`를 반환합니다. UI는 `code`를 번역 키로 쓰고 `detail`은 진단용으로만 취급해야 합니다.
-- `GET /conversations/{conversation_id}/runs/{run_id}/events`는 `event_type`으로 구분되는 닫힌 union입니다. 저장되는 이벤트는 `run_started`, `user_message_stored`, `retrieval_completed`, `graph_invoked`, `attachments_ready`, `document_workspace_started`, `artifact_created`, `answer_composed`, `run_cancel_requested`, `run_cancelled`, `run_failed`입니다.
+- `GET /conversations/{conversation_id}/runs/{run_id}/events`는 `event_type`으로 구분되는 닫힌 union입니다. 기존 run/retrieval/graph/workspace/answer/cancellation/failure 이벤트에 `run_interrupted`, `run_resumed`가 추가됩니다.
+- Checkpointer가 켜져 있으면 run 생성은 `200 completed` 또는 `202 waiting_for_input`을 반환합니다. 대기 중인 document-selection interaction은 run detail/options endpoint에서 새로고침 후에도 복구되며, `/runs/{run_id}/resume` 또는 `/resume/stream`으로 재개해도 guest prompt를 추가 소비하지 않습니다.
 - `GET /capabilities/document-workspace`는 현재 enable/eligibility, 허용 형식, 제한, retention을 반환합니다. 첨부는 `POST/GET/DELETE /conversations/{conversation_id}/attachments`, 결과물은 `GET /conversations/{conversation_id}/artifacts`와 해당 download URL을 사용합니다. Run 요청의 `attachment_ids`가 실제 실행 대상을 고릅니다.
 - `GET /capabilities/reasoning`은 surface별 Pro 지원 여부, server default effort, 허용 enum, guest customization 가능 여부를 반환하며 raw provider model identifier는 의도적으로 제외합니다. Run/replay 요청의 선택적 `reasoning_mode`와 `reasoning_effort`는 effective 값으로 run에 저장되고 응답 및 `run_started` event에 다시 제공됩니다.
 - 저장된 이벤트의 payload와 `agent_trace`는 이벤트·단계별 허용 목록을 통과한 필드만 내보냅니다. `answer_delta`, `run_completed`, `run_error`는 스트리밍 전용이라 저장되는 이벤트 union에는 들어가지 않습니다.
@@ -186,7 +189,7 @@ uv run ruff format --check .
 git diff --check
 ```
 
-2026-08-09 기준 이 체크아웃에서 전체 테스트는 **487 passed, 2 skipped**이며, 실제 자격 증명이 없어도 돌아갑니다.
+2026-08-17 기준 이 체크아웃의 전체 offline test는 **492 passed, 3 skipped**이며 실제 자격 증명이 없어도 돌아갑니다. Gated PostgreSQL checkpoint restart smoke도 local pgvector profile에서 통과합니다.
 
 ## 보안과 개인정보 경계
 
@@ -204,7 +207,7 @@ git diff --check
 - 업로드한 원본을 위한 오브젝트 스토리지, 문서 버전 관리와 재수집, 계정 삭제와 내보내기는 아직 없습니다.
 - cross-encoder를 처음 띄울 때의 지연과, 작은 인스턴스에서의 PDF 처리 시간이 남아 있습니다.
 - 여러 인스턴스에서 공유하는 요청 제한, 운영 보안 점검, 마이그레이션·스모크 자동화가 필요합니다.
-- LangGraph Store 기반 메모리, 사람이 개입해 이어서 실행하는 체크포인터, 검색 외 도구, 여러 에이전트를 운영에서 함께 돌리는 구성은 로드맵 단계입니다.
+- 검색 외 도구, background execution scheduler, 여러 에이전트를 운영에서 함께 돌리는 구성은 로드맵 단계입니다. LangGraph persistence는 구현되어 있지만 PostgreSQL setup/reconciliation 확인 전까지 opt-in으로 유지합니다.
 
 ## 핵심 문서
 

@@ -22,6 +22,7 @@ Start here:
 16. [Product identity belongs in the always-present responder prompt](./15-product-identity-belongs-in-the-always-present-responder-prompt.md)
 
 This directory is the owner's learning path archive. The root numbered notes are personal learning logs. Focused project-specific notes can live in subfolders, such as [`project-notes/`](./project-notes/). Project architecture docs that are not primarily learning logs live outside this directory, for example [`docs/product-chat-service/en/`](../product-chat-service/).
+15. [LangGraph Checkpointer와 Store의 역할 분리](./14-langgraph-checkpointer-store.md)
 
 ## Learning-doc workflow
 

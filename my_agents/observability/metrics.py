@@ -12,7 +12,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from time import perf_counter
 
-from prometheus_client import CONTENT_TYPE_LATEST, REGISTRY, Histogram, generate_latest
+from prometheus_client import CONTENT_TYPE_LATEST, REGISTRY, Counter, Histogram, generate_latest
 
 from my_agents.settings import get_settings
 
@@ -102,6 +102,12 @@ GRAPH_INVOCATION_DURATION_SECONDS = Histogram(
     buckets=_REQUEST_BUCKETS,
 )
 
+LANGGRAPH_PERSISTENCE_OPERATIONS_TOTAL = Counter(
+    "my_agents_langgraph_persistence_operations_total",
+    "LangGraph checkpointer and Store operations by operation and outcome.",
+    ("operation", "outcome"),
+)
+
 
 def metrics_enabled() -> bool:
     """Return whether metrics should be recorded and exposed in this process."""
@@ -162,6 +168,15 @@ def observe_context_forge(
         retrieval_route=_label(retrieval_route),
         answer_mode=_label(answer_mode),
     ).observe(duration_seconds)
+
+
+def record_langgraph_persistence_operation(*, operation: str, outcome: str) -> None:
+    if not metrics_enabled():
+        return
+    LANGGRAPH_PERSISTENCE_OPERATIONS_TOTAL.labels(
+        operation=_label(operation),
+        outcome=_label(outcome),
+    ).inc()
 
 
 @contextmanager

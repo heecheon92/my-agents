@@ -68,9 +68,13 @@ class ContextForgeService:
         selected_ids = self._source_warden.knowledge_base_ids(request.selection_context)
         with timing.phase("authorized_document_count"):
             with track_retrieval_phase("authorized_document_count"):
-                document_count = self._retrieval_service.authorized_document_count(
-                    user_id=request.user_id,
-                    knowledge_base_ids=selected_ids,
+                document_count = (
+                    1
+                    if request.selected_document_id is not None
+                    else self._retrieval_service.authorized_document_count(
+                        user_id=request.user_id,
+                        knowledge_base_ids=selected_ids,
+                    )
                 )
         timing.update(authorized_document_count=document_count)
         with timing.phase("query_planning"):
@@ -168,10 +172,20 @@ class ContextForgeService:
                         duration_seconds=duration_seconds,
                     )
                 ):
-                    raw_chunks = self._scouts.gather(
-                        user_id=request.user_id,
-                        plan=plan,
-                        knowledge_base_ids=selected_ids,
+                    raw_chunks = (
+                        self._retrieval_service.retrieve_selected_document(
+                            user_id=request.user_id,
+                            document_id=request.selected_document_id,
+                            query=request.query,
+                            knowledge_base_ids=selected_ids,
+                            limit=plan.limits.rerank_limit,
+                        )
+                        if request.selected_document_id is not None
+                        else self._scouts.gather(
+                            user_id=request.user_id,
+                            plan=plan,
+                            knowledge_base_ids=selected_ids,
+                        )
                     )
         timing.update(raw_candidate_count=len(raw_chunks))
         debug_agent_turn(

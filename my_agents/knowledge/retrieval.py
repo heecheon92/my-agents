@@ -42,6 +42,17 @@ class RetrievedChunk:
 
 
 @dataclass(frozen=True)
+class AuthorizedDocumentOption:
+    """Compact display-safe document option inside an authorized retrieval scope."""
+
+    document_id: str
+    title: str
+    source_filename: str | None
+    knowledge_base_id: str | None
+    knowledge_base_name: str | None
+
+
+@dataclass(frozen=True)
 class RetrievedStructuredEntity:
     """Authorized structured fact with chunk/document provenance."""
 
@@ -254,6 +265,106 @@ class RetrievalService:
                 )
                 or 0
             )
+
+    def authorized_document_options(
+        self,
+        *,
+        user_id: str,
+        knowledge_base_ids: Sequence[str] | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[AuthorizedDocumentOption], int]:
+        """Return a bounded page of documents in the current authorized scope."""
+        predicate = _authorized_document_filter(
+            user_id,
+            knowledge_base_ids=knowledge_base_ids,
+            require_standard_purpose=_schema_has_knowledge_base_purpose(self._db),
+        )
+        total = (
+            self._db.scalar(select(func.count(DocumentModel.id.distinct())).where(predicate)) or 0
+        )
+        rows = self._db.execute(
+            select(DocumentModel, KnowledgeBaseModel.name)
+            .join(KnowledgeBaseModel, KnowledgeBaseModel.id == DocumentModel.knowledge_base_id)
+            .where(predicate)
+            .order_by(DocumentModel.title, DocumentModel.id)
+            .offset(max(offset, 0))
+            .limit(max(1, min(limit, 50)))
+        ).all()
+        return (
+            [
+                AuthorizedDocumentOption(
+                    document_id=document.id,
+                    title=document.title,
+                    source_filename=document.source_filename,
+                    knowledge_base_id=document.knowledge_base_id,
+                    knowledge_base_name=knowledge_base_name,
+                )
+                for document, knowledge_base_name in rows
+            ],
+            total,
+        )
+
+    def retrieve_selected_document(
+        self,
+        *,
+        user_id: str,
+        document_id: str,
+        query: str,
+        knowledge_base_ids: Sequence[str] | None = None,
+        limit: int = 12,
+    ) -> list[RetrievedChunk]:
+        """Rank chunks only from one currently authorized selected document."""
+        rows = self._load_authorized_chunks_for_document_ids(
+            user_id,
+            document_ids=(document_id,),
+            knowledge_base_ids=knowledge_base_ids,
+        )
+        if not rows:
+            return []
+        terms = _query_terms(query)
+        query_embedding = self._embedding_provider.embed_query(query)
+        ranked: list[RetrievedChunk] = []
+        for chunk, document in rows:
+            keyword_rank = _normalized_keyword_score(_keyword_score(chunk.content, terms), terms)
+            chunk_embedding = _embedding_from_json(chunk.embedding_json)
+            semantic_rank = (
+                max(_cosine_similarity(query_embedding, chunk_embedding), 0.0)
+                if _compatible_embeddings(query_embedding, chunk_embedding)
+                else 0.0
+            )
+            score = max((0.8 * semantic_rank) + (0.2 * keyword_rank), 0.5)
+            ranked.append(
+                RetrievedChunk(
+                    chunk=chunk,
+                    document=document,
+                    score=round(score, 6),
+                    source="selected_document",
+                )
+            )
+        ranked.sort(key=lambda item: (-item.score, item.chunk.ordinal))
+        return ranked[:limit]
+
+    def document_is_authorized(
+        self,
+        *,
+        user_id: str,
+        document_id: str,
+        knowledge_base_ids: Sequence[str] | None = None,
+    ) -> bool:
+        """Revalidate one selected document against the current retrieval scope."""
+        return bool(
+            self._db.scalar(
+                select(DocumentModel.id).where(
+                    DocumentModel.id == document_id,
+                    _authorized_document_filter(
+                        user_id,
+                        knowledge_base_ids=knowledge_base_ids,
+                        require_standard_purpose=_schema_has_knowledge_base_purpose(self._db),
+                    ),
+                )
+            )
+        )
 
     def retrieve_structured_entities(
         self,

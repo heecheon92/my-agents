@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
+from langgraph.store.base import BaseStore
 from sqlalchemy.orm import Session
 
 from my_agents.memory.models import MemoryCategory, UserMemoryModel
@@ -40,6 +41,7 @@ class MemoryRuntime(Protocol):
         query: str,
         categories: list[MemoryCategory | str] | None = None,
         limit: int = 8,
+        store: BaseStore | None = None,
     ) -> list[MemoryRuntimeItem]:
         """Return provider-eligible active memories for one user/query."""
         ...
@@ -58,7 +60,32 @@ class SqlAlchemyMemoryRuntime:
         query: str,
         categories: list[MemoryCategory | str] | None = None,
         limit: int = 8,
+        store: BaseStore | None = None,
     ) -> list[MemoryRuntimeItem]:
+        if store is not None:
+            candidates = store.search(
+                (user_id, "memories"),
+                query=query or None,
+                limit=max(limit * 4, limit),
+            )
+            memory_ids = [
+                str(item.value["memory_id"])
+                for item in candidates
+                if isinstance(item.value.get("memory_id"), str)
+                and (
+                    not categories
+                    or item.value.get("category")
+                    in {
+                        category.value if isinstance(category, MemoryCategory) else str(category)
+                        for category in categories
+                    }
+                )
+            ]
+            memories = self._service.active_memories_by_ids_for_context(
+                user_id=user_id,
+                memory_ids=memory_ids,
+            )[:limit]
+            return [memory_runtime_item_from_model(memory) for memory in memories]
         memories = self._service.active_memories_for_context(
             user_id=user_id,
             categories=categories,

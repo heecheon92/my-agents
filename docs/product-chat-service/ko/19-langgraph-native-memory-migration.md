@@ -1,6 +1,6 @@
 # LangGraph-native memory migration note
 
-상태: migration in progress / architecture decision
+상태: Store/checkpointer runtime은 opt-in flag 뒤에 구현됨, memory graph는 계획 단계
 
 날짜: 2026-06-10
 
@@ -32,10 +32,10 @@ LangGraph memory_graph = extraction/update workflow
 LangGraph checkpointer = run-scoped execution/HITL state
 ```
 
-2026-06-10 구현 업데이트: Phase 1과 Phase 2의 recall 부분이 시작되었습니다.
-`general_assistant`에는 graph-owned `retrieve_memory` node와 `MemoryRuntime` boundary가
-들어갔습니다. 초기 adapter는 아직 기존 Product DB memory service를 감쌉니다. LangGraph Store,
-`memory_graph`, run-scoped checkpointer 작업은 이후 phase입니다.
+2026-08-17 구현 업데이트: `general_assistant`에는 graph-owned memory recall, Product DB
+governance로 항상 재검증하는 PostgresStore semantic projection, document-selection interrupt를
+위한 run-scoped PostgresSaver가 있습니다. 두 persistence surface는 setup/reconciliation이
+성공하기 전까지 기본적으로 꺼져 있습니다. 별도 extraction/update `memory_graph`는 이후 phase입니다.
 
 ## 왜 migration이 필요한가
 
@@ -183,9 +183,11 @@ migration합니다.
 
 ### Phase 5 — HITL/resume용 run-scoped checkpointer 추가
 
-Graph state가 충분히 작아진 뒤 `run_id`를 thread boundary로 사용해 checkpointer를 붙입니다.
-`conversation_id` + full accumulated `MessagesState` 방식은 Product DB transcript를 checkpoint state에 중복 저장하고
-source of truth를 흐릴 수 있으므로 피합니다.
+`MY_AGENTS_CHECKPOINTER_ENABLED` 뒤에 구현했습니다. Assistant workflow는 `run_id`를 thread
+boundary로 사용하고, 제한된 최근 6개 message window와 primitive retrieval/interaction snapshot만
+checkpoint합니다. Terminal run의 checkpoint는 삭제합니다. 모호한 document request는
+`waiting_for_input`으로 멈추고 authorized document selection을 노출한 뒤, 현재 permission을 다시
+확인하고 같은 run을 재개할 수 있습니다.
 
 ## Non-goals
 

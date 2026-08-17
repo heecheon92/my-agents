@@ -41,12 +41,14 @@ def retrieve_memory_context(
     if not isinstance(user_id, str) or memory_runtime is None:
         memory_context: list[dict[str, object]] = []
     else:
+        search_kwargs: dict[str, object] = {
+            "user_id": user_id,
+            "query": latest_human_text(messages),
+        }
+        if runtime.store is not None:
+            search_kwargs["store"] = runtime.store
         memory_context = [
-            memory_item_context(memory)
-            for memory in memory_runtime.search(
-                user_id=user_id,
-                query=latest_human_text(messages),
-            )
+            memory_item_context(memory) for memory in memory_runtime.search(**search_kwargs)
         ]
     return {
         "memory_context": memory_context,

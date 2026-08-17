@@ -449,6 +449,45 @@ class UserMemoryService:
         relevant = [memory for memory in candidates if _memory_relevant(memory, query_tokens)]
         return relevant[:limit]
 
+    def eligible_memories_for_store(self, *, user_id: str | None = None) -> list[UserMemoryModel]:
+        """Return canonical rows eligible for the semantic Store projection."""
+        statement = select(UserMemoryModel).where(
+            UserMemoryModel.status == MemoryStatus.ACTIVE.value,
+            UserMemoryModel.sensitivity == MemorySensitivity.NON_SENSITIVE.value,
+            UserMemoryModel.stale_at.is_(None),
+            UserMemoryModel.user_id.in_(
+                select(UserMemorySettingsModel.user_id).where(
+                    UserMemorySettingsModel.enabled.is_(True)
+                )
+            ),
+        )
+        if user_id is not None:
+            statement = statement.where(UserMemoryModel.user_id == user_id)
+        return list(
+            self._db.scalars(statement.order_by(UserMemoryModel.user_id, UserMemoryModel.key)).all()
+        )
+
+    def active_memories_by_ids_for_context(
+        self,
+        *,
+        user_id: str,
+        memory_ids: list[str],
+    ) -> list[UserMemoryModel]:
+        """Revalidate Store candidates against current Product DB governance."""
+        if not memory_ids or not self.memory_enabled(user_id):
+            return []
+        rows = self._db.scalars(
+            select(UserMemoryModel).where(
+                UserMemoryModel.user_id == user_id,
+                UserMemoryModel.id.in_(memory_ids),
+                UserMemoryModel.status == MemoryStatus.ACTIVE.value,
+                UserMemoryModel.sensitivity == MemorySensitivity.NON_SENSITIVE.value,
+                UserMemoryModel.stale_at.is_(None),
+            )
+        ).all()
+        by_id = {memory.id: memory for memory in rows}
+        return [by_id[memory_id] for memory_id in memory_ids if memory_id in by_id]
+
     def deactivate_memory(self, *, user_id: str, memory_id: str) -> UserMemoryModel:
         self._expire_user_pending_suggestions(user_id)
         memory = self._memory_for_user(user_id=user_id, memory_id=memory_id)

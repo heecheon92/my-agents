@@ -12,6 +12,7 @@ repository root with `uv run python -m scripts.<name>`.
 | `scripts.dev_pgvector` | Start and wire a disposable local Docker pgvector/Postgres database. | Local Postgres/pgvector development and migration smoke checks. |
 | `scripts.ops` | Interactive operational dispatcher that collects options and delegates to focused scripts. | Operator-friendly account/guest maintenance. |
 | `scripts.migrate_database` | Check or run Alembic `upgrade head` against the selected env database. | Production/staging migration status and upgrades after backup/snapshot. |
+| `scripts.langgraph_persistence` | Set up/check framework-owned Postgres tables and dry-run/apply memory Store reconciliation. | Enable or audit self-hosted LangGraph checkpointer and Store state. |
 | `scripts.wipe_database` | Dangerously wipe the selected SQLite/Postgres database after explicit confirmations. | Rebuild a local/staging/production database from migrations after a backup/snapshot. |
 | `scripts.approve_account_signup` | Approve a pending account signup and print/send verification or mark email verified. | Manual signup approval and verification bypass. |
 | `scripts.resend_account_verification` | Refresh an expired/missing verification token for an approved unverified account. | Recover signups blocked by expired verification links. |
@@ -33,6 +34,7 @@ Use module execution so imports resolve from the repository root:
 uv run python -m scripts.local_demo_seed --help
 uv run python -m scripts.local_demo_smoke --help
 uv run python -m scripts.dev_pgvector --help
+uv run python -m scripts.langgraph_persistence --help
 uv run python scripts/measure_ingestion_performance.py --help
 ```
 
@@ -40,6 +42,23 @@ Do not run these commands from inside `scripts/`; several of them assume the
 current working directory is the repository root. `measure_ingestion_performance.py`
 is intentionally run by path rather than `-m` so it can be copied into ad hoc
 performance worktrees without package-name assumptions.
+
+## `scripts.langgraph_persistence`
+
+Run this only against PostgreSQL after the application Alembic migration:
+
+```bash
+uv run python -m scripts.langgraph_persistence setup
+uv run python -m scripts.langgraph_persistence status
+uv run python -m scripts.langgraph_persistence prune-checkpoints
+uv run python -m scripts.langgraph_persistence reconcile-memory
+uv run python -m scripts.langgraph_persistence reconcile-memory --apply
+uv run python -m scripts.langgraph_persistence reconcile-memory
+```
+
+`reconcile-memory` is a dry run unless `--apply` is present. A clean second dry run
+reports zero missing, stale, and orphaned projection records. The command never prints
+memory content.
 
 If you are in another directory, either `cd` into the repo first or use
 `uv --directory`:

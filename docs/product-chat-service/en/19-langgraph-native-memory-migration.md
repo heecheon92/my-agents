@@ -1,6 +1,6 @@
 # LangGraph-native memory migration note
 
-Status: migration in progress / architecture decision
+Status: Store/checkpointer runtime implemented behind opt-in flags; memory graph remains planned
 
 Date: 2026-06-10
 
@@ -33,11 +33,11 @@ LangGraph memory_graph = extraction/update workflow
 LangGraph checkpointer = run-scoped execution/HITL state
 ```
 
-Implementation update on 2026-06-10: Phase 1 and the recall part of Phase 2 have
-started. `general_assistant` now has a graph-owned `retrieve_memory` node and a
-`MemoryRuntime` boundary. The initial adapter still wraps the existing Product DB
-memory service; LangGraph Store, `memory_graph`, and run-scoped checkpointer work
-remain future phases.
+Implementation update on 2026-08-17: `general_assistant` has graph-owned memory recall,
+a PostgresStore semantic projection that is always revalidated against Product DB
+governance, and a run-scoped PostgresSaver for document-selection interrupts. Both
+persistence surfaces remain disabled by default until setup/reconciliation succeeds.
+The separate extraction/update `memory_graph` remains a future phase.
 
 ## Why this migration exists
 
@@ -213,10 +213,11 @@ explicitly and migrate only when Store-backed search is active.
 
 ### Phase 5 — Add run-scoped checkpointer for HITL/resume
 
-Only after graph state is compact enough, compile the assistant workflow with a
-checkpointer using `run_id` as the thread boundary. Do not use `conversation_id` with a
-full accumulated `MessagesState`, because Product DB transcripts would be duplicated in
-checkpoint state and could diverge from the product source of truth.
+Implemented behind `MY_AGENTS_CHECKPOINTER_ENABLED`. The assistant workflow uses
+`run_id` as the thread boundary, checkpoints only a bounded six-message window plus
+primitive retrieval/interaction snapshots, and deletes terminal-run checkpoints.
+Ambiguous document requests can pause as `waiting_for_input`, expose an authorized
+document selection, and resume the same run after revalidating current permission.
 
 ## Non-goals
 

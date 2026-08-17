@@ -3,9 +3,16 @@
 from __future__ import annotations
 
 import pytest
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.types import Command
 
+from my_agents.agents.general_assistant.graph import build_graph
 from my_agents.agents.general_assistant.retrieval_gate import RetrievalSourceDecision
+from my_agents.agents.rag_agent import RagAgentRetrievalResult
+from my_agents.knowledge.retrieval import AuthorizedDocumentOption
+from my_agents.knowledge.routing import RetrievalRoutingDecision
 from my_agents.memory.runtime import MemoryRuntimeItem
+from my_agents.persistence.langgraph import checkpoint_serializer
 
 from .conftest import (
     REPRESENTATIVE_PROMPTS,
@@ -106,7 +113,7 @@ def test_graph_bypasses_rag_when_user_excludes_saved_docs() -> None:
 
     assert rag_runtime.queries == []
     assert result["retrieval_source_decision"].source == "bypass"
-    assert result["rag_retrieval_result"].decision.route == "no_retrieval"
+    assert result["rag_retrieval_snapshot"]["decision"]["route"] == "no_retrieval"
     assert result["retrieved_context"] == []
 
 
@@ -121,7 +128,7 @@ def test_graph_enters_rag_when_source_gate_selects_knowledge_base() -> None:
 
     assert rag_runtime.queries == ["Summarize my uploaded document"]
     assert result["retrieval_source_decision"].source == "knowledge_base"
-    assert result["rag_retrieval_result"].decision.route == "no_retrieval"
+    assert result["rag_retrieval_snapshot"]["decision"]["route"] == "no_retrieval"
 
 
 def test_graph_accepts_runtime_source_decider_for_multilingual_gate() -> None:
@@ -141,6 +148,40 @@ def test_graph_accepts_runtime_source_decider_for_multilingual_gate() -> None:
     assert source_decider.messages == ["웹에서 찾아보고 저장된 문서는 쓰지 마"]
     assert rag_runtime.queries == []
     assert result["retrieval_source_decision"].source == "bypass"
+
+
+def test_checkpointed_graph_interrupts_and_resumes_document_selection() -> None:
+    graph = build_graph(
+        checkpointer=InMemorySaver(serde=checkpoint_serializer()),
+        document_selection_hitl_enabled=True,
+    )
+    rag_runtime = ClarifyingRagRuntime()
+    state = {
+        **graph_state("Summarize this document", user_id="user-a"),
+        "run_id": "run-hitl",
+    }
+    context = graph_runtime_context(
+        user_id="user-a",
+        rag_runtime=rag_runtime,
+        retrieval_source_decider=FakeRetrievalSourceDecider(source="knowledge_base"),
+    )
+    config = {"configurable": {"thread_id": "run-hitl"}}
+
+    interrupted = graph.invoke(state, config=config, context=context)
+
+    assert interrupted["__interrupt__"][0].value["type"] == "document_selection"
+    assert interrupted["__interrupt__"][0].value["options"][0]["document_id"] == "doc-1"
+    assert "rag_retrieval_result" not in graph.get_state(config).values
+
+    resumed = graph.invoke(
+        Command(resume={"document_id": "doc-1"}),
+        config=config,
+        context=context,
+    )
+
+    assert resumed["selected_document_id"] == "doc-1"
+    assert rag_runtime.selected_document_ids == ["doc-1"]
+    assert resumed["rag_retrieval_snapshot"]["insufficient_evidence"] is True
 
 
 class FakeMemoryRuntime:
@@ -171,6 +212,56 @@ class FakeRetrievalSourceDecider:
         return RetrievalSourceDecision(
             source=self._source,  # type: ignore[arg-type]
             reason="fake source decider",
+        )
+
+
+class ClarifyingRagRuntime:
+    def __init__(self) -> None:
+        self.selected_document_ids: list[str] = []
+
+    def retrieve_context(self, **kwargs):  # noqa: ANN003, ANN201
+        selection_context = kwargs["selection_context"]
+        selected_document_id = kwargs.get("selected_document_id")
+        if selected_document_id is not None:
+            self.selected_document_ids.append(selected_document_id)
+            return RagAgentRetrievalResult(
+                decision=RetrievalRoutingDecision(
+                    route="retrieval_required",
+                    reason="selected in test",
+                    rewritten_query=kwargs["message"],
+                    document_scope="user_documents",
+                ),
+                answer_mode="general_knowledge",
+                retrieved_chunks=[],
+                retrieval_latency_ms=0.0,
+                knowledge_base_selection=selection_context,
+                insufficient_evidence=True,
+            )
+        return RagAgentRetrievalResult(
+            decision=RetrievalRoutingDecision(
+                route="clarification_required",
+                reason="ambiguous in test",
+                rewritten_query=kwargs["message"],
+                document_scope="unknown",
+            ),
+            answer_mode="general_knowledge",
+            retrieved_chunks=[],
+            retrieval_latency_ms=0.0,
+            knowledge_base_selection=selection_context,
+        )
+
+    def document_options(self, **kwargs):  # noqa: ANN003, ANN201
+        return (
+            [
+                AuthorizedDocumentOption(
+                    document_id="doc-1",
+                    title="Test document",
+                    source_filename="test.pdf",
+                    knowledge_base_id="kb-1",
+                    knowledge_base_name="Test KB",
+                )
+            ],
+            1,
         )
 
 

@@ -6,6 +6,7 @@ import inspect
 from collections.abc import Callable, Iterator
 from typing import Any
 
+from langgraph.types import Command
 from sqlalchemy.orm import Session
 
 from my_agents.agents.rag_agent import SqlAlchemyRagAgentRuntime
@@ -65,10 +66,11 @@ def invoke_graph_runner(
 ) -> dict:
     """Invoke a graph runner, passing LangGraph `context` only when supported."""
     invoke = graph_runner.invoke
+    kwargs = _thread_config_kwargs(graph_input)
     with track_graph_invocation("invoke"):
         if graph_context is not None and _supports_keyword(invoke, "context"):
-            return invoke(graph_input, context=graph_context)
-        return invoke(graph_input)
+            return invoke(graph_input, context=graph_context, **kwargs)
+        return invoke(graph_input, **kwargs)
 
 
 def invoke_graph_runner_collecting_updates(
@@ -118,6 +120,40 @@ def invoke_graph_runner_collecting_updates(
     )
 
 
+def invoke_graph_runner_resume_collecting_updates(
+    *,
+    graph_runner: GraphRunner,
+    run_id: str,
+    resume_value: dict[str, object],
+    graph_context: dict[str, object],
+) -> dict:
+    """Resume one checkpoint thread and preserve all node updates/interrupts."""
+    stream = getattr(graph_runner, "stream", None)
+    command = Command(resume=resume_value)
+    config = {"configurable": {"thread_id": run_id}}
+    if not callable(stream):
+        return graph_runner.invoke(command, config=config, context=graph_context)
+    partial_state: dict[str, object] = {}
+    try:
+        for event in stream(
+            command,
+            config=config,
+            context=graph_context,
+            stream_mode="updates",
+            version="v2",
+        ):
+            _merge_update_event(partial_state, event)
+    except Exception as exc:
+        raise GraphRunnerExecutionError(exc, partial_state=partial_state) from exc
+    get_state = getattr(graph_runner, "get_state", None)
+    if callable(get_state):
+        snapshot = get_state(config)
+        values = getattr(snapshot, "values", None)
+        if isinstance(values, dict):
+            return values
+    return partial_state
+
+
 def stream_graph_runner(
     *,
     stream: Callable[..., Iterator[Any]],
@@ -127,8 +163,22 @@ def stream_graph_runner(
 ) -> Iterator[Any]:
     """Stream from a graph runner, passing LangGraph `context` only when supported."""
     if graph_context is not None and _supports_keyword(stream, "context"):
-        return stream(graph_input, context=graph_context, **kwargs)
-    return stream(graph_input, **kwargs)
+        return stream(
+            graph_input,
+            context=graph_context,
+            **_thread_config_kwargs(graph_input),
+            **kwargs,
+        )
+    return stream(graph_input, **_thread_config_kwargs(graph_input), **kwargs)
+
+
+def _thread_config_kwargs(graph_input: object) -> dict[str, object]:
+    if not isinstance(graph_input, dict):
+        return {}
+    run_id = graph_input.get("run_id")
+    if not isinstance(run_id, str) or not run_id:
+        return {}
+    return {"config": {"configurable": {"thread_id": run_id}}}
 
 
 def _supports_keyword(callable_obj: Callable[..., Any], keyword: str) -> bool:
@@ -145,6 +195,8 @@ def _merge_update_event(partial_state: dict[str, object], event: Any) -> None:
     event_type, event_data = _stream_event_parts(event)
     if event_type != "updates" or not isinstance(event_data, dict):
         return
+    if "__interrupt__" in event_data:
+        partial_state["__interrupt__"] = event_data["__interrupt__"]
     for node_update in event_data.values():
         if isinstance(node_update, dict):
             partial_state.update(node_update)

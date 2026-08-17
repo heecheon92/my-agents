@@ -153,6 +153,7 @@ class ConversationReplayRequest(BaseModel):
 class ConversationRunResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    status: Literal["completed"] = "completed"
     run_id: str
     conversation_id: str
     reply: str
@@ -174,12 +175,77 @@ class ConversationRunResponse(BaseModel):
     artifacts: list[ConversationArtifactResponse] = Field(default_factory=list)
 
 
+class DocumentSelectionOption(BaseModel):
+    """Display-safe authorized document option for one paused run."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    document_id: str
+    title: str
+    source_filename: str | None = None
+    knowledge_base_id: str | None = None
+    knowledge_base_name: str | None = None
+
+
+class PendingDocumentSelection(BaseModel):
+    """Public interaction payload persisted separately from checkpoint internals."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    interaction_id: str
+    type: Literal["document_selection"] = "document_selection"
+    reason_code: Literal["ambiguous_document_reference"] = "ambiguous_document_reference"
+    message_key: Literal["clarification.document_scope.select_source"] = (
+        "clarification.document_scope.select_source"
+    )
+    expires_at: datetime
+    option_count: int = Field(ge=0)
+    options: list[DocumentSelectionOption] = Field(default_factory=list, max_length=50)
+    next_cursor: str | None = None
+
+
+class ConversationRunInterruptedResponse(BaseModel):
+    """Refresh-safe response for a graph waiting on user input."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["waiting_for_input"] = "waiting_for_input"
+    run_id: str
+    conversation_id: str
+    interaction: PendingDocumentSelection
+
+
+class ConversationRunResumeRequest(BaseModel):
+    """Resume one pending document-selection interaction."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    interaction_id: str = Field(min_length=1, max_length=80)
+    document_id: str = Field(min_length=1, max_length=36)
+
+
+class DocumentSelectionOptionsResponse(BaseModel):
+    """One refresh-safe page of currently authorized document options."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    interaction_id: str
+    option_count: int = Field(ge=0)
+    options: list[DocumentSelectionOption] = Field(default_factory=list, max_length=50)
+    next_cursor: str | None = None
+
+
+type ConversationRunResult = ConversationRunResponse | ConversationRunInterruptedResponse
+
+
 class ConversationRunCancelResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     run_id: str
     conversation_id: str
-    status: Literal["running", "cancelling", "cancelled", "completed", "failed"]
+    status: Literal[
+        "running", "waiting_for_input", "cancelling", "cancelled", "completed", "failed"
+    ]
 
 
 class AgentRunSummaryResponse(BaseModel):
@@ -296,6 +362,22 @@ class RunCancelRequestedEventPayload(AgentEventPayload):
     status: Literal["cancelling"] = "cancelling"
 
 
+class RunInterruptedEventPayload(AgentEventPayload):
+    run_id: str
+    status: Literal["waiting_for_input"] = "waiting_for_input"
+    interaction_id: str
+    interaction_type: Literal["document_selection"] = "document_selection"
+    option_count: int = Field(ge=0)
+    expires_at: datetime
+
+
+class RunResumedEventPayload(AgentEventPayload):
+    run_id: str
+    status: Literal["running"] = "running"
+    interaction_id: str
+    interaction_type: Literal["document_selection"] = "document_selection"
+
+
 class RunCancelledEventPayload(AgentEventPayload):
     run_id: str
     conversation_id: str | None = None
@@ -363,6 +445,16 @@ class RunCancelRequestedAgentEventResponse(AgentEventResponseBase):
     payload: RunCancelRequestedEventPayload
 
 
+class RunInterruptedAgentEventResponse(AgentEventResponseBase):
+    event_type: Literal["run_interrupted"]
+    payload: RunInterruptedEventPayload
+
+
+class RunResumedAgentEventResponse(AgentEventResponseBase):
+    event_type: Literal["run_resumed"]
+    payload: RunResumedEventPayload
+
+
 class RunCancelledAgentEventResponse(AgentEventResponseBase):
     event_type: Literal["run_cancelled"]
     payload: RunCancelledEventPayload
@@ -382,6 +474,8 @@ type AgentEventResponse = Annotated[
     | DocumentWorkspaceStartedAgentEventResponse
     | ArtifactCreatedAgentEventResponse
     | AnswerComposedAgentEventResponse
+    | RunInterruptedAgentEventResponse
+    | RunResumedAgentEventResponse
     | RunCancelRequestedAgentEventResponse
     | RunCancelledAgentEventResponse
     | RunFailedAgentEventResponse,
