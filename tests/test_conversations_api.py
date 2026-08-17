@@ -514,9 +514,10 @@ def test_checkpointed_document_selection_interrupts_and_resumes_same_run(monkeyp
     assert pending["interaction"]["type"] == "document_selection"
     assert pending["interaction"]["option_count"] == 2
 
+    encoded_interaction_id = pending["interaction"]["interaction_id"].replace(":", "%3A")
     options = client.get(
         f"/conversations/{conversation_id}/runs/{pending['run_id']}"
-        f"/interactions/{pending['interaction']['interaction_id']}/options"
+        f"/interactions/{encoded_interaction_id}/options"
     )
     assert options.status_code == 200
     assert options.json()["schema_version"] == 1
