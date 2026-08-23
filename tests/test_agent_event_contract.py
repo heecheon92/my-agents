@@ -44,3 +44,34 @@ def test_event_response_strips_uncontracted_and_nested_unsafe_fields() -> None:
     serialized = json.dumps(payload)
     assert "must not escape" not in serialized
     assert "provider_trace" not in serialized
+
+
+def test_full_document_event_exposes_coverage_but_strips_body_and_cursor() -> None:
+    event = AgentEventModel(
+        id="event-full",
+        run_id="run-full",
+        sequence=3,
+        event_type=AgentEventType.FULL_DOCUMENT_READ.value,
+        payload_json=json.dumps(
+            {
+                "mode": "partial",
+                "document_id": "document-1",
+                "title": "Large Source",
+                "source_filename": "large.pdf",
+                "start_offset": 0,
+                "end_offset": 12000,
+                "total_chars": 50000,
+                "latency_ms": 4.5,
+                "content": "private full-document body",
+                "next_cursor": "12000",
+            }
+        ),
+    )
+
+    payload = event_response(event).model_dump(mode="json", exclude_none=True)["payload"]
+
+    assert payload["document_id"] == "document-1"
+    assert payload["mode"] == "partial"
+    assert payload["end_offset"] == 12000
+    assert "content" not in payload
+    assert "next_cursor" not in payload

@@ -187,6 +187,7 @@ def _log_runtime_configuration(settings: Settings) -> None:
         metrics_enabled=settings.metrics_enabled,
         checkpointer_enabled=settings.checkpointer_enabled,
         memory_store_enabled=settings.memory_store_enabled,
+        full_document_retrieval_enabled=settings.full_document_retrieval_enabled,
         auto_create_tables=settings.should_auto_create_tables(),
         cors_origins=",".join(settings.cors_allowed_origin_list()) or "none",
         smtp_host=settings.auth_smtp_host or "none",

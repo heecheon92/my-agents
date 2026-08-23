@@ -8,6 +8,7 @@
 
 - Provides the runtime-only `RagAgentRuntime` contract invoked by the `retrieve_rag_context` node inside the `general_assistant` graph.
 - Returns `RagAgentRetrievalResult` with route, answer mode, authorized chunks, redacted retrieval evidence, and retry/sufficiency state.
+- Provides typed `resolve_full_document_target` and `read_full_document_range` runtime methods for explicit comprehensive-document tasks without making raw text part of the checkpointed RAG result.
 - Delegates to ContextForge for query planning, source-boundary handoff, authorized candidate search, reranking, and context packing.
 - Keeps the Query Cartographer, Source Warden, Candidate Scouts, Evidence Judge, Context Curator, Assistant Graph, and Answer Composer stage contract plus the compact trace graph (`plan_workflow -> verify_workflow`).
 - Verifies stage order, bilingual copy, public RAG Agent ownership, and redacted evidence keys.
@@ -18,7 +19,7 @@
 | File | Responsibility |
 | --- | --- |
 | `contracts.py` | Dataclass contracts, stage identifiers, public/internal role names, and expected stage order. |
-| `retrieval.py` | Public RAG Agent retrieval runtime called by `general_assistant`; wraps the delegated ContextForge implementation. |
+| `retrieval.py` | Public RAG Agent runtime called by `general_assistant`; wraps focused ContextForge retrieval and permission-first full-document target/range reads. |
 | `graph.py` | Dedicated LangGraph form that plans and verifies the RAG Agent trace/grounding contract. |
 | `planner.py` | Deterministic stage planner for compact run traces. |
 | `verifier.py` | Deterministic safety/shape and grounding-boundary verifier. |
@@ -35,10 +36,17 @@ sequenceDiagram
     participant Trace as RAG Agent contract graph
     participant Events as Conversation events/citations
 
-    GA->>RAG: retrieve_context(user, conversation, messages, KB selection)
-    RAG->>CF: ContextForgeRequest
-    CF-->>RAG: authorized chunks + redacted evidence + sufficiency state
-    RAG-->>GA: RagAgentRetrievalResult + prompt-safe retrieved_context
+    alt focused document question
+        GA->>RAG: retrieve_context(user, conversation, messages, KB selection)
+        RAG->>CF: ContextForgeRequest
+        CF-->>RAG: authorized chunks + redacted evidence + sufficiency state
+        RAG-->>GA: RagAgentRetrievalResult + prompt-safe retrieved_context
+    else explicit comprehensive-document task
+        GA->>RAG: resolve_full_document_target(authenticated user, selected KB scope)
+        RAG-->>GA: one authorized target or safe ambiguity
+        GA->>RAG: read_full_document_range(target, server limits)
+        RAG-->>GA: bounded extracted text + overlapping authorized chunks + cursor
+    end
     RAG->>Trace: redacted counts and route metadata
     Trace-->>Events: verified compact ko/en stages
     GA-->>Events: reply, citations, grounding check result
@@ -52,6 +60,10 @@ sequenceDiagram
 - `retrieved_context` is already-authorized, prompt-safe compact context. Ambient system
   entries contain only answerable snippet text; their KB/document/chunk/title/filename/page
   and retrieval-source provenance is omitted before provider invocation.
+- `FullDocumentTargetResolution` contains only safe target metadata and an option count. `FullDocumentReadResult` carries one half-open extracted-text range, offsets, total characters, an internal decimal cursor, a complete flag, and overlapping authorized chunks.
+- Target resolution and every range read reuse the user-selectable permission boundary: owner/group/explicit-document access can qualify, while ambient system KB documents and hidden staging documents cannot.
+- Overlapping chunks enter the internal grounding/citation path with `source="full_document"` and score `1.0`. Public citation responses keep their existing schema and do not expose that internal source/score pair.
+- The default complete-read threshold is 24,000 characters. Larger documents currently return only the first 12,000-character range to the graph path; continuation cursors exist at the runtime seam but automatic multi-range traversal/synthesis is not implemented.
 - `clarification_required` and required retrieval with insufficient evidence stop the `general_assistant` graph before answer nodes.
 - `completed`, `skipped`, and `waiting` are frontend trace states, not hidden chain-of-thought.
 - The `agent_trace` stage IDs, event types, statuses, bilingual copy, and evidence fields are a stable typed API contract.
@@ -63,15 +75,16 @@ This package is the production RAG Agent boundary. It exposes a graph/tool seam 
 
 ## Relationship to service layers
 
-Conversation APIs pass user/conversation/knowledge-base selection plus a DB-backed `SqlAlchemyRagAgentRuntime` through LangGraph runtime context. `general_assistant` invokes the RAG Agent inside the graph, and the API layer reads retrieval results from graph state to persist `retrieval_completed`, citations, and grounding events. System citation rows remain internal audit data; public run/event/citation serializers remove their provenance. Auth, source selection, ingestion, persistence, citation rows, and provider execution remain in service modules.
+Conversation APIs pass user/conversation/knowledge-base selection plus a DB-backed `SqlAlchemyRagAgentRuntime` through LangGraph runtime context. `general_assistant` invokes the RAG Agent inside the graph, and the API layer reads retrieval results from graph state to persist `retrieval_completed`, citations, grounding events, and optional `document_coverage`/`full_document_read` metadata. System citation rows remain internal audit data; public run/event/citation serializers remove their provenance. Raw full-document text is consumed only inside graph nodes and is excluded from checkpoints, events, application traces, and API coverage objects. Auth, source selection, ingestion, persistence, citation rows, and provider execution remain in service modules.
 
 ## Extension guidance
 
-If a new retrieval tool or deeper graph node is needed, add it first to the public `rag_agent.retrieval.RagAgentRuntime` seam. Keep ContextForge internals as the permission-first retrieval engine, and expose only compact/redacted evidence that the verifier can allow. Do not leak provider secrets, raw prompt transcripts, unauthorized candidates, or raw ContextForge graph state out of this package.
+If a new retrieval tool or deeper graph node is needed, add it first to the public `rag_agent.retrieval.RagAgentRuntime` seam. Keep ContextForge internals as the permission-first focused-retrieval engine, and keep full-document authorization/range reads behind the same runtime boundary. Expose only compact/redacted evidence that the verifier can allow. Do not leak provider secrets, raw prompt transcripts, unauthorized candidates, raw full-document text, or raw ContextForge graph state out of this package.
 
 ## Change checklist
 
 - Update `tests/test_conversations_api.py` and `tests/test_permission_aware_rag.py` for retrieval-boundary changes.
 - Update `tests/test_rag_agent_contracts.py` for contract/trace changes.
+- Update `tests/test_full_document_retrieval.py` for full-document resolution, range, authorization, citation, replay, and checkpoint-safety changes.
 - Run `tests/test_context_forge_contracts.py`, `tests/test_context_forge_reranking.py`, and `tests/test_context_forge_structured_retrieval.py` when the delegated ContextForge path changes.
 - Keep this README pair and `CHANGELOG.md` aligned.

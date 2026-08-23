@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from difflib import SequenceMatcher
 
 from rank_bm25 import BM25Okapi
-from sqlalchemy import and_, desc, false, func, inspect, or_, select
+from sqlalchemy import and_, desc, false, func, inspect, or_, select, true
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, defer
 
@@ -53,6 +53,28 @@ class AuthorizedDocumentOption:
 
 
 @dataclass(frozen=True)
+class FullDocumentTargetResolution:
+    """One authorized full-document target, or an ambiguity/unavailable result."""
+
+    target: AuthorizedDocumentOption | None
+    option_count: int
+
+
+@dataclass(frozen=True)
+class FullDocumentReadResult:
+    """Bounded authorized extracted text plus chunk provenance for one document."""
+
+    document: DocumentModel
+    content: str
+    retrieved_chunks: tuple[RetrievedChunk, ...]
+    start_offset: int
+    end_offset: int
+    total_chars: int
+    next_cursor: str | None
+    complete: bool
+
+
+@dataclass(frozen=True)
 class RetrievedStructuredEntity:
     """Authorized structured fact with chunk/document provenance."""
 
@@ -82,6 +104,8 @@ class RankedBm25Chunk:
 
 
 MatchedDocumentChunkRowsCache = dict[str, list[tuple[DocumentChunkModel, DocumentModel]]]
+_FULL_DOCUMENT_TARGET_SCAN_LIMIT = 500
+_FULL_DOCUMENT_MAX_CITATION_CHUNKS = 100
 
 
 class RetrievalService:
@@ -325,6 +349,131 @@ class RetrievalService:
                 for document, knowledge_base_name in rows
             ],
             total,
+        )
+
+    def resolve_full_document_target(
+        self,
+        *,
+        user_id: str,
+        query: str,
+        knowledge_base_ids: Sequence[str] | None = None,
+        selected_document_id: str | None = None,
+    ) -> FullDocumentTargetResolution:
+        """Resolve one user-controllable document without loading its body text."""
+        predicate = _user_selectable_document_filter(
+            user_id,
+            knowledge_base_ids=knowledge_base_ids,
+            require_standard_purpose=_schema_has_knowledge_base_purpose(self._db),
+        )
+        statement = (
+            select(
+                DocumentModel.id,
+                DocumentModel.title,
+                DocumentModel.source_filename,
+                DocumentModel.knowledge_base_id,
+                KnowledgeBaseModel.name,
+            )
+            .join(KnowledgeBaseModel, KnowledgeBaseModel.id == DocumentModel.knowledge_base_id)
+            .where(predicate)
+            .order_by(DocumentModel.title, DocumentModel.id)
+        )
+        total = (
+            self._db.scalar(select(func.count(DocumentModel.id.distinct())).where(predicate)) or 0
+        )
+        if selected_document_id is not None:
+            selected_row = self._db.execute(
+                statement.where(DocumentModel.id == selected_document_id).limit(1)
+            ).first()
+            return FullDocumentTargetResolution(
+                target=_authorized_document_option(selected_row) if selected_row else None,
+                option_count=total,
+            )
+        rows = self._db.execute(statement.limit(_FULL_DOCUMENT_TARGET_SCAN_LIMIT + 1)).all()
+        options = [
+            _authorized_document_option(row) for row in rows[:_FULL_DOCUMENT_TARGET_SCAN_LIMIT]
+        ]
+        if total == 1 and options:
+            return FullDocumentTargetResolution(target=options[0], option_count=1)
+        if total > _FULL_DOCUMENT_TARGET_SCAN_LIMIT:
+            return FullDocumentTargetResolution(target=None, option_count=total)
+        matched = _matching_document_options(options, query=query)
+        return FullDocumentTargetResolution(
+            target=matched[0] if len(matched) == 1 else None,
+            option_count=total,
+        )
+
+    def read_full_document_range(
+        self,
+        *,
+        user_id: str,
+        document_id: str,
+        knowledge_base_ids: Sequence[str] | None = None,
+        cursor: str | None = None,
+        full_document_max_chars: int = 24_000,
+        range_chars: int = 12_000,
+    ) -> FullDocumentReadResult | None:
+        """Read one bounded extracted-text range after revalidating document access."""
+        if full_document_max_chars <= 0 or range_chars <= 0:
+            raise ValueError("full-document character limits must be positive")
+        if range_chars > full_document_max_chars:
+            raise ValueError("full-document range cannot exceed the complete-read limit")
+        start_offset = _full_document_cursor_offset(cursor)
+        document = self._db.scalar(
+            select(DocumentModel)
+            .where(
+                DocumentModel.id == document_id,
+                _user_selectable_document_filter(
+                    user_id,
+                    knowledge_base_ids=knowledge_base_ids,
+                    require_standard_purpose=_schema_has_knowledge_base_purpose(self._db),
+                ),
+            )
+            .execution_options(populate_existing=True)
+        )
+        if document is None:
+            return None
+        total_chars = len(document.content)
+        if start_offset > total_chars or (start_offset == total_chars and total_chars > 0):
+            raise ValueError("full-document cursor is outside the document")
+        if start_offset == 0 and total_chars <= full_document_max_chars:
+            end_offset = total_chars
+        else:
+            end_offset = min(start_offset + range_chars, total_chars)
+        chunks = list(
+            self._db.scalars(
+                select(DocumentChunkModel)
+                .options(defer(DocumentChunkModel.embedding_json))
+                .where(
+                    DocumentChunkModel.document_id == document.id,
+                    DocumentChunkModel.start_offset < end_offset,
+                    DocumentChunkModel.end_offset > start_offset,
+                )
+                .order_by(DocumentChunkModel.ordinal)
+                .limit(_FULL_DOCUMENT_MAX_CITATION_CHUNKS + 1)
+            ).all()
+        )
+        if len(chunks) > _FULL_DOCUMENT_MAX_CITATION_CHUNKS or any(
+            not _chunk_matches_document_content(chunk, document.content) for chunk in chunks
+        ):
+            chunks = []
+        retrieved_chunks = tuple(
+            RetrievedChunk(
+                chunk=chunk,
+                document=document,
+                score=1.0,
+                source="full_document",
+            )
+            for chunk in chunks
+        )
+        return FullDocumentReadResult(
+            document=document,
+            content=document.content[start_offset:end_offset],
+            retrieved_chunks=retrieved_chunks,
+            start_offset=start_offset,
+            end_offset=end_offset,
+            total_chars=total_chars,
+            next_cursor=str(end_offset) if end_offset < total_chars else None,
+            complete=start_offset == 0 and end_offset == total_chars,
         )
 
     def retrieve_selected_document(
@@ -1092,22 +1241,37 @@ def _authorized_document_filter(
         DocumentPermissionModel.user_id == user_id,
         DocumentPermissionModel.can_read.is_(True),
     )
-    readable_document_predicates = [
+    knowledge_base_scope = _knowledge_base_scope_filter(
+        user_id,
+        knowledge_base_ids,
+        include_published_personal_kbs=include_published_personal_kbs,
+        require_standard_purpose=require_standard_purpose,
+    )
+    knowledge_base_scoped_predicates = [
         and_(DocumentModel.group_id.is_(None), DocumentModel.owner_user_id == user_id),
         DocumentModel.group_id.in_(group_ids),
-        DocumentModel.id.in_(explicit_doc_ids),
         DocumentModel.knowledge_base_id.in_(
             _system_knowledge_base_ids(require_standard_purpose=require_standard_purpose)
         ),
     ]
-    return and_(
-        _knowledge_base_scope_filter(
-            user_id,
-            knowledge_base_ids,
-            include_published_personal_kbs=include_published_personal_kbs,
-            require_standard_purpose=require_standard_purpose,
-        ),
-        or_(*readable_document_predicates),
+    explicit_scope_predicates = [
+        (
+            DocumentModel.knowledge_base_id.in_(tuple(dict.fromkeys(knowledge_base_ids)))
+            if knowledge_base_ids is not None
+            else true()
+        )
+    ]
+    if require_standard_purpose:
+        explicit_scope_predicates.append(
+            DocumentModel.knowledge_base_id.in_(
+                select(KnowledgeBaseModel.id).where(
+                    KnowledgeBaseModel.purpose == KnowledgeBasePurpose.STANDARD.value
+                )
+            )
+        )
+    return or_(
+        and_(knowledge_base_scope, or_(*knowledge_base_scoped_predicates)),
+        and_(DocumentModel.id.in_(explicit_doc_ids), *explicit_scope_predicates),
     )
 
 
@@ -1553,6 +1717,68 @@ def _normalized_keyword_score(score: int, terms: set[str]) -> float:
     if not terms:
         return 0.0
     return min(score / len(terms), 1.0)
+
+
+def _full_document_cursor_offset(cursor: str | None) -> int:
+    if cursor is None:
+        return 0
+    if not cursor or not cursor.isascii() or not cursor.isdecimal():
+        raise ValueError("full-document cursor must be a non-negative integer")
+    offset = int(cursor)
+    if cursor != str(offset):
+        raise ValueError("full-document cursor must use its canonical decimal form")
+    return offset
+
+
+def _matching_document_options(
+    options: Sequence[AuthorizedDocumentOption], *, query: str
+) -> list[AuthorizedDocumentOption]:
+    normalized_query = _normalize_document_reference(query)
+    matched: list[AuthorizedDocumentOption] = []
+    for option in options:
+        references = [option.title]
+        if option.source_filename:
+            references.extend(
+                (
+                    option.source_filename,
+                    option.source_filename.rsplit(".", maxsplit=1)[0],
+                )
+            )
+        references_match = any(
+            reference in normalized_query
+            for raw_reference in references
+            if len(reference := _normalize_document_reference(raw_reference)) >= 4
+        )
+        if references_match:
+            matched.append(option)
+    return matched
+
+
+def _normalize_document_reference(value: str) -> str:
+    return " ".join(value.casefold().split())
+
+
+def _authorized_document_option(row: object) -> AuthorizedDocumentOption:
+    document_id, title, source_filename, knowledge_base_id, knowledge_base_name = row  # type: ignore[misc]
+    return AuthorizedDocumentOption(
+        document_id=document_id,
+        title=title,
+        source_filename=source_filename,
+        knowledge_base_id=knowledge_base_id,
+        knowledge_base_name=knowledge_base_name,
+    )
+
+
+def _chunk_matches_document_content(chunk: DocumentChunkModel, document_content: str) -> bool:
+    if chunk.start_offset < 0 or chunk.end_offset < chunk.start_offset:
+        return False
+    if chunk.end_offset > len(document_content):
+        return False
+    window_start = max(chunk.start_offset - 512, 0)
+    window_end = min(chunk.end_offset + 512, len(document_content))
+    expected = _normalize_chunk_content(document_content[window_start:window_end])
+    actual = _normalize_chunk_content(chunk.content)
+    return bool(actual) and (actual == expected or actual in expected)
 
 
 def _structured_entity_score(entity: StructuredKnowledgeEntityModel, terms: set[str]) -> float:

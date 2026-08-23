@@ -22,7 +22,10 @@ from my_agents.agents.rag_agent import (
 from my_agents.agents.rag_agent import (
     retrieved_context_for_graph as rag_retrieved_context_for_graph,
 )
-from my_agents.conversations.schemas import ConversationClarificationRequest
+from my_agents.conversations.schemas import (
+    ConversationClarificationRequest,
+    DocumentCoverageResponse,
+)
 from my_agents.knowledge.auth import KnowledgeBaseSelectionContext
 from my_agents.knowledge.models import DocumentChunkModel, DocumentModel
 from my_agents.knowledge.retrieval import RetrievedChunk
@@ -31,6 +34,7 @@ from my_agents.knowledge.routing import (
     RetrievalRoutingDecision,
 )
 from my_agents.knowledge.source_locations import parse_source_location_json
+from my_agents.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +93,16 @@ def graph_has_retrieval_context(graph_state: Mapping[str, object]) -> bool:
     return isinstance(
         graph_state.get("rag_retrieval_result"), RagAgentRetrievalResult
     ) or isinstance(graph_state.get("rag_retrieval_snapshot"), Mapping)
+
+
+def document_coverage_from_graph_state(
+    graph_state: Mapping[str, object],
+) -> DocumentCoverageResponse | None:
+    """Validate compact coverage metadata returned by the full-document graph path."""
+    value = graph_state.get("document_coverage")
+    if not isinstance(value, Mapping):
+        return None
+    return DocumentCoverageResponse.model_validate(dict(value))
 
 
 def _retrieval_context_from_snapshot(
@@ -186,6 +200,8 @@ def graph_input_for_run(
     conversation_id: str,
     run_id: str,
     document_selection_hitl_allowed: bool = True,
+    preselected_document_id: str | None = None,
+    force_full_document_retrieval: bool = False,
 ) -> dict[str, object]:
     graph_input: dict[str, object] = {
         "messages": messages[-RECENT_CONVERSATION_MESSAGE_LIMIT:],
@@ -193,6 +209,10 @@ def graph_input_for_run(
         "conversation_id": conversation_id,
         "run_id": run_id,
         "document_selection_hitl_allowed": document_selection_hitl_allowed,
+        "full_document_retrieval_enabled": (
+            get_settings().full_document_retrieval_enabled or force_full_document_retrieval
+        ),
+        "full_document_requested": False,
         "retrieved_chunk_ids": [],
         "retrieval_records": [],
         "retrieved_context": [],
@@ -205,6 +225,8 @@ def graph_input_for_run(
         "document_scope": "unknown",
         "rag_halt_before_response": False,
     }
+    if preselected_document_id is not None:
+        graph_input["selected_document_id"] = preselected_document_id
     return graph_input
 
 

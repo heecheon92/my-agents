@@ -8,6 +8,7 @@
 
 - `general_assistant` graph 안의 `retrieve_rag_context` node가 호출하는 runtime-only `RagAgentRuntime` contract를 제공합니다.
 - `RagAgentRetrievalResult`로 route, answer mode, authorized chunks, redacted retrieval evidence, retry/sufficiency state를 반환합니다.
+- 명시적인 comprehensive-document task를 위해 typed `resolve_full_document_target`, `read_full_document_range` runtime method를 제공하되 raw text는 checkpoint되는 RAG result에 넣지 않습니다.
 - ContextForge를 내부 retrieval implementation으로 위임 호출해 query planning, source-boundary handoff, authorized candidate search, reranking, context packing을 수행합니다.
 - Query Cartographer, Source Warden, Candidate Scouts, Evidence Judge, Context Curator, Assistant Graph, Answer Composer 단계 contract와 compact trace graph(`plan_workflow -> verify_workflow`)를 유지합니다.
 - stage 순서, 한/영 copy, public RAG Agent ownership, redacted evidence key를 검증합니다.
@@ -18,7 +19,7 @@
 | 파일 | 책임 |
 | --- | --- |
 | `contracts.py` | dataclass contract, stage identifier, public/internal role name, expected stage order. |
-| `retrieval.py` | `general_assistant`가 호출하는 public RAG Agent retrieval runtime; ContextForge delegated implementation을 감쌉니다. |
+| `retrieval.py` | `general_assistant`가 호출하는 public RAG Agent runtime; focused ContextForge retrieval과 permission-first full-document target/range read를 감쌉니다. |
 | `graph.py` | RAG Agent trace/grounding contract를 계획하고 검증하는 전용 LangGraph form. |
 | `planner.py` | compact run trace를 위한 deterministic stage planner. |
 | `verifier.py` | trace contract의 shape/safety와 grounding boundary를 검증하는 deterministic verifier. |
@@ -35,10 +36,17 @@ sequenceDiagram
     participant Trace as RAG Agent contract graph
     participant Events as Conversation events/citations
 
-    GA->>RAG: retrieve_context(user, conversation, messages, KB selection)
-    RAG->>CF: ContextForgeRequest
-    CF-->>RAG: authorized chunks + redacted evidence + sufficiency state
-    RAG-->>GA: RagAgentRetrievalResult + prompt-safe retrieved_context
+    alt focused document question
+        GA->>RAG: retrieve_context(user, conversation, messages, KB selection)
+        RAG->>CF: ContextForgeRequest
+        CF-->>RAG: authorized chunks + redacted evidence + sufficiency state
+        RAG-->>GA: RagAgentRetrievalResult + prompt-safe retrieved_context
+    else explicit comprehensive-document task
+        GA->>RAG: resolve_full_document_target(authenticated user, selected KB scope)
+        RAG-->>GA: one authorized target or safe ambiguity
+        GA->>RAG: read_full_document_range(target, server limits)
+        RAG-->>GA: bounded extracted text + overlapping authorized chunks + cursor
+    end
     RAG->>Trace: redacted counts and route metadata
     Trace-->>Events: verified compact ko/en stages
     GA-->>Events: reply, citations, grounding check result
@@ -52,6 +60,10 @@ sequenceDiagram
 - `retrieved_context`는 이미 권한 확인이 끝난 prompt-safe compact context입니다. Ambient
   system entry는 답변에 쓸 snippet만 포함하며, KB/document/chunk/title/filename/page와
   retrieval-source provenance는 provider invocation 전에 생략합니다.
+- `FullDocumentTargetResolution`은 safe target metadata와 option count만 담습니다. `FullDocumentReadResult`는 half-open extracted-text range 한 개, offset, 전체 문자 수, 내부 decimal cursor, complete flag, 겹치는 authorized chunk를 담습니다.
+- Target resolution과 모든 range read는 user-selectable permission boundary를 재사용합니다. Owner/group/explicit-document access는 허용될 수 있지만 ambient system KB document와 hidden staging document는 대상이 될 수 없습니다.
+- 겹치는 chunk는 internal grounding/citation path에 `source="full_document"`, score `1.0`으로 들어갑니다. Public citation response는 기존 schema를 유지하며 이 내부 source/score pair를 노출하지 않습니다.
+- 기본 complete-read threshold는 24,000자입니다. 큰 문서는 현재 첫 12,000자 range만 graph path에 반환합니다. Runtime seam에는 continuation cursor가 있지만 automatic multi-range traversal/synthesis는 아직 없습니다.
 - `clarification_required` 또는 required retrieval의 insufficient evidence는 `general_assistant` graph를 answer node 전에 멈추게 합니다.
 - `completed`, `skipped`, `waiting`은 frontend trace state이며 hidden chain-of-thought가 아닙니다.
 - `agent_trace`의 stage ID, event type, status, 한/영 copy, evidence field는 stable typed API contract입니다.
@@ -63,15 +75,16 @@ sequenceDiagram
 
 ## Service layer와의 관계
 
-Conversation API는 user/conversation/knowledge-base selection과 DB-backed `SqlAlchemyRagAgentRuntime`을 LangGraph runtime context로 전달합니다. `general_assistant`가 graph 안에서 RAG Agent를 호출하고, API layer는 graph state에서 retrieval result를 읽어 `retrieval_completed`, citation, grounding event를 persist합니다. System citation row는 internal audit data로 유지하고 public run/event/citation serializer에서는 provenance를 제거합니다. Auth, source selection, ingestion, persistence, citation rows, provider execution은 계속 service module에 남습니다.
+Conversation API는 user/conversation/knowledge-base selection과 DB-backed `SqlAlchemyRagAgentRuntime`을 LangGraph runtime context로 전달합니다. `general_assistant`가 graph 안에서 RAG Agent를 호출하고, API layer는 graph state에서 retrieval result를 읽어 `retrieval_completed`, citation, grounding event, optional `document_coverage`/`full_document_read` metadata를 persist합니다. System citation row는 internal audit data로 유지하고 public run/event/citation serializer에서는 provenance를 제거합니다. Raw full-document text는 graph node 안에서만 소비하며 checkpoint, event, application trace, API coverage object에 넣지 않습니다. Auth, source selection, ingestion, persistence, citation rows, provider execution은 계속 service module에 남습니다.
 
 ## 확장 가이드
 
-새 retrieval tool이나 deeper graph node가 필요하면 public seam은 먼저 `rag_agent.retrieval.RagAgentRuntime`에 추가합니다. ContextForge internals는 permission-first retrieval engine으로 유지하고, verifier가 허용할 수 있는 compact/redacted evidence만 trace surface로 올립니다. Provider secret, raw prompt transcript, unauthorized candidate, raw ContextForge graph state를 이 패키지 밖으로 노출하지 마세요.
+새 retrieval tool이나 deeper graph node가 필요하면 public seam은 먼저 `rag_agent.retrieval.RagAgentRuntime`에 추가합니다. ContextForge internals는 permission-first focused-retrieval engine으로 유지하고 full-document authorization/range read도 같은 runtime boundary 뒤에 둡니다. Verifier가 허용할 수 있는 compact/redacted evidence만 trace surface로 올립니다. Provider secret, raw prompt transcript, unauthorized candidate, raw full-document text, raw ContextForge graph state를 이 패키지 밖으로 노출하지 마세요.
 
 ## 변경 체크리스트
 
 - Retrieval boundary 변경 시 `tests/test_conversations_api.py`와 `tests/test_permission_aware_rag.py`를 업데이트합니다.
 - Contract/trace 변경 시 `tests/test_rag_agent_contracts.py`를 업데이트합니다.
+- Full-document resolution, range, authorization, citation, replay, checkpoint safety 변경 시 `tests/test_full_document_retrieval.py`를 업데이트합니다.
 - ContextForge 위임 경로 변경 시 `tests/test_context_forge_contracts.py`, `tests/test_context_forge_reranking.py`, `tests/test_context_forge_structured_retrieval.py`를 실행합니다.
 - README pair와 `CHANGELOG.md`를 함께 유지합니다.

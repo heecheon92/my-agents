@@ -1,6 +1,6 @@
 # Implementation tracking
 
-Last updated: 2026-08-17
+Last updated: 2026-08-24
 Status owner: repo-tracked source of truth for cross-machine agent handoff
 
 This file exists because `.omx/` is local runtime state and is not shared across machines. When working with an agent on any machine, start here before re-discovering project status from the codebase.
@@ -66,6 +66,8 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
 - Uses LangGraph `StateGraph` with explicit classification and response nodes.
 - Classification is deterministic.
 - Product graph now runs a source-selection gate before private KB retrieval; OpenAI mode can use a thin multilingual LLM decision, while deterministic mode keeps an offline fallback and explicit no-retrieval result for bypassed turns.
+- An opt-in explicit-comprehensive-document branch now resolves one authorized personal/group document, prepares bounded coverage, recalls memory, and answers through a dedicated `respond_full_document` node. Normal questions remain on focused chunk retrieval.
+- Graph version `general-assistant-checkpoint-v2` keeps only compact IDs, retrieval snapshots, offsets, and coverage metadata in persisted execution state; raw full-document text is re-read inside the response node and is not checkpointed.
 - OpenAI-backed response generation uses `langchain-openai` / `ChatOpenAI` by default.
 - Deterministic mode remains available for tests and offline smoke checks.
 - Hosted web search is exposed at the OpenAI response-provider boundary for both `general_assistant` and `research_helper`; the provider prompt, not app-side language-specific keyword hints, decides when the model should call it.
@@ -120,6 +122,7 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
 - Persisted activity events use a closed, `event_type`-discriminated OpenAPI union;
   every event payload and nested `agent_trace.evidence` object passes through a typed
   allowlist before leaving the API.
+- Completed comprehensive-document runs expose refresh-safe `document_coverage` in run responses/details and a redacted `full_document_read` persisted/SSE event with document metadata, half-open character offsets, total length, and latency. Neither contract includes raw document text or the internal continuation cursor.
 - Failure path records a failed run with redacted event metadata.
 - Opt-in document-selection HITL exposes a required `schema_version=1` semantic interaction contract, persists refresh-safe waiting state in Product DB, and resumes only through a type-specific answer. Frontend waiting-state support remains a hard gate before enabling the checkpointer in a shared environment.
 - Document-selection options are a narrower user-control boundary than retrieval: personal/group documents may be chosen, while ambient system knowledge remains automatically injected, hidden from the option list, and invalid as a submitted resume selection.
@@ -133,6 +136,8 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
 - Upload path for PDF, Markdown, plain text, `.xlsx`, `.pptx`, and DOCX-only `.docx` with safe metadata persistence; PDFs keep page provenance, Office uploads keep Markdown parse artifacts where available, native-text PDF happy paths skip duplicate pypdf pre-classification after PyMuPDF passes the existing quality gate, and hosted ingestion can run through an external worker so heavy parser/embedding/indexing work no longer has to share the web request process.
 - Deterministic chunks, provider-backed JSON embeddings (deterministic by default, OpenAI opt-in), entity mentions, and co-occurrence relationships.
 - RAG Agent now owns the assistant-facing conversation-run retrieval boundary through `my_agents/agents/rag_agent/retrieval.py`; `general_assistant` invokes it inside the graph before memory/answer nodes only when the source-selection gate chooses private knowledge-base retrieval.
+- The same RAG Agent runtime now owns typed `resolve_full_document_target` and `read_full_document_range` seams for explicit whole-document tasks. Resolution and every read reuse the permission-first user-selectable-document filter, including owner/group/explicit-document grants while excluding ambient system KB documents.
+- With `MY_AGENTS_FULL_DOCUMENT_RETRIEVAL_ENABLED=true`, normalized extracted text at or below 24,000 characters is one complete read. Larger documents currently contribute only characters `[0, 12000)` and receive a localized partial-review disclosure; overlapping authorized chunks remain the citation source.
 - ContextForge remains the delegated permission-first retrieval engine behind that boundary, with a thin LangGraph RetrievalGraph wrapper over deterministic query planning, source-boundary handoff, independent vector and request-local `BM25Okapi` lexical rankings, `chunk_id`-keyed RRF fusion (`k=60`), deterministic default or optional lazily loaded cross-encoder reranking, high-recall context packing, redacted retrieval evidence, and opt-in Rich debug traces for role handoff messages.
 - Retrieval candidate gathering includes authorized document title/source-filename metadata matching, so filename-only user references can find the matching uploaded document even when the filename is absent from chunk content.
 - Ingestion stores structured knowledge entities for API endpoints, config keys, shell commands, error codes, and database table references with document/chunk/run/page/offset provenance.
@@ -170,6 +175,13 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
 - Reusable LangGraph practice conventions, pattern docs, and runnable simulated-agent implementations now live in `~/Git/Playground/langgraph-playground`.
 
 ## Latest verification evidence
+
+Full-document retrieval vertical-slice implementation on 2026-08-24:
+
+- Added deterministic Korean/English explicit-intent fixtures, complete/partial range behavior, permission and exact-target replay checks, ambiguous document-selection resume, refresh-safe coverage, SSE disclosure, citation-range checks, and a checkpoint raw-body regression in `tests/test_full_document_retrieval.py`.
+- Added settings validation coverage for the disabled-by-default feature and the `range <= complete-read limit` invariant in `tests/test_settings.py`.
+- `uv run pytest -q tests/test_full_document_retrieval.py tests/test_settings.py` passed: **56 passed, 5 warnings** in 1.88s.
+- The final aggregate offline suite passed: **519 passed, 2 skipped, 11 warnings** in 57.49s. Ruff lint, Ruff format-check, and `git diff --check` also passed on the final tree.
 
 Guest policy and email delivery verification on 2026-08-09:
 
@@ -386,8 +398,11 @@ Earlier hosted smoke status on 2026-06-03:
 - `docs/product-chat-service/en/11-v1-phase-0-contract-freeze-evidence-map.md` freezes the Phase 0 strict V1 DoD evidence matrix, backend OpenAPI inventory, frontend gate expectations, and known backend contract gaps by phase.
 - `docs/product-chat-service/en/12-public-demo-deployment-readiness.md` defines hosted preview/public smoke gates, provider/dependency decision records, privacy boundaries, rollback paths, and redacted evidence bundle schema.
 - Current production graph is still one assistant/controller path, now with a graph-owned RAG Agent retrieval node before memory/answer synthesis.
+- Full-document retrieval is an opt-in, explicit-intent-only first slice. Documents up to the configured 24,000-character threshold can be covered completely; larger documents stop after the first configured 12,000-character range and must disclose partial coverage. Automatic continuation, multi-range summary accumulation, and final whole-document synthesis are not implemented yet.
+- The current safety limits are character based, not provider-tokenizer based. Final answer-context token usage, provider-reported usage, and quality/latency comparisons against focused chunk retrieval remain open work.
+- The graph version is now `general-assistant-checkpoint-v2`. Waiting runs created under an older graph version cannot be resumed after this deployment; drain or cancel them before rollout, or allow the existing version-mismatch path to fail them safely with `run_graph_version_incompatible`.
 - Most route labels are capability metadata and response paths, not separate production specialist agents.
-- Tool workflows beyond hosted web search are not implemented as production graph capabilities yet.
+- General model-driven tool loops beyond hosted web search are not implemented as production graph capabilities yet. Full-document retrieval is the narrow exception: an application-executed typed RAG path, not a model-selected hosted tool loop.
 - Memory runtime migration is in progress. Recall orchestration now runs inside `general_assistant` through a graph-owned `retrieve_memory` node and `MemoryRuntime` adapter, but the active adapter still wraps SQLAlchemy/Product DB memory service. Target migration remains LangGraph Store-backed active memory search plus a separate `memory_graph`, with Product DB retained for governance/audit.
 - Document-selection HITL and run-scoped PostgresSaver are implemented behind `MY_AGENTS_CHECKPOINTER_ENABLED`; PostgresStore semantic recall remains a Product DB-governed projection behind its own flag. Both require explicit setup/reconciliation before activation, and neither replaces Product DB transcripts or audit records.
 
@@ -541,6 +556,7 @@ limits.
 
 | Date | Milestone | Evidence |
 | --- | --- | --- |
+| 2026-08-24 | Completed the first opt-in full-document retrieval vertical slice: explicit whole-document intent, one authorized user-selectable target, complete small-document reads, honest first-range coverage for large documents, typed coverage/event contracts, exact-target replay, and checkpoint-safe response composition. Automatic multi-range synthesis and token-aware budgeting remain roadmap work. | `my_agents/agents/general_assistant/graph.py`; `my_agents/agents/general_assistant/rag_retrieval.py`; `my_agents/agents/rag_agent/retrieval.py`; `my_agents/knowledge/retrieval.py`; conversation schemas/events/serializers; `tests/test_full_document_retrieval.py`; settings/env/docs. |
 | 2026-08-09 | Added an unauthenticated runtime guest-policy contract, removed stale numeric limits from guest email copy, and raised repo defaults to 3 conversations, 20 prompts, and 5 document uploads. Provider delivery passed with a Resend test recipient, while hosted automatic approval remained inactive pending its deployment flag. | `my_agents/api/auth.py`; `my_agents/auth/schemas.py`; `my_agents/settings.py`; auth email templates; `tests/test_guest_access_api.py`; `tests/test_auth_email.py`; README pair; auth/deployment docs. |
 | 2026-08-09 | Added stable additive API error codes, froze the persisted agent-event vocabulary and display-safe payload/trace schemas, and proved external-worker ingestion progress is visible through independent polling sessions. | `my_agents/api/errors.py`; `my_agents/conversations/schemas.py`; `my_agents/api/conversations/run_events.py`; `tests/test_api_error_contract.py`; `tests/test_agent_event_contract.py`; `tests/test_knowledge_ingestion.py`; README pair; observability/ingestion docs. |
 | 2026-07-24 | Made permission-filtered hybrid retrieval the ContextForge default with independent vector and request-local BM25Okapi rankings fused by RRF over stable `chunk_id`, without a database migration. | `pyproject.toml`; `uv.lock`; `my_agents/knowledge/retrieval.py`; `my_agents/agents/context_forge/candidates.py`; `my_agents/agents/context_forge/fusion.py`; `tests/test_context_forge_reranking.py`; `tests/test_permission_aware_rag.py`; README and ContextForge README pairs. |

@@ -3,6 +3,13 @@
 This changelog records why the production-surface `general_assistant` agent folder needed
 meaningful behavior, graph-state, provider, or documentation changes.
 
+## 2026-08-24 — Add opt-in comprehensive-document graph path
+
+- **Why:** Top-k semantic and lexical retrieval can omit distant sections when a user explicitly asks for complete-file review, requirement extraction, or cross-section consistency.
+- **Behavior/contract impact:** The graph is now `general-assistant-checkpoint-v2` and detects explicit Korean/English comprehensive-document tasks. When enabled, it resolves one currently authorized user-controllable document, reuses typed document selection for ambiguity, prepares compact coverage/citation state, recalls memory, and re-reads the same authorized range inside `respond_full_document` without checkpointing raw text. Up to 24,000 characters is complete coverage; larger documents currently answer from the first 12,000-character range with a mandatory localized partial-review disclosure. System documents cannot be selected, and replay preserves the original document instead of substituting another source.
+- **API/operations impact:** Completed run responses/details expose nullable `document_coverage`, while redacted `full_document_read` events expose metadata, offsets, total characters, and latency. The feature is disabled by default. Older waiting runs are graph-version incompatible and should be drained or cancelled before rollout.
+- **Verification:** `tests/test_full_document_retrieval.py` and `tests/test_settings.py` cover intent boundaries, complete/partial reads, permission and selection behavior, refresh/SSE/replay contracts, citation ranges, checkpoint raw-body exclusion, and settings validation. Automatic multi-range synthesis and token-aware budgeting remain follow-up work.
+
 ## 2026-08-17 — Add opt-in run persistence, document-selection HITL, and Store recall
 
 - **Why:** The stable RAG/answer pipeline now needs genuine user interaction that can pause and resume without turning checkpoint state into a second conversation history.

@@ -9,6 +9,10 @@ needs before it can continue. The first implemented interaction is durable docum
 source selection. Future interactions must extend this contract instead of adding
 one-off response fields, SSE event shapes, or frontend run-loop branches.
 
+The same `document_selection` type serves both ordinary ambiguous document questions and
+explicit comprehensive-document requests. Whole-document retrieval does not introduce a
+new interaction type or expose its internal continuation cursor to the frontend.
+
 The contract is deliberately protocol-neutral. The backend describes **what input is
 required** and the frontend decides **how to render and collect it**. It does not add
 AG-UI or A2UI as a dependency.
@@ -78,6 +82,13 @@ ambiguous document reference has more than one user-selectable document in the c
 scope. One selectable document is resolved automatically, even when ambient system
 documents also exist. A client-selected KB subset narrows the eligible document options.
 
+For an explicit comprehensive-document request, “ambiguous” also includes a request that
+names no unique title/source filename while several eligible documents exist. After resume,
+the graph returns to full-document target resolution, revalidates that the selected
+document is still user-controllable and authorized, and only then reads its bounded text.
+System KBs/documents are excluded from both automatic target resolution and interaction
+options; a forged system-document answer remains invalid.
+
 ```mermaid
 sequenceDiagram
     participant UI as Frontend
@@ -113,6 +124,11 @@ copy of state. Options are authorization-filtered when listed and the selected d
 is authorized again when resumed. The option boundary is narrower than retrieval: it
 contains only user-controllable personal/group documents, while ambient system knowledge
 continues to support the answer automatically and without visible provenance.
+
+`document_coverage` and `full_document_read` are result/audit contracts, not pending
+interactions. They disclose complete/partial character coverage after a run completes and
+must not be rendered as another question for the user. Large-document continuation is an
+internal future workflow, not a V1 resume-answer field.
 
 ## Versioning and compatibility
 
@@ -170,6 +186,10 @@ Do not enable shared-environment checkpointer interactions until all of these ar
 3. Memory-store reconciliation reports zero drift when the store flag is enabled.
 4. The frontend version with waiting-state parsing, refresh recovery, source choice,
    resume routes, and held-queue behavior is deployed.
+
+Keep `MY_AGENTS_FULL_DOCUMENT_RETRIEVAL_ENABLED=false` until this interaction rollout is
+available wherever a comprehensive request may need document selection. Single-target
+automatic resolution does not relax the same authorization and system-KB exclusion rules.
 
 The interaction layer does not add a new database migration. `schema_version` is stored in
 the existing public interaction JSON.

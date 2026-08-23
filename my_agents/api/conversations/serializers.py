@@ -25,6 +25,7 @@ from my_agents.conversations.schemas import (
     ConversationResponse,
     ConversationRunResponse,
     ConversationRunWarning,
+    DocumentCoverageResponse,
     MessageResponse,
 )
 from my_agents.document_workspace.schemas import (
@@ -160,6 +161,7 @@ def run_detail_response(db: Session, run: AgentRunModel) -> ConversationRunRespo
         document_scope=run.document_scope or "unknown",
         **source_payload,
         citations=[citation_response(db, citation) for citation in citations],
+        document_coverage=document_coverage_from_events(events),
         clarification=_run_clarification_request(run),
         agent_trace=agent_trace_steps_from_event_payloads(
             json.loads(event.payload_json) for event in events
@@ -184,6 +186,7 @@ def completed_run_response(
     agent_trace: list[AgentTraceStep] | None = None,
     attachments: list[ConversationAttachmentResponse] | None = None,
     artifacts: list[ConversationArtifactResponse] | None = None,
+    document_coverage: DocumentCoverageResponse | None = None,
 ) -> ConversationRunResponse:
     visible_pairs = user_visible_citation_pairs(
         citations, retrieved_chunks, selection_context=selection_context
@@ -229,9 +232,33 @@ def completed_run_response(
             )
             for citation, item in visible_pairs
         ],
+        document_coverage=document_coverage,
         attachments=attachments or [],
         artifacts=artifacts or [],
     )
+
+
+def document_coverage_from_events(
+    events: list[AgentEventModel],
+) -> DocumentCoverageResponse | None:
+    """Recover the latest safe coverage disclosure from persisted run events."""
+    for event in reversed(events):
+        if event.event_type != "full_document_read":
+            continue
+        try:
+            payload = json.loads(event.payload_json)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(payload, dict):
+            return None
+        allowed = DocumentCoverageResponse.model_fields.keys()
+        try:
+            return DocumentCoverageResponse.model_validate(
+                {key: value for key, value in payload.items() if key in allowed}
+            )
+        except ValueError:
+            return None
+    return None
 
 
 def user_visible_citation_pairs(

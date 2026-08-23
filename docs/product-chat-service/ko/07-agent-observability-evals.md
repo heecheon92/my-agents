@@ -6,6 +6,22 @@
 
 이 문서는 `product-chat-service/07-agent-observability-evals.md`의 한국어 문서 트랙 항목입니다. 현재는 핵심 목적과 영어 원문 위치를 안내하는 요약본입니다.
 
+Persisted event vocabulary에는 `run_started`, `user_message_stored`,
+`retrieval_completed`, `full_document_read`, `graph_invoked`, attachment/workspace/artifact
+event, `answer_composed`, `run_interrupted`, `run_resumed`, cancel event, `run_failed`가
+포함됩니다. `answer_delta`, `run_completed`, `run_error`는 SSE 전용이며 persisted event
+enum이 아닙니다.
+
+`full_document_read`는 opt-in 전체 문서 검토의 redacted audit event입니다. Payload에는
+`complete|partial` mode, document ID/title/source filename, 읽은 character offset,
+`total_chars`, latency만 들어가며 raw body나 내부 continuation cursor는 포함하지 않습니다.
+같은 coverage metadata는 run detail 새로고침 뒤에도 복원됩니다.
+
+전체 문서 body는 LangGraph checkpoint/state나 application event/log payload에 복사하지
+않고 response node 안에서 권한을 다시 확인한 뒤 일시적으로 읽습니다. Body를 받는 provider
+call 주위의 LangSmith tracing도 끕니다. 기존 opt-in DEBUG retrieval log는 이전처럼 제한된
+240-character citation chunk preview를 표시할 수 있지만 full-body override는 받지 않습니다.
+
 ## 문서 상태
 
 - 영어 원문은 `docs/product-chat-service/en/07-agent-observability-evals.md`에 있습니다.

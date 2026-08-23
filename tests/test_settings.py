@@ -148,6 +148,9 @@ def test_embedding_settings_default_to_deterministic(monkeypatch: pytest.MonkeyP
     assert settings.document_upload_concurrency == 3
     assert settings.active_run_stale_after_seconds == 120
     assert settings.metrics_enabled is False
+    assert settings.full_document_retrieval_enabled is False
+    assert settings.full_document_max_chars == 24_000
+    assert settings.full_document_range_chars == 12_000
 
 
 def test_ingestion_worker_settings_accept_external_worker_mode(
@@ -316,6 +319,17 @@ def test_langgraph_persistence_requires_postgresql(monkeypatch: pytest.MonkeyPat
     monkeypatch.setenv("MY_AGENTS_DATABASE_URL", "sqlite+pysqlite:///:memory:")
 
     with pytest.raises(ValueError, match="must use PostgreSQL"):
+        Settings(_env_file=None)
+
+
+def test_full_document_range_cannot_exceed_complete_read_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
+    monkeypatch.setenv("MY_AGENTS_FULL_DOCUMENT_MAX_CHARS", "8000")
+    monkeypatch.setenv("MY_AGENTS_FULL_DOCUMENT_RANGE_CHARS", "9000")
+
+    with pytest.raises(ValueError, match="RANGE_CHARS must be less than or equal"):
         Settings(_env_file=None)
 
 

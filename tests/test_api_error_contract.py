@@ -67,6 +67,7 @@ def test_openapi_documents_error_and_discriminated_event_contracts() -> None:
         "run_started",
         "user_message_stored",
         "retrieval_completed",
+        "full_document_read",
         "graph_invoked",
         "attachments_ready",
         "document_workspace_started",

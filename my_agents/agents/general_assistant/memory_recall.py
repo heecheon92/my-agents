@@ -26,6 +26,8 @@ class AssistantRuntimeContext(TypedDict, total=False):
     document_workspace_runtime: object
     reasoning_mode: ReasoningMode
     reasoning_effort: ReasoningEffort
+    full_document_max_chars: int
+    full_document_range_chars: int
 
 
 def retrieve_memory_context(

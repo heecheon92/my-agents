@@ -17,7 +17,13 @@ from sqlalchemy.orm import Session
 from my_agents.agents.context_forge import invoke_context_forge_graph
 from my_agents.agents.context_forge.contracts import ContextForgeRequest, RetrievalEvidence
 from my_agents.knowledge.auth import KnowledgeBaseSelectionContext
-from my_agents.knowledge.retrieval import AuthorizedDocumentOption, RetrievalService, RetrievedChunk
+from my_agents.knowledge.retrieval import (
+    AuthorizedDocumentOption,
+    FullDocumentReadResult,
+    FullDocumentTargetResolution,
+    RetrievalService,
+    RetrievedChunk,
+)
 from my_agents.knowledge.routing import (
     AnswerMode,
     RetrievalRoutingDecision,
@@ -69,6 +75,30 @@ class RagAgentRuntime(Protocol):
         """Return authorized document options for one interaction page."""
         ...
 
+    def resolve_full_document_target(
+        self,
+        *,
+        user_id: str,
+        query: str,
+        selection_context: KnowledgeBaseSelectionContext,
+        selected_document_id: str | None = None,
+    ) -> FullDocumentTargetResolution:
+        """Resolve one authorized user-controllable document for comprehensive reading."""
+        ...
+
+    def read_full_document_range(
+        self,
+        *,
+        user_id: str,
+        document_id: str,
+        selection_context: KnowledgeBaseSelectionContext,
+        cursor: str | None = None,
+        full_document_max_chars: int = 24_000,
+        range_chars: int = 12_000,
+    ) -> FullDocumentReadResult | None:
+        """Return one authorized extracted-text range and its chunk provenance."""
+        ...
+
 
 @dataclass(frozen=True)
 class SqlAlchemyRagAgentRuntime:
@@ -109,6 +139,40 @@ class SqlAlchemyRagAgentRuntime:
             knowledge_base_ids=selection_context.retrieval_knowledge_base_ids,
             limit=limit,
             offset=offset,
+        )
+
+    def resolve_full_document_target(
+        self,
+        *,
+        user_id: str,
+        query: str,
+        selection_context: KnowledgeBaseSelectionContext,
+        selected_document_id: str | None = None,
+    ) -> FullDocumentTargetResolution:
+        return RetrievalService(self.db).resolve_full_document_target(
+            user_id=user_id,
+            query=query,
+            knowledge_base_ids=selection_context.retrieval_knowledge_base_ids,
+            selected_document_id=selected_document_id,
+        )
+
+    def read_full_document_range(
+        self,
+        *,
+        user_id: str,
+        document_id: str,
+        selection_context: KnowledgeBaseSelectionContext,
+        cursor: str | None = None,
+        full_document_max_chars: int = 24_000,
+        range_chars: int = 12_000,
+    ) -> FullDocumentReadResult | None:
+        return RetrievalService(self.db).read_full_document_range(
+            user_id=user_id,
+            document_id=document_id,
+            knowledge_base_ids=selection_context.retrieval_knowledge_base_ids,
+            cursor=cursor,
+            full_document_max_chars=full_document_max_chars,
+            range_chars=range_chars,
         )
 
 

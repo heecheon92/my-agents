@@ -11,6 +11,8 @@ from my_agents.api.assistant import GraphRunner
 from my_agents.api.conversations.graph_invocation import invoke_graph_runner, stream_graph_runner
 
 GraphStreamItemKind = Literal["delta", "update", "result"]
+# Full-document replies are intentionally buffered so the deterministic partial-coverage
+# disclosure is included before any user-visible answer delta is emitted.
 _ASSISTANT_RESPONSE_STREAM_NODES = frozenset({"respond_general", "respond_research"})
 
 
@@ -158,9 +160,16 @@ def result_fields_from_update(update: dict[str, Any]) -> dict[str, Any]:
             "document_workspace_expires_at",
             "document_selection_option_count",
             "selected_document_id",
+            "full_document_retrieval_enabled",
+            "full_document_requested",
+            "full_document_target_status",
+            "full_document_next_cursor",
         ):
             if field_name in node_update:
                 fields[field_name] = node_update[field_name]
+        document_coverage = node_update.get("document_coverage")
+        if isinstance(document_coverage, dict):
+            fields["document_coverage"] = document_coverage
     return fields
 
 

@@ -9,6 +9,10 @@ architecture 계약입니다. 첫 구현은 새로고침 뒤에도 복구되는 
 selection입니다. 앞으로 다른 interaction을 추가할 때도 일회성 response field, SSE
 event shape, frontend run-loop 분기를 직접 늘리지 말고 이 계약을 확장해야 합니다.
 
+같은 `document_selection` type이 일반적인 ambiguous document 질문과 명시적인 문서 전체
+검토 요청을 모두 처리합니다. Whole-document retrieval을 위해 새 interaction type을
+추가하거나 internal continuation cursor를 frontend에 노출하지 않습니다.
+
 계약은 특정 protocol에 종속되지 않습니다. Backend는 **어떤 입력이 필요한지**를
 설명하고 frontend는 **어떻게 보여 주고 입력받을지**를 결정합니다. 지금은 AG-UI나
 A2UI dependency를 추가하지 않습니다.
@@ -78,6 +82,12 @@ user-selectable document가 둘 이상이고 document reference가 모호할 때
 Ambient system document가 있더라도 selectable document가 하나면 자동으로 결정합니다.
 Client가 KB subset을 명시적으로 골랐다면 option도 그 범위로 제한합니다.
 
+명시적인 문서 전체 검토 요청에서 title/source filename 하나로 target을 결정할 수 없고
+eligible document가 여러 개여도 같은 interaction을 사용합니다. Resume 뒤 graph는
+full-document target resolution으로 돌아가 선택한 document가 지금도 user-controllable하고
+authorized인지 다시 검사한 후 bounded text를 읽습니다. System KB/document는 자동 target
+resolution과 option 양쪽에서 제외하고 forged system-document answer도 거절합니다.
+
 ```mermaid
 sequenceDiagram
     participant UI as Frontend
@@ -112,6 +122,11 @@ stream backpressure처럼 재시도하지 말고 interaction이 끝날 때까지
 때 권한을 거르고, resume 때 선택한 document의 현재 권한을 다시 검사합니다. Option
 boundary는 retrieval보다 좁아서 사용자가 통제하는 personal/group document만 포함합니다.
 Ambient system knowledge는 visible provenance나 선택 control 없이 계속 자동 주입됩니다.
+
+`document_coverage`와 `full_document_read`는 완료 결과/audit 계약이지 pending interaction이
+아닙니다. 완료 후 `complete|partial` character coverage를 알릴 뿐 사용자에게 다시 질문하는
+UI로 처리하면 안 됩니다. 큰 문서 continuation은 future internal workflow이며 V1 resume
+answer field가 아닙니다.
 
 ## Version과 호환성
 
@@ -168,6 +183,10 @@ accessibility 규칙을 그대로 지켜야 합니다.
 3. Store flag를 켤 때 memory-store reconciliation zero drift 확인
 4. Waiting-state parsing, refresh recovery, source choice, resume route, held-queue behavior를
    포함한 frontend 배포
+
+Comprehensive request에서 document selection이 필요할 수 있는 모든 환경에 이 interaction
+rollout이 준비되기 전에는 `MY_AGENTS_FULL_DOCUMENT_RETRIEVAL_ENABLED=false`를 유지합니다.
+Single-target 자동 resolution도 authorization과 system-KB exclusion 규칙을 완화하지 않습니다.
 
 Interaction layer 자체는 새 DB migration을 추가하지 않습니다. `schema_version`은 기존
 public interaction JSON에 저장합니다.

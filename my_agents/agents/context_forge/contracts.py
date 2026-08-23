@@ -12,7 +12,14 @@ from my_agents.knowledge.auth import KnowledgeBaseSelectionContext
 from my_agents.knowledge.retrieval import RetrievedChunk
 from my_agents.knowledge.routing import AnswerMode, RetrievalRoutingDecision
 
-RetrievalIntent = Literal["semantic_qa", "overview", "enumeration", "comparison", "source_lookup"]
+RetrievalIntent = Literal[
+    "semantic_qa",
+    "overview",
+    "comprehensive_document",
+    "enumeration",
+    "comparison",
+    "source_lookup",
+]
 QualityMode = Literal["balanced", "high_recall"]
 
 

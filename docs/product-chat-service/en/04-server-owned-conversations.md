@@ -1,6 +1,6 @@
 ---
 created: 2026-05-17
-updated: 2026-06-07
+updated: 2026-08-24
 status: active
 topics:
   - conversations
@@ -54,6 +54,10 @@ sequenceDiagram
 - `/conversations/{id}/runs` applies retrieval routing, then invokes the existing LangGraph assistant with server-owned history.
 - `/conversations/{id}/runs` also supports `GET` so a frontend can list completed and failed runs.
 - Runs now include retrieval route, answer mode, permission-aware retrieval context IDs, citations, and redacted events.
+- When the opt-in full-document path handles an explicit comprehensive request, completed
+  runs also expose refresh-safe `document_coverage` metadata. The normalized document body
+  is used only while composing the answer and is not copied into Product DB run events or
+  LangGraph checkpoints.
 - Failed graph invocations persist a failed run and redacted `run_failed` event before returning a client-safe error.
 - Group membership does not grant transcript access; group knowledge is selected separately through `knowledge_base_selection`.
 - Outsiders receive safe denial.
@@ -68,7 +72,10 @@ Frontend work should use conversation/run endpoints for product chat.
 
 - streaming transport exists for run progress and answer deltas;
 - no run failure table details beyond the basic status field;
-- no LangGraph checkpointer yet;
+- the run-scoped LangGraph checkpointer is opt-in and is used only for bounded
+  `waiting_for_input` / resume execution state;
+- a large full-document request reads only its first configured character range; automatic
+  multi-range traversal and synthesis are not implemented yet;
 - no background job queue for long-running ingestion or agent work yet.
 
 Retrieval routing, citations, streaming, and redacted events now exist as later learning notes.
@@ -86,8 +93,14 @@ Retrieval routing, citations, streaming, and redacted events now exist as later 
 - outsiders cannot read conversation message transcripts;
 - legacy `/assistant/chat` does not return product run fields.
 
+`tests/test_full_document_retrieval.py` additionally verifies that full-document coverage
+survives run-detail refresh and that replay keeps the original target document. If that
+document is deleted or no longer authorized, replay returns an unavailable-source warning
+and does not silently substitute another document.
+
 ## Revision history
 
+- 2026-08-24: Documented refresh-safe full-document coverage, checkpoint separation, and replay target fidelity.
 - 2026-06-07: Removed deprecated group-conversation scope; conversations are owner-private and group knowledge is selected through the unified source-selection contract.
 - 2026-05-21: Updated run flow for retrieval routing, answer modes, and streaming-era metadata.
 - 2026-05-17: Added run history and redacted failed-run persistence.

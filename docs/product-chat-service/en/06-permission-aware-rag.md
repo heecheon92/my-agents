@@ -1,6 +1,6 @@
 ---
 created: 2026-05-17
-updated: 2026-06-16
+updated: 2026-08-24
 status: active
 topics:
   - rag
@@ -15,6 +15,7 @@ related_code:
   - my_agents/knowledge/models.py
   - my_agents/conversations/schemas.py
   - tests/test_permission_aware_rag.py
+  - tests/test_full_document_retrieval.py
 ---
 
 # Permission-aware RAG and citation-backed answers
@@ -40,6 +41,13 @@ The current implementation is intentionally deterministic so tests stay offline:
 - conversation runs enter retrieval through the `general_assistant` graph, which invokes the RAG Agent runtime; the RAG Agent delegates internally to the thin ContextForge LangGraph RetrievalGraph and records bounded retry/sufficiency state;
 - citations are stored against the `AgentRunModel` only when retrieved chunks are actually used;
 - the response payload returns routing metadata plus citation IDs, document IDs, chunk IDs, and snippets.
+- an opt-in `comprehensive_document` path handles explicit English or Korean whole-document
+  tasks without changing ordinary semantic/BM25 retrieval;
+- the path resolves exactly one currently authorized user-controllable document, excludes
+  ambient system documents, and reuses the durable `document_selection` interaction when
+  more than one eligible document remains ambiguous;
+- completed responses expose `document_coverage` as `complete` or `partial`, and citations
+  come only from chunks overlapping the covered character range.
 
 ## Request flow
 
@@ -107,12 +115,85 @@ The graph expansion step also stays inside the authorized row set. This means a 
 chunk can never become a citation or model context for an outsider just because it shares
 an entity with an authorized chunk.
 
+## Full-document retrieval path
+
+Full-document retrieval complements ranked chunk search for tasks where coverage matters
+more than finding a few relevant passages. It is disabled by default and activates only
+when the prompt contains both an explicit completeness phrase and a document task, for
+example “review the entire document” or “문서 전체를 빠짐없이 검토해줘.” An ordinary
+“summarize this document” request and a weak chunk-search result do not activate it.
+
+```mermaid
+flowchart TD
+    Intent["Explicit comprehensive-document intent"] --> Gate{"Feature enabled and KB retrieval selected?"}
+    Gate -->|No| Ranked["Normal permission-aware chunk retrieval"]
+    Gate -->|Yes| Resolve["Resolve one authorized user-controllable document"]
+    Resolve -->|Ambiguous| HITL["Existing document_selection interrupt"]
+    HITL --> Resolve
+    Resolve -->|Resolved| Read["Read normalized extracted text + overlapping chunks"]
+    Read -->|At or below max chars| Complete["coverage = complete"]
+    Read -->|Above max chars| Partial["first bounded range; coverage = partial"]
+    Complete --> Answer["Compose answer and persist compact coverage metadata"]
+    Partial --> Notice["Prepend mandatory partial-review notice"]
+    Notice --> Answer
+```
+
+Target resolution uses the resumed `selected_document_id`, the only eligible document,
+or one unique normalized title/source-filename match. If several documents remain, the
+same versioned `document_selection` HITL contract used by ordinary ambiguous retrieval
+pauses and resumes the run. Personal/group ownership, membership, explicit read grants,
+the selected KB scope, and current permission are enforced in `RetrievalService`. Ambient
+system KBs are never eligible targets or interaction options.
+
+The read source is `DocumentModel.content`: the current normalized extracted text, not the
+original upload bytes. Offsets are half-open character ranges `[start_offset, end_offset)`
+in that text. With defaults, documents up to 24,000 characters are supplied completely;
+larger documents supply characters `0..12,000` only. The completed response exposes:
+
+```json
+{
+  "document_coverage": {
+    "mode": "partial",
+    "document_id": "...",
+    "title": "...",
+    "source_filename": null,
+    "start_offset": 0,
+    "end_offset": 12000,
+    "total_chars": 48000
+  }
+}
+```
+
+`MY_AGENTS_FULL_DOCUMENT_MAX_CHARS` and
+`MY_AGENTS_FULL_DOCUMENT_RANGE_CHARS` control those character budgets; the range must not
+exceed the complete-read limit. The internal decimal continuation cursor is intentionally
+not a public API field in this slice.
+
+The graph prepares only compact coverage and chunk IDs, clears `retrieved_context`, and
+then re-reads the authorized range inside `respond_full_document`. The raw body therefore
+does not enter application checkpoints or run events. The full-body override is also
+absent from the application logging path and LangSmith tracing is disabled around this
+provider call. Existing opt-in DEBUG retrieval logging may still show its previously
+documented bounded citation-chunk snippets; it does not receive the full-document body.
+
 ## Current limitations
 
 - Retrieval routing is deterministic; Postgres ranking now uses pgvector SQL vector search after permission filtering, with JSON-backed cosine similarity as the SQLite/test fallback.
 - LLM query planning, full-text fusion, and ANN/vector index tuning are still future work.
 - The reply composition is a thin service-layer scaffold, not a polished answer synthesis prompt.
-- Citations include snippets but not character offsets in the API response yet.
+- Citation objects still do not expose a per-citation character range; `document_coverage`
+  exposes the overall covered range instead.
+- Large documents receive only the first configured range. There is no automatic cursor
+  loop, per-range summary ledger, or final multi-pass whole-document synthesis yet.
+- Budgets are characters in normalized extracted text, not provider-token estimates.
+- Coverage offsets are coordinates in the current extracted-text revision. The service
+  validates overlapping chunk offsets/content and re-reads before composition, but there
+  is no durable document revision/hash contract yet; changed or stale chunk provenance
+  can make the full-document path return insufficient evidence.
+- At most 100 overlapping chunks may back one read. A range that exceeds that provenance
+  bound is treated as unavailable instead of producing an uncited comprehensive answer.
+- This path is explicit-intent-only and does not automatically retry a semantically weak
+  ranked retrieval result with full-document access.
 - Streaming exists, but frontend display of retrieval route/answer mode still belongs to the separate frontend repository.
 - The legacy `/assistant/chat` endpoint still exists for smoke checks and does not own product KB access.
 
@@ -165,8 +246,14 @@ flowchart LR
 - optional retrieval can fall back to `general_knowledge` when no relevant authorized chunks exist;
 - the graph receives only retrieved chunk IDs/context that passed service-layer authorization, not raw unauthorized document text.
 
+`tests/test_full_document_retrieval.py` verifies explicit-intent gating, owner and explicit
+permission access, half-open cursor ranges, complete and partial coverage, overlapping
+citations, ambiguous selection/resume, system-safe checkpoint/event persistence, buffered
+partial-stream disclosure, refresh recovery, and replay without source substitution.
+
 ## Revision history
 
+- 2026-08-24: Added the opt-in comprehensive-document path, coverage contract, privacy boundary, and bounded large-document limitations.
 - 2026-06-17: Added future retrieval quality/speed profile guidance for balancing RAG accuracy with product UX latency.
 - 2026-06-16: Promoted `rag_agent` to the assistant-facing retrieval boundary invoked from `general_assistant`, while ContextForge remains the delegated permission-first retrieval graph.
 - 2026-06-10: Added the thin ContextForge RetrievalGraph wrapper as the active retrieval implementation seam while keeping deeper tool-using graph orchestration future-gated.

@@ -7,7 +7,11 @@ from collections.abc import Sequence
 from langchain_core.messages import BaseMessage
 
 from my_agents.agents.context_forge.contracts import CandidateLimits, RetrievalPlan
-from my_agents.knowledge.routing import RetrievalRoutingDecision, route_retrieval
+from my_agents.knowledge.routing import (
+    RetrievalRoutingDecision,
+    is_comprehensive_document_request,
+    route_retrieval,
+)
 
 _ENUMERATION_HINTS = (
     "list",
@@ -80,6 +84,8 @@ class QueryCartographer:
 
 
 def _intent(normalized: str, *, structured_entity_types: tuple[str, ...]) -> str:
+    if is_comprehensive_document_request(normalized):
+        return "comprehensive_document"
     if structured_entity_types and _has_any(normalized, _ENUMERATION_HINTS):
         return "enumeration"
     if _has_any(normalized, _OVERVIEW_HINTS):

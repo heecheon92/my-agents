@@ -8,6 +8,21 @@
 
 현재 영어 원문은 일반 대화 실행의 `POST /conversations/{conversation_id}/runs/stream`뿐 아니라 답변 재생성용 `POST /conversations/{conversation_id}/messages/{message_id}/replay/stream`도 다룹니다. 재생성 스트림은 진행 이벤트와 `answer_delta`를 제공하고, 새 답변이 성공적으로 완료된 뒤에만 기존 답변 이후 transcript를 정리합니다. 실패 시 기존 답변은 보존됩니다.
 
+Opt-in 전체 문서 검토에서는 provider token을 즉시 노출하지 않고 최종 답변을 먼저
+buffering합니다. `partial`이면 “전체 문서 검토가 아니며 0-N자만 읽었다”는 한국어/영어
+안내를 backend가 먼저 붙인 다음 `answer_delta`로 보냅니다. 따라서 제한 안내가 답변
+뒤늦게 나타나지 않습니다. 합친 delta는 `run_completed.reply`와 같습니다.
+
+이 경로에서는 마지막 `answer_delta` 뒤, `answer_composed` 앞에 선택적으로
+`full_document_read` event가 나타납니다. Event와
+`run_completed.document_coverage`는 `complete|partial`, document metadata,
+start/end offset, total chars를 공유하고 event에는 latency가 추가됩니다. Raw document
+body와 내부 next cursor는 공개하지 않습니다.
+
+전체 문서 답변을 replay할 때는 원래 event의 document를 그대로 preselect하고 현재
+권한을 다시 검사합니다. 삭제되었거나 권한이 없으면 다른 document로 교체하지 않고
+unavailable-source warning과 빈 coverage/citation으로 종료합니다.
+
 2026-06-09 기준으로 중요한 알려진 한계도 추가되었습니다. 현재 streamed chat generation은 client-held HTTP/SSE request에 묶여 있어서, 사용자가 탭을 닫거나 다른 화면으로 이동해 stream이 끊기면 assistant message가 최종 저장되기 전에 run이 cancelled/failed로 terminalize될 수 있습니다. 이 경우 사용자가 conversation에 다시 들어와도 생성 중이던 답변이 보이지 않을 수 있습니다. 가까운 시일 내에 server-owned background run execution과 resumable/listener-style SSE 구조로 보완해야 합니다.
 
 ## 문서 상태

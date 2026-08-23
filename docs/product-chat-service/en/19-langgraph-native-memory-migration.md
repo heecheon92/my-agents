@@ -2,7 +2,9 @@
 
 Status: Store/checkpointer runtime implemented behind opt-in flags; memory graph remains planned
 
-Date: 2026-06-10
+Created: 2026-06-10
+
+Updated: 2026-08-24
 
 This note documents the memory architecture decision after reviewing the current
 `my-agents` implementation against the LangChain `memory-template` pattern.
@@ -221,6 +223,19 @@ document selection, and resume the same run after revalidating current permissio
 The public waiting/resume payload follows the versioned semantic contract in
 [Agent-to-frontend interaction contract](./27-agent-frontend-interaction-contract.md).
 
+The opt-in comprehensive-document path extends this same run-scoped boundary without
+turning checkpoints into a document cache. `general-assistant-checkpoint-v2` checkpoints
+the resolved `selected_document_id`, compact `document_coverage`, citation/chunk IDs, and
+the private internal next cursor. It never checkpoints the normalized document body. The
+response node revalidates authorization and re-reads the bounded range at composition time,
+then disables LangSmith tracing around the provider call that receives the body.
+
+If target resolution is ambiguous, this path reuses the existing versioned
+`document_selection` interrupt rather than creating a full-document-specific interaction.
+Resume returns to target resolution, rechecks current authorization, and continues the
+same run. Terminal execution still deletes the run-scoped checkpoint; completed Product DB
+events retain only refresh-safe coverage metadata.
+
 ## Non-goals
 
 - Do not turn LangGraph checkpointer into the conversation-history store.
@@ -230,6 +245,8 @@ The public waiting/resume payload follows the versioned semantic contract in
   product decision changes the consent model.
 - Do not remove Product DB run/citation/event/source-snapshot records just because
   Store/checkpointer is introduced.
+- Do not store full normalized document text in checkpoint state merely to support
+  comprehensive answers; re-read authorized bounded content at the response boundary.
 
 ## Documentation conflicts resolved by this note
 

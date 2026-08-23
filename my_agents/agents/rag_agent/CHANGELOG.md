@@ -1,5 +1,12 @@
 # RAG Agent changelog
 
+## 2026-08-24 — Add typed full-document target and range seams
+
+- Why: focused hybrid retrieval can under-cover distant sections when the user explicitly asks for complete-document review.
+- Behavior/contract impact: `RagAgentRuntime`/`SqlAlchemyRagAgentRuntime` now resolve one authorized user-selectable document and return bounded normalized extracted-text ranges with half-open offsets, an internal decimal cursor, complete/partial state, and overlapping citation chunks. The default full-read threshold is 24,000 characters; larger files currently expose only the first 12,000-character range. Ambient system and hidden staging documents are excluded, and every read revalidates current permission and selected-KB scope.
+- Persistence/API impact: raw text stays node-local and out of checkpoints/events/traces. Conversation contracts expose only compact `document_coverage` and redacted `full_document_read` metadata; the internal cursor is not public.
+- Verification: covered by `tests/test_full_document_retrieval.py` and settings validation. Automatic multi-range synthesis and token-aware budgeting remain follow-up work.
+
 ## 2026-08-12 — Separate ambient system context from visible provenance
 
 - Why: system knowledge should influence answers without appearing as a user-visible document source.

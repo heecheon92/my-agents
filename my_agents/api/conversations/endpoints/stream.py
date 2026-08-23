@@ -29,6 +29,7 @@ from my_agents.api.conversations.retrieval_context import (
     clarification_reply,
     clarification_request,
     compose_rag_reply,
+    document_coverage_from_graph_state,
     graph_has_retrieval_context,
     graph_input_for_run,
     graph_memory_source_snapshot_json,
@@ -119,6 +120,14 @@ def stream_resumed_conversation_run(
         if isinstance(result, ConversationRunInterruptedResponse):
             yield sse_event("run_interrupted", result.model_dump(mode="json"))
             return
+        if result.document_coverage is not None:
+            yield sse_event(
+                AgentEventType.FULL_DOCUMENT_READ.value,
+                {
+                    **result.document_coverage.model_dump(mode="json"),
+                    "latency_ms": 0.0,
+                },
+            )
         for sequence, delta in enumerate(fallback_answer_deltas(result.reply), start=1):
             yield sse_event("answer_delta", {"delta": delta, "sequence": sequence})
         yield sse_event("run_completed", result.model_dump(mode="json"))
@@ -428,6 +437,7 @@ def conversation_run_events(
                 run_id=run_id,
                 status_code=503,
             )
+            delete_checkpoint_thread(graph_runner, run_id)
             yield sse_event(
                 AgentEventType.RUN_FAILED.value,
                 {"run_id": run_id, "safe_error_type": type(exc).__name__},
@@ -558,6 +568,7 @@ def conversation_run_events(
         update_graph_invoked_event_memory_snapshot(db, graph_event, memory_snapshot)
         base_reply = result.get("reply") or "".join(streamed_base_reply_parts).strip()
         used_chunks = chunks_used_for_answer(retrieval_context)
+        document_coverage = document_coverage_from_graph_state(result)
         reply = compose_rag_reply(base_reply, used_chunks, retrieval_context.answer_mode)
         reply, used_chunks, completion_insufficient_evidence = _verified_grounding_or_fallback(
             reply=reply,
@@ -616,7 +627,17 @@ def conversation_run_events(
             insufficient_evidence=completion_insufficient_evidence,
             retrieval_evidence=retrieval_context.retrieval_evidence,
             memory_source_snapshot=memory_snapshot,
+            document_coverage=document_coverage,
+            retrieval_latency_ms=retrieval_context.retrieval_latency_ms,
         )
+        if document_coverage is not None:
+            yield sse_event(
+                AgentEventType.FULL_DOCUMENT_READ.value,
+                {
+                    **document_coverage.model_dump(mode="json"),
+                    "latency_ms": retrieval_context.retrieval_latency_ms,
+                },
+            )
         yield sse_event(
             AgentEventType.ANSWER_COMPOSED.value,
             answer_composed_payload(
@@ -637,6 +658,7 @@ def conversation_run_events(
             raise
         if is_run_active(db, run.id):
             cancelled_sse_event(db, run.id)
+        delete_checkpoint_thread(graph_runner, run.id)
         record_run_metric("cancelled")
         raise
     except ResponseProviderConfigurationError as exc:
@@ -674,6 +696,7 @@ def conversation_run_events(
                 run_id=run_id,
                 status_code=502,
             )
+            delete_checkpoint_thread(graph_runner, run_id)
             yield sse_event(
                 AgentEventType.RUN_FAILED.value,
                 {"run_id": run_id, "safe_error_type": type(exc).__name__},

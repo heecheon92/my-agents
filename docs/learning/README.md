@@ -20,9 +20,10 @@ Start here:
 14. [Hybrid retrieval with BM25, vector search, and RRF](./13-bm25-vector-search-rrf-hybrid-retrieval.md)
 15. [Ambient System Knowledge and User-Visible Provenance](./14-ambient-system-knowledge-and-user-visible-provenance.md)
 16. [Product identity belongs in the always-present responder prompt](./15-product-identity-belongs-in-the-always-present-responder-prompt.md)
+17. [LangGraph Checkpointer와 Store의 역할 분리](./14-langgraph-checkpointer-store.md)
+18. [Full-document retrieval: coverage, authorization, and checkpoint safety](./16-full-document-retrieval-coverage-and-safety.md)
 
 This directory is the owner's learning path archive. The root numbered notes are personal learning logs. Focused project-specific notes can live in subfolders, such as [`project-notes/`](./project-notes/). Project architecture docs that are not primarily learning logs live outside this directory, for example [`docs/product-chat-service/en/`](../product-chat-service/).
-15. [LangGraph Checkpointer와 Store의 역할 분리](./14-langgraph-checkpointer-store.md)
 
 ## Learning-doc workflow
 

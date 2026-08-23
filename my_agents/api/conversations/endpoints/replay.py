@@ -16,12 +16,14 @@ from my_agents.api.assistant import GraphRunner, get_graph_runner
 from my_agents.api.conversations.auth import get_authorized_conversation
 from my_agents.api.conversations.graph_invocation import graph_context_for_run
 from my_agents.api.conversations.graph_streaming import fallback_answer_deltas, stream_graph_items
+from my_agents.api.conversations.interactions import delete_checkpoint_thread
 from my_agents.api.conversations.retrieval_context import (
     ConversationRetrievalContext,
     chunks_used_for_answer,
     clarification_reply,
     clarification_request,
     compose_rag_reply,
+    document_coverage_from_graph_state,
     graph_has_retrieval_context,
     graph_input_for_run,
     graph_memory_source_snapshot_json,
@@ -64,7 +66,13 @@ from my_agents.api.reasoning import resolve_reasoning_preferences
 from my_agents.auth.contracts import Principal
 from my_agents.auth.dependencies import get_current_principal
 from my_agents.auth.guest_limits import assert_guest_can_send_prompt
-from my_agents.conversations.models import AgentEventType, AgentRunModel, MessageModel, MessageRole
+from my_agents.conversations.models import (
+    AgentEventModel,
+    AgentEventType,
+    AgentRunModel,
+    MessageModel,
+    MessageRole,
+)
 from my_agents.conversations.schemas import (
     ConversationReplayRequest,
     ConversationRunResponse,
@@ -75,6 +83,7 @@ from my_agents.knowledge.auth import (
     resolve_conversation_knowledge_context,
 )
 from my_agents.knowledge.models import DocumentModel
+from my_agents.knowledge.retrieval import RetrievalService
 from my_agents.knowledge.schemas import KnowledgeBaseSelection
 from my_agents.persistence.database import get_database_session
 from my_agents.settings import ReasoningEffort, ReasoningMode, Settings, get_settings
@@ -93,6 +102,8 @@ class ReplayContext:
     selection_context: KnowledgeBaseSelectionContext
     reasoning_mode: ReasoningMode
     reasoning_effort: ReasoningEffort
+    preselected_document_id: str | None
+    force_full_document_retrieval: bool
 
 
 @router.post(
@@ -144,6 +155,9 @@ def replay_assistant_message(
         selection_context=replay_context.selection_context,
         graph_runner=graph_runner,
         warnings=replay_context.replay_warnings,
+        document_selection_hitl_allowed=False,
+        preselected_document_id=replay_context.preselected_document_id,
+        force_full_document_retrieval=replay_context.force_full_document_retrieval,
     )
     prune_conversation_from_message(
         db,
@@ -265,20 +279,49 @@ def replay_context_for_request(
         fallback_mode=(original_run.reasoning_mode if original_run is not None else None),
         fallback_effort=(original_run.reasoning_effort if original_run is not None else None),
     )
+    original_full_document = _full_document_source_for_run(db, original_run)
+    try:
+        selection_context = resolve_conversation_knowledge_context(
+            db,
+            principal=principal,
+            requested_selection=requested_selection,
+        )
+    except HTTPException:
+        if original_full_document is None:
+            raise
+        selection_context = resolve_conversation_knowledge_context(
+            db,
+            principal=principal,
+            requested_selection=KnowledgeBaseSelection(),
+        )
+    replay_warnings = source_warnings_for_replay(db, original_run)
+    preselected_document_id = None
+    force_full_document_retrieval = original_full_document is not None
+    if original_full_document is not None:
+        original_document_id = original_full_document["document_id"]
+        preselected_document_id = original_document_id
+        if not RetrievalService(db).document_is_user_selectable(
+            user_id=principal.user_id,
+            document_id=original_document_id,
+            knowledge_base_ids=selection_context.retrieval_knowledge_base_ids,
+        ):
+            replay_warnings = _with_unavailable_full_document_warning(
+                replay_warnings,
+                document_id=original_document_id,
+                source_filename=original_full_document.get("source_filename"),
+            )
     return ReplayContext(
         target_message=target_message,
         removed_messages=persisted_messages[target_index:],
         prefix_messages=prefix_messages,
         preceding_message=preceding_message,
         original_run=original_run,
-        replay_warnings=source_warnings_for_replay(db, original_run),
-        selection_context=resolve_conversation_knowledge_context(
-            db,
-            principal=principal,
-            requested_selection=requested_selection,
-        ),
+        replay_warnings=replay_warnings,
+        selection_context=selection_context,
         reasoning_mode=reasoning.mode,
         reasoning_effort=reasoning.effort,
+        preselected_document_id=preselected_document_id,
+        force_full_document_retrieval=force_full_document_retrieval,
     )
 
 
@@ -326,6 +369,8 @@ def replay_conversation_run_events(
             conversation_id=conversation_id,
             run_id=run.id,
             document_selection_hitl_allowed=False,
+            preselected_document_id=replay_context.preselected_document_id,
+            force_full_document_retrieval=replay_context.force_full_document_retrieval,
         )
         graph_context = graph_context_for_run(
             db=db,
@@ -524,6 +569,7 @@ def replay_conversation_run_events(
         update_graph_invoked_event_memory_snapshot(db, graph_event, memory_snapshot)
         base_reply = result.get("reply") or "".join(streamed_base_reply_parts).strip()
         used_chunks = chunks_used_for_answer(retrieval_context)
+        document_coverage = document_coverage_from_graph_state(result)
         reply = compose_rag_reply(base_reply, used_chunks, retrieval_context.answer_mode)
         reply, used_chunks, completion_insufficient_evidence = _verified_grounding_or_fallback(
             reply=reply,
@@ -563,7 +609,17 @@ def replay_conversation_run_events(
             insufficient_evidence=completion_insufficient_evidence,
             retrieval_evidence=retrieval_context.retrieval_evidence,
             memory_source_snapshot=memory_snapshot,
+            document_coverage=document_coverage,
+            retrieval_latency_ms=retrieval_context.retrieval_latency_ms,
         )
+        if document_coverage is not None:
+            yield sse_event(
+                AgentEventType.FULL_DOCUMENT_READ.value,
+                {
+                    **document_coverage.model_dump(mode="json"),
+                    "latency_ms": retrieval_context.retrieval_latency_ms,
+                },
+            )
         yield sse_event(
             AgentEventType.ANSWER_COMPOSED.value,
             answer_composed_payload(
@@ -575,6 +631,7 @@ def replay_conversation_run_events(
                 insufficient_evidence=completion_insufficient_evidence,
             ),
         )
+        delete_checkpoint_thread(graph_runner, run.id)
         _prune_replayed_transcript(db, conversation_id, replay_context, run.id)
         yield sse_event("run_completed", response.model_dump(mode="json"))
     except GeneratorExit:
@@ -585,12 +642,15 @@ def replay_conversation_run_events(
                 conversation_id=conversation_id,
                 error_type="GeneratorExit",
             )
+        delete_checkpoint_thread(graph_runner, run.id)
         raise
     except ResponseProviderConfigurationError as exc:
+        delete_checkpoint_thread(graph_runner, run.id)
         yield from _failed_replay_stream_events(
             db, run.id, conversation_id, type(exc).__name__, 503
         )
     except Exception as exc:
+        delete_checkpoint_thread(graph_runner, run.id)
         yield from _failed_replay_stream_events(
             db, run.id, conversation_id, type(exc).__name__, 502
         )
@@ -670,6 +730,61 @@ def source_warnings_for_replay(
             missing_document_ids=missing_document_ids,
             missing_source_filenames=missing_source_filenames,
         )
+    ]
+
+
+def _full_document_source_for_run(
+    db: Session,
+    original_run: AgentRunModel | None,
+) -> dict[str, str | None] | None:
+    if original_run is None:
+        return None
+    event = db.scalar(
+        select(AgentEventModel)
+        .where(
+            AgentEventModel.run_id == original_run.id,
+            AgentEventModel.event_type == AgentEventType.FULL_DOCUMENT_READ.value,
+        )
+        .order_by(AgentEventModel.sequence.desc())
+        .limit(1)
+    )
+    if event is None:
+        return None
+    try:
+        payload = json.loads(event.payload_json)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict) or not isinstance(payload.get("document_id"), str):
+        return None
+    source_filename = payload.get("source_filename")
+    return {
+        "document_id": payload["document_id"],
+        "source_filename": source_filename if isinstance(source_filename, str) else None,
+    }
+
+
+def _with_unavailable_full_document_warning(
+    warnings: list[ConversationRunWarning],
+    *,
+    document_id: str,
+    source_filename: str | None,
+) -> list[ConversationRunWarning]:
+    existing_document_ids = {
+        missing_id for warning in warnings for missing_id in warning.missing_document_ids
+    }
+    if document_id in existing_document_ids:
+        return warnings
+    return [
+        *warnings,
+        ConversationRunWarning(
+            code="regeneration_sources_unavailable",
+            message=(
+                "The full document used in the original answer is no longer authorized or "
+                "available. This regeneration did not substitute a different document."
+            ),
+            missing_document_ids=[document_id],
+            missing_source_filenames=[source_filename] if source_filename else [],
+        ),
     ]
 
 

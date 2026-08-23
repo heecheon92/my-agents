@@ -101,6 +101,54 @@ _GENERAL_KNOWLEDGE_HINTS = (
 )
 _GROUP_SCOPE_HINTS = ("group", "team", "shared", "우리 팀", "그룹", "공유")
 _CURRENT_SCOPE_HINTS = ("current conversation", "this chat", "이 대화", "현재 대화")
+_COMPREHENSIVE_DOCUMENT_HINTS = (
+    "entire document",
+    "whole document",
+    "complete document",
+    "full document",
+    "entire file",
+    "whole file",
+    "complete file",
+    "every section in the document",
+    "all sections in the document",
+    "all requirements in the document",
+    "from beginning to end of the document",
+    "across all sections",
+    "cross-section consistency",
+    "throughout the document",
+    "문서 전체",
+    "전체 문서",
+    "파일 전체",
+    "전체 파일",
+    "문서의 모든 섹션",
+    "문서의 모든 절",
+    "문서의 모든 요구사항",
+    "문서 요구사항 전체",
+    "문서를 처음부터 끝까지",
+    "문서 전체를 빠짐없이",
+    "문서의 섹션 간",
+)
+_COMPREHENSIVE_DOCUMENT_TASK_HINTS = (
+    "read",
+    "summarize",
+    "review",
+    "analyze",
+    "extract",
+    "check",
+    "list",
+    "identify",
+    "compare",
+    "cover",
+    "읽",
+    "요약",
+    "검토",
+    "분석",
+    "추출",
+    "확인",
+    "정리",
+    "나열",
+    "비교",
+)
 
 
 def route_retrieval(
@@ -204,6 +252,14 @@ def is_relevant_retrieval_result(*, route: RetrievalRoute, source: str, score: f
     if source == "document_fallback" and route != "retrieval_required":
         return False
     return True
+
+
+def is_comprehensive_document_request(message: str) -> bool:
+    """Return whether the user explicitly requests whole-document coverage."""
+    normalized = _normalize(_clean_query(message))
+    return _has_any(normalized, _COMPREHENSIVE_DOCUMENT_HINTS) and _has_any(
+        normalized, _COMPREHENSIVE_DOCUMENT_TASK_HINTS
+    )
 
 
 def _clean_query(message: str) -> str:

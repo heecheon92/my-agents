@@ -106,6 +106,20 @@ class ConversationRunWarning(BaseModel):
     missing_source_filenames: list[str] = Field(default_factory=list)
 
 
+class DocumentCoverageResponse(BaseModel):
+    """Refresh-safe disclosure for one bounded comprehensive document read."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    mode: Literal["complete", "partial"]
+    document_id: str
+    title: str
+    source_filename: str | None = None
+    start_offset: int = Field(ge=0)
+    end_offset: int = Field(ge=0)
+    total_chars: int = Field(ge=0)
+
+
 class ConversationClarificationRequest(BaseModel):
     """Language-neutral clarification contract for human-in-the-loop replies."""
 
@@ -169,6 +183,7 @@ class ConversationRunResponse(BaseModel):
     resolved_knowledge_base_ids: list[str] = Field(default_factory=list)
     resolved_knowledge_base_count: int = 0
     citations: list[CitationResponse] = Field(default_factory=list)
+    document_coverage: DocumentCoverageResponse | None = None
     warnings: list[ConversationRunWarning] = Field(default_factory=list)
     clarification: ConversationClarificationRequest | None = None
     agent_trace: list[AgentTraceStep] = Field(default_factory=list)
@@ -264,6 +279,17 @@ class RetrievalCompletedEventPayload(KnowledgeSelectionEventPayload):
     contextforge_intent: str | None = Field(default=None, max_length=160)
     contextforge_reranker: str | None = Field(default=None, max_length=160)
     agent_trace: list[AgentTraceStep] = Field(default_factory=list)
+
+
+class FullDocumentReadEventPayload(AgentEventPayload):
+    mode: Literal["complete", "partial"]
+    document_id: str
+    title: str
+    source_filename: str | None = None
+    start_offset: int = Field(ge=0)
+    end_offset: int = Field(ge=0)
+    total_chars: int = Field(ge=0)
+    latency_ms: float = Field(default=0, ge=0)
 
 
 class GraphInvokedEventPayload(KnowledgeSelectionEventPayload):
@@ -369,6 +395,11 @@ class RetrievalCompletedAgentEventResponse(AgentEventResponseBase):
     payload: RetrievalCompletedEventPayload
 
 
+class FullDocumentReadAgentEventResponse(AgentEventResponseBase):
+    event_type: Literal["full_document_read"]
+    payload: FullDocumentReadEventPayload
+
+
 class GraphInvokedAgentEventResponse(AgentEventResponseBase):
     event_type: Literal["graph_invoked"]
     payload: GraphInvokedEventPayload
@@ -423,6 +454,7 @@ type AgentEventResponse = Annotated[
     RunStartedAgentEventResponse
     | UserMessageStoredAgentEventResponse
     | RetrievalCompletedAgentEventResponse
+    | FullDocumentReadAgentEventResponse
     | GraphInvokedAgentEventResponse
     | AttachmentsReadyAgentEventResponse
     | DocumentWorkspaceStartedAgentEventResponse

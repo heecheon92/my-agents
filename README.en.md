@@ -23,6 +23,7 @@ English | [한국어](./README.md)
 
 - **Permission-first retrieval**: unauthorized chunks are excluded before ranking, graph expansion, and prompt construction.
 - **Hybrid retrieval**: pgvector vector search and BM25 lexical search gather candidates independently, fuse them by stable chunk identifiers with RRF (`k=60`), then rerank and pack the context.
+- **Bounded full-document coverage**: an opt-in typed graph path handles only explicit whole-document tasks, resolves one authorized document, and distinguishes complete coverage from an honest first-range partial review.
 - **Inspectable orchestration**: a LangGraph state machine connects the decision to use authorized knowledge, retrieval, opt-in memory, and response composition as explicit stages.
 - **Application-owned state**: the application database owns conversations, runs, messages, citations, and redacted events. Temporary LangGraph execution state is not treated as the source of truth for user-visible transcripts.
 - **Streaming product contract**: SSE carries progress events, agent traces, answer deltas, and terminal status while the server persists the same run.
@@ -60,10 +61,13 @@ flowchart TD
     Runs --> Orchestration["LangGraph request orchestration"]
     Orchestration --> SourceGate{"Use authorized knowledge?"}
     SourceGate -->|No| Memory["Opt-in governed memory"]
-    SourceGate -->|Yes| Retrieval["Permission-aware retrieval pipeline"]
+    SourceGate -->|Focused question| Retrieval["Permission-aware retrieval pipeline"]
+    SourceGate -->|Explicit whole-document task| FullResolve["Resolve one authorized document"]
     Retrieval --> Permission["Permission-filtered candidates"]
     Permission --> Hybrid["Vector + BM25 -> RRF -> rerank"]
     Hybrid --> Context["Packed context + evidence"]
+    FullResolve --> FullRead["Complete <=24k chars or first 12k range"]
+    FullRead --> Context
     Context --> Memory
 
     Memory --> DB
@@ -76,9 +80,9 @@ flowchart TD
 
 1. The API layer validates session, CSRF, and group/knowledge-base access.
 2. LangGraph orchestration decides whether the question requires authorized knowledge retrieval.
-3. The retrieval service limits database queries to personal, group, and administrator-provided sources that the current user may access.
-4. Vector, lexical, metadata, and structured-entity candidates pass through fusion, reranking, and context packing.
-5. The answer, citations, compact agent trace, and redacted timing/events are persisted under the same run.
+3. Focused questions use permission-first chunk retrieval. Explicit comprehensive tasks instead resolve exactly one user-controllable personal/group document; system knowledge is never a selectable full-document target.
+4. The full-document path returns normalized extracted text completely only at or below its configured character threshold; larger files expose one bounded range and a mandatory partial-review disclosure.
+5. The answer, citations, compact coverage metadata, agent trace, and redacted timing/events are persisted under the same run. Raw full-document text is not persisted in graph checkpoints or events.
 
 Administrator-provided system knowledge is ambient model context, not a user-visible source.
 Its provenance remains in internal audit records, while public run, event, and citation
@@ -95,6 +99,7 @@ The production runtime consists of one assistant orchestration flow with a retri
 - PDF, Markdown, plain text, `.xlsx`, `.pptx`, and `.docx` upload and ingestion
 - A PyMuPDF fast path with pypdf, Docling, and Tesseract fallbacks
 - pgvector + BM25 + RRF + deterministic or optional cross-encoder reranking
+- Opt-in explicit full-document review with complete/partial coverage disclosure and range-backed citations
 - Server-owned conversation/run history, SSE streaming, citations, and redacted agent events
 - A stable `my-agents` assistant identity anchored to the canonical
   `https://my-agents.dev` domain, with changing product facts grounded in authorized context
@@ -166,6 +171,8 @@ With `MY_AGENTS_DOCUMENT_WORKSPACE_ENABLED=true`, approved registered accounts c
 
 LangGraph persistence is an opt-in PostgreSQL feature. `MY_AGENTS_CHECKPOINTER_ENABLED=true` lets an ambiguous document-grounded run return `202 waiting_for_input`, survive a process restart, and resume after the user selects an authorized document. `MY_AGENTS_MEMORY_STORE_ENABLED=true` uses PostgresStore for semantic memory candidate search while Product DB rows continue to enforce consent, status, sensitivity, provenance, and source staleness. Run `uv run python -m scripts.langgraph_persistence setup` and a zero-drift memory reconciliation before enabling either flag.
 
+Full-document retrieval is separately disabled by default. Set `MY_AGENTS_FULL_DOCUMENT_RETRIEVAL_ENABLED=true` to route explicit requests such as “review the entire document and identify every requirement” through the typed comprehensive-document path. `MY_AGENTS_FULL_DOCUMENT_MAX_CHARS=24000` controls complete one-call coverage; larger documents currently provide only the first `MY_AGENTS_FULL_DOCUMENT_RANGE_CHARS=12000` characters and return `mode=partial`. The range must not exceed the complete-read limit. Ambiguous requests need the checkpointer-backed document-selection interaction before this path can continue.
+
 The VS Code `FastAPI: uvicorn main:app (local pgvector)` profile runs its pre-launch migration with the interpreter selected by the Python extension. It does not depend on a shell command finding `uv` in a GUI-launched VS Code process, so select this repository's `.venv` interpreter before using the profile.
 
 OpenAPI is available from a running server at `http://127.0.0.1:8000/openapi.json`. See the [frontend demo runbook](./docs/product-chat-service/en/10-frontend-demo-runbook.md) for the full product flow and PostgreSQL setup.
@@ -173,8 +180,9 @@ OpenAPI is available from a running server at `http://127.0.0.1:8000/openapi.jso
 ### Frontend API contracts
 
 - HTTP and validation errors return a stable machine-readable `code` alongside the existing `detail`. UIs should localize from `code` and treat `detail` as diagnostic copy.
-- `GET /conversations/{conversation_id}/runs/{run_id}/events` is a closed OpenAPI union discriminated by `event_type`. Persisted event types include `run_interrupted` and `run_resumed` in addition to the existing run, retrieval, graph, workspace, answer, cancellation, and failure events.
+- `GET /conversations/{conversation_id}/runs/{run_id}/events` is a closed OpenAPI union discriminated by `event_type`. Persisted event types include `run_interrupted`, `run_resumed`, and redacted `full_document_read` metadata in addition to the existing run, retrieval, graph, workspace, answer, cancellation, and failure events.
 - With checkpointer support enabled, run creation returns either `200 completed` or `202 waiting_for_input`. A waiting document-selection interaction is refresh-safe through the run detail/options endpoints and resumes through `/runs/{run_id}/resume` or `/resume/stream` without consuming another guest prompt. Options include only user-controllable personal/group documents; ambient system knowledge remains automatically injected and is never selectable. Interaction and resume payloads require the protocol-neutral `schema_version=1` and semantic `type`; see the [agent-to-frontend interaction contract](./docs/product-chat-service/en/27-agent-frontend-interaction-contract.md).
+- Completed comprehensive-document runs add nullable `document_coverage` to sync, streamed, replay, and refreshed run responses. It reports `mode`, document metadata, `[start_offset, end_offset)`, and `total_chars`; it never exposes raw text or the internal continuation cursor. A partial answer also starts with a localized disclosure that it is not a complete-document review.
 - `GET /capabilities/document-workspace` reports effective enablement, eligibility, accepted formats, limits, and retention. Attachments use `POST/GET/DELETE /conversations/{conversation_id}/attachments`; artifacts use `GET /conversations/{conversation_id}/artifacts` and their download URLs. A run's `attachment_ids` selects the files used for that execution.
 - `GET /capabilities/reasoning` reports per-surface Pro support, the server-default effort, stable enums, and whether the current account may customize them. It intentionally omits raw provider model identifiers. Optional run/replay `reasoning_mode` and `reasoning_effort` values are persisted as effective run metadata and returned in responses and the `run_started` event.
 - Persisted event payloads and `agent_trace` expose only fields accepted by event- and stage-specific allowlist schemas. `answer_delta`, `run_completed`, and `run_error` are stream-only SSE events and are not members of the persisted-event union.
@@ -189,7 +197,7 @@ uv run ruff format --check .
 git diff --check
 ```
 
-On 2026-08-17, the full offline suite on this checkout reports **498 passed, 3 skipped** without requiring real credentials. The gated PostgreSQL checkpoint restart smoke also passes against the local pgvector profile.
+On 2026-08-24, the full offline suite on this checkout reports **519 passed, 2 skipped** without requiring real credentials. The gated PostgreSQL checkpoint restart smoke was separately verified against the local pgvector profile on 2026-08-17.
 
 ## Security and privacy boundaries
 
@@ -197,6 +205,7 @@ On 2026-08-17, the full offline suite on this checkout reports **498 passed, 3 s
 - Public-release checks cover both the current tree and the full Git history; any exposed credential must be revoked and rotated even if its file was later deleted.
 - Retrieval permissions are enforced in application/service code, not through prompt instructions.
 - Metric labels and default agent events exclude raw prompts, document text, emails, credentials, and provider traces. The event response boundary allowlists nested `agent_trace.evidence` fields as well.
+- Full-document response composition revalidates and re-reads the authorized range inside the response node with tracing disabled. Checkpoints retain only IDs, offsets, compact retrieval snapshots, and coverage metadata.
 - System-knowledge management is limited to privileged administrative account types, with no public role-mutation API.
 - The service is publicly reachable, so it assumes users will not upload sensitive, regulated, or irreplaceable documents.
 
@@ -206,6 +215,8 @@ On 2026-08-17, the full offline suite on this checkout reports **498 passed, 3 s
 - The external ingestion worker uses database polling; durable queueing, supervision, and stale-job recovery need further work.
 - Object storage for uploaded originals, document versioning/re-ingestion, and account deletion/export are not implemented yet.
 - Cross-encoder cold starts and PDF processing latency remain constraints on small hosted instances.
+- Full-document retrieval is explicit-intent-only and disabled by default. Large documents currently stop after the first bounded range; automatic multi-range traversal/final synthesis, model-tokenizer-aware budgets, and provider usage measurements remain future work.
+- The full-document graph bumps waiting-run compatibility to `general-assistant-checkpoint-v2`. Drain or cancel older waiting runs before rollout; an older graph version cannot resume and is failed safely by the version-mismatch path.
 - Shared rate limiting, production security review, and automated migration/smoke gates remain necessary.
 - Non-RAG tools, a background execution scheduler, and production multi-agent orchestration remain roadmap work. LangGraph persistence is implemented but remains opt-in until its Postgres setup and reconciliation checks are run.
 

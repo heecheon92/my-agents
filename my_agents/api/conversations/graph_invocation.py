@@ -14,7 +14,7 @@ from my_agents.api.assistant import GraphRunner
 from my_agents.knowledge.auth import KnowledgeBaseSelectionContext
 from my_agents.memory.runtime import SqlAlchemyMemoryRuntime
 from my_agents.observability.metrics import track_graph_invocation
-from my_agents.settings import ReasoningEffort, ReasoningMode
+from my_agents.settings import ReasoningEffort, ReasoningMode, get_settings
 
 
 class GraphRunnerExecutionError(RuntimeError):
@@ -45,6 +45,7 @@ def graph_context_for_run(
     The context carries non-checkpointed runtime dependencies. This keeps memory recall
     graph-owned without storing DB sessions or adapter objects in graph state.
     """
+    settings = get_settings()
     context: dict[str, object] = {
         "user_id": user_id,
         "memory_runtime": SqlAlchemyMemoryRuntime(db),
@@ -52,6 +53,8 @@ def graph_context_for_run(
         "knowledge_base_selection": selection_context,
         "reasoning_mode": reasoning_mode,
         "reasoning_effort": reasoning_effort,
+        "full_document_max_chars": settings.full_document_max_chars,
+        "full_document_range_chars": settings.full_document_range_chars,
     }
     if document_workspace_runtime is not None:
         context["document_workspace_runtime"] = document_workspace_runtime

@@ -2,7 +2,9 @@
 
 상태: Store/checkpointer runtime은 opt-in flag 뒤에 구현됨, memory graph는 계획 단계
 
-날짜: 2026-06-10
+작성: 2026-06-10
+
+업데이트: 2026-08-24
 
 이 문서는 현재 `my-agents` memory 구현을 LangChain `memory-template` 패턴과 비교한 뒤 정리한
 memory architecture 방향입니다.
@@ -191,12 +193,26 @@ checkpoint합니다. Terminal run의 checkpoint는 삭제합니다. 모호한 do
 Public waiting/resume payload는 [Agent와 frontend 사이의 interaction 계약](./27-agent-frontend-interaction-contract.md)의
 versioned semantic contract를 따릅니다.
 
+Opt-in 문서 전체 검토 경로도 이 run-scoped boundary를 확장하지만 checkpoint를 document
+cache로 만들지는 않습니다. `general-assistant-checkpoint-v2`에는 결정된
+`selected_document_id`, compact `document_coverage`, citation/chunk ID, 비공개 internal
+next cursor만 들어갑니다. 정규화된 document body는 checkpoint하지 않습니다. Response
+node가 composition 시점에 권한을 다시 확인하고 bounded range를 다시 읽으며, body를 받는
+provider call 주변의 LangSmith tracing도 끕니다.
+
+Target이 모호하면 full-document 전용 interaction을 새로 만들지 않고 기존 versioned
+`document_selection` interrupt를 재사용합니다. Resume은 target resolution으로 돌아가
+현재 권한을 다시 검사한 뒤 같은 run을 계속합니다. Terminal run checkpoint는 계속
+삭제하고 Product DB event에는 refresh-safe coverage metadata만 남깁니다.
+
 ## Non-goals
 
 - LangGraph checkpointer를 conversation-history store로 쓰지 않습니다.
 - LangGraph Store가 opt-in/delete/deactivate/source-staleness policy를 우회하게 두지 않습니다.
 - 별도 제품 결정 전에는 chat에서 memory를 조용히 auto-store하지 않습니다.
 - Store/checkpointer가 들어와도 Product DB run/citation/event/source-snapshot record는 제거하지 않습니다.
+- 문서 전체 답변을 위해 정규화된 full body를 checkpoint state에 저장하지 않습니다.
+  Response boundary에서 authorized bounded content를 다시 읽습니다.
 
 ## 이 문서가 해결하는 충돌
 

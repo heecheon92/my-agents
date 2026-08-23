@@ -36,6 +36,7 @@ class AgentEventType(StrEnum):
     RUN_STARTED = "run_started"
     USER_MESSAGE_STORED = "user_message_stored"
     RETRIEVAL_COMPLETED = "retrieval_completed"
+    FULL_DOCUMENT_READ = "full_document_read"
     GRAPH_INVOKED = "graph_invoked"
     ATTACHMENTS_READY = "attachments_ready"
     DOCUMENT_WORKSPACE_STARTED = "document_workspace_started"
