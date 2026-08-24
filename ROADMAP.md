@@ -66,8 +66,8 @@ Current honest status:
 - [x] CLI token streaming through LangGraph `graph.stream(...)`.
 - [x] Product chat uses the graph inside conversation runs.
 - [x] Opt-in Product DB-backed long-term memory governance scaffold with settings, CRUD, suggest-confirm, provenance, staleness, and redacted run snapshots.
-- [x] Opt-in PostgresStore semantic memory projection with Product DB governance validation and reconciliation; the separate `memory_graph` extraction/suggest-confirm workflow remains planned.
-- [x] Opt-in run-scoped PostgresSaver for bounded document-selection HITL/resume state; Product DB remains conversation history and audit truth.
+- [x] PostgreSQL-owned PostgresStore semantic memory projection with per-user opt-in, Product DB governance validation, and reconciliation; the separate `memory_graph` extraction/suggest-confirm workflow remains planned.
+- [x] PostgreSQL-owned run-scoped PostgresSaver for bounded document-selection HITL/resume state; Product DB remains conversation history and audit truth.
 - [x] Versioned protocol-neutral interaction contract for durable document selection, with typed resume answers, refresh recovery, and a documented AG-UI/A2UI adapter boundary.
 - [x] System knowledge remains ambient internal context rather than a controllable interaction axis; document-selection options and resume validation exclude system KB documents.
 - [ ] Real tool/function capabilities exposed through the graph.

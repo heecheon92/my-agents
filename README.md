@@ -164,7 +164,9 @@ curl -X POST http://127.0.0.1:8000/assistant/chat \
 
 `MY_AGENTS_DOCUMENT_WORKSPACE_ENABLED=true`로 켜면 승인된 일반 계정은 대화에 임시 파일을 첨부해 GPT-5.6 Sol로 분석하고, 인증된 spreadsheet 결과(`.xlsx`, `.csv`, `.tsv`)를 내려받을 수 있습니다. Guest에는 열리지 않으며, 업로드마다 OpenAI 전송 동의가 필요합니다. 파일 본문은 Product DB에 저장하지 않고 OpenAI `user_data` file과 network-disabled hosted container에만 제한 시간 동안 둡니다. 세부 계약은 [OpenAI document workspace 설계](./docs/product-chat-service/ko/25-openai-document-workspace.md)를 봅니다.
 
-LangGraph persistence는 PostgreSQL에서만 켜는 opt-in 기능입니다. `MY_AGENTS_CHECKPOINTER_ENABLED=true`이면 문서 범위가 모호한 run이 `202 waiting_for_input`으로 멈추고, process restart 뒤에도 사용자가 권한 있는 문서를 선택해 같은 run을 재개할 수 있습니다. `MY_AGENTS_MEMORY_STORE_ENABLED=true`이면 PostgresStore가 semantic memory candidate search를 담당하지만, consent/status/sensitivity/provenance/source staleness는 계속 Product DB row가 강제합니다. 두 flag를 켜기 전에 `uv run python -m scripts.langgraph_persistence setup`과 zero-drift memory reconciliation을 실행합니다.
+PostgreSQL deployment는 baseline LangGraph infrastructure로 PostgresStore와 PostgresSaver를 자동 provision합니다. Store는 Product DB가 governance하는 memory의 semantic projection이며 per-user experimental setting이 consent와 eligibility를 제어합니다. Status/sensitivity/provenance/source staleness는 계속 Product DB row가 강제합니다. PostgresSaver는 모호한 document-grounded run을 `202 waiting_for_input`으로 멈추고 process restart 뒤에도 같은 run을 재개하게 합니다. SQLite는 Product DB recall과 non-durable graph execution fallback을 유지합니다. PostgreSQL traffic을 받기 전에 `uv run python -m scripts.langgraph_persistence setup`을 실행하고, 사용자에게 experimental memory를 열기 전에 zero-drift reconciliation을 확인합니다.
+
+Experimental memory는 현재 explicit memory와 사용자가 직접 confirm한 suggestion을 recall합니다. 일반 chat이 memory를 자동 형성하지는 않으며, 별도 post-turn `memory_graph` extraction/update workflow는 계획 단계입니다.
 
 VS Code의 `FastAPI: uvicorn main:app (local pgvector)` 프로필은 실행 전에 마이그레이션을 돌리는데, 이때 셸에서 `uv`를 찾는 대신 Python 확장이 선택한 인터프리터를 그대로 씁니다. GUI로 켠 VS Code의 `PATH`에 `uv`가 없어도 동작하도록 만든 구성이므로, 쓰기 전에 이 저장소의 `.venv` 인터프리터를 선택해 두세요.
 
@@ -189,7 +191,7 @@ uv run ruff format --check .
 git diff --check
 ```
 
-2026-08-17 기준 이 체크아웃의 전체 offline test는 **498 passed, 3 skipped**이며 실제 자격 증명이 없어도 돌아갑니다. Gated PostgreSQL checkpoint restart smoke도 local pgvector profile에서 통과합니다.
+2026-08-24 기준 이 체크아웃의 전체 offline test는 **498 passed, 3 skipped**이며 실제 자격 증명이 없어도 돌아갑니다. Gated PostgreSQL checkpoint restart smoke도 local pgvector profile에서 통과합니다.
 
 ## 보안과 개인정보 경계
 

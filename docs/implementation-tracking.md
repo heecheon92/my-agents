@@ -1,6 +1,6 @@
 # Implementation tracking
 
-Last updated: 2026-08-17
+Last updated: 2026-08-24
 Status owner: repo-tracked source of truth for cross-machine agent handoff
 
 This file exists because `.omx/` is local runtime state and is not shared across machines. When working with an agent on any machine, start here before re-discovering project status from the codebase.
@@ -388,8 +388,8 @@ Earlier hosted smoke status on 2026-06-03:
 - Current production graph is still one assistant/controller path, now with a graph-owned RAG Agent retrieval node before memory/answer synthesis.
 - Most route labels are capability metadata and response paths, not separate production specialist agents.
 - Tool workflows beyond hosted web search are not implemented as production graph capabilities yet.
-- Memory runtime migration is in progress. Recall orchestration now runs inside `general_assistant` through a graph-owned `retrieve_memory` node and `MemoryRuntime` adapter, but the active adapter still wraps SQLAlchemy/Product DB memory service. Target migration remains LangGraph Store-backed active memory search plus a separate `memory_graph`, with Product DB retained for governance/audit.
-- Document-selection HITL and run-scoped PostgresSaver are implemented behind `MY_AGENTS_CHECKPOINTER_ENABLED`; PostgresStore semantic recall remains a Product DB-governed projection behind its own flag. Both require explicit setup/reconciliation before activation, and neither replaces Product DB transcripts or audit records.
+- Memory runtime migration is partially implemented. Recall orchestration runs inside `general_assistant`; PostgreSQL deployments provide PostgresStore semantic candidate search, and every candidate is revalidated through the SQLAlchemy/Product DB governance adapter before entering context. SQLite retains the Product DB relevance fallback. The separate `memory_graph` extraction/update workflow is still unimplemented.
+- PostgreSQL deployments now treat run-scoped PostgresSaver and PostgresStore as baseline process-owned infrastructure. The per-user experimental setting controls memory consent and eligibility; HITL availability derives from PostgresSaver presence. Framework setup is an explicit deployment prerequisite, and neither persistence primitive replaces Product DB transcripts or audit records. SQLite keeps non-durable graph execution and Product DB memory recall fallbacks.
 
 ### Deployment/ops
 

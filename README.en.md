@@ -164,7 +164,9 @@ Registered-account run requests may optionally provide `reasoning_mode` (`standa
 
 With `MY_AGENTS_DOCUMENT_WORKSPACE_ENABLED=true`, approved registered accounts can attach temporary files to a conversation, analyze them with GPT-5.6 Sol, and download certified spreadsheet outputs (`.xlsx`, `.csv`, `.tsv`). Guests are ineligible and every upload requires explicit consent to transfer the file to OpenAI. File bytes are never stored in the Product DB; they remain only in expiring OpenAI `user_data` files and a network-disabled hosted container. See the [OpenAI document workspace design](./docs/product-chat-service/en/25-openai-document-workspace.md) for the full contract.
 
-LangGraph persistence is an opt-in PostgreSQL feature. `MY_AGENTS_CHECKPOINTER_ENABLED=true` lets an ambiguous document-grounded run return `202 waiting_for_input`, survive a process restart, and resume after the user selects an authorized document. `MY_AGENTS_MEMORY_STORE_ENABLED=true` uses PostgresStore for semantic memory candidate search while Product DB rows continue to enforce consent, status, sensitivity, provenance, and source staleness. Run `uv run python -m scripts.langgraph_persistence setup` and a zero-drift memory reconciliation before enabling either flag.
+PostgreSQL deployments provision PostgresStore and PostgresSaver automatically as baseline LangGraph infrastructure. Store is a semantic projection of Product DB-governed memories; the per-user experimental setting controls consent and eligibility while Product DB rows continue to enforce status, sensitivity, provenance, and source staleness. PostgresSaver lets ambiguous document-grounded runs return `202 waiting_for_input`, survive a process restart, and resume after an authorized document selection. SQLite keeps Product DB recall and non-durable graph execution fallbacks. Run `uv run python -m scripts.langgraph_persistence setup` before serving PostgreSQL traffic and verify zero-drift memory reconciliation before enabling experimental memory for users.
+
+Experimental memory currently recalls explicit memories and manually confirmed suggestions. Ordinary chat does not form memories automatically; the separate post-turn `memory_graph` extraction/update workflow remains planned.
 
 The VS Code `FastAPI: uvicorn main:app (local pgvector)` profile runs its pre-launch migration with the interpreter selected by the Python extension. It does not depend on a shell command finding `uv` in a GUI-launched VS Code process, so select this repository's `.venv` interpreter before using the profile.
 
@@ -189,7 +191,7 @@ uv run ruff format --check .
 git diff --check
 ```
 
-On 2026-08-17, the full offline suite on this checkout reports **498 passed, 3 skipped** without requiring real credentials. The gated PostgreSQL checkpoint restart smoke also passes against the local pgvector profile.
+On 2026-08-24, the full offline suite on this checkout reports **498 passed, 3 skipped** without requiring real credentials. The gated PostgreSQL checkpoint restart smoke also passes against the local pgvector profile.
 
 ## Security and privacy boundaries
 

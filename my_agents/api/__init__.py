@@ -92,7 +92,7 @@ def _application_lifespan(settings: Settings):
             app.state.graph_runner = build_graph(
                 checkpointer=resources.checkpointer,
                 store=resources.store,
-                document_selection_hitl_enabled=settings.checkpointer_enabled,
+                document_selection_hitl_enabled=resources.checkpointer is not None,
             )
             yield
         finally:
@@ -185,8 +185,8 @@ def _log_runtime_configuration(settings: Settings) -> None:
         auth_password_hash_memory_cost_kib=settings.auth_password_hash_memory_cost_kib,
         auth_password_hash_parallelism=settings.auth_password_hash_parallelism,
         metrics_enabled=settings.metrics_enabled,
-        checkpointer_enabled=settings.checkpointer_enabled,
-        memory_store_enabled=settings.memory_store_enabled,
+        checkpointer_available=settings.database_url.startswith(("postgresql", "postgres://")),
+        memory_store_available=settings.database_url.startswith(("postgresql", "postgres://")),
         auto_create_tables=settings.should_auto_create_tables(),
         cors_origins=",".join(settings.cors_allowed_origin_list()) or "none",
         smtp_host=settings.auth_smtp_host or "none",

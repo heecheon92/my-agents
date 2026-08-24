@@ -225,14 +225,6 @@ class Settings(BaseSettings):
         min_length=1,
         validation_alias=AliasChoices("MY_AGENTS_DATABASE_URL"),
     )
-    checkpointer_enabled: bool = Field(
-        default=False,
-        validation_alias=AliasChoices("MY_AGENTS_CHECKPOINTER_ENABLED"),
-    )
-    memory_store_enabled: bool = Field(
-        default=False,
-        validation_alias=AliasChoices("MY_AGENTS_MEMORY_STORE_ENABLED"),
-    )
     memory_store_embedding_dimensions: int = Field(
         default=1536,
         ge=1,
@@ -619,22 +611,6 @@ class Settings(BaseSettings):
         if self.document_workspace_enabled and self.openai_api_key is None:
             raise ValueError(
                 "OPENAI_API_KEY is required when MY_AGENTS_DOCUMENT_WORKSPACE_ENABLED=true"
-            )
-        if (self.checkpointer_enabled or self.memory_store_enabled) and not (
-            self.database_url.startswith("postgresql")
-            or self.database_url.startswith("postgres://")
-        ):
-            raise ValueError(
-                "MY_AGENTS_DATABASE_URL must use PostgreSQL when LangGraph persistence is enabled"
-            )
-        if (
-            self.memory_store_enabled
-            and self.embedding_mode == "deterministic"
-            and self.memory_store_embedding_dimensions != 32
-        ):
-            raise ValueError(
-                "MY_AGENTS_MEMORY_STORE_EMBEDDING_DIMENSIONS=32 is required when "
-                "MY_AGENTS_EMBEDDING_MODE=deterministic"
             )
         if self.document_workspace_idle_ttl_seconds % 60:
             raise ValueError("MY_AGENTS_DOCUMENT_WORKSPACE_IDLE_TTL_SECONDS must use whole minutes")

@@ -278,8 +278,6 @@ def test_service_foundation_settings_have_safe_defaults(
     assert settings.test_database_url is None
     assert settings.auto_create_tables is None
     assert settings.should_auto_create_tables() is True
-    assert settings.checkpointer_enabled is False
-    assert settings.memory_store_enabled is False
     assert settings.hitl_wait_seconds == 86_400
     assert settings.session_cookie_name == "my_agents_session"
     assert settings.session_cookie_secure is True
@@ -308,15 +306,6 @@ def test_service_foundation_settings_have_safe_defaults(
     assert settings.guest_max_prompts == 20
     assert settings.guest_max_document_uploads == 5
     assert settings.active_run_stale_after_seconds == 120
-
-
-def test_langgraph_persistence_requires_postgresql(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
-    monkeypatch.setenv("MY_AGENTS_CHECKPOINTER_ENABLED", "true")
-    monkeypatch.setenv("MY_AGENTS_DATABASE_URL", "sqlite+pysqlite:///:memory:")
-
-    with pytest.raises(ValueError, match="must use PostgreSQL"):
-        Settings(_env_file=None)
 
 
 def test_service_foundation_settings_accept_overrides(

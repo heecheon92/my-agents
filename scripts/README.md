@@ -12,7 +12,7 @@ repository root with `uv run python -m scripts.<name>`.
 | `scripts.dev_pgvector` | Start and wire a disposable local Docker pgvector/Postgres database. | Local Postgres/pgvector development and migration smoke checks. |
 | `scripts.ops` | Interactive operational dispatcher that collects options and delegates to focused scripts. | Operator-friendly account/guest maintenance. |
 | `scripts.migrate_database` | Check or run Alembic `upgrade head` against the selected env database. | Production/staging migration status and upgrades after backup/snapshot. |
-| `scripts.langgraph_persistence` | Set up/check framework-owned Postgres tables and dry-run/apply memory Store reconciliation. | Enable or audit self-hosted LangGraph checkpointer and Store state. |
+| `scripts.langgraph_persistence` | Set up/check framework-owned Postgres tables and dry-run/apply memory Store reconciliation. | Provision or audit baseline PostgreSQL LangGraph persistence. |
 | `scripts.wipe_database` | Dangerously wipe the selected SQLite/Postgres database after explicit confirmations. | Rebuild a local/staging/production database from migrations after a backup/snapshot. |
 | `scripts.approve_account_signup` | Approve a pending account signup and print/send verification or mark email verified. | Manual signup approval and verification bypass. |
 | `scripts.resend_account_verification` | Refresh an expired/missing verification token for an approved unverified account. | Recover signups blocked by expired verification links. |
@@ -45,7 +45,9 @@ performance worktrees without package-name assumptions.
 
 ## `scripts.langgraph_persistence`
 
-Run this only against PostgreSQL after the application Alembic migration:
+Run `setup` and `status` for every PostgreSQL deployment after the application Alembic
+migration and before serving traffic. Reconciliation is needed before enabling per-user
+experimental memory or after repairing projection drift:
 
 ```bash
 uv run python -m scripts.langgraph_persistence setup

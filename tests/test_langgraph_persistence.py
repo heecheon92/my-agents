@@ -19,6 +19,50 @@ from my_agents.persistence.langgraph import open_langgraph_persistence
 from my_agents.settings import Settings
 
 
+def test_postgres_persistence_is_automatic_and_uses_embedding_provider_dimensions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class FakePool:
+        def __init__(self, *args, **kwargs) -> None:  # noqa: ANN002, ANN003
+            captured["pool_kwargs"] = kwargs
+
+        def open(self, *, wait: bool) -> None:
+            captured["pool_open_wait"] = wait
+
+        def close(self) -> None:
+            captured["pool_closed"] = True
+
+    class FakeSaver:
+        def __init__(self, pool, *, serde) -> None:  # noqa: ANN001
+            captured["saver_pool"] = pool
+            captured["saver_serde"] = serde
+
+    class FakeStore:
+        def __init__(self, pool, *, index) -> None:  # noqa: ANN001
+            captured["store_pool"] = pool
+            captured["store_index"] = index
+
+    monkeypatch.setattr("my_agents.persistence.langgraph.ConnectionPool", FakePool)
+    monkeypatch.setattr("my_agents.persistence.langgraph.PostgresSaver", FakeSaver)
+    monkeypatch.setattr("my_agents.persistence.langgraph.PostgresStore", FakeStore)
+    settings = Settings(
+        _env_file=None,
+        MY_AGENTS_RESPONSE_MODE="deterministic",
+        MY_AGENTS_DATABASE_URL="postgresql+psycopg://app:pw@localhost/app",
+        MY_AGENTS_MEMORY_STORE_EMBEDDING_DIMENSIONS=1536,
+    )
+
+    resources = open_langgraph_persistence(settings)
+
+    assert resources.checkpointer is not None
+    assert resources.store is not None
+    assert captured["store_index"]["dims"] == 32  # type: ignore[index]
+    resources.close()
+    assert captured["pool_closed"] is True
+
+
 def test_postgres_checkpoint_resumes_document_selection_after_resource_restart() -> None:
     database_url = os.getenv("MY_AGENTS_TEST_DATABASE_URL")
     if not database_url:
@@ -27,8 +71,6 @@ def test_postgres_checkpoint_resumes_document_selection_after_resource_restart()
         _env_file=None,
         MY_AGENTS_RESPONSE_MODE="deterministic",
         MY_AGENTS_DATABASE_URL=database_url,
-        MY_AGENTS_CHECKPOINTER_ENABLED=True,
-        MY_AGENTS_MEMORY_STORE_ENABLED=False,
     )
     run_id = f"test-{uuid.uuid4()}"
     context = {
@@ -43,6 +85,7 @@ def test_postgres_checkpoint_resumes_document_selection_after_resource_restart()
 
     first_resources = open_langgraph_persistence(settings)
     assert first_resources.checkpointer is not None
+    assert first_resources.store is not None
     first_resources.checkpointer.setup()
     first_graph = build_graph(
         checkpointer=first_resources.checkpointer,

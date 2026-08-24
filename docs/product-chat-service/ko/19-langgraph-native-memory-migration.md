@@ -1,6 +1,6 @@
 # LangGraph-native memory migration note
 
-상태: Store/checkpointer runtime은 opt-in flag 뒤에 구현됨, memory graph는 계획 단계
+상태: PostgreSQL Store/checkpointer baseline 구현됨, `memory_graph`는 계획 단계
 
 날짜: 2026-06-10
 
@@ -32,10 +32,11 @@ LangGraph memory_graph = extraction/update workflow
 LangGraph checkpointer = run-scoped execution/HITL state
 ```
 
-2026-08-17 구현 업데이트: `general_assistant`에는 graph-owned memory recall, Product DB
+2026-08-24 구현 업데이트: `general_assistant`에는 graph-owned memory recall, Product DB
 governance로 항상 재검증하는 PostgresStore semantic projection, document-selection interrupt를
-위한 run-scoped PostgresSaver가 있습니다. 두 persistence surface는 setup/reconciliation이
-성공하기 전까지 기본적으로 꺼져 있습니다. 별도 extraction/update `memory_graph`는 이후 phase입니다.
+위한 run-scoped PostgresSaver가 있습니다. PostgreSQL deployment는 명시적 framework setup 뒤
+process startup에서 둘 다 provision하며, deployment Store flag가 아니라 per-user experimental
+setting이 consent와 memory eligibility를 제어합니다. 별도 extraction/update `memory_graph`는 이후 phase입니다.
 
 ## 왜 migration이 필요한가
 
@@ -128,24 +129,26 @@ flowchart TD
 - redacted run snapshot;
 - document deletion과 transcript replay/delete의 source invalidation.
 
-Known limitation: LangGraph-native runtime memory가 아니라 product-owned runtime memory입니다.
+현재 boundary: Product DB는 governance source of truth와 SQLite recall fallback으로 남고,
+PostgreSQL recall은 LangGraph Store semantic candidate search를 사용할 수 있습니다.
 
 ### Phase 1 — memory runtime boundary 추가
 
-시작되었습니다. Persistence를 바꾸기 전에 작은 recall interface를 둡니다.
+구현되었습니다. 작은 recall interface가 persistence assumption을 격리합니다.
 
 ```python
 class MemoryRuntime(Protocol):
     def search(self, *, user_id: str, query: str, limit: int) -> list[MemoryItem]: ...
 ```
 
-초기 adapter는 기존 Product DB table을 `UserMemoryService`를 통해 감쌉니다. 중요한 것은 graph/API code 전반에
-direct table/service assumption이 퍼지지 않게 하는 것입니다. Write/delete runtime method는 `memory_graph`나
-Store-backed write를 도입할 때 추가합니다.
+Adapter는 `UserMemoryService`를 통해 Product DB governance를 유지합니다. Store가 있으면 semantic
+candidate를 검색한 뒤 candidate ID를 Product DB에서 다시 load/revalidate합니다. Store가 없으면 Product DB
+relevance fallback을 사용합니다. Explicit/confirmed write와 lifecycle delete는 Store에 best-effort로 반영하고,
+reconciliation이 drift를 복구합니다.
 
 ### Phase 2 — recall을 graph node로 이동
 
-시작되었습니다. Response generation 이전에 graph node가 추가되었습니다.
+구현되었습니다. Response generation 이전에 graph node가 있습니다.
 
 ```text
 classify_request -> retrieve_memory -> respond_general/respond_research
@@ -155,6 +158,10 @@ Node는 LangGraph runtime context에서 `user_id`와 `MemoryRuntime`을 받고, 
 그 뒤 `MemoryRuntime.search`를 호출해 compact `memory_context`와 `source_conflicts`를 출력합니다.
 
 ### Phase 3 — extraction용 `memory_graph` 추가
+
+**현재 상태: 미구현.** `my_agents/agents/memory_graph/` package, post-turn scheduler/debounce
+worker, 일반 chat에서 memory를 자동 생성·갱신하는 경로가 없습니다. 현재 API는 explicit memory와
+사용자가 직접 confirm한 suggestion만 지원합니다.
 
 `memory-template`에서 영감을 받은 별도 LangGraph workflow를 `my_agents/agents/memory_graph/`에 둡니다.
 
@@ -166,28 +173,27 @@ Node는 LangGraph runtime context에서 `user_id`와 `MemoryRuntime`을 받고, 
 
 ### Phase 4 — active memory runtime을 LangGraph Store로 이동
 
-Active memory storage/search를 LangGraph Store 또는 compatible adapter로 이동합니다. Product DB는 governance metadata를
-유지하고 다음 중 하나를 담당합니다.
-
-1. store namespace/key와 status/provenance/stale/delete state mirror;
-2. Store result를 prompt에 넣기 전 filtering하는 authorization/provenance index.
-
-Namespace는 LangGraph example에 가까운 다음 모양을 선호합니다.
+**PostgreSQL에서 구현되었습니다.** PostgresStore는 process-owned infrastructure이며 eligible
+Product DB memory의 `content` field를 index합니다. 실제 namespace는 다음과 같습니다.
 
 ```text
-("memories", user_id, memory_type)
+(user_id, "memories", category) / memory_key
 ```
 
-전환 중 기존 SQL namespace shape을 유지한다면 mapping을 명시적으로 문서화하고, Store-backed search가 활성화될 때
-migration합니다.
+Experimental memory를 켠 사용자의 active/non-sensitive/non-stale memory만 eligible합니다. Store는
+semantic candidate ID를 반환하고, Product DB가 user/status/sensitivity/staleness/current opt-in을 다시
+검증한 뒤 graph context에 content를 전달합니다. Explicit write와 confirmed suggestion은 best-effort로
+project하며 reconciliation이 missing/stale/orphaned item을 복구합니다. SQLite는 Product DB search fallback을
+유지하고 PostgresStore를 provision하지 않습니다.
 
 ### Phase 5 — HITL/resume용 run-scoped checkpointer 추가
 
-`MY_AGENTS_CHECKPOINTER_ENABLED` 뒤에 구현했습니다. Assistant workflow는 `run_id`를 thread
+**PostgreSQL baseline infrastructure로 구현했습니다.** Assistant workflow는 `run_id`를 thread
 boundary로 사용하고, 제한된 최근 6개 message window와 primitive retrieval/interaction snapshot만
 checkpoint합니다. Terminal run의 checkpoint는 삭제합니다. 모호한 document request는
 `waiting_for_input`으로 멈추고 authorized document selection을 노출한 뒤, 현재 permission을 다시
 확인하고 같은 run을 재개할 수 있습니다.
+SQLite는 durable checkpointer 없이 compile하므로 restart-safe HITL을 보장하지 않습니다.
 Public waiting/resume payload는 [Agent와 frontend 사이의 interaction 계약](./27-agent-frontend-interaction-contract.md)의
 versioned semantic contract를 따릅니다.
 
