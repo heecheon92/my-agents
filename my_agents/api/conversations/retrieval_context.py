@@ -34,7 +34,6 @@ from my_agents.knowledge.routing import (
     RetrievalRoutingDecision,
 )
 from my_agents.knowledge.source_locations import parse_source_location_json
-from my_agents.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -201,7 +200,6 @@ def graph_input_for_run(
     run_id: str,
     document_selection_hitl_allowed: bool = True,
     preselected_document_id: str | None = None,
-    force_full_document_retrieval: bool = False,
 ) -> dict[str, object]:
     graph_input: dict[str, object] = {
         "messages": messages[-RECENT_CONVERSATION_MESSAGE_LIMIT:],
@@ -209,9 +207,6 @@ def graph_input_for_run(
         "conversation_id": conversation_id,
         "run_id": run_id,
         "document_selection_hitl_allowed": document_selection_hitl_allowed,
-        "full_document_retrieval_enabled": (
-            get_settings().full_document_retrieval_enabled or force_full_document_retrieval
-        ),
         "full_document_requested": False,
         "retrieved_chunk_ids": [],
         "retrieval_records": [],

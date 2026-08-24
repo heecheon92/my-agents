@@ -187,9 +187,10 @@ Do not enable shared-environment checkpointer interactions until all of these ar
 4. The frontend version with waiting-state parsing, refresh recovery, source choice,
    resume routes, and held-queue behavior is deployed.
 
-Keep `MY_AGENTS_FULL_DOCUMENT_RETRIEVAL_ENABLED=false` until this interaction rollout is
-available wherever a comprehensive request may need document selection. Single-target
-automatic resolution does not relax the same authorization and system-KB exclusion rules.
+The comprehensive-document path is baseline behavior for explicit intent, so deploy it only
+where this interaction rollout is available whenever document selection may be required.
+Single-target automatic resolution does not relax the same authorization and system-KB
+exclusion rules.
 
 The interaction layer does not add a new database migration. `schema_version` is stored in
 the existing public interaction JSON.

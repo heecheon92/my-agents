@@ -149,6 +149,27 @@ _COMPREHENSIVE_DOCUMENT_TASK_HINTS = (
     "나열",
     "비교",
 )
+_EXHAUSTIVE_COVERAGE_HINTS = (
+    "without missing anything",
+    "without omitting anything",
+    "without omissions",
+    "no omissions",
+    "all content",
+    "everything in",
+    "빠짐없이",
+    "누락 없이",
+    "누락없이",
+    "모든 내용",
+    "전부",
+)
+_DOCUMENT_REFERENCE_HINTS = (
+    "document",
+    "file",
+    "source",
+    "문서",
+    "파일",
+    "자료",
+)
 
 
 def route_retrieval(
@@ -257,9 +278,13 @@ def is_relevant_retrieval_result(*, route: RetrievalRoute, source: str, score: f
 def is_comprehensive_document_request(message: str) -> bool:
     """Return whether the user explicitly requests whole-document coverage."""
     normalized = _normalize(_clean_query(message))
-    return _has_any(normalized, _COMPREHENSIVE_DOCUMENT_HINTS) and _has_any(
-        normalized, _COMPREHENSIVE_DOCUMENT_TASK_HINTS
+    has_task = _has_any(normalized, _COMPREHENSIVE_DOCUMENT_TASK_HINTS)
+    has_known_comprehensive_phrase = _has_any(normalized, _COMPREHENSIVE_DOCUMENT_HINTS)
+    has_composed_comprehensive_intent = _has_any(normalized, _EXHAUSTIVE_COVERAGE_HINTS) and (
+        _has_any(normalized, _DOCUMENT_REFERENCE_HINTS)
+        or _has_specific_document_reference(normalized)
     )
+    return has_task and (has_known_comprehensive_phrase or has_composed_comprehensive_intent)
 
 
 def _clean_query(message: str) -> str:

@@ -75,7 +75,7 @@ Successful streams emit:
 7. `answer_composed`
 8. `run_completed`
 
-`full_document_read` appears only for the opt-in comprehensive-document path. It is
+`full_document_read` appears only for the explicit comprehensive-document path. It is
 persisted and streamed after the final answer deltas but before `answer_composed`; ordinary
 runs keep their existing sequence without that event.
 

@@ -8,10 +8,12 @@ topics:
   - langgraph
   - permissions
   - citations
+  - tool-calling
 related_code:
   - my_agents/agents/general_assistant/graph.py
   - my_agents/agents/general_assistant/rag_retrieval.py
   - my_agents/agents/rag_agent/retrieval.py
+  - my_agents/agents/rag_agent/tool_selection.py
   - my_agents/knowledge/retrieval.py
   - tests/test_full_document_retrieval.py
 ---
@@ -26,16 +28,37 @@ Ranked retrieval and full-document retrieval solve different problems.
 
 A few excellent chunks may still miss a requirement in an unrelated section. Conversely,
 injecting an entire file for every question is slower, more expensive, and harder to secure.
-The implementation therefore keeps ranked retrieval as the default and adds an explicit,
-opt-in comprehensive-document path.
+The implementation therefore keeps ranked retrieval as the default and adds an explicit
+comprehensive-document path.
+
+## 0. Tool choice is model judgment; execution is application authority
+
+The RAG Agent now has one deliberately narrow model-backed responsibility. After the General
+Assistant decides that private knowledge is relevant, fixed `gpt-5.6-luna` in standard mode
+with low reasoning effort chooses one typed operation:
+
+- `search_authorized_chunks` for focused facts, sections, and ordinary summaries;
+- `read_authorized_document_comprehensively` for explicit or clearly implied exhaustive work.
+
+This is not permission delegation. Luna receives the user task and bounded recent conversation,
+but does not receive trusted document IDs or raw full-document text during tool selection. The
+backend still resolves the target, revalidates owner/group/explicit-document access, excludes
+ambient system knowledge, enforces character limits, and owns HITL. The final answer remains a
+Sol response-provider responsibility.
+
+The reasoning setting is fixed rather than inherited from the user. `low` is the initial balance
+for multilingual nuance and negation without turning a two-tool decision into a deep reasoning
+task. Deterministic mode stays offline, and invalid tool output or provider failure falls back to
+the same composed semantic rule. This makes the natural Korean regression request—named document
++ `빠짐없이` + review/summarize task—comprehensive without treating a generic “explain everything”
+request as a document read.
 
 ## 1. Intent is part of the safety boundary
 
-The graph enters this path only when all three conditions are true:
+The graph enters this path only when both conditions are true:
 
-1. `MY_AGENTS_FULL_DOCUMENT_RETRIEVAL_ENABLED=true`;
-2. the source-selection gate chose `knowledge_base`;
-3. the prompt contains both a completeness hint and a document task.
+1. the source-selection gate chose `knowledge_base`;
+2. the prompt contains both a completeness hint and a document task.
 
 Examples that activate it include “review the entire document and identify every
 requirement” and “문서 전체를 빠짐없이 검토해줘.” “Summarize this document” stays on the
@@ -160,4 +183,4 @@ contract, not a temporary implementation detail that the UI or responder may hid
 
 ## Revision history
 
-- 2026-08-24: Created after implementing the opt-in bounded full-document retrieval path.
+- 2026-08-24: Created after implementing the explicit-intent bounded full-document retrieval path; updated when that semantic gate became baseline behavior and when Luna-backed typed retrieval-tool selection replaced literal phrases as the OpenAI-mode decision boundary.

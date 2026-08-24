@@ -9,6 +9,7 @@ from langgraph.types import Command
 from my_agents.agents.general_assistant.graph import build_graph
 from my_agents.agents.general_assistant.retrieval_gate import RetrievalSourceDecision
 from my_agents.agents.rag_agent import RagAgentRetrievalResult
+from my_agents.agents.rag_agent.tool_selection import RagRetrievalToolDecision
 from my_agents.knowledge.retrieval import AuthorizedDocumentOption
 from my_agents.knowledge.routing import RetrievalRoutingDecision
 from my_agents.memory.runtime import MemoryRuntimeItem
@@ -150,6 +151,28 @@ def test_graph_accepts_runtime_source_decider_for_multilingual_gate() -> None:
     assert result["retrieval_source_decision"].source == "bypass"
 
 
+def test_graph_uses_rag_owned_runtime_tool_decider_after_kb_delegation() -> None:
+    graph = get_compiled_graph()
+    rag_runtime = FakeRagRuntime()
+    source_decider = FakeRetrievalSourceDecider(source="knowledge_base")
+    tool_decider = FakeRagRetrievalToolDecider(tool="search_authorized_chunks")
+
+    result = graph.invoke(
+        graph_state("SUMMARY.ko.md에서 AxSystem 정의만 찾아줘", user_id="user-a"),
+        context=graph_runtime_context(
+            user_id="user-a",
+            rag_runtime=rag_runtime,
+            retrieval_source_decider=source_decider,
+            rag_retrieval_tool_decider=tool_decider,
+        ),
+    )
+
+    assert tool_decider.messages == ["SUMMARY.ko.md에서 AxSystem 정의만 찾아줘"]
+    assert result["rag_retrieval_tool"] == "search_authorized_chunks"
+    assert result["full_document_requested"] is False
+    assert rag_runtime.queries == ["SUMMARY.ko.md에서 AxSystem 정의만 찾아줘"]
+
+
 def test_checkpointed_graph_interrupts_and_resumes_document_selection() -> None:
     graph = build_graph(
         checkpointer=InMemorySaver(serde=checkpoint_serializer()),
@@ -213,6 +236,19 @@ class FakeRetrievalSourceDecider:
         return RetrievalSourceDecision(
             source=self._source,  # type: ignore[arg-type]
             reason="fake source decider",
+        )
+
+
+class FakeRagRetrievalToolDecider:
+    def __init__(self, *, tool: str) -> None:
+        self._tool = tool
+        self.messages: list[str] = []
+
+    def decide(self, *, messages):  # noqa: ANN001
+        self.messages.append(str(messages[-1].content))
+        return RagRetrievalToolDecision(
+            tool=self._tool,  # type: ignore[arg-type]
+            reason="fake RAG tool decider",
         )
 
 

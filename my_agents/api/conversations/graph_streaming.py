@@ -160,8 +160,9 @@ def result_fields_from_update(update: dict[str, Any]) -> dict[str, Any]:
             "document_workspace_expires_at",
             "document_selection_option_count",
             "selected_document_id",
-            "full_document_retrieval_enabled",
             "full_document_requested",
+            "rag_retrieval_tool",
+            "rag_retrieval_tool_reason",
             "full_document_target_status",
             "full_document_next_cursor",
         ):

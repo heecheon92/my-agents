@@ -106,7 +106,6 @@ def complete_sync_conversation_run(
     hitl_wait_seconds: int = 86_400,
     document_selection_hitl_allowed: bool = True,
     preselected_document_id: str | None = None,
-    force_full_document_retrieval: bool = False,
 ) -> ConversationRunResult:
     try:
         result = _complete_sync_conversation_run(
@@ -123,7 +122,6 @@ def complete_sync_conversation_run(
             hitl_wait_seconds=hitl_wait_seconds,
             document_selection_hitl_allowed=document_selection_hitl_allowed,
             preselected_document_id=preselected_document_id,
-            force_full_document_retrieval=force_full_document_retrieval,
         )
         if isinstance(result, ConversationRunResponse):
             delete_checkpoint_thread(graph_runner, run.id)
@@ -180,7 +178,6 @@ def _complete_sync_conversation_run(
     hitl_wait_seconds: int = 86_400,
     document_selection_hitl_allowed: bool = True,
     preselected_document_id: str | None = None,
-    force_full_document_retrieval: bool = False,
 ) -> ConversationRunResult:
     run_started = perf_counter()
     retrieval_route = "unknown"
@@ -202,7 +199,6 @@ def _complete_sync_conversation_run(
         run_id=run.id,
         document_selection_hitl_allowed=document_selection_hitl_allowed,
         preselected_document_id=preselected_document_id,
-        force_full_document_retrieval=force_full_document_retrieval,
     )
     graph_context = graph_context_for_run(
         db=db,

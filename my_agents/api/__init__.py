@@ -11,6 +11,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from rich.logging import RichHandler
 
 from my_agents.agents.general_assistant.graph import build_graph
+from my_agents.agents.rag_agent.tool_selection import (
+    RAG_AGENT_PLANNER_MODEL,
+    RAG_AGENT_PLANNER_REASONING_EFFORT,
+)
 from my_agents.api.assistant import GraphRunner, assistant_router, get_graph_runner
 from my_agents.api.auth import auth_router
 from my_agents.api.conversations import conversations_router
@@ -92,7 +96,7 @@ def _application_lifespan(settings: Settings):
             app.state.graph_runner = build_graph(
                 checkpointer=resources.checkpointer,
                 store=resources.store,
-                document_selection_hitl_enabled=settings.checkpointer_enabled,
+                document_selection_hitl_enabled=resources.checkpointer is not None,
             )
             yield
         finally:
@@ -174,6 +178,8 @@ def _log_runtime_configuration(settings: Settings) -> None:
         "runtime.config",
         deployment_environment=settings.deployment_environment,
         response_mode=settings.response_mode,
+        rag_planner_model=RAG_AGENT_PLANNER_MODEL,
+        rag_planner_reasoning_effort=RAG_AGENT_PLANNER_REASONING_EFFORT,
         embedding_mode=settings.embedding_mode,
         reranker_mode=settings.reranker_mode,
         auth_email_mode=settings.auth_email_mode,
@@ -185,9 +191,8 @@ def _log_runtime_configuration(settings: Settings) -> None:
         auth_password_hash_memory_cost_kib=settings.auth_password_hash_memory_cost_kib,
         auth_password_hash_parallelism=settings.auth_password_hash_parallelism,
         metrics_enabled=settings.metrics_enabled,
-        checkpointer_enabled=settings.checkpointer_enabled,
-        memory_store_enabled=settings.memory_store_enabled,
-        full_document_retrieval_enabled=settings.full_document_retrieval_enabled,
+        checkpointer_available=settings.database_url.startswith(("postgresql", "postgres://")),
+        memory_store_available=settings.database_url.startswith(("postgresql", "postgres://")),
         auto_create_tables=settings.should_auto_create_tables(),
         cors_origins=",".join(settings.cors_allowed_origin_list()) or "none",
         smtp_host=settings.auth_smtp_host or "none",

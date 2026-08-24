@@ -3,11 +3,17 @@
 This changelog records why the production-surface `general_assistant` agent folder needed
 meaningful behavior, graph-state, provider, or documentation changes.
 
-## 2026-08-24 — Add opt-in comprehensive-document graph path
+## 2026-08-24 — Delegate retrieval-operation choice to the RAG Agent
+
+- **Why:** `general_assistant` should own broad source delegation and final response composition, while focused-versus-comprehensive retrieval belongs to the RAG Agent.
+- **Behavior/contract impact:** after the source gate selects private knowledge, the graph consumes the RAG Agent's Luna/deterministic typed tool decision and routes to focused ContextForge retrieval or the bounded comprehensive-document branch. Only compact tool name/reason metadata enters graph state; authorization, raw reads, HITL, and Sol answer composition keep their existing boundaries.
+- **Verification:** graph integration tests inject a RAG tool decider and confirm that focused selection reaches the existing runtime without activating full-document state.
+
+## 2026-08-24 — Add explicit comprehensive-document graph path
 
 - **Why:** Top-k semantic and lexical retrieval can omit distant sections when a user explicitly asks for complete-file review, requirement extraction, or cross-section consistency.
-- **Behavior/contract impact:** The graph is now `general-assistant-checkpoint-v2` and detects explicit Korean/English comprehensive-document tasks. When enabled, it resolves one currently authorized user-controllable document, reuses typed document selection for ambiguity, prepares compact coverage/citation state, recalls memory, and re-reads the same authorized range inside `respond_full_document` without checkpointing raw text. Up to 24,000 characters is complete coverage; larger documents currently answer from the first 12,000-character range with a mandatory localized partial-review disclosure. System documents cannot be selected, and replay preserves the original document instead of substituting another source.
-- **API/operations impact:** Completed run responses/details expose nullable `document_coverage`, while redacted `full_document_read` events expose metadata, offsets, total characters, and latency. The feature is disabled by default. Older waiting runs are graph-version incompatible and should be drained or cancelled before rollout.
+- **Behavior/contract impact:** The graph is now `general-assistant-checkpoint-v2` and detects explicit Korean/English comprehensive-document tasks. It resolves one currently authorized user-controllable document, reuses typed document selection for ambiguity, prepares compact coverage/citation state, recalls memory, and re-reads the same authorized range inside `respond_full_document` without checkpointing raw text. Up to 24,000 characters is complete coverage; larger documents currently answer from the first 12,000-character range with a mandatory localized partial-review disclosure. System documents cannot be selected, and replay preserves the original document instead of substituting another source.
+- **API/operations impact:** Completed run responses/details expose nullable `document_coverage`, while redacted `full_document_read` events expose metadata, offsets, total characters, and latency. Explicit comprehensive intent is the baseline activation gate; older waiting runs are graph-version incompatible and should be drained or cancelled before rollout.
 - **Verification:** `tests/test_full_document_retrieval.py` and `tests/test_settings.py` cover intent boundaries, complete/partial reads, permission and selection behavior, refresh/SSE/replay contracts, citation ranges, checkpoint raw-body exclusion, and settings validation. Automatic multi-range synthesis and token-aware budgeting remain follow-up work.
 
 ## 2026-08-17 — Add opt-in run persistence, document-selection HITL, and Store recall

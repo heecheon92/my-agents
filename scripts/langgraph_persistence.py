@@ -35,18 +35,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     reconcile.add_argument("--apply", action="store_true", help="repair drift after reporting it")
     args = parser.parse_args(argv)
 
-    base_settings = get_settings()
-    settings = base_settings.model_copy(
-        update={
-            "checkpointer_enabled": True,
-            "memory_store_enabled": True,
-            "memory_store_embedding_dimensions": (
-                32
-                if base_settings.embedding_mode == "deterministic"
-                else base_settings.memory_store_embedding_dimensions
-            ),
-        }
-    )
+    settings = get_settings()
     if args.command == "setup":
         setup_langgraph_persistence(settings)
         return _print_status(settings)
