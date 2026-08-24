@@ -3,11 +3,14 @@
 import logging
 import time
 import uuid
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from rich.logging import RichHandler
 
+from my_agents.agents.general_assistant.graph import build_graph
 from my_agents.api.assistant import GraphRunner, assistant_router, get_graph_runner
 from my_agents.api.auth import auth_router
 from my_agents.api.conversations import conversations_router
@@ -22,6 +25,7 @@ from my_agents.api.metrics import metrics_router
 from my_agents.api.reasoning import reasoning_router
 from my_agents.diagnostics import deploy_log, safe_database_url_summary, safe_email_domain
 from my_agents.observability.metrics import observe_http_request
+from my_agents.persistence.langgraph import open_langgraph_persistence
 from my_agents.settings import Settings, get_settings
 
 
@@ -33,6 +37,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="my-agents",
         version="0.1.0",
+        lifespan=_application_lifespan(settings),
         responses={
             "default": {
                 "model": APIErrorResponse,
@@ -73,6 +78,27 @@ def create_app() -> FastAPI:
     if settings.metrics_enabled:
         app.include_router(metrics_router)
     return app
+
+
+def _application_lifespan(settings: Settings):
+    """Own process-scoped LangGraph Postgres resources and the compiled product graph."""
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        resources = open_langgraph_persistence(settings)
+        try:
+            app.state.langgraph_persistence = resources
+            app.state.langgraph_store = resources.store
+            app.state.graph_runner = build_graph(
+                checkpointer=resources.checkpointer,
+                store=resources.store,
+                document_selection_hitl_enabled=resources.checkpointer is not None,
+            )
+            yield
+        finally:
+            resources.close()
+
+    return lifespan
 
 
 def _install_deployment_request_logging(app: FastAPI) -> None:
@@ -159,6 +185,8 @@ def _log_runtime_configuration(settings: Settings) -> None:
         auth_password_hash_memory_cost_kib=settings.auth_password_hash_memory_cost_kib,
         auth_password_hash_parallelism=settings.auth_password_hash_parallelism,
         metrics_enabled=settings.metrics_enabled,
+        checkpointer_available=settings.database_url.startswith(("postgresql", "postgres://")),
+        memory_store_available=settings.database_url.startswith(("postgresql", "postgres://")),
         auto_create_tables=settings.should_auto_create_tables(),
         cors_origins=",".join(settings.cors_allowed_origin_list()) or "none",
         smtp_host=settings.auth_smtp_host or "none",

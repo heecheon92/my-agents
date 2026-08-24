@@ -37,6 +37,7 @@ class ContextForgeRequest:
     query: str
     messages: Sequence[BaseMessage]
     selection_context: KnowledgeBaseSelectionContext
+    selected_document_id: str | None = None
     quality_mode: QualityMode = "high_recall"
 
 

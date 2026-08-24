@@ -12,6 +12,7 @@ from my_agents.document_workspace.schemas import (
     ConversationArtifactResponse,
     ConversationAttachmentResponse,
 )
+from my_agents.interactions.schemas import PendingDocumentSelection
 from my_agents.knowledge.routing import AnswerMode, DocumentScope, RetrievalRoute
 from my_agents.knowledge.schemas import CitationResponse, KnowledgeBaseSelection
 from my_agents.schemas import RouteDecision
@@ -153,6 +154,7 @@ class ConversationReplayRequest(BaseModel):
 class ConversationRunResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    status: Literal["completed"] = "completed"
     run_id: str
     conversation_id: str
     reply: str
@@ -174,12 +176,28 @@ class ConversationRunResponse(BaseModel):
     artifacts: list[ConversationArtifactResponse] = Field(default_factory=list)
 
 
+class ConversationRunInterruptedResponse(BaseModel):
+    """Refresh-safe response for a graph waiting on user input."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["waiting_for_input"] = "waiting_for_input"
+    run_id: str
+    conversation_id: str
+    interaction: PendingDocumentSelection
+
+
+type ConversationRunResult = ConversationRunResponse | ConversationRunInterruptedResponse
+
+
 class ConversationRunCancelResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     run_id: str
     conversation_id: str
-    status: Literal["running", "cancelling", "cancelled", "completed", "failed"]
+    status: Literal[
+        "running", "waiting_for_input", "cancelling", "cancelled", "completed", "failed"
+    ]
 
 
 class AgentRunSummaryResponse(BaseModel):
@@ -296,6 +314,24 @@ class RunCancelRequestedEventPayload(AgentEventPayload):
     status: Literal["cancelling"] = "cancelling"
 
 
+class RunInterruptedEventPayload(AgentEventPayload):
+    run_id: str
+    status: Literal["waiting_for_input"] = "waiting_for_input"
+    interaction_id: str
+    interaction_schema_version: Literal[1]
+    interaction_type: Literal["document_selection"] = "document_selection"
+    option_count: int = Field(ge=0)
+    expires_at: datetime
+
+
+class RunResumedEventPayload(AgentEventPayload):
+    run_id: str
+    status: Literal["running"] = "running"
+    interaction_id: str
+    interaction_schema_version: Literal[1]
+    interaction_type: Literal["document_selection"] = "document_selection"
+
+
 class RunCancelledEventPayload(AgentEventPayload):
     run_id: str
     conversation_id: str | None = None
@@ -363,6 +399,16 @@ class RunCancelRequestedAgentEventResponse(AgentEventResponseBase):
     payload: RunCancelRequestedEventPayload
 
 
+class RunInterruptedAgentEventResponse(AgentEventResponseBase):
+    event_type: Literal["run_interrupted"]
+    payload: RunInterruptedEventPayload
+
+
+class RunResumedAgentEventResponse(AgentEventResponseBase):
+    event_type: Literal["run_resumed"]
+    payload: RunResumedEventPayload
+
+
 class RunCancelledAgentEventResponse(AgentEventResponseBase):
     event_type: Literal["run_cancelled"]
     payload: RunCancelledEventPayload
@@ -382,6 +428,8 @@ type AgentEventResponse = Annotated[
     | DocumentWorkspaceStartedAgentEventResponse
     | ArtifactCreatedAgentEventResponse
     | AnswerComposedAgentEventResponse
+    | RunInterruptedAgentEventResponse
+    | RunResumedAgentEventResponse
     | RunCancelRequestedAgentEventResponse
     | RunCancelledAgentEventResponse
     | RunFailedAgentEventResponse,

@@ -2,8 +2,9 @@
 
 from typing import Annotated, Any, Protocol
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langgraph.store.base import BaseStore
 
 from my_agents.agents.general_assistant.graph import build_graph, build_legacy_chat_graph
 from my_agents.agents.general_assistant.responders import ResponseProviderConfigurationError
@@ -26,9 +27,15 @@ _graph_runner = build_graph()
 _legacy_chat_graph_runner = build_legacy_chat_graph()
 
 
-def get_graph_runner() -> GraphRunner:
-    """Return the retrieval-enabled product graph runner."""
-    return _graph_runner
+def get_graph_runner(request: Request) -> GraphRunner:
+    """Return the lifespan-owned retrieval-enabled product graph runner."""
+    runner = getattr(request.app.state, "graph_runner", None)
+    return runner or _graph_runner
+
+
+def get_memory_store(request: Request) -> BaseStore | None:
+    """Return the lifespan-owned LangGraph Store when the feature is enabled."""
+    return getattr(request.app.state, "langgraph_store", None)
 
 
 def get_legacy_chat_graph_runner() -> GraphRunner:

@@ -1,6 +1,6 @@
 # Implementation tracking
 
-Last updated: 2026-08-12
+Last updated: 2026-08-24
 Status owner: repo-tracked source of truth for cross-machine agent handoff
 
 This file exists because `.omx/` is local runtime state and is not shared across machines. When working with an agent on any machine, start here before re-discovering project status from the codebase.
@@ -121,6 +121,8 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
   every event payload and nested `agent_trace.evidence` object passes through a typed
   allowlist before leaving the API.
 - Failure path records a failed run with redacted event metadata.
+- Opt-in document-selection HITL exposes a required `schema_version=1` semantic interaction contract, persists refresh-safe waiting state in Product DB, and resumes only through a type-specific answer. Frontend waiting-state support remains a hard gate before enabling the checkpointer in a shared environment.
+- Document-selection options are a narrower user-control boundary than retrieval: personal/group documents may be chosen, while ambient system knowledge remains automatically injected, hidden from the option list, and invalid as a submitted resume selection.
 - Conversation-run timing histograms cover sync and streaming outcomes for internal
   performance review when metrics are enabled.
 
@@ -386,8 +388,8 @@ Earlier hosted smoke status on 2026-06-03:
 - Current production graph is still one assistant/controller path, now with a graph-owned RAG Agent retrieval node before memory/answer synthesis.
 - Most route labels are capability metadata and response paths, not separate production specialist agents.
 - Tool workflows beyond hosted web search are not implemented as production graph capabilities yet.
-- Memory runtime migration is in progress. Recall orchestration now runs inside `general_assistant` through a graph-owned `retrieve_memory` node and `MemoryRuntime` adapter, but the active adapter still wraps SQLAlchemy/Product DB memory service. Target migration remains LangGraph Store-backed active memory search plus a separate `memory_graph`, with Product DB retained for governance/audit.
-- No human-in-the-loop interrupts/checkpointed product workflow yet; when added, checkpointer state should be run-scoped execution state rather than conversation history or long-term memory.
+- Memory runtime migration is partially implemented. Recall orchestration runs inside `general_assistant`; PostgreSQL deployments provide PostgresStore semantic candidate search, and every candidate is revalidated through the SQLAlchemy/Product DB governance adapter before entering context. SQLite retains the Product DB relevance fallback. The separate `memory_graph` extraction/update workflow is still unimplemented.
+- PostgreSQL deployments now treat run-scoped PostgresSaver and PostgresStore as baseline process-owned infrastructure. The per-user experimental setting controls memory consent and eligibility; HITL availability derives from PostgresSaver presence. Framework setup is an explicit deployment prerequisite, and neither persistence primitive replaces Product DB transcripts or audit records. SQLite keeps non-durable graph execution and Product DB memory recall fallbacks.
 
 ### Deployment/ops
 

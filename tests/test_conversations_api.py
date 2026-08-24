@@ -8,8 +8,10 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi.testclient import TestClient
+from langgraph.checkpoint.memory import InMemorySaver
 from sqlalchemy import func, select
 
+from my_agents.agents.general_assistant.graph import build_graph
 from my_agents.api import create_app
 from my_agents.api.assistant import get_graph_runner
 from my_agents.api.conversations import retrieval_context as retrieval_context_module
@@ -28,6 +30,7 @@ from my_agents.knowledge.auth import KnowledgeBaseSelectionContext
 from my_agents.knowledge.models import CitationModel
 from my_agents.knowledge.retrieval import RetrievalService
 from my_agents.persistence.database import get_database_session
+from my_agents.persistence.langgraph import checkpoint_serializer
 from my_agents.schemas import RouteDecision
 
 from .conftest import verify_latest_auth_email
@@ -470,6 +473,118 @@ def test_ambiguous_document_scope_returns_visible_clarification(monkeypatch) -> 
     assert detail.json()["clarification"]["message_key"] == (
         "clarification.document_scope.select_source"
     )
+
+
+def test_checkpointed_document_selection_interrupts_and_resumes_same_run(monkeypatch) -> None:  # noqa: ANN001
+    graph = build_graph(
+        checkpointer=InMemorySaver(serde=checkpoint_serializer()),
+        document_selection_hitl_enabled=True,
+    )
+    client = _client(monkeypatch, graph)  # type: ignore[arg-type]
+    _signup_login(client, "checkpoint-document-selection@example.com")
+    kb_id = _create_knowledge_base(client, "Checkpointed selection KB")
+    documents = []
+    for title, content in (
+        ("Alpha Source", "AlphaOnly checkpointed retrieval evidence."),
+        ("Beta Source", "BetaOnly checkpointed retrieval evidence."),
+    ):
+        document = _create_document(
+            client,
+            json={"title": title, "content": content, "knowledge_base_id": kb_id},
+        )
+        assert document.status_code == 201
+        assert client.post(f"/documents/{document.json()['id']}/ingest").status_code == 200
+        documents.append(document.json())
+    conversation_id = client.post(
+        "/conversations", json={"title": "Checkpointed selection"}
+    ).json()["id"]
+
+    interrupted = client.post(
+        f"/conversations/{conversation_id}/runs",
+        json={
+            "message": "Summarize this document",
+            "knowledge_base_selection": {"mode": "selected", "knowledge_base_ids": [kb_id]},
+        },
+    )
+
+    assert interrupted.status_code == 202
+    pending = interrupted.json()
+    assert pending["status"] == "waiting_for_input"
+    assert pending["interaction"]["schema_version"] == 1
+    assert pending["interaction"]["type"] == "document_selection"
+    assert pending["interaction"]["option_count"] == 2
+
+    encoded_interaction_id = pending["interaction"]["interaction_id"].replace(":", "%3A")
+    options = client.get(
+        f"/conversations/{conversation_id}/runs/{pending['run_id']}"
+        f"/interactions/{encoded_interaction_id}/options"
+    )
+    assert options.status_code == 200
+    assert options.json()["schema_version"] == 1
+    assert options.json()["type"] == "document_selection"
+    assert options.json()["option_count"] == 2
+
+    resumed = client.post(
+        f"/conversations/{conversation_id}/runs/{pending['run_id']}/resume",
+        json={
+            "schema_version": 1,
+            "interaction_id": pending["interaction"]["interaction_id"],
+            "type": "document_selection",
+            "document_id": documents[0]["id"],
+        },
+    )
+
+    assert resumed.status_code == 200
+    completed = resumed.json()
+    assert completed["status"] == "completed"
+    assert completed["run_id"] == pending["run_id"]
+    assert {citation["document_id"] for citation in completed["citations"]} == {documents[0]["id"]}
+    detail = client.get(f"/conversations/{conversation_id}/runs/{pending['run_id']}")
+    assert detail.status_code == 200
+    assert detail.json()["status"] == "completed"
+    events = client.get(f"/conversations/{conversation_id}/runs/{pending['run_id']}/events").json()
+    for event_type in ("run_interrupted", "run_resumed"):
+        payload = next(event["payload"] for event in events if event["event_type"] == event_type)
+        assert payload["interaction_schema_version"] == 1
+
+    stream_conversation_id = client.post(
+        "/conversations", json={"title": "Checkpointed selection stream"}
+    ).json()["id"]
+    with client.stream(
+        "POST",
+        f"/conversations/{stream_conversation_id}/runs/stream",
+        json={
+            "message": "Summarize this document",
+            "knowledge_base_selection": {"mode": "selected", "knowledge_base_ids": [kb_id]},
+        },
+    ) as response:
+        assert response.status_code == 200
+        interrupt_events = _parse_sse(response.read().decode())
+    stream_pending = next(
+        event["data"] for event in interrupt_events if event["event"] == "run_interrupted"
+    )
+    assert all(event["event"] != "run_completed" for event in interrupt_events)
+
+    with client.stream(
+        "POST",
+        (f"/conversations/{stream_conversation_id}/runs/{stream_pending['run_id']}/resume/stream"),
+        json={
+            "schema_version": 1,
+            "interaction_id": stream_pending["interaction"]["interaction_id"],
+            "type": "document_selection",
+            "document_id": documents[1]["id"],
+        },
+    ) as response:
+        assert response.status_code == 200
+        resume_events = _parse_sse(response.read().decode())
+    assert any(event["event"] == "answer_delta" for event in resume_events)
+    streamed_completed = next(
+        event["data"] for event in resume_events if event["event"] == "run_completed"
+    )
+    assert streamed_completed["run_id"] == stream_pending["run_id"]
+    assert {citation["document_id"] for citation in streamed_completed["citations"]} == {
+        documents[1]["id"]
+    }
 
 
 def test_filename_reference_retrieves_matching_document_metadata(monkeypatch) -> None:  # noqa: ANN001

@@ -43,6 +43,10 @@ from my_agents.conversations.schemas import (
     RunCancelRequestedEventPayload,
     RunFailedAgentEventResponse,
     RunFailedEventPayload,
+    RunInterruptedAgentEventResponse,
+    RunInterruptedEventPayload,
+    RunResumedAgentEventResponse,
+    RunResumedEventPayload,
     RunStartedAgentEventResponse,
     RunStartedEventPayload,
     UserMessageStoredAgentEventResponse,
@@ -346,6 +350,18 @@ def event_response(event: AgentEventModel) -> AgentEventResponse:
                 **common,
                 event_type=event_type.value,
                 payload=_safe_event_payload(RunCancelRequestedEventPayload, raw_payload),
+            )
+        case AgentEventType.RUN_INTERRUPTED:
+            return RunInterruptedAgentEventResponse(
+                **common,
+                event_type=event_type.value,
+                payload=_safe_event_payload(RunInterruptedEventPayload, raw_payload),
+            )
+        case AgentEventType.RUN_RESUMED:
+            return RunResumedAgentEventResponse(
+                **common,
+                event_type=event_type.value,
+                payload=_safe_event_payload(RunResumedEventPayload, raw_payload),
             )
         case AgentEventType.RUN_CANCELLED:
             return RunCancelledAgentEventResponse(

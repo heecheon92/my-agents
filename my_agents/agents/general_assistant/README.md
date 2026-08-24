@@ -133,7 +133,13 @@ sequenceDiagram
 
 Memory service는 이 agent folder 밖의 `my_agents/memory/`와 `my_agents/api/memories.py`에 있습니다. Public memory write는 client가 주장하는 provenance ID를 받지 않으며, service-owned path가 document-derived memory를 만들 때 provenance를 제공해야 합니다. Agent graph는 recall orchestration을 소유하지만 persistence/governance는 `MemoryRuntime` 뒤에 유지합니다. Graph state는 untrusted JSON prompt data로 직렬화된 active memory context와 conflict metadata만 받습니다. Replay/regeneration은 historical memory content가 아니라 현재 active memory context를 사용합니다. Completed/failed run에는 내부 audit용 redacted memory-source snapshot을 남길 수 있지만, frontend-visible run event에는 memory count/category/provenance type만 노출합니다.
 
-자세한 LangGraph-native memory migration 내용은 [`docs/product-chat-service/ko/19-langgraph-native-memory-migration.md`](../../../docs/product-chat-service/ko/19-langgraph-native-memory-migration.md)를 봅니다. Checkpointer는 conversation history나 long-term memory가 아니라 run-scoped execution/HITL state로만 사용해야 합니다.
+자세한 LangGraph-native memory migration 내용은 [`docs/product-chat-service/ko/19-langgraph-native-memory-migration.md`](../../../docs/product-chat-service/ko/19-langgraph-native-memory-migration.md)를 봅니다. 선택적으로 켜는 production graph는 이제 `run_id`를 thread boundary로 쓰는 PostgresSaver와, governance 검증을 거치는 memory-search projection인 PostgresStore로 compile됩니다. Checkpoint는 document selection을 기다리는 동안 제한된 serializable execution state만 보관하고, Product DB는 transcript/run/citation/permission/memory governance source of truth로 유지됩니다.
+
+Document-selection HITL을 켜면 `clarification_required`가 `prepare_document_selection -> request_document_selection`으로 이어집니다. Interrupt에는 안전한 document metadata만 담습니다. Resume은 정확한 document ID를 받아 현재 권한을 다시 확인한 뒤 selected-document retrieval을 실행하고 기존 memory/response node로 진행합니다. Runtime DB session, provider client, ORM model, document-workspace adapter는 checkpoint에 넣지 않습니다.
+
+Public waiting payload와 typed resume answer는 [`docs/product-chat-service/ko/27-agent-frontend-interaction-contract.md`](../../../docs/product-chat-service/ko/27-agent-frontend-interaction-contract.md)의 versioned protocol-neutral 계약을 따릅니다. 앞으로 사용자 입력이 필요한 state도 이 semantic interaction boundary로 추가하고, graph node가 frontend component나 layout을 지정해서는 안 됩니다.
+
+Document-selection option에는 사용자가 통제하는 personal/group document만 포함합니다. Ambient system knowledge는 계속 자동으로 주입되는 internal context이며 visible/selectable source가 아닙니다. Client가 system document ID를 직접 보내더라도 resume boundary가 거절합니다.
 
 ## OpenAI hosted tools를 추가할 위치
 

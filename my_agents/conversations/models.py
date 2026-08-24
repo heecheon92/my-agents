@@ -23,6 +23,7 @@ class RunStatus(StrEnum):
     """Chat run lifecycle status."""
 
     RUNNING = "running"
+    WAITING_FOR_INPUT = "waiting_for_input"
     CANCELLING = "cancelling"
     COMPLETED = "completed"
     FAILED = "failed"
@@ -40,6 +41,8 @@ class AgentEventType(StrEnum):
     DOCUMENT_WORKSPACE_STARTED = "document_workspace_started"
     ARTIFACT_CREATED = "artifact_created"
     ANSWER_COMPOSED = "answer_composed"
+    RUN_INTERRUPTED = "run_interrupted"
+    RUN_RESUMED = "run_resumed"
     RUN_CANCEL_REQUESTED = "run_cancel_requested"
     RUN_CANCELLED = "run_cancelled"
     RUN_FAILED = "run_failed"
@@ -98,6 +101,14 @@ class AgentRunModel(Base):
     resolved_knowledge_base_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     retrieval_source_snapshot_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     memory_source_snapshot_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    graph_version: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    interaction_id: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
+    interaction_type: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    interaction_payload_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    interaction_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    resumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     assistant_message_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False

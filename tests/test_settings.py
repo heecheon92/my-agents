@@ -278,6 +278,7 @@ def test_service_foundation_settings_have_safe_defaults(
     assert settings.test_database_url is None
     assert settings.auto_create_tables is None
     assert settings.should_auto_create_tables() is True
+    assert settings.hitl_wait_seconds == 86_400
     assert settings.session_cookie_name == "my_agents_session"
     assert settings.session_cookie_secure is True
     assert settings.session_cookie_samesite == "lax"

@@ -3,16 +3,18 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import UTC, datetime, timedelta
 from time import perf_counter
 
 from fastapi import HTTPException, status
 from langchain_core.messages import BaseMessage
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from my_agents.agents.context_forge.contracts import RetrievalEvidence
 from my_agents.agents.general_assistant.classifier import classify_messages
+from my_agents.agents.general_assistant.graph import GRAPH_VERSION
 from my_agents.agents.general_assistant.responders import ResponseProviderConfigurationError
 from my_agents.agents.rag_agent import DeterministicRagAgentGroundingVerifier
 from my_agents.api.assistant import GraphRunner
@@ -21,6 +23,12 @@ from my_agents.api.conversations.graph_invocation import (
     GraphRunnerExecutionError,
     graph_context_for_run,
     invoke_graph_runner_collecting_updates,
+    invoke_graph_runner_resume_collecting_updates,
+)
+from my_agents.api.conversations.interactions import (
+    delete_checkpoint_thread,
+    graph_interrupt_payload,
+    persist_waiting_document_selection,
 )
 from my_agents.api.conversations.retrieval_context import (
     ConversationRetrievalContext,
@@ -61,6 +69,7 @@ from my_agents.conversations.models import (
 from my_agents.conversations.schemas import (
     ConversationClarificationRequest,
     ConversationRunResponse,
+    ConversationRunResult,
     ConversationRunWarning,
 )
 from my_agents.knowledge.auth import KnowledgeBaseSelectionContext
@@ -71,8 +80,13 @@ from my_agents.observability.metrics import observe_conversation_run
 from my_agents.schemas import RouteDecision
 from my_agents.settings import ReasoningEffort, ReasoningMode, get_settings
 
-ACTIVE_RUN_STATUSES = (RunStatus.RUNNING.value, RunStatus.CANCELLING.value)
+ACTIVE_RUN_STATUSES = (
+    RunStatus.RUNNING.value,
+    RunStatus.WAITING_FOR_INPUT.value,
+    RunStatus.CANCELLING.value,
+)
 _GROUNDING_VERIFIER = DeterministicRagAgentGroundingVerifier()
+logger = logging.getLogger(__name__)
 
 
 def complete_sync_conversation_run(
@@ -87,9 +101,10 @@ def complete_sync_conversation_run(
     graph_runner: GraphRunner,
     document_workspace_runtime: object | None = None,
     warnings: list[ConversationRunWarning] | None = None,
-) -> ConversationRunResponse:
+    hitl_wait_seconds: int = 86_400,
+) -> ConversationRunResult:
     try:
-        return _complete_sync_conversation_run(
+        result = _complete_sync_conversation_run(
             db=db,
             conversation_id=conversation_id,
             user_id=user_id,
@@ -100,7 +115,11 @@ def complete_sync_conversation_run(
             graph_runner=graph_runner,
             document_workspace_runtime=document_workspace_runtime,
             warnings=warnings,
+            hitl_wait_seconds=hitl_wait_seconds,
         )
+        if isinstance(result, ConversationRunResponse):
+            delete_checkpoint_thread(graph_runner, run.id)
+        return result
     except HTTPException:
         fail_active_run(
             db=db,
@@ -108,6 +127,7 @@ def complete_sync_conversation_run(
             conversation_id=conversation_id,
             error_type="HTTPException",
         )
+        delete_checkpoint_thread(graph_runner, run.id)
         raise
     except ResponseProviderConfigurationError as exc:
         fail_active_run(
@@ -116,6 +136,7 @@ def complete_sync_conversation_run(
             conversation_id=conversation_id,
             error_type=type(exc).__name__,
         )
+        delete_checkpoint_thread(graph_runner, run.id)
         raise APIHTTPException(
             status_code=503,
             detail="conversation run failed",
@@ -128,6 +149,7 @@ def complete_sync_conversation_run(
             conversation_id=conversation_id,
             error_type=type(exc).__name__,
         )
+        delete_checkpoint_thread(graph_runner, run.id)
         raise APIHTTPException(
             status_code=502,
             detail="conversation run failed",
@@ -147,7 +169,8 @@ def _complete_sync_conversation_run(
     graph_runner: GraphRunner,
     document_workspace_runtime: object | None = None,
     warnings: list[ConversationRunWarning] | None = None,
-) -> ConversationRunResponse:
+    hitl_wait_seconds: int = 86_400,
+) -> ConversationRunResult:
     run_started = perf_counter()
     retrieval_route = "unknown"
     answer_mode = "unknown"
@@ -165,6 +188,7 @@ def _complete_sync_conversation_run(
         messages=messages,
         user_id=user_id,
         conversation_id=conversation_id,
+        run_id=run.id,
     )
     graph_context = graph_context_for_run(
         db=db,
@@ -184,7 +208,7 @@ def _complete_sync_conversation_run(
         partial_state = exc.partial_state
         memory_source_snapshot = graph_memory_source_snapshot_json(partial_state)
         if graph_has_retrieval_context(partial_state):
-            retrieval_context = retrieval_context_from_graph_state(partial_state)
+            retrieval_context = retrieval_context_from_graph_state(partial_state, db)
             retrieval_route = retrieval_context.decision.route
             answer_mode = retrieval_context.answer_mode
             record_retrieval_completed_event(db, run.id, retrieval_context)
@@ -249,10 +273,25 @@ def _complete_sync_conversation_run(
             code=APIErrorCode.CONVERSATION_RUN_FAILED,
         ) from exc
 
-    retrieval_context = retrieval_context_from_graph_state(result)
+    retrieval_context = retrieval_context_from_graph_state(result, db)
     retrieval_route = retrieval_context.decision.route
     answer_mode = retrieval_context.answer_mode
     record_retrieval_completed_event(db, run.id, retrieval_context)
+    if graph_interrupt_payload(result) is not None:
+        route = classify_messages(messages)
+        run.route_label = route.label
+        run.route_explanation = route.explanation
+        run.retrieval_route = retrieval_context.decision.route
+        run.answer_mode = retrieval_context.answer_mode
+        run.document_scope = retrieval_context.decision.document_scope
+        response = persist_waiting_document_selection(
+            db=db,
+            run=run,
+            graph_state=result,
+            wait_seconds=hitl_wait_seconds,
+        )
+        record_run_metric("waiting_for_input")
+        return response
     if retrieval_context.decision.route == "clarification_required":
         route = classify_messages(messages)
         clarification = clarification_request(retrieval_context.decision)
@@ -347,6 +386,120 @@ def _complete_sync_conversation_run(
     return response
 
 
+def complete_resumed_conversation_run(
+    *,
+    db: Session,
+    run: AgentRunModel,
+    messages: list[BaseMessage],
+    selection_context: KnowledgeBaseSelectionContext,
+    selected_document_id: str,
+    graph_runner: GraphRunner,
+    hitl_wait_seconds: int,
+) -> ConversationRunResult:
+    """Resume one document-selection checkpoint and finalize its Product DB run."""
+    graph_context = graph_context_for_run(
+        db=db,
+        user_id=run.user_id,
+        selection_context=selection_context,
+        reasoning_mode=run.reasoning_mode,  # type: ignore[arg-type]
+        reasoning_effort=run.reasoning_effort,  # type: ignore[arg-type]
+    )
+    try:
+        result = invoke_graph_runner_resume_collecting_updates(
+            graph_runner=graph_runner,
+            run_id=run.id,
+            resume_value={"document_id": selected_document_id},
+            graph_context=graph_context,
+        )
+    except GraphRunnerExecutionError as exc:
+        logger.warning(
+            "conversation_run.resume_failed run_id=%s error_class=%s",
+            run.id,
+            type(exc.original_exception).__name__,
+        )
+        persist_failed_run(
+            db=db,
+            run_id=run.id,
+            conversation_id=run.conversation_id,
+            error_type=type(exc.original_exception).__name__,
+        )
+        delete_checkpoint_thread(graph_runner, run.id)
+        raise APIHTTPException(
+            status_code=502,
+            detail="conversation run resume failed",
+            code=APIErrorCode.CONVERSATION_RUN_FAILED,
+        ) from exc.original_exception
+
+    retrieval_context = retrieval_context_from_graph_state(result, db)
+    record_retrieval_completed_event(db, run.id, retrieval_context)
+    if graph_interrupt_payload(result) is not None:
+        return persist_waiting_document_selection(
+            db=db,
+            run=run,
+            graph_state=result,
+            wait_seconds=hitl_wait_seconds,
+        )
+    route = coerce_route(result.get("route") or classify_messages(messages))
+    if retrieval_context.insufficient_evidence or "reply" not in result:
+        response = persist_completed_run(
+            db=db,
+            run_id=run.id,
+            conversation_id=run.conversation_id,
+            retrieved_chunks=[],
+            route=route,
+            reply=insufficient_evidence_reply(),
+            retrieval_decision=retrieval_context.decision,
+            answer_mode=retrieval_context.answer_mode,
+            selection_context=selection_context,
+            insufficient_evidence=True,
+            retrieval_evidence=retrieval_context.retrieval_evidence,
+        )
+        delete_checkpoint_thread(graph_runner, run.id)
+        return response
+
+    memory_source_snapshot = graph_memory_source_snapshot_json(result)
+    graph_event = append_run_event(
+        db,
+        run.id,
+        AgentEventType.GRAPH_INVOKED,
+        graph_invoked_payload(
+            route=route,
+            messages=messages,
+            retrieved_chunks=retrieval_context.retrieved_chunks,
+            retrieval_decision=retrieval_context.decision,
+            answer_mode=retrieval_context.answer_mode,
+            selection_context=selection_context,
+            memory_source_snapshot_json=memory_source_snapshot,
+        ),
+    )
+    update_graph_invoked_event_memory_snapshot(db, graph_event, memory_source_snapshot)
+    used_chunks = chunks_used_for_answer(retrieval_context)
+    reply = compose_rag_reply(str(result["reply"]), used_chunks, retrieval_context.answer_mode)
+    reply, used_chunks, insufficient = _verified_grounding_or_fallback(
+        reply=reply,
+        cited_chunks=used_chunks,
+        retrieval_decision=retrieval_context.decision,
+        answer_mode=retrieval_context.answer_mode,
+        retrieval_attempt_count=retrieval_context.retrieval_attempt_count,
+    )
+    response = persist_completed_run(
+        db=db,
+        run_id=run.id,
+        conversation_id=run.conversation_id,
+        retrieved_chunks=used_chunks,
+        route=route,
+        reply=reply,
+        retrieval_decision=retrieval_context.decision,
+        answer_mode=retrieval_context.answer_mode,
+        selection_context=selection_context,
+        insufficient_evidence=insufficient,
+        retrieval_evidence=retrieval_context.retrieval_evidence,
+        memory_source_snapshot=memory_source_snapshot,
+    )
+    delete_checkpoint_thread(graph_runner, run.id)
+    return response
+
+
 def _verified_grounding_or_fallback(
     *,
     reply: str,
@@ -417,6 +570,10 @@ def persist_completed_run(
     run.retrieval_source_snapshot_json = _retrieval_source_snapshot_json(retrieved_chunks)
     run.memory_source_snapshot_json = memory_source_snapshot
     run.assistant_message_id = assistant_message.id
+    run.interaction_id = None
+    run.interaction_type = None
+    run.interaction_payload_json = None
+    run.interaction_expires_at = None
     db.flush()
     citations = [
         CitationModel(
@@ -537,6 +694,10 @@ def persist_failed_run(
     if run.status not in ACTIVE_RUN_STATUSES:
         return run.id
     run.status = RunStatus.FAILED.value
+    run.interaction_id = None
+    run.interaction_type = None
+    run.interaction_payload_json = None
+    run.interaction_expires_at = None
     if memory_source_snapshot is not None:
         run.memory_source_snapshot_json = memory_source_snapshot
     append_run_event(
@@ -569,17 +730,31 @@ def assert_no_active_run(db: Session, conversation_id: str) -> None:
 
 
 def cleanup_stale_active_runs(db: Session, conversation_id: str) -> None:
-    cutoff = datetime.now(UTC) - timedelta(seconds=get_settings().active_run_stale_after_seconds)
+    now = datetime.now(UTC)
+    cutoff = now - timedelta(seconds=get_settings().active_run_stale_after_seconds)
     stale_runs = db.scalars(
         select(AgentRunModel).where(
             AgentRunModel.conversation_id == conversation_id,
-            AgentRunModel.status.in_(ACTIVE_RUN_STATUSES),
-            AgentRunModel.created_at < cutoff,
+            or_(
+                (
+                    AgentRunModel.status.in_((RunStatus.RUNNING.value, RunStatus.CANCELLING.value))
+                    & (AgentRunModel.created_at < cutoff)
+                ),
+                (
+                    (AgentRunModel.status == RunStatus.WAITING_FOR_INPUT.value)
+                    & (AgentRunModel.interaction_expires_at.is_not(None))
+                    & (AgentRunModel.interaction_expires_at <= now)
+                ),
+            ),
         )
     ).all()
     for run in stale_runs:
-        if run.status == RunStatus.CANCELLING.value:
+        if run.status in {RunStatus.CANCELLING.value, RunStatus.WAITING_FOR_INPUT.value}:
             run.status = RunStatus.CANCELLED.value
+            run.interaction_id = None
+            run.interaction_type = None
+            run.interaction_payload_json = None
+            run.interaction_expires_at = None
             append_run_event(
                 db,
                 run.id,
@@ -625,6 +800,7 @@ def start_run(
         conversation_id=conversation_id,
         user_id=user_id,
         status=RunStatus.RUNNING.value,
+        graph_version=GRAPH_VERSION,
         reasoning_mode=reasoning_mode,
         reasoning_effort=reasoning_effort,
         knowledge_base_selection_mode=selection_context.mode,

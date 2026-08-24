@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from my_agents.agents.context_forge import invoke_context_forge_graph
 from my_agents.agents.context_forge.contracts import ContextForgeRequest, RetrievalEvidence
 from my_agents.knowledge.auth import KnowledgeBaseSelectionContext
-from my_agents.knowledge.retrieval import RetrievedChunk
+from my_agents.knowledge.retrieval import AuthorizedDocumentOption, RetrievalService, RetrievedChunk
 from my_agents.knowledge.routing import (
     AnswerMode,
     RetrievalRoutingDecision,
@@ -53,8 +53,20 @@ class RagAgentRuntime(Protocol):
         message: str,
         messages: Sequence[BaseMessage],
         selection_context: KnowledgeBaseSelectionContext,
+        selected_document_id: str | None = None,
     ) -> RagAgentRetrievalResult:
         """Return authorized document context for one assistant turn."""
+        ...
+
+    def document_options(
+        self,
+        *,
+        user_id: str,
+        selection_context: KnowledgeBaseSelectionContext,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[AuthorizedDocumentOption], int]:
+        """Return authorized document options for one interaction page."""
         ...
 
 
@@ -72,6 +84,7 @@ class SqlAlchemyRagAgentRuntime:
         message: str,
         messages: Sequence[BaseMessage],
         selection_context: KnowledgeBaseSelectionContext,
+        selected_document_id: str | None = None,
     ) -> RagAgentRetrievalResult:
         return retrieve_context(
             db=self.db,
@@ -80,6 +93,22 @@ class SqlAlchemyRagAgentRuntime:
             message=message,
             messages=messages,
             selection_context=selection_context,
+            selected_document_id=selected_document_id,
+        )
+
+    def document_options(
+        self,
+        *,
+        user_id: str,
+        selection_context: KnowledgeBaseSelectionContext,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[AuthorizedDocumentOption], int]:
+        return RetrievalService(self.db).authorized_document_options(
+            user_id=user_id,
+            knowledge_base_ids=selection_context.retrieval_knowledge_base_ids,
+            limit=limit,
+            offset=offset,
         )
 
 
@@ -91,6 +120,7 @@ def retrieve_context(
     message: str,
     messages: Sequence[BaseMessage],
     selection_context: KnowledgeBaseSelectionContext,
+    selected_document_id: str | None = None,
 ) -> RagAgentRetrievalResult:
     """Invoke the RAG Agent retrieval tool and return answer-ready context.
 
@@ -106,6 +136,7 @@ def retrieve_context(
             query=message,
             messages=messages,
             selection_context=selection_context,
+            selected_document_id=selected_document_id,
         ),
     )
     result = graph_result.result
@@ -161,6 +192,52 @@ def retrieved_context_for_graph(
                 "source_location_json": parse_source_location_json(item.chunk.source_location_json),
                 "source_filename": item.document.source_filename,
                 "source": item.source,
+                "score": item.score,
             }
         )
     return context
+
+
+def rag_result_snapshot_for_graph(result: RagAgentRetrievalResult) -> dict[str, object]:
+    """Return checkpoint-safe metadata without ORM-backed retrieved chunks."""
+    evidence = result.retrieval_evidence
+    return {
+        "decision": {
+            "route": result.decision.route,
+            "reason": result.decision.reason,
+            "rewritten_query": result.decision.rewritten_query,
+            "document_scope": result.decision.document_scope,
+        },
+        "answer_mode": result.answer_mode,
+        "retrieval_latency_ms": result.retrieval_latency_ms,
+        "knowledge_base_selection": {
+            "mode": result.knowledge_base_selection.mode,
+            "knowledge_base_ids": list(result.knowledge_base_selection.knowledge_base_ids),
+            "resolved_count": result.knowledge_base_selection.resolved_count,
+            "resolved_knowledge_base_ids": list(
+                result.knowledge_base_selection.resolved_knowledge_base_ids
+            ),
+            "ambient_system_knowledge_base_ids": list(
+                result.knowledge_base_selection.ambient_system_knowledge_base_ids
+            ),
+            "ambient_system_knowledge_base_count": (
+                result.knowledge_base_selection.ambient_system_knowledge_base_count
+            ),
+        },
+        "retrieval_evidence": (
+            {
+                "intent": evidence.intent,
+                "candidate_count": evidence.candidate_count,
+                "injected_count": evidence.injected_count,
+                "rejected_count": evidence.rejected_count,
+                "source_counts": evidence.source_counts,
+                "structured_entity_types": list(evidence.structured_entity_types),
+                "reranker": evidence.reranker,
+                "budget_truncated": evidence.budget_truncated,
+            }
+            if evidence is not None
+            else None
+        ),
+        "retrieval_attempt_count": result.retrieval_attempt_count,
+        "insufficient_evidence": result.insufficient_evidence,
+    }

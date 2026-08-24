@@ -164,6 +164,10 @@ Registered-account run requests may optionally provide `reasoning_mode` (`standa
 
 With `MY_AGENTS_DOCUMENT_WORKSPACE_ENABLED=true`, approved registered accounts can attach temporary files to a conversation, analyze them with GPT-5.6 Sol, and download certified spreadsheet outputs (`.xlsx`, `.csv`, `.tsv`). Guests are ineligible and every upload requires explicit consent to transfer the file to OpenAI. File bytes are never stored in the Product DB; they remain only in expiring OpenAI `user_data` files and a network-disabled hosted container. See the [OpenAI document workspace design](./docs/product-chat-service/en/25-openai-document-workspace.md) for the full contract.
 
+PostgreSQL deployments provision PostgresStore and PostgresSaver automatically as baseline LangGraph infrastructure. Store is a semantic projection of Product DB-governed memories; the per-user experimental setting controls consent and eligibility while Product DB rows continue to enforce status, sensitivity, provenance, and source staleness. PostgresSaver lets ambiguous document-grounded runs return `202 waiting_for_input`, survive a process restart, and resume after an authorized document selection. SQLite keeps Product DB recall and non-durable graph execution fallbacks. Run `uv run python -m scripts.langgraph_persistence setup` before serving PostgreSQL traffic and verify zero-drift memory reconciliation before enabling experimental memory for users.
+
+Experimental memory currently recalls explicit memories and manually confirmed suggestions. Ordinary chat does not form memories automatically; the separate post-turn `memory_graph` extraction/update workflow remains planned.
+
 The VS Code `FastAPI: uvicorn main:app (local pgvector)` profile runs its pre-launch migration with the interpreter selected by the Python extension. It does not depend on a shell command finding `uv` in a GUI-launched VS Code process, so select this repository's `.venv` interpreter before using the profile.
 
 OpenAPI is available from a running server at `http://127.0.0.1:8000/openapi.json`. See the [frontend demo runbook](./docs/product-chat-service/en/10-frontend-demo-runbook.md) for the full product flow and PostgreSQL setup.
@@ -171,7 +175,8 @@ OpenAPI is available from a running server at `http://127.0.0.1:8000/openapi.jso
 ### Frontend API contracts
 
 - HTTP and validation errors return a stable machine-readable `code` alongside the existing `detail`. UIs should localize from `code` and treat `detail` as diagnostic copy.
-- `GET /conversations/{conversation_id}/runs/{run_id}/events` is a closed OpenAPI union discriminated by `event_type`. Persisted event types are `run_started`, `user_message_stored`, `retrieval_completed`, `graph_invoked`, `attachments_ready`, `document_workspace_started`, `artifact_created`, `answer_composed`, `run_cancel_requested`, `run_cancelled`, and `run_failed`.
+- `GET /conversations/{conversation_id}/runs/{run_id}/events` is a closed OpenAPI union discriminated by `event_type`. Persisted event types include `run_interrupted` and `run_resumed` in addition to the existing run, retrieval, graph, workspace, answer, cancellation, and failure events.
+- With checkpointer support enabled, run creation returns either `200 completed` or `202 waiting_for_input`. A waiting document-selection interaction is refresh-safe through the run detail/options endpoints and resumes through `/runs/{run_id}/resume` or `/resume/stream` without consuming another guest prompt. Options include only user-controllable personal/group documents; ambient system knowledge remains automatically injected and is never selectable. Interaction and resume payloads require the protocol-neutral `schema_version=1` and semantic `type`; see the [agent-to-frontend interaction contract](./docs/product-chat-service/en/27-agent-frontend-interaction-contract.md).
 - `GET /capabilities/document-workspace` reports effective enablement, eligibility, accepted formats, limits, and retention. Attachments use `POST/GET/DELETE /conversations/{conversation_id}/attachments`; artifacts use `GET /conversations/{conversation_id}/artifacts` and their download URLs. A run's `attachment_ids` selects the files used for that execution.
 - `GET /capabilities/reasoning` reports per-surface Pro support, the server-default effort, stable enums, and whether the current account may customize them. It intentionally omits raw provider model identifiers. Optional run/replay `reasoning_mode` and `reasoning_effort` values are persisted as effective run metadata and returned in responses and the `run_started` event.
 - Persisted event payloads and `agent_trace` expose only fields accepted by event- and stage-specific allowlist schemas. `answer_delta`, `run_completed`, and `run_error` are stream-only SSE events and are not members of the persisted-event union.
@@ -186,7 +191,7 @@ uv run ruff format --check .
 git diff --check
 ```
 
-On 2026-08-09, the full suite on this checkout reports **487 passed, 2 skipped** without requiring real credentials.
+On 2026-08-24, the full offline suite on this checkout reports **498 passed, 3 skipped** without requiring real credentials. The gated PostgreSQL checkpoint restart smoke also passes against the local pgvector profile.
 
 ## Security and privacy boundaries
 
@@ -204,7 +209,7 @@ On 2026-08-09, the full suite on this checkout reports **487 passed, 2 skipped**
 - Object storage for uploaded originals, document versioning/re-ingestion, and account deletion/export are not implemented yet.
 - Cross-encoder cold starts and PDF processing latency remain constraints on small hosted instances.
 - Shared rate limiting, production security review, and automated migration/smoke gates remain necessary.
-- LangGraph Store-backed memory, HITL/resume checkpointers, non-RAG tools, and production multi-agent orchestration remain roadmap work.
+- Non-RAG tools, a background execution scheduler, and production multi-agent orchestration remain roadmap work. LangGraph persistence is implemented but remains opt-in until its Postgres setup and reconciliation checks are run.
 
 ## Selected documentation
 

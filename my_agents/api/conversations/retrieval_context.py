@@ -9,8 +9,10 @@ from dataclasses import dataclass
 
 from langchain_core.messages import BaseMessage
 from rich import print as rich_print
+from sqlalchemy.orm import Session
 
 from my_agents.agents.context_forge.contracts import RetrievalEvidence
+from my_agents.agents.general_assistant.context import RECENT_CONVERSATION_MESSAGE_LIMIT
 from my_agents.agents.rag_agent import (
     RagAgentRetrievalResult,
 )
@@ -22,6 +24,7 @@ from my_agents.agents.rag_agent import (
 )
 from my_agents.conversations.schemas import ConversationClarificationRequest
 from my_agents.knowledge.auth import KnowledgeBaseSelectionContext
+from my_agents.knowledge.models import DocumentChunkModel, DocumentModel
 from my_agents.knowledge.retrieval import RetrievedChunk
 from my_agents.knowledge.routing import (
     AnswerMode,
@@ -69,17 +72,111 @@ def conversation_retrieval_context_from_rag_result(
 
 def retrieval_context_from_graph_state(
     graph_state: Mapping[str, object],
+    db: Session | None = None,
 ) -> ConversationRetrievalContext:
     """Extract graph-owned RAG Agent retrieval state after graph execution."""
     result = graph_state.get("rag_retrieval_result")
     if isinstance(result, RagAgentRetrievalResult):
         return conversation_retrieval_context_from_rag_result(result)
+    snapshot = graph_state.get("rag_retrieval_snapshot")
+    if isinstance(snapshot, Mapping) and db is not None:
+        return _retrieval_context_from_snapshot(graph_state, snapshot, db)
     raise RuntimeError("general_assistant graph did not return RAG Agent retrieval context")
 
 
 def graph_has_retrieval_context(graph_state: Mapping[str, object]) -> bool:
     """Return whether a graph update/final state contains RAG Agent retrieval output."""
-    return isinstance(graph_state.get("rag_retrieval_result"), RagAgentRetrievalResult)
+    return isinstance(
+        graph_state.get("rag_retrieval_result"), RagAgentRetrievalResult
+    ) or isinstance(graph_state.get("rag_retrieval_snapshot"), Mapping)
+
+
+def _retrieval_context_from_snapshot(
+    graph_state: Mapping[str, object],
+    snapshot: Mapping[str, object],
+    db: Session,
+) -> ConversationRetrievalContext:
+    decision_payload = snapshot.get("decision")
+    selection_payload = snapshot.get("knowledge_base_selection")
+    if not isinstance(decision_payload, Mapping) or not isinstance(selection_payload, Mapping):
+        raise RuntimeError("checkpointed RAG metadata is incomplete")
+    decision = RetrievalRoutingDecision(
+        route=str(decision_payload.get("route") or "no_retrieval"),  # type: ignore[arg-type]
+        reason=str(decision_payload.get("reason") or "checkpointed retrieval result"),
+        rewritten_query=str(decision_payload.get("rewritten_query") or ""),
+        document_scope=str(decision_payload.get("document_scope") or "unknown"),  # type: ignore[arg-type]
+    )
+    selection = KnowledgeBaseSelectionContext(
+        mode=str(selection_payload.get("mode") or "all"),
+        knowledge_base_ids=tuple(_string_list(selection_payload.get("knowledge_base_ids"))),
+        resolved_count=int(selection_payload.get("resolved_count") or 0),
+        resolved_knowledge_base_ids=tuple(
+            _string_list(selection_payload.get("resolved_knowledge_base_ids"))
+        ),
+        ambient_system_knowledge_base_ids=tuple(
+            _string_list(selection_payload.get("ambient_system_knowledge_base_ids"))
+        ),
+        ambient_system_knowledge_base_count=int(
+            selection_payload.get("ambient_system_knowledge_base_count") or 0
+        ),
+    )
+    retrieved_chunks: list[RetrievedChunk] = []
+    retrieval_records = _mapping_list(graph_state.get("retrieval_records"))
+    if not retrieval_records:
+        retrieval_records = _mapping_list(graph_state.get("retrieved_context"))
+    for item in retrieval_records:
+        chunk_id = item.get("chunk_id")
+        document_id = item.get("document_id")
+        if not isinstance(chunk_id, str) or not isinstance(document_id, str):
+            continue
+        chunk = db.get(DocumentChunkModel, chunk_id)
+        document = db.get(DocumentModel, document_id)
+        if chunk is None or document is None or chunk.document_id != document.id:
+            continue
+        retrieved_chunks.append(
+            RetrievedChunk(
+                chunk=chunk,
+                document=document,
+                score=float(item.get("score") or 0.0),
+                source=str(item.get("source") or "checkpoint"),
+            )
+        )
+    evidence_payload = snapshot.get("retrieval_evidence")
+    evidence = None
+    if isinstance(evidence_payload, Mapping):
+        evidence = RetrievalEvidence(
+            intent=str(evidence_payload.get("intent") or "semantic_qa"),  # type: ignore[arg-type]
+            candidate_count=int(evidence_payload.get("candidate_count") or 0),
+            injected_count=int(evidence_payload.get("injected_count") or 0),
+            rejected_count=int(evidence_payload.get("rejected_count") or 0),
+            source_counts={
+                str(key): int(value)
+                for key, value in (
+                    evidence_payload.get("source_counts")
+                    if isinstance(evidence_payload.get("source_counts"), Mapping)
+                    else {}
+                ).items()
+            },
+            structured_entity_types=tuple(
+                _string_list(evidence_payload.get("structured_entity_types"))
+            ),
+            reranker=str(evidence_payload.get("reranker") or "deterministic"),
+            budget_truncated=bool(evidence_payload.get("budget_truncated", False)),
+        )
+    return ConversationRetrievalContext(
+        decision=decision,
+        answer_mode=str(snapshot.get("answer_mode") or "general_knowledge"),  # type: ignore[arg-type]
+        retrieved_chunks=retrieved_chunks,
+        retrieval_latency_ms=float(snapshot.get("retrieval_latency_ms") or 0.0),
+        knowledge_base_selection=selection,
+        retrieval_evidence=evidence,
+        retrieval_attempt_count=int(snapshot.get("retrieval_attempt_count") or 1),
+        insufficient_evidence=bool(snapshot.get("insufficient_evidence", False)),
+    )
+
+
+def _string_list(value: object) -> list[str]:
+    return [item for item in value if isinstance(item, str)] if isinstance(value, list) else []
 
 
 def graph_input_for_run(
@@ -87,12 +184,17 @@ def graph_input_for_run(
     messages: list[BaseMessage],
     user_id: str,
     conversation_id: str,
+    run_id: str,
+    document_selection_hitl_allowed: bool = True,
 ) -> dict[str, object]:
     graph_input: dict[str, object] = {
-        "messages": messages,
+        "messages": messages[-RECENT_CONVERSATION_MESSAGE_LIMIT:],
         "principal_id": user_id,
         "conversation_id": conversation_id,
+        "run_id": run_id,
+        "document_selection_hitl_allowed": document_selection_hitl_allowed,
         "retrieved_chunk_ids": [],
+        "retrieval_records": [],
         "retrieved_context": [],
         # Memory recall is graph-owned. These defaults keep test doubles and legacy
         # graph runners compatible; the real graph overwrites them in `retrieve_memory`.

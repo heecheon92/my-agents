@@ -73,6 +73,8 @@ def test_openapi_documents_error_and_discriminated_event_contracts() -> None:
         "artifact_created",
         "answer_composed",
         "run_cancel_requested",
+        "run_interrupted",
+        "run_resumed",
         "run_cancelled",
         "run_failed",
     }

@@ -68,7 +68,10 @@ The optional temporary document workspace is disabled by default, forbidden to
 guest sessions, and uses `gpt-5.6-sol` plus an OpenAI-hosted, network-disabled
 container. Its full knobs and retention limits are documented in `.env.example`.
 
-For memory architecture, do not treat LangGraph checkpointers as conversation history or long-term memory. Product DB remains the source of truth for visible transcripts/runs/citations/audit and memory governance; LangGraph Store should become the target long-term memory runtime; run-scoped checkpointers are for HITL/resume execution state only. OpenAI `previous_response_id` may be stored as one field inside compact graph/run state, but should not replace application state.
+For memory architecture, do not treat LangGraph checkpointers as conversation history or long-term memory. Product DB remains the source of truth for visible transcripts/runs/citations/audit and memory governance. PostgreSQL deployments own baseline PostgresSaver and a rebuildable PostgresStore semantic projection; Store candidates must be revalidated against Product DB rows and per-user experimental memory settings control consent and eligibility. PostgresSaver uses `run_id` only for bounded HITL/resume execution state. OpenAI `previous_response_id` may be stored as one field inside compact graph/run state, but should not replace application state.
+
+All agent-requested user input must use the versioned, semantic contract in `docs/product-chat-service/en/27-agent-frontend-interaction-contract.md`. Backend interactions describe required input, never frontend components or layout. Keep activity events separate from pending interaction state, require typed answers, and add future AG-UI/A2UI support only as a boundary adapter rather than a Product DB domain model.
+Ambient system knowledge is automatically injected internal context, not a user-controllable source axis: never expose system KBs/documents as interaction options or accept them as resume selections.
 
 ## Dependency policy
 
@@ -123,7 +126,7 @@ Prefer this sequence:
 1. Preserve deterministic classify/router contract.
 2. Keep OpenAI-backed reply behavior as the normal local mode while preserving deterministic tests.
 3. Keep current opt-in Product DB memory as a governance scaffold while migrating runtime recall/extraction toward LangGraph-native Store + `memory_graph`.
-4. Add run-scoped LangGraph checkpointer support only for HITL/resume execution state after graph state is compact.
+4. Extend the implemented run-scoped checkpointer only with bounded, typed HITL/resume interactions; never checkpoint ORM/runtime objects or use `conversation_id` as the thread boundary.
 5. Store OpenAI `previous_response_id` only after graph/run state exists.
 6. Add real tool/function capabilities one at a time with tests.
 7. Add durable storage only when the behavior requires it.

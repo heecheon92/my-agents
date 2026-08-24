@@ -4,9 +4,11 @@ from collections.abc import Sequence
 from typing import Annotated, Any, TypedDict
 
 from langchain_core.messages import AnyMessage, BaseMessage
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.runtime import Runtime
+from langgraph.store.base import BaseStore
 
 from my_agents.agents.capabilities import AgentCapability, get_capability_for_route
 from my_agents.agents.general_assistant.classifier import classify_messages
@@ -15,7 +17,10 @@ from my_agents.agents.general_assistant.memory_recall import (
     retrieve_memory_context,
 )
 from my_agents.agents.general_assistant.rag_retrieval import (
+    prepare_document_selection,
+    request_document_selection,
     retrieve_rag_context,
+    retrieve_selected_rag_context,
     select_after_rag_context,
     skip_rag_context,
 )
@@ -25,11 +30,11 @@ from my_agents.agents.general_assistant.retrieval_gate import (
     RetrievalSourceDecision,
     get_retrieval_source_decider,
 )
-from my_agents.agents.rag_agent import RagAgentRetrievalResult
 from my_agents.knowledge.routing import AnswerMode, DocumentScope, RetrievalRoute
 from my_agents.schemas import RouteDecision
 
 HANDLED_BY = "personal_assistant_graph"
+GRAPH_VERSION = "general-assistant-checkpoint-v1"
 
 
 class AssistantState(TypedDict, total=False):
@@ -42,11 +47,13 @@ class AssistantState(TypedDict, total=False):
     handled_by: str
     principal_id: str
     conversation_id: str
+    run_id: str
     retrieved_chunk_ids: list[str]
+    retrieval_records: list[dict[str, object]]
     retrieved_context: list[dict[str, object]]
     memory_context: list[dict[str, object]]
     source_conflicts: list[dict[str, object]]
-    rag_retrieval_result: RagAgentRetrievalResult
+    rag_retrieval_snapshot: dict[str, object]
     retrieval_source_decision: RetrievalSourceDecision
     rag_halt_before_response: bool
     retrieval_route: RetrievalRoute
@@ -55,6 +62,10 @@ class AssistantState(TypedDict, total=False):
     debug_empty_openai_response: bool
     document_artifacts: list[dict[str, object]]
     document_workspace_expires_at: str
+    document_selection_options: list[dict[str, object]]
+    document_selection_option_count: int
+    selected_document_id: str
+    document_selection_hitl_allowed: bool
 
 
 def classify_request(state: AssistantState) -> AssistantState:
@@ -198,13 +209,23 @@ def _compose_reply(
     return {"reply": reply}
 
 
-def build_graph():
+def build_graph(
+    *,
+    checkpointer: BaseCheckpointSaver | None = None,
+    store: BaseStore | None = None,
+    document_selection_hitl_enabled: bool = False,
+):
     """Build and compile the retrieval-enabled product assistant graph.
 
     Conversation-run services must invoke this graph with `graph_context_for_run(...)`
     so the RAG Agent runtime and authorized knowledge-base selection are present.
     """
-    return _build_graph(include_rag=True)
+    return _build_graph(
+        include_rag=True,
+        checkpointer=checkpointer,
+        store=store,
+        document_selection_hitl_enabled=document_selection_hitl_enabled,
+    )
 
 
 def build_legacy_chat_graph():
@@ -212,13 +233,23 @@ def build_legacy_chat_graph():
     return _build_graph(include_rag=False)
 
 
-def _build_graph(*, include_rag: bool):
+def _build_graph(
+    *,
+    include_rag: bool,
+    checkpointer: BaseCheckpointSaver | None = None,
+    store: BaseStore | None = None,
+    document_selection_hitl_enabled: bool = False,
+):
     graph = StateGraph(AssistantState, context_schema=AssistantRuntimeContext)
     graph.add_node("classify_request", classify_request)
     if include_rag:
         graph.add_node("decide_retrieval_source", decide_retrieval_source)
         graph.add_node("retrieve_rag_context", retrieve_rag_context)
         graph.add_node("skip_rag_context", skip_rag_context)
+        if document_selection_hitl_enabled:
+            graph.add_node("prepare_document_selection", prepare_document_selection)
+            graph.add_node("request_document_selection", request_document_selection)
+            graph.add_node("retrieve_selected_rag_context", retrieve_selected_rag_context)
     graph.add_node("retrieve_memory", retrieve_memory_context)
     graph.add_node("respond_general", respond_general)
     graph.add_node("respond_research", respond_research)
@@ -237,11 +268,32 @@ def _build_graph(*, include_rag: bool):
         for retrieval_node in ("retrieve_rag_context", "skip_rag_context"):
             graph.add_conditional_edges(
                 retrieval_node,
-                select_after_rag_context,
-                {
-                    "retrieve_memory": "retrieve_memory",
-                    "end": END,
-                },
+                lambda state: select_after_rag_context(
+                    state,
+                    document_selection_hitl_enabled=document_selection_hitl_enabled,
+                ),
+                (
+                    {
+                        "retrieve_memory": "retrieve_memory",
+                        "end": END,
+                        **(
+                            {"prepare_document_selection": "prepare_document_selection"}
+                            if document_selection_hitl_enabled
+                            else {}
+                        ),
+                    }
+                ),
+            )
+        if document_selection_hitl_enabled:
+            graph.add_edge("prepare_document_selection", "request_document_selection")
+            graph.add_edge("request_document_selection", "retrieve_selected_rag_context")
+            graph.add_conditional_edges(
+                "retrieve_selected_rag_context",
+                lambda state: select_after_rag_context(
+                    state,
+                    document_selection_hitl_enabled=False,
+                ),
+                {"retrieve_memory": "retrieve_memory", "end": END},
             )
     else:
         graph.add_edge("classify_request", "retrieve_memory")
@@ -256,4 +308,4 @@ def _build_graph(*, include_rag: bool):
     for node_name in ("respond_general", "respond_research"):
         graph.add_edge(node_name, END)
 
-    return graph.compile()
+    return graph.compile(checkpointer=checkpointer, store=store)

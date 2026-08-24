@@ -1,6 +1,6 @@
 # LangGraph-native memory migration note
 
-Status: migration in progress / architecture decision
+Status: PostgreSQL Store/checkpointer baseline implemented; `memory_graph` remains planned
 
 Date: 2026-06-10
 
@@ -33,11 +33,12 @@ LangGraph memory_graph = extraction/update workflow
 LangGraph checkpointer = run-scoped execution/HITL state
 ```
 
-Implementation update on 2026-06-10: Phase 1 and the recall part of Phase 2 have
-started. `general_assistant` now has a graph-owned `retrieve_memory` node and a
-`MemoryRuntime` boundary. The initial adapter still wraps the existing Product DB
-memory service; LangGraph Store, `memory_graph`, and run-scoped checkpointer work
-remain future phases.
+Implementation update on 2026-08-24: `general_assistant` has graph-owned memory recall,
+a PostgresStore semantic projection that is always revalidated against Product DB
+governance, and a run-scoped PostgresSaver for document-selection interrupts. PostgreSQL
+deployments provision both at process startup after explicit framework setup; the
+per-user experimental setting—not a deployment Store flag—controls consent and memory
+eligibility. The separate extraction/update `memory_graph` remains a future phase.
 
 ## Why this migration exists
 
@@ -148,27 +149,27 @@ Already merged:
 - Redacted run snapshots.
 - Source invalidation for document deletion and transcript replay/delete.
 
-Known limitation: this is product-owned runtime memory, not LangGraph-native runtime
-memory.
+Current boundary: Product DB remains the governance source of truth and SQLite recall
+fallback. PostgreSQL recall can use LangGraph Store for semantic candidate search.
 
 ### Phase 1 — Introduce a memory runtime boundary
 
-Started. A small interface now exists around recall operations before changing
-persistence:
+Implemented. A small interface isolates recall operations from persistence:
 
 ```python
 class MemoryRuntime(Protocol):
     def search(self, *, user_id: str, query: str, limit: int) -> list[MemoryItem]: ...
 ```
 
-The initial adapter wraps the existing Product DB tables through `UserMemoryService`.
-The important part is to stop spreading direct table/service assumptions across graph
-and API code. Write/delete runtime methods should be added when `memory_graph` or
-Store-backed writes are introduced.
+The adapter wraps Product DB governance through `UserMemoryService`. With Store available,
+it searches semantic candidates there and then reloads/revalidates the candidate IDs from
+Product DB before returning context. Without Store, it uses the Product DB relevance
+fallback. Explicit/confirmed writes and lifecycle deletes project to Store best-effort,
+with reconciliation repairing drift.
 
 ### Phase 2 — Move recall into the graph
 
-Started. The chat graph now has a recall node before response generation:
+Implemented. The chat graph has a recall node before response generation:
 
 ```text
 classify_request -> retrieve_memory -> respond_general/respond_research
@@ -181,6 +182,11 @@ compact `memory_context` plus `source_conflicts`.
 This makes memory a graph capability instead of a pre-graph FastAPI preprocessing step.
 
 ### Phase 3 — Add `memory_graph` for extraction
+
+**Current state: not implemented.** There is no `my_agents/agents/memory_graph/` package,
+no post-turn scheduler/debounce worker, and ordinary chat does not automatically create or
+update memories. The existing API supports explicit memories and manually confirmed
+suggestions only.
 
 Create `my_agents/agents/memory_graph/` as a separate LangGraph workflow inspired by
 `memory-template`:
@@ -196,27 +202,31 @@ execution once the worker path exists.
 
 ### Phase 4 — Store active memory in LangGraph Store
 
-Move active memory runtime storage/search to LangGraph Store or a compatible adapter.
-The Product DB should retain governance metadata and either:
-
-1. mirror store namespace/key plus status/provenance/stale/delete state; or
-2. act as an authorization/provenance index that filters Store results before prompt use.
-
-Prefer a namespace shape close to LangGraph examples, such as:
+**Implemented for PostgreSQL.** PostgresStore is process-owned infrastructure and indexes
+the `content` field of eligible Product DB memories. The actual namespace is:
 
 ```text
-("memories", user_id, memory_type)
+(user_id, "memories", category) / memory_key
 ```
 
-If we keep the existing SQL namespace shape during transition, document the mapping
-explicitly and migrate only when Store-backed search is active.
+Only active, non-sensitive, non-stale memories belonging to users who enabled experimental
+memory are eligible. Store returns semantic candidate IDs; Product DB revalidates user,
+status, sensitivity, staleness, and current opt-in before content reaches graph state.
+Explicit writes and confirmed suggestions project best-effort, while reconciliation
+detects and repairs missing, stale, or orphaned items. SQLite keeps the Product DB search
+fallback and does not provision PostgresStore.
 
 ### Phase 5 — Add run-scoped checkpointer for HITL/resume
 
-Only after graph state is compact enough, compile the assistant workflow with a
-checkpointer using `run_id` as the thread boundary. Do not use `conversation_id` with a
-full accumulated `MessagesState`, because Product DB transcripts would be duplicated in
-checkpoint state and could diverge from the product source of truth.
+**Implemented as PostgreSQL baseline infrastructure.** The assistant workflow uses
+`run_id` as the thread boundary, checkpoints only a bounded six-message window plus
+primitive retrieval/interaction snapshots, and deletes terminal-run checkpoints.
+Ambiguous document requests can pause as `waiting_for_input`, expose an authorized
+document selection, and resume the same run after revalidating current permission.
+SQLite compiles without a durable checkpointer and therefore does not claim restart-safe
+HITL behavior.
+The public waiting/resume payload follows the versioned semantic contract in
+[Agent-to-frontend interaction contract](./27-agent-frontend-interaction-contract.md).
 
 ## Non-goals
 

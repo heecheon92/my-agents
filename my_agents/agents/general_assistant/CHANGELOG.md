@@ -3,6 +3,12 @@
 This changelog records why the production-surface `general_assistant` agent folder needed
 meaningful behavior, graph-state, provider, or documentation changes.
 
+## 2026-08-17 — Add opt-in run persistence, document-selection HITL, and Store recall
+
+- **Why:** The stable RAG/answer pipeline now needs genuine user interaction that can pause and resume without turning checkpoint state into a second conversation history.
+- **Behavior/contract impact:** The product graph can compile with run-scoped PostgresSaver and PostgresStore. Ambiguous document requests return a safe document-selection interrupt and resume by exact authorized document ID. Checkpoint state contains bounded messages and primitive RAG snapshots; Product DB remains authoritative for transcripts, runs, permissions, citations, and memory governance. Store search results are revalidated against canonical memory rows, and reconciliation repairs projection drift.
+- **Verification:** Offline graph/API/Store projection tests cover strict serialization, interrupt/resume, exact document citations, and idempotent reconciliation. PostgreSQL setup/restart smoke remains feature-gated and is run before production activation.
+
 ## 2026-08-12 — Hide ambient system-knowledge provenance from users
 
 - **Why:** System knowledge was intended as ambient model context, but prompt context and public citations exposed its source identity.

@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
+from langgraph.store.base import BaseStore
 from sqlalchemy.orm import Session
 
+from my_agents.api.assistant import get_memory_store
 from my_agents.auth.contracts import Principal
 from my_agents.auth.dependencies import get_current_principal
 from my_agents.auth.guest_limits import assert_guest_access_active
@@ -30,9 +33,16 @@ from my_agents.memory.service import (
     memory_suggestion_value,
     memory_value,
 )
+from my_agents.memory.store_projection import (
+    delete_projected_memory,
+    project_memory,
+    reconcile_memory_store,
+)
+from my_agents.observability.metrics import record_langgraph_persistence_operation
 from my_agents.persistence.database import get_database_session
 
 memories_router = APIRouter(prefix="/memories", tags=["memories"])
+logger = logging.getLogger(__name__)
 
 
 @memories_router.get("/settings", response_model=UserMemorySettingsResponse)
@@ -51,10 +61,26 @@ def patch_memory_settings(
     request: UserMemorySettingsPatchRequest,
     principal: Annotated[Principal, Depends(get_current_principal)],
     db: Annotated[Session, Depends(get_database_session)],
+    store: Annotated[BaseStore | None, Depends(get_memory_store)],
 ) -> UserMemorySettingsResponse:
     """Enable or disable long-term memory for the current user."""
     assert_guest_access_active(db, principal)
     settings = UserMemoryService(db).set_enabled(principal.user_id, request.enabled)
+    if store is not None:
+        try:
+            reconcile_memory_store(
+                db=db,
+                store=store,
+                apply=True,
+                user_id=principal.user_id,
+            )
+        except Exception as exc:
+            logger.warning(
+                "memory_store.settings_reconcile_failed user_id=%s error_class=%s",
+                principal.user_id,
+                type(exc).__name__,
+            )
+            record_langgraph_persistence_operation(operation="memory_reconcile", outcome="failed")
     return _settings_response(settings)
 
 
@@ -63,6 +89,7 @@ def create_memory(
     request: UserMemoryCreateRequest,
     principal: Annotated[Principal, Depends(get_current_principal)],
     db: Annotated[Session, Depends(get_database_session)],
+    store: Annotated[BaseStore | None, Depends(get_memory_store)],
 ) -> UserMemoryResponse:
     """Persist an explicit user memory when the user has opted in."""
     assert_guest_access_active(db, principal)
@@ -81,6 +108,7 @@ def create_memory(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
         ) from exc
+    _project_best_effort(store, memory)
     return _memory_response(memory)
 
 
@@ -137,6 +165,7 @@ def confirm_memory_suggestion(
     suggestion_id: str,
     principal: Annotated[Principal, Depends(get_current_principal)],
     db: Annotated[Session, Depends(get_database_session)],
+    store: Annotated[BaseStore | None, Depends(get_memory_store)],
 ) -> UserMemoryResponse:
     """Confirm a pending suggestion and persist it as active memory."""
     assert_guest_access_active(db, principal)
@@ -155,6 +184,7 @@ def confirm_memory_suggestion(
         ) from exc
     except MemorySuggestionUnavailableError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    _project_best_effort(store, memory)
     return _memory_response(memory)
 
 
@@ -186,6 +216,7 @@ def deactivate_memory(
     memory_id: str,
     principal: Annotated[Principal, Depends(get_current_principal)],
     db: Annotated[Session, Depends(get_database_session)],
+    store: Annotated[BaseStore | None, Depends(get_memory_store)],
 ) -> UserMemoryResponse:
     """Deactivate a memory so it no longer enters provider context."""
     assert_guest_access_active(db, principal)
@@ -197,6 +228,7 @@ def deactivate_memory(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="memory not found"
         ) from exc
+    _delete_projection_best_effort(store, memory)
     return _memory_response(memory)
 
 
@@ -205,16 +237,51 @@ def delete_memory(
     memory_id: str,
     principal: Annotated[Principal, Depends(get_current_principal)],
     db: Annotated[Session, Depends(get_database_session)],
+    store: Annotated[BaseStore | None, Depends(get_memory_store)],
 ) -> Response:
     """Delete a memory owned by the current user and scrub stored content."""
     assert_guest_access_active(db, principal)
     try:
+        memory = db.get(UserMemoryModel, memory_id)
+        if memory is None or memory.user_id != principal.user_id:
+            raise MemoryNotFoundError("memory not found")
         UserMemoryService(db).delete_memory(user_id=principal.user_id, memory_id=memory_id)
     except MemoryNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="memory not found"
         ) from exc
+    _delete_projection_best_effort(store, memory)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+def _project_best_effort(store: BaseStore | None, memory: UserMemoryModel) -> None:
+    if store is None:
+        return
+    try:
+        project_memory(store, memory)
+        record_langgraph_persistence_operation(operation="memory_project", outcome="completed")
+    except Exception as exc:
+        logger.warning(
+            "memory_store.projection_failed memory_id=%s error_class=%s",
+            memory.id,
+            type(exc).__name__,
+        )
+        record_langgraph_persistence_operation(operation="memory_project", outcome="failed")
+
+
+def _delete_projection_best_effort(store: BaseStore | None, memory: UserMemoryModel) -> None:
+    if store is None:
+        return
+    try:
+        delete_projected_memory(store, memory)
+        record_langgraph_persistence_operation(operation="memory_delete", outcome="completed")
+    except Exception as exc:
+        logger.warning(
+            "memory_store.delete_failed memory_id=%s error_class=%s",
+            memory.id,
+            type(exc).__name__,
+        )
+        record_langgraph_persistence_operation(operation="memory_delete", outcome="failed")
 
 
 def _settings_response(settings: UserMemorySettingsModel) -> UserMemorySettingsResponse:

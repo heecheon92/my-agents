@@ -324,6 +324,8 @@ def replay_conversation_run_events(
             messages=messages,
             user_id=user_id,
             conversation_id=conversation_id,
+            run_id=run.id,
+            document_selection_hitl_allowed=False,
         )
         graph_context = graph_context_for_run(
             db=db,
@@ -349,7 +351,7 @@ def replay_conversation_run_events(
                 if item.kind == "update":
                     if item.result:
                         if retrieval_context is None and graph_has_retrieval_context(item.result):
-                            retrieval_context = retrieval_context_from_graph_state(item.result)
+                            retrieval_context = retrieval_context_from_graph_state(item.result, db)
                             retrieval_payload = record_retrieval_completed_event(
                                 db, run.id, retrieval_context
                             )
@@ -381,7 +383,7 @@ def replay_conversation_run_events(
                     and item.result is not None
                     and graph_has_retrieval_context(item.result)
                 ):
-                    retrieval_context = retrieval_context_from_graph_state(item.result)
+                    retrieval_context = retrieval_context_from_graph_state(item.result, db)
                     retrieval_payload = record_retrieval_completed_event(
                         db, run.id, retrieval_context
                     )
@@ -446,7 +448,7 @@ def replay_conversation_run_events(
         if result is None:
             raise RuntimeError("conversation graph stream ended without a final result")
         if retrieval_context is None:
-            retrieval_context = retrieval_context_from_graph_state(result)
+            retrieval_context = retrieval_context_from_graph_state(result, db)
             retrieval_payload = record_retrieval_completed_event(db, run.id, retrieval_context)
             yield sse_event(AgentEventType.RETRIEVAL_COMPLETED.value, retrieval_payload)
         if retrieval_context.decision.route == "clarification_required":

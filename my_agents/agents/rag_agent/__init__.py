@@ -23,6 +23,7 @@ from my_agents.agents.rag_agent.retrieval import (
     RagAgentRuntime,
     SqlAlchemyRagAgentRuntime,
     chunks_used_for_answer,
+    rag_result_snapshot_for_graph,
     retrieve_context,
     retrieved_context_for_graph,
 )
@@ -53,5 +54,6 @@ __all__ = [
     "get_rag_agent_graph",
     "invoke_rag_agent_graph",
     "retrieve_context",
+    "rag_result_snapshot_for_graph",
     "retrieved_context_for_graph",
 ]

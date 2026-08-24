@@ -108,6 +108,7 @@ def route_retrieval(
     message: str,
     history: list[BaseMessage] | None = None,
     authorized_document_count: int | None = None,
+    user_selectable_document_count: int | None = None,
 ) -> RetrievalRoutingDecision:
     """Classify a request into a deterministic retrieval route.
 
@@ -119,15 +120,24 @@ def route_retrieval(
     normalized = _normalize(query)
     document_scope = _document_scope(normalized)
 
-    if (
-        _has_any(normalized, _AMBIGUOUS_DOCUMENT_REFERENCES)
-        and authorized_document_count is not None
-        and authorized_document_count > 1
-        and not _has_specific_document_reference(query)
+    clarification_document_count = (
+        authorized_document_count
+        if user_selectable_document_count is None
+        else user_selectable_document_count
+    )
+    if _has_any(normalized, _AMBIGUOUS_DOCUMENT_REFERENCES) and not (
+        _has_specific_document_reference(query)
     ):
+        if clarification_document_count is not None and clarification_document_count > 1:
+            return RetrievalRoutingDecision(
+                route="clarification_required",
+                reason="ambiguous document reference with multiple user-selectable documents",
+                rewritten_query=query,
+                document_scope="unknown",
+            )
         return RetrievalRoutingDecision(
-            route="clarification_required",
-            reason="ambiguous document reference with multiple authorized documents",
+            route="retrieval_required",
+            reason="ambiguous document reference requires authorized document retrieval",
             rewritten_query=query,
             document_scope="unknown",
         )

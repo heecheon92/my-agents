@@ -64,6 +64,9 @@ class FakeAuthorizedRetrievalService:
     def authorized_document_count(self, **_: Any) -> int:
         return 45
 
+    def user_selectable_document_count(self, **_: Any) -> int:
+        return 45
+
     def retrieve_scoped(self, **_: Any) -> list[RetrievedChunk]:
         with track_retrieval_phase("document_metadata_match"):
             metadata_matches: list[RetrievedChunk] = []

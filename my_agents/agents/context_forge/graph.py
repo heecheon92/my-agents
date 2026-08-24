@@ -119,7 +119,7 @@ def build_graph():
     )
     graph.add_edge("retry_required_evidence", "assess_evidence")
     graph.add_edge("assess_evidence", END)
-    return graph.compile()
+    return graph.compile(checkpointer=False)
 
 
 @lru_cache(maxsize=1)

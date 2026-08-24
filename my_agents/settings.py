@@ -225,6 +225,18 @@ class Settings(BaseSettings):
         min_length=1,
         validation_alias=AliasChoices("MY_AGENTS_DATABASE_URL"),
     )
+    memory_store_embedding_dimensions: int = Field(
+        default=1536,
+        ge=1,
+        le=3072,
+        validation_alias=AliasChoices("MY_AGENTS_MEMORY_STORE_EMBEDDING_DIMENSIONS"),
+    )
+    hitl_wait_seconds: int = Field(
+        default=86_400,
+        ge=300,
+        le=604_800,
+        validation_alias=AliasChoices("MY_AGENTS_HITL_WAIT_SECONDS"),
+    )
     test_database_url: str | None = Field(
         default=None,
         validation_alias=AliasChoices("MY_AGENTS_TEST_DATABASE_URL"),
