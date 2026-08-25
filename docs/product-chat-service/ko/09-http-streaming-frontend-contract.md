@@ -23,6 +23,20 @@ body와 내부 next cursor는 공개하지 않습니다.
 권한을 다시 검사합니다. 삭제되었거나 권한이 없으면 다른 document로 교체하지 않고
 unavailable-source warning과 빈 coverage/citation으로 종료합니다.
 
+완료 응답은 `consulted_sources`와 `citations`를 구분합니다. 전자는 모델에 제공된
+user-visible source 전체 superset이고 후자는 최종 답변에서 근거가 확인된 보수적 subset입니다.
+두 배열에 같은 source가 있으면 동일한 persisted `id`와 `chunk_id`를 사용합니다.
+Attribution이 실행됐지만 source가 없으면 `consulted_sources: []`, attribution 도입 이전
+legacy run이면 `consulted_sources: null`입니다. 이 필드는 sync 완료, 일반 SSE 및 resume SSE의
+`run_completed`, replay 완료, `GET /conversations/{conversation_id}/runs/{run_id}`에서 동일하게
+직렬화되어 새로고침 뒤에도 구분이 유지됩니다.
+
+Backend attribution/audit 배열은 chunk 단위를 유지하지만 frontend citation presentation은
+document 단위입니다. `document_id`로 grouping하고 `source_filename`이 있으면 우선 표시하며,
+없으면 `document_title`을 사용합니다. `knowledge_base_name`과 deduplicated optional
+`source_page`만 함께 보여주고 일반 citation 상세에서는 snippet과 document/KB/chunk ID를
+숨깁니다.
+
 2026-06-09 기준으로 중요한 알려진 한계도 추가되었습니다. 현재 streamed chat generation은 client-held HTTP/SSE request에 묶여 있어서, 사용자가 탭을 닫거나 다른 화면으로 이동해 stream이 끊기면 assistant message가 최종 저장되기 전에 run이 cancelled/failed로 terminalize될 수 있습니다. 이 경우 사용자가 conversation에 다시 들어와도 생성 중이던 답변이 보이지 않을 수 있습니다. 가까운 시일 내에 server-owned background run execution과 resumable/listener-style SSE 구조로 보완해야 합니다.
 
 ## 문서 상태

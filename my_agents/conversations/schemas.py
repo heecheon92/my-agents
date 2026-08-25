@@ -183,6 +183,7 @@ class ConversationRunResponse(BaseModel):
     resolved_knowledge_base_ids: list[str] = Field(default_factory=list)
     resolved_knowledge_base_count: int = 0
     citations: list[CitationResponse] = Field(default_factory=list)
+    consulted_sources: list[CitationResponse] | None = None
     document_coverage: DocumentCoverageResponse | None = None
     warnings: list[ConversationRunWarning] = Field(default_factory=list)
     clarification: ConversationClarificationRequest | None = None

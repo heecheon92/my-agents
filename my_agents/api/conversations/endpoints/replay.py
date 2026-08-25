@@ -19,7 +19,7 @@ from my_agents.api.conversations.graph_streaming import fallback_answer_deltas, 
 from my_agents.api.conversations.interactions import delete_checkpoint_thread
 from my_agents.api.conversations.retrieval_context import (
     ConversationRetrievalContext,
-    chunks_used_for_answer,
+    chunks_consulted_for_answer,
     clarification_reply,
     clarification_request,
     compose_rag_reply,
@@ -498,7 +498,7 @@ def replay_conversation_run_events(
                 db=db,
                 run_id=run.id,
                 conversation_id=conversation_id,
-                retrieved_chunks=[],
+                consulted_chunks=[],
                 route=route,
                 reply=clarification_reply(result.get("reply"), retrieval_context.decision),
                 retrieval_decision=retrieval_context.decision,
@@ -528,7 +528,7 @@ def replay_conversation_run_events(
                 db=db,
                 run_id=run.id,
                 conversation_id=conversation_id,
-                retrieved_chunks=[],
+                consulted_chunks=[],
                 route=route,
                 reply=insufficient_evidence_reply(),
                 retrieval_decision=retrieval_context.decision,
@@ -563,12 +563,12 @@ def replay_conversation_run_events(
         memory_snapshot = graph_memory_source_snapshot_json(result) or memory_snapshot
         update_graph_invoked_event_memory_snapshot(db, graph_event, memory_snapshot)
         base_reply = result.get("reply") or "".join(streamed_base_reply_parts).strip()
-        used_chunks = chunks_used_for_answer(retrieval_context)
+        consulted_chunks = chunks_consulted_for_answer(retrieval_context)
         document_coverage = document_coverage_from_graph_state(result)
-        reply = compose_rag_reply(base_reply, used_chunks, retrieval_context.answer_mode)
-        reply, used_chunks, completion_insufficient_evidence = _verified_grounding_or_fallback(
+        reply = compose_rag_reply(base_reply, consulted_chunks, retrieval_context.answer_mode)
+        reply, consulted_chunks, completion_insufficient_evidence = _verified_grounding_or_fallback(
             reply=reply,
-            cited_chunks=used_chunks,
+            consulted_chunks=consulted_chunks,
             retrieval_decision=retrieval_context.decision,
             answer_mode=retrieval_context.answer_mode,
             retrieval_attempt_count=retrieval_context.retrieval_attempt_count,
@@ -594,7 +594,7 @@ def replay_conversation_run_events(
             db=db,
             run_id=run.id,
             conversation_id=conversation_id,
-            retrieved_chunks=used_chunks,
+            consulted_chunks=consulted_chunks,
             route=route,
             reply=reply,
             retrieval_decision=retrieval_context.decision,

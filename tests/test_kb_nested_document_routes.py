@@ -499,7 +499,9 @@ def test_selected_kb_chat_scope_filters_retrieval_and_metadata(monkeypatch) -> N
         "knowledge_base_ids": [kb_a],
     }
     assert selected_a_payload["resolved_knowledge_base_count"] == 1
-    assert {citation["knowledge_base_id"] for citation in selected_a_payload["citations"]} == {kb_a}
+    assert {source["knowledge_base_id"] for source in selected_a_payload["consulted_sources"]} == {
+        kb_a
+    }
     assert {context["document_id"] for context in graph.calls[-2]["retrieved_context"]} == {
         doc_a.json()["id"]
     }
@@ -510,8 +512,8 @@ def test_selected_kb_chat_scope_filters_retrieval_and_metadata(monkeypatch) -> N
         "knowledge_base_ids": [kb_b],
     }
     assert payload["resolved_knowledge_base_count"] == 1
-    assert payload["citations"]
-    assert {citation["knowledge_base_id"] for citation in payload["citations"]} == {kb_b}
+    assert payload["consulted_sources"]
+    assert {source["knowledge_base_id"] for source in payload["consulted_sources"]} == {kb_b}
     assert graph.calls[-1]["retrieved_context"][0]["document_id"] == doc_b.json()["id"]
     detail = owner.get(f"/conversations/{conversation_id}/runs/{payload['run_id']}")
     events = owner.get(f"/conversations/{conversation_id}/runs/{payload['run_id']}/events")
@@ -555,7 +557,10 @@ def test_all_kb_chat_scope_searches_all_authorized_kbs(monkeypatch) -> None:  # 
     payload = response.json()
     assert payload["knowledge_base_selection"] == {"mode": "all", "knowledge_base_ids": []}
     assert payload["resolved_knowledge_base_count"] == 2
-    assert {citation["knowledge_base_id"] for citation in payload["citations"]} == {kb_a, kb_b}
+    assert {source["knowledge_base_id"] for source in payload["consulted_sources"]} == {
+        kb_a,
+        kb_b,
+    }
     assert {context["document_id"] for context in graph.calls[-1]["retrieved_context"]} == {
         doc_a.json()["id"],
         doc_b.json()["id"],
@@ -604,7 +609,7 @@ def test_stream_selected_kb_chat_scope_filters_retrieval_and_metadata(monkeypatc
         "knowledge_base_ids": [kb_b],
     }
     assert completed["resolved_knowledge_base_count"] == 1
-    assert {citation["knowledge_base_id"] for citation in completed["citations"]} == {kb_b}
+    assert {source["knowledge_base_id"] for source in completed["consulted_sources"]} == {kb_b}
     assert graph.calls[-1]["retrieved_context"][0]["document_id"] == doc_b.json()["id"]
     assert (
         retrieval_event["data"]["knowledge_base_selection"] == completed["knowledge_base_selection"]
@@ -692,7 +697,10 @@ def test_stream_all_kb_chat_scope_persists_completion_and_event_metadata(monkeyp
 
     assert completed["knowledge_base_selection"] == {"mode": "all", "knowledge_base_ids": []}
     assert completed["resolved_knowledge_base_count"] == 2
-    assert {citation["knowledge_base_id"] for citation in completed["citations"]} == {kb_a, kb_b}
+    assert {source["knowledge_base_id"] for source in completed["consulted_sources"]} == {
+        kb_a,
+        kb_b,
+    }
     assert detail.json()["knowledge_base_selection"] == completed["knowledge_base_selection"]
     assert (
         retrieval_event["payload"]["knowledge_base_selection"]
@@ -780,7 +788,7 @@ def test_team_upload_staging_is_hidden_from_retrieval_but_publishable(monkeypatc
         json={"message": "What is StageOnlyAlpha?"},
     )
     assert group_run.status_code == 200
-    assert {citation["knowledge_base_id"] for citation in group_run.json()["citations"]} == {
+    assert {source["knowledge_base_id"] for source in group_run.json()["consulted_sources"]} == {
         group_kb_id
     }
 
@@ -824,4 +832,4 @@ def test_personal_conversation_can_select_group_knowledge_base(monkeypatch) -> N
         "knowledge_base_ids": [group_kb],
     }
     assert payload["resolved_knowledge_base_ids"] == [group_kb]
-    assert {citation["knowledge_base_id"] for citation in payload["citations"]} == {group_kb}
+    assert {source["knowledge_base_id"] for source in payload["consulted_sources"]} == {group_kb}

@@ -110,7 +110,7 @@ PATCH /projects/{id}
     payload = response.json()
     assert payload["retrieval_route"] == "retrieval_required"
     assert payload["answer_mode"] == "document_grounded"
-    assert payload["citations"]
+    assert payload["consulted_sources"]
     assert graph.calls[-1]["retrieved_context"]
     assert graph.calls[-1]["retrieved_context"][0]["source"].startswith("structured_entity:")
     snippets = "\n".join(item["snippet"] for item in graph.calls[-1]["retrieved_context"])

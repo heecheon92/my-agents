@@ -1,6 +1,6 @@
 ---
 created: 2026-05-17
-updated: 2026-08-24
+updated: 2026-08-25
 status: active
 topics:
   - rag
@@ -44,8 +44,15 @@ the same two-tool contract:
 - filename/title-like document references are matched against authorized document metadata
   before body-only retrieval, so visible upload names can resolve even when absent from text;
 - conversation runs enter retrieval through the `general_assistant` graph, which invokes the RAG Agent runtime; the RAG Agent delegates internally to the thin ContextForge LangGraph RetrievalGraph and records bounded retry/sufficiency state;
-- citations are stored against the `AgentRunModel` only when retrieved chunks are actually used;
-- the response payload returns routing metadata plus citation IDs, document IDs, chunk IDs, and snippets.
+- consulted sources are stored against the `AgentRunModel`; a conservative post-hoc selector
+  marks only sources with visible lexical support in the final reply as answer-supported citations;
+- the response payload returns `citations` as that answer-supported subset and
+  `consulted_sources` as the complete user-visible consulted superset, using the same persisted
+  citation `id` and `chunk_id` for a source appearing in both arrays;
+- each chunk-level response row also carries nullable `document_title` and
+  `knowledge_base_name`. The product UI should collapse rows by `document_id`, show one
+  human-readable document/knowledge-base entry with optional unique page numbers, and avoid
+  displaying snippets or internal document/KB/chunk IDs as ordinary citation details;
 - a semantic `comprehensive_document` path handles explicit or clearly implied English/Korean
   exhaustive tasks without changing ordinary semantic/BM25 retrieval;
 - the path resolves exactly one currently authorized user-controllable document, excludes
@@ -190,10 +197,15 @@ documented bounded citation-chunk snippets; it does not receive the full-documen
 - The reply composition is a thin service-layer scaffold, not a polished answer synthesis prompt.
 - Citation objects still do not expose a per-citation character range; `document_coverage`
   exposes the overall covered range instead.
-- Full-document citations currently preserve provenance for every authorized chunk overlapping
-  the read range. They prove which document range was available to the answer, not that every
-  cited chunk supports a particular generated claim. Claim-selective citation attribution remains
-  future work and the frontend must keep coverage disclosure distinct from citation meaning.
+- Full-document reads validate every authorized chunk overlapping the read range, up to a
+  2,000-chunk scan bound. When more than 100 chunks are valid, the runtime keeps 100 evenly
+  distributed provenance chunks, including the beginning and end, instead of discarding all
+  evidence. They prove which document range was available to the answer, not that every consulted
+  chunk supports a particular generated claim. The conservative attribution selector recognizes
+  exact anchors and distinctive phrase/token overlap in the final reply. It deliberately prefers
+  false negatives over unsupported citation claims, so paraphrased answers may commonly produce
+  zero `citations` while retaining non-empty `consulted_sources`. Semantic or model-emitted
+  claim-level attribution remains future work.
 - Large documents receive only the first configured range. There is no automatic cursor
   loop, per-range summary ledger, or final multi-pass whole-document synthesis yet.
 - Budgets are characters in normalized extracted text, not provider-token estimates.
@@ -201,15 +213,16 @@ documented bounded citation-chunk snippets; it does not receive the full-documen
   validates overlapping chunk offsets/content and re-reads before composition, but there
   is no durable document revision/hash contract yet; changed or stale chunk provenance
   can make the full-document path return insufficient evidence.
-- At most 100 overlapping chunks may back one read. A range that exceeds that provenance
-  bound is treated as unavailable instead of producing an uncited comprehensive answer.
+- At most 2,000 overlapping chunks are validated for one read and at most 100 distributed
+  chunks become persisted consulted sources. A range exceeding the scan bound still fails closed.
 - This path is explicit-intent-only and does not automatically retry a semantically weak
   ranked retrieval result with full-document access.
 - Focused retrieval does not yet support adaptive surrounding-context expansion. That is a
   separate milestone: a bounded sufficiency decision may request same-document neighbors
   around authorized anchor chunks, while backend code owns permission revalidation,
   ordinal/offset windows, round/token budgets, reranking/packing, and citation selectivity.
-  Neighboring chunks are candidates and must not become citations merely because they were read.
+  Neighboring chunks are candidates and must not become answer-supported citations merely because
+  they were read.
 - Streaming exists, but frontend display of retrieval route/answer mode still belongs to the separate frontend repository.
 - The legacy `/assistant/chat` endpoint still exists for smoke checks and does not own product KB access.
 
@@ -264,11 +277,19 @@ flowchart LR
 
 `tests/test_full_document_retrieval.py` verifies explicit-intent gating, owner and explicit
 permission access, half-open cursor ranges, complete and partial coverage, overlapping
-citations, ambiguous selection/resume, system-safe checkpoint/event persistence, buffered
+consulted sources, ambiguous selection/resume, system-safe checkpoint/event persistence, buffered
 partial-stream disclosure, refresh recovery, and replay without source substitution.
+
+`tests/test_citation_attribution.py` and `tests/test_conversations_api.py` verify the conservative
+selector and the wire contract. New attributed runs return `consulted_sources: []` when no source
+was consulted. Legacy runs return `consulted_sources: null` and retain their historical flat
+`citations` list because those rows cannot honestly be reclassified after the fact.
 
 ## Revision history
 
+- 2026-08-25: Added human-readable document and knowledge-base citation metadata and documented document-level UI grouping over chunk-level audit provenance.
+- 2026-08-25: Separated the complete consulted-source set from conservative answer-supported citations, including legacy `null` versus attributed empty-list semantics and stable shared IDs.
+- 2026-08-25: Replaced the 100-chunk fail-closed cutoff with bounded distributed provenance sampling after a valid 190-chunk Markdown document reproduced the insufficient-evidence fallback.
 - 2026-08-24: Added the explicit-intent comprehensive-document path, coverage contract, privacy boundary, and bounded large-document limitations.
 - 2026-06-17: Added future retrieval quality/speed profile guidance for balancing RAG accuracy with product UX latency.
 - 2026-06-16: Promoted `rag_agent` to the assistant-facing retrieval boundary invoked from `general_assistant`, while ContextForge remains the delegated permission-first retrieval graph.

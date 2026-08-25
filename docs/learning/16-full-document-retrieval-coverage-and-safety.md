@@ -1,6 +1,6 @@
 ---
 created: 2026-08-24
-updated: 2026-08-24
+updated: 2026-08-25
 status: active
 topics:
   - rag
@@ -10,6 +10,7 @@ topics:
   - citations
   - tool-calling
 related_code:
+  - my_agents/agent_runtime/citation_attribution.py
   - my_agents/agents/general_assistant/graph.py
   - my_agents/agents/general_assistant/rag_retrieval.py
   - my_agents/agents/rag_agent/retrieval.py
@@ -81,7 +82,7 @@ flowchart TD
     Resolve -->|No authorized target| Stop["Insufficient evidence"]
     Prepare --> Memory["Retrieve governed user memory"]
     Memory --> Respond["Re-read range inside respond_full_document"]
-    Respond --> Persist["Persist reply, citations, coverage event"]
+    Respond --> Persist["Persist reply, consulted sources, attributed citations, coverage event"]
 ```
 
 Resolution works from metadata first. It accepts the exact selected/replayed document, the
@@ -112,8 +113,8 @@ With default settings:
   in the V1 public response.
 
 The public `document_coverage` contains document identity, title/source filename,
-start/end offsets, and total characters. Citations come only from authorized chunks that
-overlap the range. A partial response receives a deterministic Korean or English notice
+start/end offsets, and total characters. Consulted sources come only from authorized chunks
+that overlap the range. A partial response receives a deterministic Korean or English notice
 before the generated answer, so it cannot pretend to be a complete review.
 
 The limits are characters, not model tokens. They provide deterministic application bounds,
@@ -150,12 +151,68 @@ offsets and still match the current content. It also rechecks the prepared start
 values before composing.
 
 This avoids confidently citing stale chunks, but it is not document versioning. There is no
-durable content revision or hash in the coverage contract yet. If body/chunk provenance has
-drifted, if more than 100 chunks overlap one read, or if the document becomes unavailable,
-the graph returns insufficient evidence instead of producing an uncited comprehensive
-answer.
+durable content revision or hash in the coverage contract yet. The service validates as many
+as 2,000 overlapping chunks. When more than 100 are valid, it keeps 100 evenly distributed
+provenance chunks—including the first and last—instead of converting the read into zero
+evidence. A larger scan, body/chunk drift, or an unavailable document still returns
+insufficient evidence rather than producing an uncited comprehensive answer.
 
-## 6. Streaming and replay preserve the honest claim
+### Debug lesson: a safety cap must not erase valid evidence
+
+The first implementation queried only 101 chunks to enforce a 100-citation ceiling. If the
+101st chunk existed, it replaced the entire chunk list with `[]`. A 16,600-character Markdown
+document with 190 valid small chunks therefore passed authorization, extraction, offset, and
+content checks but failed at the graph boundary because citation provenance appeared empty.
+
+The rejected quick fix was to raise the public citation ceiling above 190. That would make UI
+and persistence cost grow with ingestion granularity. The implemented fix separates two
+budgets:
+
+1. scan and validate at most 2,000 overlapping chunks;
+2. retain at most 100 evenly distributed provenance chunks for grounding and persistence.
+
+This preserves the original bounded-citation goal while making the outcome independent of
+whether ingestion produced a few large chunks or many small, valid chunks.
+
+## 6. Consultation and citation are different provenance claims
+
+Retrieval evidence can answer two different questions:
+
+1. What source material was made available while composing the answer?
+2. What source material visibly supports something in the final answer?
+
+The first is `consulted_sources`; the second is `citations`. For attributed runs,
+`citations` is a subset of `consulted_sources`. They are not separate copies: both arrays
+serialize the same persisted citation row, so overlapping entries have identical `id` and
+`chunk_id` values.
+
+The current post-hoc selector looks for exact anchors, meaningful phrase overlap, and
+distinctive long tokens in the final reply. This preserves provider-token streaming and is
+deterministic in offline tests, but it cannot recognize every semantic paraphrase. The
+deliberate failure direction is a false negative: show a source as consulted but not cited
+rather than claim answer support the system did not verify. Consequently, zero cited sources
+with several consulted sources is an expected, non-exceptional result.
+
+Legacy data requires a third state. Historical rows did not record the distinction, so
+marking all of them `used_in_answer=true` would recreate the provenance overclaim. The wire
+contract therefore uses:
+
+| Value | Meaning |
+| --- | --- |
+| `consulted_sources: null` | Legacy run; attribution did not exist, so keep the historical flat citation list without relabeling it. |
+| `consulted_sources: []` | Attribution ran for this run and no user-visible source was consulted. |
+| Non-empty list | Attribution ran and these user-visible sources were consulted; `citations` is the supported subset. |
+
+A nullable run-level attribution version makes this distinction refresh-safe. A nullable
+row-level `used_in_answer` marker records the new result without irreversible legacy backfill.
+
+Chunk granularity is an audit boundary, not a UI requirement. The response carries
+`document_title` and `knowledge_base_name` so a client can group by stable `document_id` and
+render one human-readable document entry. Optional source pages can be deduplicated across the
+group. Snippets and document/KB/chunk IDs remain available to trusted diagnostics but should not
+appear in the ordinary product citation panel.
+
+## 7. Streaming and replay preserve the honest claim
 
 Full-document provider tokens are buffered. For a partial read, the backend first prepends
 the deterministic coverage notice and only then emits `answer_delta`; concatenated deltas
@@ -168,7 +225,7 @@ unavailable and does not substitute another document that happens to be accessib
 This is replay fidelity: regenerate from the same source boundary or disclose that it cannot
 be reproduced.
 
-## 7. What remains for true large-document coverage
+## 8. What remains for true large-document coverage
 
 The current large-document path is intentionally one bounded first range. It does not yet:
 
@@ -183,4 +240,7 @@ contract, not a temporary implementation detail that the UI or responder may hid
 
 ## Revision history
 
+- 2026-08-25: Clarified the separation between chunk-level audit provenance and document-level citation UX.
+- 2026-08-25: Explained the consulted-source versus answer-supported citation contract, conservative selector trade-off, stable join IDs, and legacy null semantics.
+- 2026-08-25: Documented the many-small-chunk failure and bounded distributed provenance fix.
 - 2026-08-24: Created after implementing the explicit-intent bounded full-document retrieval path; updated when that semantic gate became baseline behavior and when Luna-backed typed retrieval-tool selection replaced literal phrases as the OpenAI-mode decision boundary.

@@ -106,6 +106,7 @@ class RankedBm25Chunk:
 MatchedDocumentChunkRowsCache = dict[str, list[tuple[DocumentChunkModel, DocumentModel]]]
 _FULL_DOCUMENT_TARGET_SCAN_LIMIT = 500
 _FULL_DOCUMENT_MAX_CITATION_CHUNKS = 100
+_FULL_DOCUMENT_MAX_PROVENANCE_SCAN_CHUNKS = 2_000
 
 
 class RetrievalService:
@@ -449,13 +450,18 @@ class RetrievalService:
                     DocumentChunkModel.end_offset > start_offset,
                 )
                 .order_by(DocumentChunkModel.ordinal)
-                .limit(_FULL_DOCUMENT_MAX_CITATION_CHUNKS + 1)
+                .limit(_FULL_DOCUMENT_MAX_PROVENANCE_SCAN_CHUNKS + 1)
             ).all()
         )
-        if len(chunks) > _FULL_DOCUMENT_MAX_CITATION_CHUNKS or any(
+        if len(chunks) > _FULL_DOCUMENT_MAX_PROVENANCE_SCAN_CHUNKS or any(
             not _chunk_matches_document_content(chunk, document.content) for chunk in chunks
         ):
             chunks = []
+        else:
+            chunks = _distributed_chunk_sample(
+                chunks,
+                limit=_FULL_DOCUMENT_MAX_CITATION_CHUNKS,
+            )
         retrieved_chunks = tuple(
             RetrievedChunk(
                 chunk=chunk,
@@ -1756,6 +1762,20 @@ def _matching_document_options(
 
 def _normalize_document_reference(value: str) -> str:
     return " ".join(value.casefold().split())
+
+
+def _distributed_chunk_sample(
+    chunks: Sequence[DocumentChunkModel], *, limit: int
+) -> list[DocumentChunkModel]:
+    """Keep bounded provenance spread across the entire covered range."""
+    if limit < 1:
+        raise ValueError("distributed chunk sample limit must be positive")
+    if len(chunks) <= limit:
+        return list(chunks)
+    if limit == 1:
+        return [chunks[0]]
+    last_index = len(chunks) - 1
+    return [chunks[(sample_index * last_index) // (limit - 1)] for sample_index in range(limit)]
 
 
 def _authorized_document_option(row: object) -> AuthorizedDocumentOption:

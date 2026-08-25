@@ -134,9 +134,27 @@ The final `run_completed` event contains the same response shape as
   "answer_mode": "general_knowledge",
   "document_scope": "unknown",
   "citations": [],
+  "consulted_sources": [],
   "document_coverage": null
 }
 ```
+
+For attributed runs, `consulted_sources` is the complete user-visible consulted superset and
+`citations` is its conservative answer-supported subset. A source in both arrays has the same
+persisted `id` and `chunk_id`. `consulted_sources: []` means attribution ran and found no
+consulted source; `consulted_sources: null` means the run predates attribution, in which case
+the legacy flat `citations` list is preserved without reclassifying it as answer-supported.
+
+This response field is present consistently in synchronous run completion, normal SSE
+`run_completed`, resumed-run SSE `run_completed`, non-streaming and streaming replay completion,
+and `GET /conversations/{conversation_id}/runs/{run_id}`. A refresh must therefore not collapse
+the two evidence sets back into one.
+
+Evidence arrays remain chunk-granular for backend attribution and audit, but frontend citation
+presentation is document-granular. Group by `document_id`; display `source_filename` when present,
+otherwise `document_title`, plus `knowledge_base_name` and optional deduplicated `source_page`
+values. Do not show snippets or document, knowledge-base, or chunk IDs in the ordinary citation
+detail UI.
 
 ## Full-document buffering and coverage disclosure
 
@@ -305,6 +323,8 @@ that leaving a streaming conversation will finish and persist the assistant resp
 
 ## Revision history
 
+- 2026-08-25: Defined document-level citation presentation using human-readable document/knowledge-base metadata over chunk-level wire provenance.
+- 2026-08-25: Added refresh-safe `consulted_sources` alongside answer-supported `citations`, including resume/replay parity and legacy `null` semantics.
 - 2026-08-24: Documented full-document buffering, typed coverage events, and replay target fidelity.
 - 2026-05-19: Created after adding the SSE conversation-run stream endpoint.
 - 2026-05-19: Added `answer_delta` events for incremental assistant text streaming.

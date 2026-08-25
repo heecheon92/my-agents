@@ -103,7 +103,10 @@ serialization time, stored payload JSON is filtered through the matching event m
 the same boundary recursively filters trace steps, localized text, and evidence. Unknown
 or accidentally stored keys such as `prompt`, `provider_trace`, `credentials`, or
 chain-of-thought fields therefore cannot reach this endpoint. Events explain
-what happened; citations explain which authorized knowledge supported the answer.
+what happened; `consulted_sources` explain which authorized knowledge was made available to
+the answer, while `citations` contain only the conservative answer-supported subset. The
+`answer_composed.citation_count` therefore counts answer-supported citations; retrieval and
+authorized-context counts continue to describe consulted evidence.
 
 The comprehensive-document path tightens this boundary further. Graph state/checkpoints
 hold compact coverage and citation metadata but not the raw extracted-text range. The
@@ -197,7 +200,8 @@ Future observability work should split into three lanes:
 
 `my_agents/agent_runtime/evals.py` provides small deterministic helpers:
 
-- `evaluate_grounded_citations` checks that a cited reply visibly uses citation text;
+- `evaluate_grounded_citations` uses the same conservative selector as response persistence
+  and checks that a cited reply visibly uses citation text;
 - `evaluate_permission_leakage` checks forbidden terms are absent from reply/citations;
 - `evaluate_event_redaction` checks forbidden terms are absent from event payloads;
 - `evaluate_event_latency_budget` checks emitted latency metrics fit a fixture budget.
@@ -217,7 +221,9 @@ claims testable: grounding, permission safety, redaction, and basic performance 
 - opt-in `/metrics` exposure records request and embedding timing histograms without exposing raw product data in labels.
 
 `tests/test_conversations_api.py` also verifies that failed graph invocation stores
-`status=failed` plus a redacted `run_failed` event.
+`status=failed` plus a redacted `run_failed` event. It also verifies that consulted and
+answer-supported sources retain the same persisted IDs and remain identical after run-detail
+refresh.
 
 `tests/test_agent_event_contract.py` verifies the OpenAPI-facing serializer strips
 uncontracted top-level and nested evidence fields before returning persisted events.
@@ -228,6 +234,7 @@ metadata remains refresh-safe.
 
 ## Revision history
 
+- 2026-08-25: Documented the consulted-source versus answer-supported citation split and shared production/eval selector.
 - 2026-08-24: Added the typed `full_document_read` event and full-body checkpoint/log/trace redaction boundary.
 - 2026-08-09: Froze the persisted event vocabulary as a discriminated OpenAPI union and added event/stage-specific response allowlists.
 - 2026-06-17: Added future Fast / Balanced / Thorough retrieval UX quality profile guidance.

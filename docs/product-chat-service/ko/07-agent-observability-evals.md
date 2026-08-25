@@ -22,6 +22,12 @@ enum이 아닙니다.
 call 주위의 LangSmith tracing도 끕니다. 기존 opt-in DEBUG retrieval log는 이전처럼 제한된
 240-character citation chunk preview를 표시할 수 있지만 full-body override는 받지 않습니다.
 
+응답 provenance는 두 집합으로 나뉩니다. `consulted_sources`는 모델에 제공된 authorized
+source 전체이고, `citations`는 최종 답변에서 보수적인 lexical 근거가 확인된 subset입니다.
+따라서 `answer_composed.citation_count`는 answer-supported citation 수만 세고, retrieval 및
+authorized-context count는 consulted evidence를 설명합니다. Production persistence와
+`evaluate_grounded_citations`는 같은 deterministic selector를 사용합니다.
+
 ## 문서 상태
 
 - 영어 원문은 `docs/product-chat-service/en/07-agent-observability-evals.md`에 있습니다.

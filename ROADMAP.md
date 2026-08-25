@@ -153,6 +153,8 @@ Current honest status:
 - [x] Entity/relationship expansion limited to authorized chunks.
 - [x] Product conversation run composes authorized context into the answer.
 - [x] Citations are persisted and returned in run responses.
+- [x] Run responses distinguish the full user-visible `consulted_sources` set from conservative answer-supported `citations`; legacy runs expose `consulted_sources=null` instead of receiving unverifiable attribution retroactively.
+- [x] Citation rows expose human-readable document and knowledge-base names so product UIs can group chunk-level provenance into one entry per document and hide internal IDs/snippets.
 - [x] Negative tests for permission leakage.
 - [x] Redacted event payloads avoid raw private content.
 - [x] Real embedding generation provider boundary.

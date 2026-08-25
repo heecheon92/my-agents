@@ -28,10 +28,23 @@ Deterministic mode, invalid output, provider failure는 같은 two-tool local fa
   Partial 답변에는 검토 범위와 전체 길이를 알리는 문구를 반드시 먼저 붙입니다.
 - 응답과 run detail의 `document_coverage`는 mode, document metadata, start/end offset,
   total chars를 제공합니다. Citation은 읽은 범위와 겹치는 chunk에서만 생성합니다.
-- Full-document citation은 현재 읽은 범위와 겹치는 모든 authorized chunk의 provenance를
-  보존합니다. 이는 답변에 제공된 문서 범위를 증명하지만 각 chunk가 특정 생성 claim을
-  직접 뒷받침한다는 뜻은 아닙니다. Claim-selective attribution은 향후 과제이며 frontend는
-  coverage disclosure와 citation 의미를 구분해야 합니다.
+- Full-document read는 읽은 범위와 겹치는 authorized chunk를 최대 2,000개까지 모두
+  검증합니다. Valid chunk가 100개보다 많으면 첫/마지막을 포함해 범위 전체에 고르게
+  분산된 provenance chunk 100개를 유지합니다. 이는 답변에 제공된 문서 범위를 증명하지만
+  각 chunk가 특정 생성 claim을 직접 뒷받침한다는 뜻은 아닙니다. 응답의
+  `consulted_sources`는 이 전체 consulted superset을, `citations`는 최종 답변에서
+  명시적 lexical 근거가 확인된 보수적 subset을 나타냅니다. 두 배열에 같은 source가 있으면
+  동일한 persisted `id`와 `chunk_id`를 사용합니다. 보수적 selector는 과장된 citation보다
+  false negative를 선택하므로 paraphrase 답변에서는 `citations: []`이면서
+  `consulted_sources`가 비어 있지 않은 경우가 흔할 수 있습니다. 더 정교한 semantic/claim-level
+  attribution은 향후 과제입니다. Scan bound 2,000개를 넘는 range는 계속 fail closed합니다.
+- 새 attribution run에서 source를 하나도 참조하지 않았으면 `consulted_sources: []`입니다.
+  Attribution 이전 legacy run은 검증할 수 없으므로 `consulted_sources: null`로 직렬화하고
+  기존 flat `citations`를 그대로 유지합니다. Legacy row를 answer-supported로 backfill하지 않습니다.
+- 각 chunk-level response row는 nullable `document_title`과 `knowledge_base_name`도
+  제공합니다. Product UI는 `document_id`로 묶어 문서당 한 항목만 보여주고,
+  document/knowledge-base 이름과 optional unique page number만 표시합니다. 일반 citation
+  상세에서 snippet과 document/KB/chunk ID는 노출하지 않습니다.
 - Raw full-document body는 application checkpoint, run event, full-body logging payload에
   저장하지 않습니다. 해당 provider call은 LangSmith tracing도 끕니다. 기존 opt-in DEBUG
   logging의 제한된 citation-chunk snippet은 별도 기존 동작입니다.
@@ -53,3 +66,9 @@ Deterministic mode, invalid output, provider failure는 같은 two-tool local fa
 ## 관련 위치
 
 - 영어 원문: [product-chat-service/06-permission-aware-rag.md](../en/06-permission-aware-rag.md)
+
+## Revision history
+
+- 2026-08-25: Chunk-level audit provenance 위에 document/knowledge-base 이름을 추가하고 document-level UI grouping 계약을 기록했습니다.
+- 2026-08-25: Consulted source 전체 집합과 보수적인 answer-supported citation subset을 분리하고 legacy `null`/신규 빈 배열 의미 및 동일 ID 계약을 기록했습니다.
+- 2026-08-25: Valid 190-chunk Markdown 문서가 insufficient evidence로 잘못 종료되던 문제를 bounded distributed provenance sampling으로 수정했습니다.

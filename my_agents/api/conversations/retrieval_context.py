@@ -17,7 +17,7 @@ from my_agents.agents.rag_agent import (
     RagAgentRetrievalResult,
 )
 from my_agents.agents.rag_agent import (
-    chunks_used_for_answer as rag_chunks_used_for_answer,
+    chunks_consulted_for_answer as rag_chunks_consulted_for_answer,
 )
 from my_agents.agents.rag_agent import (
     retrieved_context_for_graph as rag_retrieved_context_for_graph,
@@ -230,10 +230,10 @@ def insufficient_evidence_reply() -> str:
     return _INSUFFICIENT_EVIDENCE_REPLY
 
 
-def chunks_used_for_answer(
+def chunks_consulted_for_answer(
     retrieval_context: ConversationRetrievalContext,
 ) -> list[RetrievedChunk]:
-    return rag_chunks_used_for_answer(_rag_result_from_conversation_context(retrieval_context))
+    return rag_chunks_consulted_for_answer(_rag_result_from_conversation_context(retrieval_context))
 
 
 def retrieved_context_for_graph(retrieved_chunks: list[RetrievedChunk]) -> list[dict[str, object]]:

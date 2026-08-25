@@ -97,7 +97,7 @@ def test_rag_agent_verifier_rejects_unsafe_trace_evidence() -> None:
     assert "query_cartographer: unsafe evidence key 'prompt'" in result.errors
 
 
-def test_grounding_verifier_accepts_required_rag_with_relevant_citation() -> None:
+def test_grounding_verifier_accepts_required_rag_with_relevant_consulted_source() -> None:
     result = DeterministicRagAgentGroundingVerifier().verify(
         retrieval_decision=RetrievalRoutingDecision(
             route="retrieval_required",
@@ -106,7 +106,7 @@ def test_grounding_verifier_accepts_required_rag_with_relevant_citation() -> Non
             document_scope="user_documents",
         ),
         answer_mode="document_grounded",
-        cited_chunks=[
+        consulted_chunks=[
             RetrievedChunk(
                 chunk=object(),
                 document=object(),
@@ -114,7 +114,7 @@ def test_grounding_verifier_accepts_required_rag_with_relevant_citation() -> Non
                 source="semantic_vector",
             )
         ],
-        citation_count=1,
+        consulted_count=1,
         retrieval_attempt_count=1,
     )
 
@@ -122,7 +122,7 @@ def test_grounding_verifier_accepts_required_rag_with_relevant_citation() -> Non
     assert result.errors == ()
 
 
-def test_grounding_verifier_rejects_required_rag_without_citations() -> None:
+def test_grounding_verifier_rejects_required_rag_without_consulted_sources() -> None:
     result = DeterministicRagAgentGroundingVerifier().verify(
         retrieval_decision=RetrievalRoutingDecision(
             route="retrieval_required",
@@ -131,13 +131,13 @@ def test_grounding_verifier_rejects_required_rag_without_citations() -> None:
             document_scope="user_documents",
         ),
         answer_mode="document_grounded",
-        cited_chunks=[],
-        citation_count=0,
+        consulted_chunks=[],
+        consulted_count=0,
         retrieval_attempt_count=2,
     )
 
     assert result.passed is False
-    assert "required retrieval completions must include citations" in result.errors
+    assert "required retrieval completions must consult source evidence" in result.errors
 
 
 def test_grounding_verifier_accepts_required_retry_safe_fallback() -> None:
@@ -149,8 +149,8 @@ def test_grounding_verifier_accepts_required_retry_safe_fallback() -> None:
             document_scope="user_documents",
         ),
         answer_mode="general_knowledge",
-        cited_chunks=[],
-        citation_count=0,
+        consulted_chunks=[],
+        consulted_count=0,
         insufficient_evidence=True,
         retrieval_attempt_count=2,
     )
@@ -167,8 +167,8 @@ def test_grounding_verifier_rejects_unretried_safe_fallback() -> None:
             document_scope="user_documents",
         ),
         answer_mode="general_knowledge",
-        cited_chunks=[],
-        citation_count=0,
+        consulted_chunks=[],
+        consulted_count=0,
         insufficient_evidence=True,
         retrieval_attempt_count=1,
     )
@@ -177,10 +177,10 @@ def test_grounding_verifier_rejects_unretried_safe_fallback() -> None:
     assert "required retrieval fallback must follow the bounded retry" in result.errors
 
 
-def test_completion_grounding_gate_falls_back_for_required_rag_without_citations() -> None:
-    reply, cited_chunks, insufficient_evidence = _verified_grounding_or_fallback(
+def test_completion_grounding_gate_falls_back_for_required_rag_without_sources() -> None:
+    reply, consulted_chunks, insufficient_evidence = _verified_grounding_or_fallback(
         reply="Unsupported answer",
-        cited_chunks=[],
+        consulted_chunks=[],
         retrieval_decision=RetrievalRoutingDecision(
             route="retrieval_required",
             reason="document requested",
@@ -191,6 +191,6 @@ def test_completion_grounding_gate_falls_back_for_required_rag_without_citations
         retrieval_attempt_count=2,
     )
 
-    assert cited_chunks == []
+    assert consulted_chunks == []
     assert insufficient_evidence is True
     assert "enough relevant authorized document evidence" in reply

@@ -216,10 +216,10 @@ def retrieve_context(
     )
 
 
-def chunks_used_for_answer(
+def chunks_consulted_for_answer(
     retrieval_result: RagAgentRetrievalResult,
 ) -> list[RetrievedChunk]:
-    """Return retrieved chunks that are relevant enough to cite/inject."""
+    """Return retrieved chunks admitted to answer composition as consulted evidence."""
     if retrieval_result.answer_mode == "general_knowledge":
         return []
     return [

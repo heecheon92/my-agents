@@ -102,6 +102,7 @@ class AgentRunModel(Base):
     resolved_knowledge_base_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     retrieval_source_snapshot_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     memory_source_snapshot_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    citation_attribution_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     graph_version: Mapped[str | None] = mapped_column(String(80), nullable=True)
     interaction_id: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
     interaction_type: Mapped[str | None] = mapped_column(String(80), nullable=True)

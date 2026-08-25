@@ -41,8 +41,8 @@ sequenceDiagram
     API->>DB: retrieve authorized knowledge context only when needed
     API->>G: invoke messages + principal_id + conversation_id + retrieval metadata/context
     G-->>API: reply + route
-    API->>DB: persist assistant message + AgentRun + citations + events
-    API-->>C: run_id + reply + route + citations
+    API->>DB: persist assistant message + AgentRun + consulted source attribution + events
+    API-->>C: run_id + reply + route + citations + consulted_sources
 ```
 
 ## What is implemented now
@@ -53,7 +53,12 @@ sequenceDiagram
 - `/conversations/{id}/messages` returns the authorized server-owned transcript for frontend display.
 - `/conversations/{id}/runs` applies retrieval routing, then invokes the existing LangGraph assistant with server-owned history.
 - `/conversations/{id}/runs` also supports `GET` so a frontend can list completed and failed runs.
-- Runs now include retrieval route, answer mode, permission-aware retrieval context IDs, citations, and redacted events.
+- Runs now include retrieval route, answer mode, permission-aware retrieval context IDs,
+  answer-supported `citations`, a consulted `consulted_sources` superset, and redacted events.
+- Product DB stores one source row per consulted chunk with a nullable `used_in_answer` marker
+  and a nullable run-level attribution version. New runs set both explicitly. Legacy runs are
+  not backfilled; run detail therefore returns `consulted_sources: null` and preserves the old
+  flat citation list without making a stronger provenance claim.
 - When the full-document path handles an explicit comprehensive request, completed
   runs also expose refresh-safe `document_coverage` metadata. The normalized document body
   is used only while composing the answer and is not copied into Product DB run events or
@@ -92,6 +97,8 @@ Retrieval routing, citations, streaming, and redacted events now exist as later 
 - group members cannot read another user's owner-private conversation merely through shared group membership;
 - outsiders cannot read conversation message transcripts;
 - legacy `/assistant/chat` does not return product run fields.
+- attributed and legacy run-detail serialization preserves the `consulted_sources` null/empty
+  distinction and stable IDs shared with answer-supported citations.
 
 `tests/test_full_document_retrieval.py` additionally verifies that full-document coverage
 survives run-detail refresh and that replay keeps the original target document. If that
@@ -100,6 +107,7 @@ and does not silently substitute another document.
 
 ## Revision history
 
+- 2026-08-25: Added durable consulted-source attribution with legacy-safe nullable wire semantics.
 - 2026-08-24: Documented refresh-safe full-document coverage, checkpoint separation, and replay target fidelity.
 - 2026-06-07: Removed deprecated group-conversation scope; conversations are owner-private and group knowledge is selected through the unified source-selection contract.
 - 2026-05-21: Updated run flow for retrieval routing, answer modes, and streaming-era metadata.

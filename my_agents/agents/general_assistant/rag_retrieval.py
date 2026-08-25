@@ -17,7 +17,7 @@ from my_agents.agents.general_assistant.memory_recall import (
 )
 from my_agents.agents.rag_agent import (
     RagAgentRetrievalResult,
-    chunks_used_for_answer,
+    chunks_consulted_for_answer,
     rag_result_snapshot_for_graph,
     retrieved_context_for_graph,
 )
@@ -63,10 +63,10 @@ def retrieve_rag_context(
 
 def graph_state_from_rag_result(result: RagAgentRetrievalResult) -> dict[str, object]:
     """Return assistant-state fields derived from one RAG Agent retrieval result."""
-    used_chunks = chunks_used_for_answer(result)
+    consulted_chunks = chunks_consulted_for_answer(result)
     return {
         "rag_retrieval_snapshot": rag_result_snapshot_for_graph(result),
-        "retrieved_chunk_ids": [item.chunk.id for item in used_chunks],
+        "retrieved_chunk_ids": [item.chunk.id for item in consulted_chunks],
         "retrieval_records": [
             {
                 "document_id": item.document.id,
@@ -74,10 +74,10 @@ def graph_state_from_rag_result(result: RagAgentRetrievalResult) -> dict[str, ob
                 "source": item.source,
                 "score": item.score,
             }
-            for item in used_chunks
+            for item in consulted_chunks
         ],
         "retrieved_context": retrieved_context_for_graph(
-            used_chunks,
+            consulted_chunks,
             hidden_knowledge_base_ids=(
                 result.knowledge_base_selection.ambient_system_knowledge_base_ids
             ),

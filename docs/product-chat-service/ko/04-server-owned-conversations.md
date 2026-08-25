@@ -16,6 +16,13 @@ Replay는 원래 `full_document_read` event가 가리키는 document를 그대�
 unavailable-source warning을 반환합니다. 큰 문서는 현재 첫 번째 설정 범위만 검토하며
 자동 multi-range 순회와 전체 synthesis는 아직 구현되지 않았습니다.
 
+Product DB는 consulted chunk마다 source row 하나를 저장하고 새 run에서는 nullable
+`used_in_answer` 값과 run-level attribution version을 명시적으로 설정합니다. 응답의
+`consulted_sources`는 consulted 전체 superset이고 `citations`는 answer-supported subset입니다.
+Legacy row는 근거를 사후 검증할 수 없으므로 backfill하지 않습니다. 따라서 legacy run detail은
+`consulted_sources: null`과 기존 flat citation list를 반환하고, 새 attribution run에서 source가
+없으면 `consulted_sources: []`을 반환합니다.
+
 ## 문서 상태
 
 - 영어 원문은 `docs/product-chat-service/en/04-server-owned-conversations.md`에 있습니다.

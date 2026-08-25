@@ -390,6 +390,7 @@ class CitationModel(Base):
         ForeignKey("document_chunks.id"), nullable=False, index=True
     )
     snippet: Mapped[str] = mapped_column(Text, nullable=False)
+    used_in_answer: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )

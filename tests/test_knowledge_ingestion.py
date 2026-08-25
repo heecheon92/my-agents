@@ -1428,10 +1428,10 @@ def test_text_upload_persists_metadata_and_ingests_for_retrieval(
 
     assert run.status_code == 200
     run_payload = run.json()
-    assert run_payload["citations"]
-    assert run_payload["citations"][0]["document_id"] == payload["id"]
-    assert run_payload["citations"][0]["source_filename"] == filename
-    assert phrase in run_payload["citations"][0]["snippet"]
+    assert run_payload["consulted_sources"]
+    assert run_payload["consulted_sources"][0]["document_id"] == payload["id"]
+    assert run_payload["consulted_sources"][0]["source_filename"] == filename
+    assert phrase in run_payload["consulted_sources"][0]["snippet"]
     assert not run_payload["reply"].startswith("Based on authorized document context:")
 
 
@@ -1560,8 +1560,8 @@ def test_office_ingestion_exposes_source_location_on_chunks_debug_and_citations(
     )
 
     assert run.status_code == 200
-    assert run.json()["citations"]
-    assert run.json()["citations"][0]["source_location_json"] == source_location
+    assert run.json()["consulted_sources"]
+    assert run.json()["consulted_sources"][0]["source_location_json"] == source_location
 
 
 def test_powerpoint_upload_ingests_slide_source_location_and_cites_it(monkeypatch) -> None:  # noqa: ANN001
@@ -1606,8 +1606,8 @@ def test_powerpoint_upload_ingests_slide_source_location_and_cites_it(monkeypatc
     )
 
     assert run.status_code == 200
-    assert run.json()["citations"]
-    assert run.json()["citations"][0]["source_location_json"] == source_location
+    assert run.json()["consulted_sources"]
+    assert run.json()["consulted_sources"][0]["source_location_json"] == source_location
 
 
 def test_docx_upload_persists_artifact_ingests_source_location_and_cites_it(
@@ -1679,8 +1679,8 @@ def test_docx_upload_persists_artifact_ingests_source_location_and_cites_it(
     )
 
     assert run.status_code == 200
-    assert run.json()["citations"]
-    citation = run.json()["citations"][0]
+    assert run.json()["consulted_sources"]
+    citation = run.json()["consulted_sources"][0]
     assert citation["source_filename"] == "word-plan.docx"
     assert citation["source_location_json"]["source_type"] == "word_document"
 
@@ -1774,12 +1774,12 @@ def test_pdf_upload_ingest_and_conversation_retrieval_pipeline(monkeypatch) -> N
 
     assert run.status_code == 200
     payload = run.json()
-    assert payload["citations"]
-    assert payload["citations"][0]["document_id"] == document.json()["id"]
-    assert payload["citations"][0]["source_filename"] == "resume.pdf"
-    assert payload["citations"][0]["source_page"] == 1
-    assert payload["citations"][0]["source_location_json"] is None
-    assert resume_phrase in payload["citations"][0]["snippet"]
+    assert payload["consulted_sources"]
+    assert payload["consulted_sources"][0]["document_id"] == document.json()["id"]
+    assert payload["consulted_sources"][0]["source_filename"] == "resume.pdf"
+    assert payload["consulted_sources"][0]["source_page"] == 1
+    assert payload["consulted_sources"][0]["source_location_json"] is None
+    assert resume_phrase in payload["consulted_sources"][0]["snippet"]
 
 
 def test_owner_can_delete_uploaded_pdf_and_cleanup_ingestion_artifacts(monkeypatch) -> None:  # noqa: ANN001
@@ -1818,7 +1818,7 @@ def test_owner_can_delete_uploaded_pdf_and_cleanup_ingestion_artifacts(monkeypat
         json={"message": "What does Delete Cleanup PDF mention?"},
     )
     assert run.status_code == 200
-    assert run.json()["citations"]
+    assert run.json()["consulted_sources"]
 
     assert _database_rows(select(DocumentModel).where(DocumentModel.id == document_id))
     assert _database_rows(

@@ -101,7 +101,7 @@ The production runtime consists of one assistant orchestration flow with a retri
 - A PyMuPDF fast path with pypdf, Docling, and Tesseract fallbacks
 - pgvector + BM25 + RRF + deterministic or optional cross-encoder reranking
 - Explicit full-document review with complete/partial coverage disclosure and range-backed citations
-- Server-owned conversation/run history, SSE streaming, citations, and redacted agent events
+- Server-owned conversation/run history, SSE streaming, conservative answer-supported `citations`, separately disclosed `consulted_sources`, human-readable document/knowledge-base citation metadata, and redacted agent events
 - A stable `my-agents` assistant identity anchored to the canonical
   `https://my-agents.dev` domain, with changing product facts grounded in authorized context
 - User-enabled experimental long-term memory with a governance lifecycle
@@ -200,7 +200,7 @@ uv run ruff format --check .
 git diff --check
 ```
 
-On 2026-08-24, the full offline suite on this checkout reports **525 passed, 3 skipped** without requiring real credentials. The gated PostgreSQL checkpoint restart smoke was separately verified against the local pgvector profile on 2026-08-17.
+On 2026-08-25, the full offline suite on this checkout reports **534 passed, 2 skipped** without requiring real credentials. The gated PostgreSQL checkpoint restart smoke was separately verified against the local pgvector profile on 2026-08-17.
 
 ## Security and privacy boundaries
 

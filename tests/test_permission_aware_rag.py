@@ -225,9 +225,9 @@ def test_chat_run_cites_only_authorized_personal_knowledge(monkeypatch) -> None:
     )
     assert owner_run.status_code == 200
     owner_payload = owner_run.json()
-    assert owner_payload["citations"]
-    assert owner_payload["citations"][0]["document_id"] == document.json()["id"]
-    assert private_phrase in owner_payload["citations"][0]["snippet"]
+    assert owner_payload["consulted_sources"]
+    assert owner_payload["consulted_sources"][0]["document_id"] == document.json()["id"]
+    assert private_phrase in owner_payload["consulted_sources"][0]["snippet"]
     assert owner_payload["reply"] == "graph reply without hidden document text"
     assert graph.calls[-1]["retrieved_chunk_ids"]
     owner_detail = owner.get(
@@ -276,9 +276,9 @@ def test_broad_resume_question_uses_recent_authorized_document(monkeypatch) -> N
 
     assert owner_run.status_code == 200
     owner_payload = owner_run.json()
-    assert owner_payload["citations"]
-    assert owner_payload["citations"][0]["document_id"] == document.json()["id"]
-    assert resume_phrase in owner_payload["citations"][0]["snippet"]
+    assert owner_payload["consulted_sources"]
+    assert owner_payload["consulted_sources"][0]["document_id"] == document.json()["id"]
+    assert resume_phrase in owner_payload["consulted_sources"][0]["snippet"]
     assert owner_payload["reply"] == "graph reply without hidden document text"
     assert graph.calls[-1]["retrieved_chunk_ids"]
     assert graph.calls[-1]["retrieved_context"][0]["title"] == "Resume 2026"
@@ -342,9 +342,9 @@ def test_semantic_vector_retrieval_after_permission_filtering(monkeypatch) -> No
 
     assert owner_run.status_code == 200
     owner_payload = owner_run.json()
-    assert owner_payload["citations"]
-    assert owner_payload["citations"][0]["document_id"] == vehicle_doc.json()["id"]
-    assert "Automobile maintenance" in owner_payload["citations"][0]["snippet"]
+    assert owner_payload["consulted_sources"]
+    assert owner_payload["consulted_sources"][0]["document_id"] == vehicle_doc.json()["id"]
+    assert "Automobile maintenance" in owner_payload["consulted_sources"][0]["snippet"]
     assert owner_payload["reply"] == "graph reply without hidden document text"
     assert graph.calls[-1]["retrieved_context"][0]["title"] == "Vehicle Notes"
     graph_call_count = len(graph.calls)
@@ -567,7 +567,9 @@ def test_rag_reply_does_not_prepend_clipped_markdown_snippet(monkeypatch) -> Non
     payload = response.json()
     assert payload["reply"] == "graph reply without hidden document text"
     assert "- [x] 학생 엑셀 다운로드 UI\n- [" not in payload["reply"]
-    assert any("학생 엑셀 다운로드 UI" in citation["snippet"] for citation in payload["citations"])
+    assert any(
+        "학생 엑셀 다운로드 UI" in source["snippet"] for source in payload["consulted_sources"]
+    )
 
 
 def test_selected_kb_vector_retrieval_respects_scope(monkeypatch) -> None:  # noqa: ANN001
@@ -620,11 +622,13 @@ def test_selected_kb_vector_retrieval_respects_scope(monkeypatch) -> None:  # no
         "knowledge_base_ids": [vehicle_kb],
     }
     assert payload["resolved_knowledge_base_count"] == 1
-    assert {citation["knowledge_base_id"] for citation in payload["citations"]} == {vehicle_kb}
-    assert {citation["document_id"] for citation in payload["citations"]} == {
+    assert {source["knowledge_base_id"] for source in payload["consulted_sources"]} == {vehicle_kb}
+    assert {source["document_id"] for source in payload["consulted_sources"]} == {
         vehicle_doc.json()["id"]
     }
-    assert any("Automobile maintenance" in citation["snippet"] for citation in payload["citations"])
+    assert any(
+        "Automobile maintenance" in source["snippet"] for source in payload["consulted_sources"]
+    )
     assert "Pastry dough" not in payload["reply"]
     assert {context["document_id"] for context in graph.calls[-1]["retrieved_context"]} == {
         vehicle_doc.json()["id"]
@@ -696,7 +700,7 @@ def test_generated_metadata_profile_retrieves_when_body_lacks_search_terms(
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["citations"][0]["document_id"] == document_id
+    assert payload["consulted_sources"][0]["document_id"] == document_id
     assert graph.calls[-1]["retrieved_context"][0]["source"] == "document_metadata_profile"
 
     events = client.get(f"/conversations/{conversation_id}/runs/{payload['run_id']}/events")
@@ -771,7 +775,7 @@ def test_metadata_profile_match_injects_body_chunks_not_only_heading(
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["citations"][0]["document_id"] == document_id
+    assert payload["consulted_sources"][0]["document_id"] == document_id
     assert any(
         "Visit schedule and dosing table" in context["snippet"]
         for context in graph.calls[-1]["retrieved_context"]
@@ -915,7 +919,7 @@ def test_graph_expansion_adds_authorized_related_chunks(monkeypatch) -> None:  #
 
     assert response.status_code == 200
     payload = response.json()
-    snippets = [citation["snippet"] for citation in payload["citations"]]
+    snippets = [source["snippet"] for source in payload["consulted_sources"]]
     assert payload["knowledge_base_selection"] == {
         "mode": "selected",
         "knowledge_base_ids": [kb_id],
@@ -925,8 +929,8 @@ def test_graph_expansion_adds_authorized_related_chunks(monkeypatch) -> None:  #
     assert any("AlphaQuery" in snippet for snippet in snippets)
     assert any("planner memory" in snippet for snippet in snippets)
     assert all("unselected memory" not in snippet for snippet in snippets)
-    assert {citation["knowledge_base_id"] for citation in payload["citations"]} == {kb_id}
-    assert any("planner memory" in citation["snippet"] for citation in payload["citations"])
+    assert {source["knowledge_base_id"] for source in payload["consulted_sources"]} == {kb_id}
+    assert any("planner memory" in source["snippet"] for source in payload["consulted_sources"])
     assert "unselected memory" not in payload["reply"]
     assert len(graph.calls[-1]["retrieved_chunk_ids"]) == 2
     context_sources = {context["source"] for context in graph.calls[-1]["retrieved_context"]}

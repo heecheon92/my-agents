@@ -101,7 +101,7 @@ KB/document/chunk ID, filename, snippet, citation을 생략합니다.
 - PyMuPDF를 먼저 시도하고 pypdf, Docling, Tesseract로 넘어가는 처리 경로
 - pgvector와 BM25를 RRF로 합치고, 결정적 방식 또는 선택적 cross-encoder로 재순위
 - 명시적인 전체 문서 요청을 위한 검토 경로, complete/partial coverage 안내, 범위 기반 인용
-- 서버가 소유하는 대화·실행 기록, SSE 스트리밍, 인용, 가려진 에이전트 이벤트
+- 서버가 소유하는 대화·실행 기록, SSE 스트리밍, 보수적으로 판정한 답변 지원 `citations`, 별도로 공개하는 `consulted_sources`, 사람이 읽을 수 있는 document/knowledge-base citation metadata, 가려진 에이전트 이벤트
 - 공식 도메인 `https://my-agents.dev`에 연결된 일관된 `my-agents` 어시스턴트
   정체성과, 바뀔 수 있는 제품 정보를 권한이 확인된 context에 근거해 답하는 정책
 - 사용자가 직접 켜는 실험적인 장기 메모리와 관리 절차
@@ -200,7 +200,7 @@ uv run ruff format --check .
 git diff --check
 ```
 
-2026-08-24 기준 이 체크아웃의 전체 offline test는 **525 passed, 3 skipped**이며 실제 자격 증명이 없어도 돌아갑니다. Gated PostgreSQL checkpoint restart smoke는 2026-08-17에 local pgvector profile에서 별도로 통과했습니다.
+2026-08-25 기준 이 체크아웃의 전체 offline test는 **534 passed, 2 skipped**이며 실제 자격 증명이 없어도 돌아갑니다. Gated PostgreSQL checkpoint restart smoke는 2026-08-17에 local pgvector profile에서 별도로 통과했습니다.
 
 ## 보안과 개인정보 경계
 

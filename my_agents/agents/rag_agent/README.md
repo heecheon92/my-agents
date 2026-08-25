@@ -70,7 +70,9 @@ sequenceDiagram
   retrieval-source provenance는 provider invocation 전에 생략합니다.
 - `FullDocumentTargetResolution`은 safe target metadata와 option count만 담습니다. `FullDocumentReadResult`는 half-open extracted-text range 한 개, offset, 전체 문자 수, 내부 decimal cursor, complete flag, 겹치는 authorized chunk를 담습니다.
 - Target resolution과 모든 range read는 user-selectable permission boundary를 재사용합니다. Owner/group/explicit-document access는 허용될 수 있지만 ambient system KB document와 hidden staging document는 대상이 될 수 없습니다.
-- 겹치는 chunk는 internal grounding/citation path에 `source="full_document"`, score `1.0`으로 들어갑니다. Public citation response는 기존 schema를 유지하며 이 내부 source/score pair를 노출하지 않습니다.
+- 겹치는 chunk는 현재 extracted text와 모두 검증합니다. 최대 2,000개까지 scan하며, valid chunk가 100개보다 많으면 첫/마지막을 포함해 문서 범위 전체에 고르게 분산된 provenance chunk 100개만 유지합니다. 따라서 citation 양은 bounded 상태를 유지하면서 전체 문서 evidence를 버리지 않습니다. 유지된 chunk는 internal grounding/citation path에 `source="full_document"`, score `1.0`으로 들어갑니다. Public citation response는 기존 schema를 유지하며 이 내부 source/score pair를 노출하지 않습니다.
+- Product response는 consultation과 attribution을 구분합니다. `consulted_sources`는 answer composition에 들어간 user-visible source 전체이고, `citations`는 답변 text가 보수적인 post-hoc selector로 지원을 확인한 subset입니다. 두 배열의 겹치는 항목은 같은 persisted evidence row를 serialize하므로 `id`와 `chunk_id`가 동일합니다. Legacy run은 `consulted_sources=null`, 새 attribution run은 source나 match가 없어도 `[]`을 반환합니다.
+- Chunk-level row는 persistence/audit contract로 유지하지만 public shape에는 nullable `document_title`과 `knowledge_base_name`도 포함합니다. Product UI는 `document_id`로 row를 묶고, document 하나당 이름/knowledge-base 이름/optional unique page number만 표시하며 일반 citation 상세에서 chunk ID와 snippet을 숨겨야 합니다.
 - 기본 complete-read threshold는 24,000자입니다. 큰 문서는 현재 첫 12,000자 range만 graph path에 반환합니다. Runtime seam에는 continuation cursor가 있지만 automatic multi-range traversal/synthesis는 아직 없습니다.
 - `clarification_required` 또는 required retrieval의 insufficient evidence는 `general_assistant` graph를 answer node 전에 멈추게 합니다.
 - `completed`, `skipped`, `waiting`은 frontend trace state이며 hidden chain-of-thought가 아닙니다.
@@ -83,7 +85,7 @@ sequenceDiagram
 
 ## Service layer와의 관계
 
-Conversation API는 user/conversation/knowledge-base selection과 DB-backed `SqlAlchemyRagAgentRuntime`을 LangGraph runtime context로 전달합니다. General Assistant source gate가 private knowledge로 위임한 뒤 RAG-owned planner가 retrieval tool을 고르고, `general_assistant`는 그 compact choice를 routing해 RAG runtime을 호출합니다. API layer는 graph state에서 retrieval result를 읽어 `retrieval_completed`, citation, grounding event, optional `document_coverage`/`full_document_read` metadata를 persist합니다. System citation row는 internal audit data로 유지하고 public serializer에서 provenance를 제거합니다. Raw full-document text는 graph node 안에서만 소비하며 checkpoint, event, application trace, API coverage object에 넣지 않습니다. Auth, broad source selection, ingestion, persistence, citation row, final Sol response composition은 RAG Agent 밖에 남습니다.
+Conversation API는 user/conversation/knowledge-base selection과 DB-backed `SqlAlchemyRagAgentRuntime`을 LangGraph runtime context로 전달합니다. General Assistant source gate가 private knowledge로 위임한 뒤 RAG-owned planner가 retrieval tool을 고르고, `general_assistant`는 그 compact choice를 routing해 RAG runtime을 호출합니다. API layer는 graph state에서 retrieval result를 읽어 consulted evidence, 보수적인 answer-use attribution, `retrieval_completed`, grounding event, optional `document_coverage`/`full_document_read` metadata를 persist합니다. System evidence row는 internal audit data로 유지하고 public serializer에서 provenance를 제거합니다. Raw full-document text는 graph node 안에서만 소비하며 checkpoint, event, application trace, API coverage object에 넣지 않습니다. Auth, broad source selection, ingestion, persistence, evidence row, final Sol response composition은 RAG Agent 밖에 남습니다.
 
 ## 확장 가이드
 

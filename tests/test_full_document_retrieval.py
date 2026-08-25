@@ -43,6 +43,7 @@ from .test_graph import FakeRetrievalSourceDecider
         "Analyze the whole file from beginning to end.",
         "문서 전체를 빠짐없이 검토해줘.",
         "문서의 모든 요구사항을 추출해줘.",
+        "Markdown Langgraph - Pydantic Annotated Literal.md 문서를 모두 읽고 내용을 요약해줘",
     ],
 )
 def test_explicit_comprehensive_document_intent(message: str) -> None:
@@ -135,6 +136,70 @@ def test_authorized_full_document_read_uses_half_open_ranges(monkeypatch) -> Non
             )
     finally:
         session_generator.close()
+
+
+def test_many_chunk_full_document_uses_distributed_bounded_citations(monkeypatch) -> None:  # noqa: ANN001
+    client = _client(monkeypatch)
+    user_id = _signup_login(client, "full-many-chunks@example.com")
+    kb_id = _create_knowledge_base(client, "Many chunk KB")
+    content = "\n\n".join(
+        f"## Section {index}\nRequirement {index}: preserve distributed provenance."
+        for index in range(190)
+    )
+    document = _create_document(
+        client,
+        json={
+            "title": "Many Chunk Source",
+            "content": content,
+            "knowledge_base_id": kb_id,
+        },
+    ).json()
+    assert client.post(f"/documents/{document['id']}/ingest").status_code == 200
+
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        persisted_chunks = list(
+            db.scalars(
+                select(DocumentChunkModel)
+                .where(DocumentChunkModel.document_id == document["id"])
+                .order_by(DocumentChunkModel.ordinal)
+            ).all()
+        )
+        assert len(persisted_chunks) > 100
+
+        read_result = RetrievalService(db).read_full_document_range(
+            user_id=user_id,
+            document_id=document["id"],
+        )
+        assert read_result is not None
+        assert read_result.complete is True
+        assert len(read_result.retrieved_chunks) == 100
+        sampled_chunks = [item.chunk for item in read_result.retrieved_chunks]
+        assert sampled_chunks[0].id == persisted_chunks[0].id
+        assert sampled_chunks[-1].id == persisted_chunks[-1].id
+        assert [chunk.ordinal for chunk in sampled_chunks] == sorted(
+            {chunk.ordinal for chunk in sampled_chunks}
+        )
+    finally:
+        session_generator.close()
+
+    conversation_id = client.post("/conversations", json={"title": "Many chunk full read"}).json()[
+        "id"
+    ]
+    response = client.post(
+        f"/conversations/{conversation_id}/runs",
+        json={
+            "message": "Many Chunk Source 문서를 모두 읽고 내용을 요약해줘",
+            "knowledge_base_selection": {"mode": "selected", "knowledge_base_ids": [kb_id]},
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["document_coverage"]["mode"] == "complete"
+    assert payload["citations"] == []
+    assert len(payload["consulted_sources"]) == 100
+    assert "I couldn't find enough relevant authorized document evidence" not in payload["reply"]
 
 
 def test_explicit_document_read_permission_allows_full_document_without_kb_access(
@@ -261,7 +326,8 @@ def test_small_full_document_run_is_refresh_safe_and_does_not_persist_raw_body(
         "end_offset": len(f"Introduction. {marker}. Final requirement."),
         "total_chars": len(f"Introduction. {marker}. Final requirement."),
     }
-    assert {citation["document_id"] for citation in payload["citations"]} == {document["id"]}
+    assert payload["citations"] == []
+    assert {source["document_id"] for source in payload["consulted_sources"]} == {document["id"]}
 
     detail = client.get(f"/conversations/{conversation_id}/runs/{payload['run_id']}")
     assert detail.status_code == 200
@@ -446,7 +512,10 @@ def test_full_document_selection_interrupt_resumes_exact_document(monkeypatch) -
     assert resumed.status_code == 200
     completed = resumed.json()
     assert completed["document_coverage"]["document_id"] == documents[1]["id"]
-    assert {citation["document_id"] for citation in completed["citations"]} == {documents[1]["id"]}
+    assert completed["citations"] == []
+    assert {source["document_id"] for source in completed["consulted_sources"]} == {
+        documents[1]["id"]
+    }
 
 
 def test_full_document_replay_preserves_target_and_never_substitutes_after_delete(
@@ -491,7 +560,10 @@ def test_full_document_replay_preserves_target_and_never_substitutes_after_delet
     )
     assert replay.status_code == 200
     assert replay.json()["document_coverage"]["document_id"] == original["id"]
-    assert {citation["document_id"] for citation in replay.json()["citations"]} == {original["id"]}
+    assert replay.json()["citations"] == []
+    assert {source["document_id"] for source in replay.json()["consulted_sources"]} == {
+        original["id"]
+    }
 
     latest_assistant_id = client.get(f"/conversations/{conversation_id}/messages").json()[-1]["id"]
     assert client.delete(f"/documents/{original['id']}").status_code == 204
@@ -503,6 +575,7 @@ def test_full_document_replay_preserves_target_and_never_substitutes_after_delet
     unavailable_payload = unavailable.json()
     assert unavailable_payload["document_coverage"] is None
     assert unavailable_payload["citations"] == []
+    assert unavailable_payload["consulted_sources"] == []
     assert unavailable_payload["warnings"][0]["missing_document_ids"] == [original["id"]]
     assert "Later Distractor" not in unavailable_payload["reply"]
 
