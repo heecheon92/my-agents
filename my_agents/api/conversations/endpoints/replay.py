@@ -103,7 +103,6 @@ class ReplayContext:
     reasoning_mode: ReasoningMode
     reasoning_effort: ReasoningEffort
     preselected_document_id: str | None
-    force_full_document_retrieval: bool
 
 
 @router.post(
@@ -157,7 +156,6 @@ def replay_assistant_message(
         warnings=replay_context.replay_warnings,
         document_selection_hitl_allowed=False,
         preselected_document_id=replay_context.preselected_document_id,
-        force_full_document_retrieval=replay_context.force_full_document_retrieval,
     )
     prune_conversation_from_message(
         db,
@@ -296,7 +294,6 @@ def replay_context_for_request(
         )
     replay_warnings = source_warnings_for_replay(db, original_run)
     preselected_document_id = None
-    force_full_document_retrieval = original_full_document is not None
     if original_full_document is not None:
         original_document_id = original_full_document["document_id"]
         preselected_document_id = original_document_id
@@ -321,7 +318,6 @@ def replay_context_for_request(
         reasoning_mode=reasoning.mode,
         reasoning_effort=reasoning.effort,
         preselected_document_id=preselected_document_id,
-        force_full_document_retrieval=force_full_document_retrieval,
     )
 
 
@@ -370,7 +366,6 @@ def replay_conversation_run_events(
             run_id=run.id,
             document_selection_hitl_allowed=False,
             preselected_document_id=replay_context.preselected_document_id,
-            force_full_document_retrieval=replay_context.force_full_document_retrieval,
         )
         graph_context = graph_context_for_run(
             db=db,

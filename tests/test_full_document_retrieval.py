@@ -226,7 +226,6 @@ def test_small_full_document_run_is_refresh_safe_and_does_not_persist_raw_body(
     monkeypatch,
 ) -> None:  # noqa: ANN001
     marker = "FULL_DOCUMENT_PRIVATE_MARKER_7F3A"
-    monkeypatch.setenv("MY_AGENTS_FULL_DOCUMENT_RETRIEVAL_ENABLED", "true")
     client = _client(monkeypatch)
     _signup_login(client, "full-complete@example.com")
     kb_id = _create_knowledge_base(client, "Complete document KB")
@@ -281,36 +280,6 @@ def test_small_full_document_run_is_refresh_safe_and_does_not_persist_raw_body(
         session_generator.close()
 
 
-def test_feature_disabled_keeps_comprehensive_prompt_on_chunk_retrieval(monkeypatch) -> None:  # noqa: ANN001
-    client = _client(monkeypatch)
-    _signup_login(client, "full-disabled@example.com")
-    kb_id = _create_knowledge_base(client, "Disabled full read KB")
-    document = _create_document(
-        client,
-        json={
-            "title": "Disabled Full Source",
-            "content": "Ordinary chunk retrieval remains available.",
-            "knowledge_base_id": kb_id,
-        },
-    ).json()
-    assert client.post(f"/documents/{document['id']}/ingest").status_code == 200
-    conversation_id = client.post("/conversations", json={"title": "Disabled full read"}).json()[
-        "id"
-    ]
-
-    response = client.post(
-        f"/conversations/{conversation_id}/runs",
-        json={
-            "message": "Review the entire document and identify every requirement.",
-            "knowledge_base_selection": {"mode": "selected", "knowledge_base_ids": [kb_id]},
-        },
-    )
-
-    assert response.status_code == 200
-    assert response.json()["document_coverage"] is None
-    assert response.json()["citations"]
-
-
 def test_full_document_body_never_enters_checkpoint_state(monkeypatch) -> None:  # noqa: ANN001
     marker = "CHECKPOINT_PRIVATE_FULL_BODY_4C91"
     client = _client(monkeypatch)
@@ -348,7 +317,6 @@ def test_full_document_body_never_enters_checkpoint_state(monkeypatch) -> None: 
                 conversation_id="checkpoint-full-document",
             ),
             "run_id": "run-full-checkpoint",
-            "full_document_retrieval_enabled": True,
         }
         selection_context = KnowledgeBaseSelectionContext(
             mode="selected",
@@ -381,7 +349,6 @@ def test_full_document_body_never_enters_checkpoint_state(monkeypatch) -> None: 
 def test_large_full_document_run_is_partial_and_streams_honest_disclosure(
     monkeypatch,
 ) -> None:  # noqa: ANN001
-    monkeypatch.setenv("MY_AGENTS_FULL_DOCUMENT_RETRIEVAL_ENABLED", "true")
     monkeypatch.setenv("MY_AGENTS_FULL_DOCUMENT_MAX_CHARS", "4000")
     monkeypatch.setenv("MY_AGENTS_FULL_DOCUMENT_RANGE_CHARS", "2000")
     client = _client(monkeypatch)
@@ -435,7 +402,6 @@ def test_large_full_document_run_is_partial_and_streams_honest_disclosure(
 
 
 def test_full_document_selection_interrupt_resumes_exact_document(monkeypatch) -> None:  # noqa: ANN001
-    monkeypatch.setenv("MY_AGENTS_FULL_DOCUMENT_RETRIEVAL_ENABLED", "true")
     graph = build_graph(
         checkpointer=InMemorySaver(serde=checkpoint_serializer()),
         document_selection_hitl_enabled=True,
@@ -486,7 +452,6 @@ def test_full_document_selection_interrupt_resumes_exact_document(monkeypatch) -
 def test_full_document_replay_preserves_target_and_never_substitutes_after_delete(
     monkeypatch,
 ) -> None:  # noqa: ANN001
-    monkeypatch.setenv("MY_AGENTS_FULL_DOCUMENT_RETRIEVAL_ENABLED", "true")
     client = _client(monkeypatch)
     _signup_login(client, "full-replay@example.com")
     kb_id = _create_knowledge_base(client, "Full replay KB")

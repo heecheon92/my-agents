@@ -39,12 +39,11 @@ from my_agents.agents.general_assistant.retrieval_gate import (
     RetrievalSourceDecision,
     get_retrieval_source_decider,
 )
-from my_agents.knowledge.routing import (
-    AnswerMode,
-    DocumentScope,
-    RetrievalRoute,
-    is_comprehensive_document_request,
+from my_agents.agents.rag_agent.tool_selection import (
+    RagRetrievalToolDecider,
+    get_rag_retrieval_tool_decider,
 )
+from my_agents.knowledge.routing import AnswerMode, DocumentScope, RetrievalRoute
 from my_agents.schemas import RouteDecision
 
 HANDLED_BY = "personal_assistant_graph"
@@ -69,6 +68,8 @@ class AssistantState(TypedDict, total=False):
     source_conflicts: list[dict[str, object]]
     rag_retrieval_snapshot: dict[str, object]
     retrieval_source_decision: RetrievalSourceDecision
+    rag_retrieval_tool: str
+    rag_retrieval_tool_reason: str
     rag_halt_before_response: bool
     retrieval_route: RetrievalRoute
     answer_mode: AnswerMode
@@ -80,7 +81,6 @@ class AssistantState(TypedDict, total=False):
     document_selection_option_count: int
     selected_document_id: str
     document_selection_hitl_allowed: bool
-    full_document_retrieval_enabled: bool
     full_document_requested: bool
     full_document_target_status: str
     full_document_next_cursor: str | None
@@ -95,9 +95,6 @@ def classify_request(state: AssistantState) -> AssistantState:
         "route": route,
         "capability": capability,
         "handled_by": HANDLED_BY,
-        "full_document_requested": is_comprehensive_document_request(
-            latest_human_text(_state_messages(state.get("messages", [])))
-        ),
     }
 
 
@@ -137,24 +134,35 @@ def decide_retrieval_source(
             "retrieval_source_decision": RetrievalSourceDecision(
                 source="bypass",
                 reason=("temporary conversation attachments are the explicit source for this turn"),
-            )
+            ),
+            "full_document_requested": False,
         }
     decider = _retrieval_source_decider(context.get("retrieval_source_decider"))
     decision = decider.decide(
         messages=_state_messages(state.get("messages", [])),
         selection_context=selection_context,
     )
-    return {"retrieval_source_decision": decision}
+    if decision.source != "knowledge_base":
+        return {
+            "retrieval_source_decision": decision,
+            "full_document_requested": False,
+        }
+    tool_decider = _rag_retrieval_tool_decider(context.get("rag_retrieval_tool_decider"))
+    tool_decision = tool_decider.decide(
+        messages=_state_messages(state.get("messages", [])),
+    )
+    return {
+        "retrieval_source_decision": decision,
+        "rag_retrieval_tool": tool_decision.tool,
+        "rag_retrieval_tool_reason": tool_decision.reason,
+        "full_document_requested": tool_decision.comprehensive,
+    }
 
 
 def select_retrieval_source(state: AssistantState) -> str:
     """Route to RAG retrieval only when the source-selection gate requests it."""
     decision = state["retrieval_source_decision"]
-    if (
-        decision.source == "knowledge_base"
-        and state.get("full_document_retrieval_enabled") is True
-        and state.get("full_document_requested") is True
-    ):
+    if decision.source == "knowledge_base" and state.get("full_document_requested") is True:
         return "full_document"
     return decision.source
 
@@ -164,6 +172,13 @@ def _retrieval_source_decider(candidate: object) -> RetrievalSourceDecider:
     if callable(decide):
         return candidate  # type: ignore[return-value]
     return get_retrieval_source_decider()
+
+
+def _rag_retrieval_tool_decider(candidate: object) -> RagRetrievalToolDecider:
+    decide = getattr(candidate, "decide", None)
+    if callable(decide):
+        return candidate  # type: ignore[return-value]
+    return get_rag_retrieval_tool_decider()
 
 
 def _state_messages(messages: Sequence[Any]) -> list[BaseMessage]:

@@ -63,7 +63,7 @@ cooperatively cancelled, the service emits `run_cancel_requested`/`run_cancelled
 persisting partial assistant text. Every response variant has its own typed payload
 model, and `AgentEventResponse` uses `event_type` as its OpenAPI discriminator.
 
-`full_document_read` is the redacted audit event for the opt-in comprehensive-document
+`full_document_read` is the redacted audit event for the explicit comprehensive-document
 path. Its typed payload contains only `mode`, document ID/title/source filename, covered
 character offsets, total character count, and latency. The same safe coverage fields are
 also recoverable from completed run detail after refresh. The event never contains the

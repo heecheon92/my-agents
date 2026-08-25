@@ -28,7 +28,12 @@ A product chat run can now answer with context from ingested personal or group d
 The important rule is simple: retrieval starts from the user's authorized documents, not
 from the entire knowledge corpus.
 
-The current implementation is intentionally deterministic so tests stay offline:
+The retrieval execution remains deterministic and permission-first, while OpenAI mode now
+adds one bounded RAG-owned model decision. After the General Assistant delegates to private
+knowledge, fixed `gpt-5.6-luna` in standard mode with low reasoning effort chooses exactly
+one typed operation: focused authorized chunk search or comprehensive document read.
+Deterministic mode, invalid tool output, and provider failure keep an offline fallback with
+the same two-tool contract:
 
 - retrieval routing classifies each prompt as `no_retrieval`, `retrieval_required`, `retrieval_optional`, or `clarification_required`;
 - direct retrieval uses term matching over authorized chunks only when routing calls for retrieval;
@@ -41,8 +46,8 @@ The current implementation is intentionally deterministic so tests stay offline:
 - conversation runs enter retrieval through the `general_assistant` graph, which invokes the RAG Agent runtime; the RAG Agent delegates internally to the thin ContextForge LangGraph RetrievalGraph and records bounded retry/sufficiency state;
 - citations are stored against the `AgentRunModel` only when retrieved chunks are actually used;
 - the response payload returns routing metadata plus citation IDs, document IDs, chunk IDs, and snippets.
-- an opt-in `comprehensive_document` path handles explicit English or Korean whole-document
-  tasks without changing ordinary semantic/BM25 retrieval;
+- a semantic `comprehensive_document` path handles explicit or clearly implied English/Korean
+  exhaustive tasks without changing ordinary semantic/BM25 retrieval;
 - the path resolves exactly one currently authorized user-controllable document, excludes
   ambient system documents, and reuses the durable `document_selection` interaction when
   more than one eligible document remains ambiguous;
@@ -118,16 +123,18 @@ an entity with an authorized chunk.
 ## Full-document retrieval path
 
 Full-document retrieval complements ranked chunk search for tasks where coverage matters
-more than finding a few relevant passages. It is disabled by default and activates only
-when the prompt contains both an explicit completeness phrase and a document task, for
-example “review the entire document” or “문서 전체를 빠짐없이 검토해줘.” An ordinary
-“summarize this document” request and a weak chunk-search result do not activate it.
+more than finding a few relevant passages. After private-knowledge delegation, Luna chooses
+the comprehensive tool for explicit or clearly implied exhaustive intent, including a named
+document plus “without missing anything” / “빠짐없이 검토.” An ordinary “summarize this
+document” request and a weak chunk-search result do not activate it. Deterministic mode and
+provider failure compose the same decision from document reference, exhaustive language,
+and a task verb.
 
 ```mermaid
 flowchart TD
-    Intent["Explicit comprehensive-document intent"] --> Gate{"Feature enabled and KB retrieval selected?"}
-    Gate -->|No| Ranked["Normal permission-aware chunk retrieval"]
-    Gate -->|Yes| Resolve["Resolve one authorized user-controllable document"]
+    Intent["Private-knowledge task"] --> Planner{"Luna or deterministic RAG tool choice"}
+    Planner -->|search_authorized_chunks| Ranked["Normal permission-aware chunk retrieval"]
+    Planner -->|read comprehensively| Resolve["Resolve one authorized user-controllable document"]
     Resolve -->|Ambiguous| HITL["Existing document_selection interrupt"]
     HITL --> Resolve
     Resolve -->|Resolved| Read["Read normalized extracted text + overlapping chunks"]
@@ -178,11 +185,15 @@ documented bounded citation-chunk snippets; it does not receive the full-documen
 
 ## Current limitations
 
-- Retrieval routing is deterministic; Postgres ranking now uses pgvector SQL vector search after permission filtering, with JSON-backed cosine similarity as the SQLite/test fallback.
+- Broad source routing remains General Assistant-owned. Focused-versus-comprehensive tool choice is Luna-backed in OpenAI mode with deterministic fallback; Postgres ranking uses pgvector SQL vector search after permission filtering, with JSON-backed cosine similarity as the SQLite/test fallback.
 - LLM query planning, full-text fusion, and ANN/vector index tuning are still future work.
 - The reply composition is a thin service-layer scaffold, not a polished answer synthesis prompt.
 - Citation objects still do not expose a per-citation character range; `document_coverage`
   exposes the overall covered range instead.
+- Full-document citations currently preserve provenance for every authorized chunk overlapping
+  the read range. They prove which document range was available to the answer, not that every
+  cited chunk supports a particular generated claim. Claim-selective citation attribution remains
+  future work and the frontend must keep coverage disclosure distinct from citation meaning.
 - Large documents receive only the first configured range. There is no automatic cursor
   loop, per-range summary ledger, or final multi-pass whole-document synthesis yet.
 - Budgets are characters in normalized extracted text, not provider-token estimates.
@@ -194,6 +205,11 @@ documented bounded citation-chunk snippets; it does not receive the full-documen
   bound is treated as unavailable instead of producing an uncited comprehensive answer.
 - This path is explicit-intent-only and does not automatically retry a semantically weak
   ranked retrieval result with full-document access.
+- Focused retrieval does not yet support adaptive surrounding-context expansion. That is a
+  separate milestone: a bounded sufficiency decision may request same-document neighbors
+  around authorized anchor chunks, while backend code owns permission revalidation,
+  ordinal/offset windows, round/token budgets, reranking/packing, and citation selectivity.
+  Neighboring chunks are candidates and must not become citations merely because they were read.
 - Streaming exists, but frontend display of retrieval route/answer mode still belongs to the separate frontend repository.
 - The legacy `/assistant/chat` endpoint still exists for smoke checks and does not own product KB access.
 
@@ -253,7 +269,7 @@ partial-stream disclosure, refresh recovery, and replay without source substitut
 
 ## Revision history
 
-- 2026-08-24: Added the opt-in comprehensive-document path, coverage contract, privacy boundary, and bounded large-document limitations.
+- 2026-08-24: Added the explicit-intent comprehensive-document path, coverage contract, privacy boundary, and bounded large-document limitations.
 - 2026-06-17: Added future retrieval quality/speed profile guidance for balancing RAG accuracy with product UX latency.
 - 2026-06-16: Promoted `rag_agent` to the assistant-facing retrieval boundary invoked from `general_assistant`, while ContextForge remains the delegated permission-first retrieval graph.
 - 2026-06-10: Added the thin ContextForge RetrievalGraph wrapper as the active retrieval implementation seam while keeping deeper tool-using graph orchestration future-gated.

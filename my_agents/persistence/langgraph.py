@@ -43,7 +43,8 @@ class LangGraphPersistenceResources:
 
 def open_langgraph_persistence(settings: Settings) -> LangGraphPersistenceResources:
     """Open the configured Postgres saver/store without running schema setup."""
-    if not settings.checkpointer_enabled and not settings.memory_store_enabled:
+    postgres_available = make_url(settings.database_url).get_backend_name() == "postgresql"
+    if not postgres_available:
         return LangGraphPersistenceResources()
 
     pool = ConnectionPool(
@@ -60,17 +61,19 @@ def open_langgraph_persistence(settings: Settings) -> LangGraphPersistenceResour
     pool.open(wait=True)
     checkpointer: BaseCheckpointSaver | None = None
     store: BaseStore | None = None
-    if settings.checkpointer_enabled:
-        checkpointer = PostgresSaver(
-            pool,
-            serde=checkpoint_serializer(),
-        )
-    if settings.memory_store_enabled:
+    checkpointer = PostgresSaver(
+        pool,
+        serde=checkpoint_serializer(),
+    )
+    if postgres_available:
         embedding_provider = build_embedding_provider(settings)
+        embedding_dimensions = (
+            embedding_provider.dimensions or settings.memory_store_embedding_dimensions
+        )
         store = PostgresStore(
             pool,
             index={
-                "dims": settings.memory_store_embedding_dimensions,
+                "dims": embedding_dimensions,
                 "embed": _StoreEmbeddings(embedding_provider),
                 "fields": ["content"],
             },

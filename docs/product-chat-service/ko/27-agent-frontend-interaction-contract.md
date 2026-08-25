@@ -184,9 +184,9 @@ accessibility 규칙을 그대로 지켜야 합니다.
 4. Waiting-state parsing, refresh recovery, source choice, resume route, held-queue behavior를
    포함한 frontend 배포
 
-Comprehensive request에서 document selection이 필요할 수 있는 모든 환경에 이 interaction
-rollout이 준비되기 전에는 `MY_AGENTS_FULL_DOCUMENT_RETRIEVAL_ENABLED=false`를 유지합니다.
-Single-target 자동 resolution도 authorization과 system-KB exclusion 규칙을 완화하지 않습니다.
+Comprehensive-document path는 explicit intent에 대한 baseline 동작이므로 document selection이
+필요할 수 있는 모든 환경에 이 interaction rollout이 준비된 뒤 배포합니다. Single-target 자동
+resolution도 authorization과 system-KB exclusion 규칙을 완화하지 않습니다.
 
 Interaction layer 자체는 새 DB migration을 추가하지 않습니다. `schema_version`은 기존
 public interaction JSON에 저장합니다.

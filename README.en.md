@@ -23,7 +23,7 @@ English | [한국어](./README.md)
 
 - **Permission-first retrieval**: unauthorized chunks are excluded before ranking, graph expansion, and prompt construction.
 - **Hybrid retrieval**: pgvector vector search and BM25 lexical search gather candidates independently, fuse them by stable chunk identifiers with RRF (`k=60`), then rerank and pack the context.
-- **Bounded full-document coverage**: an opt-in typed graph path handles only explicit whole-document tasks, resolves one authorized document, and distinguishes complete coverage from an honest first-range partial review.
+- **Bounded full-document coverage**: a typed graph path handles only explicit whole-document tasks, resolves one authorized document, and distinguishes complete coverage from an honest first-range partial review.
 - **Inspectable orchestration**: a LangGraph state machine connects the decision to use authorized knowledge, retrieval, opt-in memory, and response composition as explicit stages.
 - **Application-owned state**: the application database owns conversations, runs, messages, citations, and redacted events. Temporary LangGraph execution state is not treated as the source of truth for user-visible transcripts.
 - **Streaming product contract**: SSE carries progress events, agent traces, answer deltas, and terminal status while the server persists the same run.
@@ -61,8 +61,9 @@ flowchart TD
     Runs --> Orchestration["LangGraph request orchestration"]
     Orchestration --> SourceGate{"Use authorized knowledge?"}
     SourceGate -->|No| Memory["Opt-in governed memory"]
-    SourceGate -->|Focused question| Retrieval["Permission-aware retrieval pipeline"]
-    SourceGate -->|Explicit whole-document task| FullResolve["Resolve one authorized document"]
+    SourceGate -->|Yes| RAGChoice{"Luna RAG tool selection"}
+    RAGChoice -->|Focused question| Retrieval["Permission-aware retrieval pipeline"]
+    RAGChoice -->|Comprehensive document task| FullResolve["Resolve one authorized document"]
     Retrieval --> Permission["Permission-filtered candidates"]
     Permission --> Hybrid["Vector + BM25 -> RRF -> rerank"]
     Hybrid --> Context["Packed context + evidence"]
@@ -79,8 +80,8 @@ flowchart TD
 ### Boundaries enforced during a request
 
 1. The API layer validates session, CSRF, and group/knowledge-base access.
-2. LangGraph orchestration decides whether the question requires authorized knowledge retrieval.
-3. Focused questions use permission-first chunk retrieval. Explicit comprehensive tasks instead resolve exactly one user-controllable personal/group document; system knowledge is never a selectable full-document target.
+2. LangGraph orchestration decides whether the question requires authorized knowledge retrieval. After private-knowledge delegation, a fixed `gpt-5.6-luna` standard/low RAG planner chooses one typed tool: focused chunk search or comprehensive document read.
+3. Focused questions use permission-first chunk retrieval. Explicit or clearly implied comprehensive tasks instead resolve exactly one user-controllable personal/group document; system knowledge is never a selectable full-document target. Luna chooses the tool while backend code enforces document identity, permissions, and limits.
 4. The full-document path returns normalized extracted text completely only at or below its configured character threshold; larger files expose one bounded range and a mandatory partial-review disclosure.
 5. The answer, citations, compact coverage metadata, agent trace, and redacted timing/events are persisted under the same run. Raw full-document text is not persisted in graph checkpoints or events.
 
@@ -99,7 +100,7 @@ The production runtime consists of one assistant orchestration flow with a retri
 - PDF, Markdown, plain text, `.xlsx`, `.pptx`, and `.docx` upload and ingestion
 - A PyMuPDF fast path with pypdf, Docling, and Tesseract fallbacks
 - pgvector + BM25 + RRF + deterministic or optional cross-encoder reranking
-- Opt-in explicit full-document review with complete/partial coverage disclosure and range-backed citations
+- Explicit full-document review with complete/partial coverage disclosure and range-backed citations
 - Server-owned conversation/run history, SSE streaming, citations, and redacted agent events
 - A stable `my-agents` assistant identity anchored to the canonical
   `https://my-agents.dev` domain, with changing product facts grounded in authorized context
@@ -169,9 +170,11 @@ Registered-account run requests may optionally provide `reasoning_mode` (`standa
 
 With `MY_AGENTS_DOCUMENT_WORKSPACE_ENABLED=true`, approved registered accounts can attach temporary files to a conversation, analyze them with GPT-5.6 Sol, and download certified spreadsheet outputs (`.xlsx`, `.csv`, `.tsv`). Guests are ineligible and every upload requires explicit consent to transfer the file to OpenAI. File bytes are never stored in the Product DB; they remain only in expiring OpenAI `user_data` files and a network-disabled hosted container. See the [OpenAI document workspace design](./docs/product-chat-service/en/25-openai-document-workspace.md) for the full contract.
 
-LangGraph persistence is an opt-in PostgreSQL feature. `MY_AGENTS_CHECKPOINTER_ENABLED=true` lets an ambiguous document-grounded run return `202 waiting_for_input`, survive a process restart, and resume after the user selects an authorized document. `MY_AGENTS_MEMORY_STORE_ENABLED=true` uses PostgresStore for semantic memory candidate search while Product DB rows continue to enforce consent, status, sensitivity, provenance, and source staleness. Run `uv run python -m scripts.langgraph_persistence setup` and a zero-drift memory reconciliation before enabling either flag.
+PostgreSQL deployments provision PostgresStore and PostgresSaver automatically as baseline LangGraph infrastructure. Store is a semantic projection of Product DB-governed memories; the per-user experimental setting controls consent and eligibility while Product DB rows continue to enforce status, sensitivity, provenance, and source staleness. PostgresSaver lets ambiguous document-grounded runs return `202 waiting_for_input`, survive a process restart, and resume after an authorized document selection. SQLite keeps Product DB recall and non-durable graph execution fallbacks. Run `uv run python -m scripts.langgraph_persistence setup` before serving PostgreSQL traffic and verify zero-drift memory reconciliation before enabling experimental memory for users.
 
-Full-document retrieval is separately disabled by default. Set `MY_AGENTS_FULL_DOCUMENT_RETRIEVAL_ENABLED=true` to route explicit requests such as “review the entire document and identify every requirement” through the typed comprehensive-document path. `MY_AGENTS_FULL_DOCUMENT_MAX_CHARS=24000` controls complete one-call coverage; larger documents currently provide only the first `MY_AGENTS_FULL_DOCUMENT_RANGE_CHARS=12000` characters and return `mode=partial`. The range must not exceed the complete-read limit. Ambiguous requests need the checkpointer-backed document-selection interaction before this path can continue.
+Experimental memory currently recalls explicit memories and manually confirmed suggestions. Ordinary chat does not form memories automatically; the separate post-turn `memory_graph` extraction/update workflow remains planned.
+
+Full-document retrieval activates for explicit or clearly implied comprehensive requests such as “review the entire document” and “review this document without missing anything.” In OpenAI mode the RAG Agent's Luna planner chooses the typed retrieval tool; deterministic mode and provider failures use the same contract's local fallback. `MY_AGENTS_FULL_DOCUMENT_MAX_CHARS=24000` controls complete one-call coverage; larger documents currently provide only the first `MY_AGENTS_FULL_DOCUMENT_RANGE_CHARS=12000` characters and return `mode=partial`. The range must not exceed the complete-read limit. Ambiguous requests need the checkpointer-backed document-selection interaction before this path can continue.
 
 The VS Code `FastAPI: uvicorn main:app (local pgvector)` profile runs its pre-launch migration with the interpreter selected by the Python extension. It does not depend on a shell command finding `uv` in a GUI-launched VS Code process, so select this repository's `.venv` interpreter before using the profile.
 
@@ -197,7 +200,7 @@ uv run ruff format --check .
 git diff --check
 ```
 
-On 2026-08-24, the full offline suite on this checkout reports **519 passed, 2 skipped** without requiring real credentials. The gated PostgreSQL checkpoint restart smoke was separately verified against the local pgvector profile on 2026-08-17.
+On 2026-08-24, the full offline suite on this checkout reports **525 passed, 3 skipped** without requiring real credentials. The gated PostgreSQL checkpoint restart smoke was separately verified against the local pgvector profile on 2026-08-17.
 
 ## Security and privacy boundaries
 
@@ -215,7 +218,7 @@ On 2026-08-24, the full offline suite on this checkout reports **519 passed, 2 s
 - The external ingestion worker uses database polling; durable queueing, supervision, and stale-job recovery need further work.
 - Object storage for uploaded originals, document versioning/re-ingestion, and account deletion/export are not implemented yet.
 - Cross-encoder cold starts and PDF processing latency remain constraints on small hosted instances.
-- Full-document retrieval is explicit-intent-only and disabled by default. Large documents currently stop after the first bounded range; automatic multi-range traversal/final synthesis, model-tokenizer-aware budgets, and provider usage measurements remain future work.
+- Full-document retrieval is semantic comprehensive-intent-only. Large documents currently stop after the first bounded range; automatic multi-range traversal/final synthesis, model-tokenizer-aware budgets, and provider usage measurements remain future work.
 - The full-document graph bumps waiting-run compatibility to `general-assistant-checkpoint-v2`. Drain or cancel older waiting runs before rollout; an older graph version cannot resume and is failed safely by the version-mismatch path.
 - Shared rate limiting, production security review, and automated migration/smoke gates remain necessary.
 - Non-RAG tools, a background execution scheduler, and production multi-agent orchestration remain roadmap work. LangGraph persistence is implemented but remains opt-in until its Postgres setup and reconciliation checks are run.

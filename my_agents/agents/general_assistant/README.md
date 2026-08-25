@@ -9,7 +9,7 @@
 - `build_graph()`는 conversation run이 사용하는 retrieval-enabled product graph입니다.
 - `build_legacy_chat_graph()`는 FastAPI legacy `/assistant/chat`와 터미널 CLI가 사용하는 no-KB graph입니다.
 - Product conversation run에서는 top-level controller처럼 동작하며 `decide_retrieval_source`를 거친 뒤 필요할 때 `retrieve_rag_context` node로 `rag_agent` retrieval runtime을 호출합니다.
-- 전체 문서 검색을 켠 경우, 결정적인 한국어/영어 intent 감지가 명시적인 전체 문서 작업만 `resolve_full_document_target -> prepare_full_document_read -> retrieve_memory -> respond_full_document` 경로로 보냅니다.
+- Private knowledge 위임 뒤 RAG Agent의 fixed Luna standard/low planner가 focused chunk search와 comprehensive document read를 고릅니다. Deterministic mode와 provider failure는 같은 local fallback을 유지하며 comprehensive choice는 `resolve_full_document_target -> prepare_full_document_read -> retrieve_memory -> respond_full_document` 경로로 갑니다.
 - 라우트 라벨은 응답 방식을 고르는 메타데이터입니다.
 - 라우트 라벨은 `AgentCapability` metadata와 연결되어 사용 가능한 tool, data source, side effect를 정직하게 전달합니다.
 - 현재 라우트별 response node는 별도의 hosted 전문 에이전트 실행을 의미하지 않습니다.
@@ -38,8 +38,9 @@
 flowchart TD
     Start([START]) --> Classify["classify_request"]
     Classify --> SourceGate["decide_retrieval_source"]
-    SourceGate -->|focused knowledge_base| RAG["retrieve_rag_context\ncall RAG Agent runtime"]
-    SourceGate -->|explicit comprehensive + enabled| FullTarget["resolve_full_document_target"]
+    SourceGate -->|knowledge_base| RAGChoice{"RAG Agent Luna tool choice"}
+    RAGChoice -->|search_authorized_chunks| RAG["retrieve_rag_context\ncall RAG Agent runtime"]
+    RAGChoice -->|read comprehensively| FullTarget["resolve_full_document_target"]
     SourceGate -->|bypass| SkipRAG["skip_rag_context\nexplicit no_retrieval result"]
     FullTarget -->|one authorized document| FullPrepare["prepare_full_document_read\ncompact coverage + chunk IDs"]
     FullTarget -->|ambiguous + HITL| Select["prepare/request document_selection"]
@@ -77,9 +78,9 @@ flowchart TD
 
 `general_assistant` 폴더는 graph/classifier/RAG invocation/memory recall/responder 경계를 소유합니다. Auth, group/document permission, server-owned conversation, knowledge ingestion, source selection, citation, agent event persistence는 `my_agents/api/`, `my_agents/knowledge/`, `my_agents/conversations/` 같은 service layer에서 소유합니다.
 
-제품용 conversation run은 DB-backed `SqlAlchemyRagAgentRuntime`과 resolved `KnowledgeBaseSelectionContext`를 LangGraph runtime context로 전달합니다. `general_assistant`는 답변을 쓰기 전에 source-selection gate를 실행합니다. OpenAI mode에서는 이 gate가 얇은 LLM decision을 사용할 수 있으므로 “저장 문서를 사용해”와 “지식베이스 쓰지 말고 웹에서 찾아줘” 같은 다국어 요청을 영어 keyword list에 의존하지 않고 구분할 수 있습니다. Deterministic mode는 test와 smoke check를 위해 offline fallback을 유지합니다. Gate가 `knowledge_base`를 선택하면 graph가 RAG Agent를 호출합니다. RAG Agent는 public retrieval boundary이고, ContextForge는 내부 delegated retrieval engine입니다. Gate가 `bypass`를 선택하면 ContextForge를 건너뛰되 API/event code가 같은 contract를 유지하도록 explicit `no_retrieval` RAG result를 graph state에 남깁니다. RAG 결과가 `clarification_required`이면 graph는 memory/response composition까지 계속 진행해 assistant가 사용자에게 보이는 clarification question을 작성하고, API layer는 structured clarification contract를 함께 persist합니다. Required retrieval에 충분한 evidence가 없을 때만 graph가 answer node 전에 멈추고 safe insufficient-evidence reply를 persist합니다. 그 외에는 graph가 자체 `retrieve_memory` node를 실행한 뒤 response provider를 호출합니다.
+제품 conversation run은 DB-backed `SqlAlchemyRagAgentRuntime`과 resolved `KnowledgeBaseSelectionContext`를 LangGraph runtime context로 전달합니다. `general_assistant`는 먼저 broad source-selection gate를 실행합니다. Gate가 `knowledge_base`로 위임하면 RAG-owned fixed Luna standard/low planner가 typed focused/comprehensive operation을 선택하고, `general_assistant`는 retrieval policy나 authorization을 소유하지 않은 채 compact choice를 routing합니다. RAG Agent는 public retrieval boundary이고 ContextForge는 focused retrieval engine입니다. Source gate가 `bypass`를 선택하면 explicit `no_retrieval` result를 남깁니다. RAG 결과가 `clarification_required`이면 visible clarification을 구성하고 structured contract를 persist합니다. Required evidence가 부족하면 answer node 전에 멈추며, 그 외에는 memory recall 뒤 shared Sol response provider가 final answer를 구성합니다.
 
-Opt-in comprehensive branch는 일반 검색보다 더 좁습니다. `classify_request`는 whole-document 표현과 task verb가 모두 있어야 활성화하므로 “full document retrieval이 뭐야?”나 일반적인 “이 문서를 요약해줘”는 이 경로에 들어가지 않습니다. Resume selection, 유일한 eligible target, 고유한 title/filename match 순서로 현재 권한이 있는 user-controllable document 한 개를 결정합니다. 대상이 모호하고 checkpointer를 쓸 수 있으면 기존 typed document-selection interrupt를 재사용합니다. Ambient system document는 target resolution, option, resume value, range read에서 모두 제외합니다.
+Comprehensive branch는 일반 검색보다 더 좁습니다. Luna는 explicit 또는 의미상 분명한 exhaustive document task를 선택하며, named document와 “빠짐없이”가 결합된 자연스러운 요청도 포함합니다. 일반적인 “이 문서를 요약해줘”는 focused path에 남습니다. Deterministic fallback도 document reference, exhaustive coverage 표현, task verb를 조합해 같은 결정을 내립니다. Resume selection, 유일한 eligible target, 고유한 title/filename match 순서로 현재 권한이 있는 user-controllable document 한 개를 결정합니다. 대상이 모호하면 typed document-selection interrupt를 재사용하고 ambient system document는 모든 target/read boundary에서 제외합니다.
 
 `prepare_full_document_read`는 coverage와 겹치는 citation chunk를 검증하지만 raw document body는 state에 쓰지 않습니다. 정규화된 추출 텍스트가 `MY_AGENTS_FULL_DOCUMENT_MAX_CHARS` 이하이면(기본 24,000자) `complete`입니다. 큰 문서는 현재 `[0, MY_AGENTS_FULL_DOCUMENT_RANGE_CHARS)`만 준비하며(기본 12,000자) `partial`로 표시하고, 응답 맨 앞에 피할 수 없는 현지화된 부분 검토 안내를 붙입니다. Memory recall 뒤 `respond_full_document`가 같은 범위의 권한과 내용을 node 안에서 다시 확인해 읽고, LangSmith tracing을 끈 채 provider를 호출한 뒤 reply만 반환합니다. 문서가 바뀌거나 삭제되거나 권한이 사라지면 다른 source를 대신 고르지 않고 안전한 insufficient-evidence 결과로 내려갑니다.
 

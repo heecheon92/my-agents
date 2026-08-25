@@ -54,7 +54,7 @@ sequenceDiagram
 - `/conversations/{id}/runs` applies retrieval routing, then invokes the existing LangGraph assistant with server-owned history.
 - `/conversations/{id}/runs` also supports `GET` so a frontend can list completed and failed runs.
 - Runs now include retrieval route, answer mode, permission-aware retrieval context IDs, citations, and redacted events.
-- When the opt-in full-document path handles an explicit comprehensive request, completed
+- When the full-document path handles an explicit comprehensive request, completed
   runs also expose refresh-safe `document_coverage` metadata. The normalized document body
   is used only while composing the answer and is not copied into Product DB run events or
   LangGraph checkpoints.

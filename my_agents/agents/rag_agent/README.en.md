@@ -7,6 +7,8 @@
 ## Current role
 
 - Provides the runtime-only `RagAgentRuntime` contract invoked by the `retrieve_rag_context` node inside the `general_assistant` graph.
+- After the General Assistant delegates to private knowledge, uses a fixed `gpt-5.6-luna` standard/low planner to choose exactly one typed retrieval operation: `search_authorized_chunks` or `read_authorized_document_comprehensively`.
+- Keeps deterministic mode, invalid-output handling, and provider failures on a credential-free semantic fallback with the same two-tool contract.
 - Returns `RagAgentRetrievalResult` with route, answer mode, authorized chunks, redacted retrieval evidence, and retry/sufficiency state.
 - Provides typed `resolve_full_document_target` and `read_full_document_range` runtime methods for explicit comprehensive-document tasks without making raw text part of the checkpointed RAG result.
 - Delegates to ContextForge for query planning, source-boundary handoff, authorized candidate search, reranking, and context packing.
@@ -22,6 +24,7 @@
 | `retrieval.py` | Public RAG Agent runtime called by `general_assistant`; wraps focused ContextForge retrieval and permission-first full-document target/range reads. |
 | `graph.py` | Dedicated LangGraph form that plans and verifies the RAG Agent trace/grounding contract. |
 | `planner.py` | Deterministic stage planner for compact run traces. |
+| `tool_selection.py` | Luna-backed focused/comprehensive retrieval-tool selection plus deterministic fallback; never executes authorization or returns raw document text. |
 | `verifier.py` | Deterministic safety/shape and grounding-boundary verifier. |
 | `README.md` / `README.en.md` | Korean/English behavior and boundary docs. |
 | `CHANGELOG.md` | Why this agent folder changed. |
@@ -31,17 +34,20 @@
 ```mermaid
 sequenceDiagram
     participant GA as general_assistant graph
+    participant Planner as Luna RAG tool planner
     participant RAG as RAG Agent runtime
     participant CF as ContextForge retrieval graph
     participant Trace as RAG Agent contract graph
     participant Events as Conversation events/citations
 
-    alt focused document question
+    GA->>Planner: authorized-knowledge task + bounded recent messages
+    Planner-->>GA: focused or comprehensive typed tool choice
+    alt search_authorized_chunks
         GA->>RAG: retrieve_context(user, conversation, messages, KB selection)
         RAG->>CF: ContextForgeRequest
         CF-->>RAG: authorized chunks + redacted evidence + sufficiency state
         RAG-->>GA: RagAgentRetrievalResult + prompt-safe retrieved_context
-    else explicit comprehensive-document task
+    else read_authorized_document_comprehensively
         GA->>RAG: resolve_full_document_target(authenticated user, selected KB scope)
         RAG-->>GA: one authorized target or safe ambiguity
         GA->>RAG: read_full_document_range(target, server limits)
@@ -56,6 +62,8 @@ sequenceDiagram
 
 - The public retrieval-agent name is `RAG Agent`.
 - The internal delegated implementation name is `ContextForge`.
+- `gpt-5.6-luna` in standard mode with low reasoning effort owns only semantic tool choice. It cannot select trusted document IDs, authorize access, change server budgets, or compose the final answer. User-selected reasoning controls apply to the final response model, not this internal planner.
+- `search_authorized_chunks` means focused ContextForge retrieval. `read_authorized_document_comprehensively` means bounded target resolution/range reading for explicit or clearly implied exhaustive intent. Weak focused evidence alone must not escalate to the comprehensive tool.
 - `rag_retrieval_result` is a graph runtime object; do not expose it directly to frontend clients or checkpoints.
 - `retrieved_context` is already-authorized, prompt-safe compact context. Ambient system
   entries contain only answerable snippet text; their KB/document/chunk/title/filename/page
@@ -71,11 +79,11 @@ sequenceDiagram
 
 ## Capability or boundary metadata
 
-This package is the production RAG Agent boundary. It exposes a graph/tool seam for retrieval, while hard authorization and low-level candidate SQL stay in ContextForge/RetrievalService. It is not an autonomous hosted agent runtime and has no provider credentials or external side effects.
+This package is the production RAG Agent boundary. It exposes a graph/tool seam for retrieval and now performs one bounded Luna tool-choice call in OpenAI mode, while hard authorization and low-level candidate SQL stay in ContextForge/RetrievalService. It is not an autonomous hosted agent service and has no external side effects; provider credentials remain application settings and are never persisted in agent state.
 
 ## Relationship to service layers
 
-Conversation APIs pass user/conversation/knowledge-base selection plus a DB-backed `SqlAlchemyRagAgentRuntime` through LangGraph runtime context. `general_assistant` invokes the RAG Agent inside the graph, and the API layer reads retrieval results from graph state to persist `retrieval_completed`, citations, grounding events, and optional `document_coverage`/`full_document_read` metadata. System citation rows remain internal audit data; public run/event/citation serializers remove their provenance. Raw full-document text is consumed only inside graph nodes and is excluded from checkpoints, events, application traces, and API coverage objects. Auth, source selection, ingestion, persistence, citation rows, and provider execution remain in service modules.
+Conversation APIs pass user/conversation/knowledge-base selection plus a DB-backed `SqlAlchemyRagAgentRuntime` through LangGraph runtime context. After the General Assistant's source gate delegates to private knowledge, the RAG-owned planner chooses the retrieval tool; `general_assistant` routes that compact choice and invokes the RAG runtime. The API layer reads retrieval results from graph state to persist `retrieval_completed`, citations, grounding events, and optional `document_coverage`/`full_document_read` metadata. System citation rows remain internal audit data; public run/event/citation serializers remove their provenance. Raw full-document text is consumed only inside graph nodes and is excluded from checkpoints, events, application traces, and API coverage objects. Auth, broad source selection, ingestion, persistence, citation rows, and final Sol response composition remain outside the RAG Agent.
 
 ## Extension guidance
 
@@ -85,6 +93,7 @@ If a new retrieval tool or deeper graph node is needed, add it first to the publ
 
 - Update `tests/test_conversations_api.py` and `tests/test_permission_aware_rag.py` for retrieval-boundary changes.
 - Update `tests/test_rag_agent_contracts.py` for contract/trace changes.
+- Update `tests/test_rag_agent_tool_selection.py` for Luna model policy, tool descriptions, multilingual intent, and deterministic/provider-failure fallback changes.
 - Update `tests/test_full_document_retrieval.py` for full-document resolution, range, authorization, citation, replay, and checkpoint-safety changes.
 - Run `tests/test_context_forge_contracts.py`, `tests/test_context_forge_reranking.py`, and `tests/test_context_forge_structured_retrieval.py` when the delegated ContextForge path changes.
 - Keep this README pair and `CHANGELOG.md` aligned.

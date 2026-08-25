@@ -1,5 +1,11 @@
 # RAG Agent changelog
 
+## 2026-08-24 — Add Luna-backed retrieval-tool selection
+
+- Why: literal comprehensive-intent phrases missed natural multilingual requests such as a named document plus “빠짐없이 검토,” while the RAG Agent had no model-backed planning step of its own.
+- Behavior/contract impact: after broad private-knowledge delegation, fixed `gpt-5.6-luna` standard/low tool selection chooses exactly one typed operation: `search_authorized_chunks` or `read_authorized_document_comprehensively`. Deterministic mode, invalid tool output, and provider failure fall back to a local composed-intent rule. Luna never selects trusted IDs, authorizes access, changes budgets, reads raw full-document text, or composes the final answer.
+- Verification: offline fake-model tests cover model/effort policy, strict required tool binding, Korean comprehensive intent, focused controls, invalid output, provider timeout, and deterministic false-positive prevention. A credentialed smoke selected the comprehensive tool for the original Korean regression prompt.
+
 ## 2026-08-24 — Add typed full-document target and range seams
 
 - Why: focused hybrid retrieval can under-cover distant sections when the user explicitly asks for complete-document review.
