@@ -106,7 +106,9 @@ sequenceDiagram
     API-->>UI: waiting_for_input과 interaction
     UI->>API: typed answer로 POST resume
     API->>DB: run, expiry, document permission 재검증
+    API-->>UI: run_resumed
     API->>Graph: Command(resume = document_id)
+    Graph-->>UI: retrieval/graph 진행 event와 answer_delta
     Graph-->>API: completed 또는 다음 interrupt
     API->>DB: canonical run result 저장
     API-->>UI: completed 또는 다음 waiting interaction
@@ -116,6 +118,13 @@ sequenceDiagram
 `409`, `code=conversation_run_already_active`로 거절됩니다. Frontend는 이 응답을 일반적인
 stream backpressure처럼 재시도하지 말고 interaction이 끝날 때까지 queued message를
 보류해야 합니다.
+
+Option을 선택하는 즉시 suspended presentation은 끝납니다. Streaming resume endpoint는
+run을 atomic하게 claim하고 `run_resumed`를 먼저 보낸 뒤 checkpoint가 계속 실행되는 동안
+실제 LangGraph 진행 event와 answer delta를 전송합니다. Frontend는 resume이 실패하거나
+run이 다시 interrupt된 경우에만 interaction을 복원하며, 재개 중인 답변 위에 frozen choice
+card를 유지하면 안 됩니다. Non-streaming resume endpoint도 같은 authorization/atomic-claim
+boundary를 사용하지만 기존처럼 완료 결과를 반환합니다.
 
 `GET /conversations/{conversation_id}/runs/{run_id}`로 새로고침 뒤 interaction을 복구할 수
 있습니다. SSE는 state 전환 신호이지 유일한 state 사본이 아닙니다. Option 목록을 읽을

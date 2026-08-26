@@ -191,6 +191,26 @@ partial `answer_delta` events before the failure event. The persisted run status
 redacted persisted event sequence. The stream intentionally does not expose raw user
 prompts, private provider exceptions, chain-of-thought, or document content.
 
+## Durable-interaction resume streaming
+
+```text
+POST /conversations/{conversation_id}/runs/{run_id}/resume/stream
+Content-Type: application/json
+Accept: text/event-stream
+```
+
+The endpoint validates and atomically claims the waiting run before opening the stream. Its first
+event is `run_resumed`, followed by real `retrieval_completed` and `graph_invoked` progress as
+LangGraph continues the checkpoint. Provider message chunks are emitted as `answer_delta`; a
+buffered fallback is used only when the graph produces no live message chunks. Cancellation is
+checked between graph updates and deltas. A repeated interrupt emits `run_interrupted`; normal
+completion persists the same response returned by sync resume and emits `run_completed`.
+
+This ordering is a product contract: once the user answers the interaction, the frontend must
+leave its suspended presentation immediately and behave like an ordinary streaming answer. The
+previous adapter called sync resume to completion before its first yield and then replayed the
+finished text as fake deltas, which kept the choice UI frozen for the entire run.
+
 ## Assistant-message replay streaming
 
 ```text
@@ -323,6 +343,7 @@ that leaving a streaming conversation will finish and persist the assistant resp
 
 ## Revision history
 
+- 2026-08-26: Replaced buffered checkpoint-resume replay with immediate `run_resumed`, live LangGraph progress, real answer deltas, and cooperative cancellation checks.
 - 2026-08-25: Defined document-level citation presentation using human-readable document/knowledge-base metadata over chunk-level wire provenance.
 - 2026-08-25: Added refresh-safe `consulted_sources` alongside answer-supported `citations`, including resume/replay parity and legacy `null` semantics.
 - 2026-08-24: Documented full-document buffering, typed coverage events, and replay target fidelity.

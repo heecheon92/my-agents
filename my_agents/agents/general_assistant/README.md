@@ -155,6 +155,8 @@ Comprehensive branch는 run compatibility marker를 `general-assistant-checkpoin
 
 Public waiting payload와 typed resume answer는 [`docs/product-chat-service/ko/27-agent-frontend-interaction-contract.md`](../../../docs/product-chat-service/ko/27-agent-frontend-interaction-contract.md)의 versioned protocol-neutral 계약을 따릅니다. 앞으로 사용자 입력이 필요한 state도 이 semantic interaction boundary로 추가하고, graph node가 frontend component나 layout을 지정해서는 안 됩니다.
 
+Streaming resume transport는 SSE를 열기 전에 waiting run을 atomic하게 claim하고 첫 event로 `run_resumed`를 보낸 뒤 LangGraph checkpoint를 `messages` + `updates` mode로 재개합니다. 따라서 실제 retrieval/graph 진행 event가 live answer delta보다 먼저 도착하고 stream step 사이에 cancellation을 확인합니다. Sync resume endpoint도 같은 authorization/claim helper를 재사용하지만 기존 completed response 계약을 유지합니다.
+
 Document-selection option에는 사용자가 통제하는 personal/group document만 포함합니다. Ambient system knowledge는 계속 자동으로 주입되는 internal context이며 visible/selectable source가 아닙니다. Client가 system document ID를 직접 보내더라도 resume boundary가 거절합니다.
 
 ## OpenAI hosted tools를 추가할 위치

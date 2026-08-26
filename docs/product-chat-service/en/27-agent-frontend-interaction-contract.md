@@ -107,7 +107,9 @@ sequenceDiagram
     API-->>UI: waiting_for_input plus interaction
     UI->>API: POST resume with typed answer
     API->>DB: revalidate run, expiry, and document permission
+    API-->>UI: run_resumed
     API->>Graph: Command(resume = document_id)
+    Graph-->>UI: retrieval/graph progress and answer_delta
     Graph-->>API: completed or another interrupt
     API->>DB: persist canonical run result
     API-->>UI: completed or next waiting interaction
@@ -117,6 +119,13 @@ An unexpired waiting run remains the conversation's active run. A new run reques
 rejected with HTTP `409` and `code=conversation_run_already_active`. Frontends must pause
 queued messages while waiting instead of treating that response as ordinary retryable
 stream backpressure.
+
+Choosing an option ends the suspended presentation immediately. The streamed resume endpoint
+atomically claims the run, emits `run_resumed` first, and then exposes real LangGraph progress
+and answer deltas while the checkpoint continues. Frontends may restore the interaction only
+if resume fails or the run interrupts again; they must not keep a frozen choice card over the
+resuming answer. The non-streaming resume endpoint keeps the same authorization and atomic-claim
+boundary but returns its completed result normally.
 
 The interaction can be reconstructed after refresh from `GET
 /conversations/{conversation_id}/runs/{run_id}`. SSE is a transition signal, not the only

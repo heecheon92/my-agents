@@ -3,6 +3,12 @@
 This changelog records why the production-surface `general_assistant` agent folder needed
 meaningful behavior, graph-state, provider, or documentation changes.
 
+## 2026-08-26 — Stream checkpoint resume instead of replaying a buffered answer
+
+- **Why:** `/resume/stream` called the synchronous resume endpoint to completion before its first SSE yield, so the frontend kept the document-choice card frozen and showed no live progress until the entire answer existed.
+- **Behavior/contract impact:** sync and streamed resume share one authorization/atomic-claim helper. Streamed resume emits `run_resumed` first, then drives the checkpoint through LangGraph `messages` and `updates`, exposing retrieval/graph progress and real answer deltas with cooperative cancellation checks.
+- **Verification:** the checkpointed document-selection API regression now requires `run_resumed` first and `retrieval_completed`/`graph_invoked` before `answer_delta`; graph streaming, persistence, and conversation API suites cover the shared boundary.
+
 ## 2026-08-24 — Delegate retrieval-operation choice to the RAG Agent
 
 - **Why:** `general_assistant` should own broad source delegation and final response composition, while focused-versus-comprehensive retrieval belongs to the RAG Agent.

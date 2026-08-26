@@ -155,6 +155,8 @@ The comprehensive branch bumps the run compatibility marker to `general-assistan
 
 The public waiting payload and its typed resume answer use the versioned, protocol-neutral contract in [`docs/product-chat-service/en/27-agent-frontend-interaction-contract.md`](../../../docs/product-chat-service/en/27-agent-frontend-interaction-contract.md). Add future user-input states through that semantic interaction boundary; graph nodes must not prescribe frontend components or layout.
 
+The streamed resume transport claims the waiting run before opening SSE, emits `run_resumed` as its first event, and resumes the checkpoint with LangGraph `messages` plus `updates` streaming. Retrieval and graph progress therefore arrive before live answer deltas, and cancellation is checked between stream steps. The sync resume endpoint reuses the same authorization and atomic-claim helper but keeps its ordinary completed response.
+
 Document-selection options include only user-controllable personal/group documents. Ambient system knowledge remains automatically injected internal context, never a visible or selectable source, and the resume boundary rejects a system document ID even if a client submits one directly.
 
 ## Where to add OpenAI hosted tools

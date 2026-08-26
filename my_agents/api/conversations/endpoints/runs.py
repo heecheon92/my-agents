@@ -1,9 +1,11 @@
 """Conversation run endpoints."""
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from langchain_core.messages import BaseMessage
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
@@ -55,7 +57,10 @@ from my_agents.interactions.schemas import (
     DocumentSelectionOption,
     DocumentSelectionOptionsResponse,
 )
-from my_agents.knowledge.auth import resolve_conversation_knowledge_context
+from my_agents.knowledge.auth import (
+    KnowledgeBaseSelectionContext,
+    resolve_conversation_knowledge_context,
+)
 from my_agents.knowledge.retrieval import RetrievalService
 from my_agents.observability.metrics import record_langgraph_persistence_operation
 from my_agents.persistence.database import get_database_session
@@ -147,21 +152,27 @@ def run_conversation(
     return result
 
 
-@router.post(
-    "/{conversation_id}/runs/{run_id}/resume",
-    response_model=ConversationRunResult,
-)
-def resume_conversation_run(
+@dataclass(frozen=True)
+class PreparedConversationRunResume:
+    """Authorized, atomically claimed resume state shared by sync and SSE paths."""
+
+    run: AgentRunModel
+    messages: list[BaseMessage]
+    selection_context: KnowledgeBaseSelectionContext
+    selected_document_id: str
+    resumed_event_payload: dict[str, object]
+
+
+def prepare_conversation_run_resume(
+    *,
     conversation_id: str,
     run_id: str,
     request: ConversationRunResumeRequest,
-    response: Response,
-    principal: Annotated[Principal, Depends(get_current_principal)],
-    db: Annotated[Session, Depends(get_database_session)],
-    graph_runner: Annotated[GraphRunner, Depends(get_graph_runner)],
-    settings: Annotated[Settings, Depends(get_settings)],
-) -> ConversationRunResult:
-    """Resume one authorized document-selection checkpoint without storing a new prompt."""
+    principal: Principal,
+    db: Session,
+    graph_runner: GraphRunner,
+) -> PreparedConversationRunResume:
+    """Validate and atomically claim one waiting run before execution starts."""
     assert_guest_access_active(db, principal)
     get_authorized_conversation(db, conversation_id, principal.user_id)
     run = db.get(AgentRunModel, run_id, populate_existing=True)
@@ -242,27 +253,60 @@ def resume_conversation_run(
         )
     db.flush()
     db.refresh(run)
+    resumed_event_payload: dict[str, object] = {
+        "run_id": run.id,
+        "status": RunStatus.RUNNING.value,
+        "interaction_id": request.interaction_id,
+        "interaction_schema_version": request.schema_version,
+        "interaction_type": "document_selection",
+    }
     append_run_event(
         db,
         run.id,
         AgentEventType.RUN_RESUMED,
-        {
-            "run_id": run.id,
-            "status": RunStatus.RUNNING.value,
-            "interaction_id": request.interaction_id,
-            "interaction_schema_version": request.schema_version,
-            "interaction_type": "document_selection",
-        },
+        resumed_event_payload,
         commit=False,
     )
     db.commit()
     record_langgraph_persistence_operation(operation="resume", outcome="accepted")
-    result = complete_resumed_conversation_run(
-        db=db,
+    return PreparedConversationRunResume(
         run=run,
         messages=messages_for_conversation(db, conversation_id),
         selection_context=selection_context,
         selected_document_id=request.document_id,
+        resumed_event_payload=resumed_event_payload,
+    )
+
+
+@router.post(
+    "/{conversation_id}/runs/{run_id}/resume",
+    response_model=ConversationRunResult,
+)
+def resume_conversation_run(
+    conversation_id: str,
+    run_id: str,
+    request: ConversationRunResumeRequest,
+    response: Response,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    db: Annotated[Session, Depends(get_database_session)],
+    graph_runner: Annotated[GraphRunner, Depends(get_graph_runner)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> ConversationRunResult:
+    """Resume one authorized document-selection checkpoint without storing a new prompt."""
+    prepared = prepare_conversation_run_resume(
+        conversation_id=conversation_id,
+        run_id=run_id,
+        request=request,
+        principal=principal,
+        db=db,
+        graph_runner=graph_runner,
+    )
+    result = complete_resumed_conversation_run(
+        db=db,
+        run=prepared.run,
+        messages=prepared.messages,
+        selection_context=prepared.selection_context,
+        selected_document_id=prepared.selected_document_id,
         graph_runner=graph_runner,
         hitl_wait_seconds=settings.hitl_wait_seconds,
     )

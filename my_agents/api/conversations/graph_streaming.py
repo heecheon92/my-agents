@@ -6,9 +6,15 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from langgraph.types import Command
+
 from my_agents.agents.general_assistant.classifier import classify_messages
 from my_agents.api.assistant import GraphRunner
-from my_agents.api.conversations.graph_invocation import invoke_graph_runner, stream_graph_runner
+from my_agents.api.conversations.graph_invocation import (
+    invoke_graph_runner,
+    invoke_graph_runner_resume_collecting_updates,
+    stream_graph_runner,
+)
 
 GraphStreamItemKind = Literal["delta", "update", "result"]
 # Full-document replies are intentionally buffered so the deterministic partial-coverage
@@ -98,6 +104,67 @@ def stream_graph_items(
         )
         return
     raise RuntimeError("graph stream did not yield a reply")
+
+
+def stream_resumed_graph_items(
+    *,
+    graph_runner: GraphRunner,
+    run_id: str,
+    resume_value: dict[str, object],
+    graph_context: dict[str, object],
+):
+    """Yield real message/update events while resuming one checkpoint thread."""
+    stream = getattr(graph_runner, "stream", None)
+    if not callable(stream):
+        yield GraphStreamItem(
+            kind="result",
+            result=invoke_graph_runner_resume_collecting_updates(
+                graph_runner=graph_runner,
+                run_id=run_id,
+                resume_value=resume_value,
+                graph_context=graph_context,
+            ),
+        )
+        return
+
+    command = Command(resume=resume_value)
+    config = {"configurable": {"thread_id": run_id}}
+    streamed_parts: list[str] = []
+    final_result: dict[str, Any] = {}
+    for event in stream(
+        command,
+        config=config,
+        context=graph_context,
+        stream_mode=["messages", "updates"],
+        version="v2",
+    ):
+        event_type, event_data = stream_event_parts(event)
+        if event_type == "messages":
+            message_chunk, metadata = event_data
+            if not should_emit_message_chunk(metadata):
+                continue
+            text = message_chunk_text(message_chunk)
+            if text:
+                streamed_parts.append(text)
+                yield GraphStreamItem(kind="delta", delta=text)
+            continue
+        if event_type == "updates" and isinstance(event_data, dict):
+            fields = result_fields_from_update(event_data)
+            if fields:
+                final_result.update(fields)
+                yield GraphStreamItem(kind="update", result=fields)
+
+    get_state = getattr(graph_runner, "get_state", None)
+    if callable(get_state):
+        snapshot = get_state(config)
+        values = getattr(snapshot, "values", None)
+        if isinstance(values, dict):
+            final_result.update(values)
+    if "reply" not in final_result and streamed_parts:
+        final_result["reply"] = "".join(streamed_parts).strip()
+    if not final_result:
+        raise RuntimeError("resumed graph stream ended without state")
+    yield GraphStreamItem(kind="result", result=final_result)
 
 
 def stream_event_parts(event: Any) -> tuple[str | None, Any]:

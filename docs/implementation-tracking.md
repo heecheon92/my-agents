@@ -180,6 +180,20 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
 
 ## Latest verification evidence
 
+True checkpoint-resume streaming on 2026-08-26:
+
+- Reproduced the UX regression in source: `/resume/stream` executed the synchronous checkpoint
+  resume to completion before its first SSE yield, then split the finished reply into artificial
+  deltas. It emitted no live `run_resumed`, retrieval, or graph progress.
+- Sync and SSE resume now share one authorization/atomic-claim helper. SSE emits `run_resumed`
+  first and drives the checkpoint with LangGraph `messages` plus `updates`, with real progress,
+  real provider deltas when available, and cancellation checks between stream steps.
+- The regression test failed before the fix because `answer_delta` was the first event. It now
+  requires `run_resumed` first and both `retrieval_completed` and `graph_invoked` before the first
+  answer delta.
+- The final backend suite passed: **534 passed, 2 skipped, 11 warnings** in 56.36s. Ruff lint,
+  Ruff format-check, and `git diff --check` passed.
+
 Consulted-source and answer-supported citation split on 2026-08-25:
 
 - Added nullable `ConversationRunResponse.consulted_sources` as the complete user-visible

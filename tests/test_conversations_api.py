@@ -675,6 +675,14 @@ def test_checkpointed_document_selection_interrupts_and_resumes_same_run(monkeyp
     ) as response:
         assert response.status_code == 200
         resume_events = _parse_sse(response.read().decode())
+    resume_event_names = [event["event"] for event in resume_events]
+    assert resume_event_names[0] == "run_resumed"
+    assert "retrieval_completed" in resume_event_names
+    assert "graph_invoked" in resume_event_names
+    assert resume_event_names.index("retrieval_completed") < resume_event_names.index(
+        "answer_delta"
+    )
+    assert resume_event_names.index("graph_invoked") < resume_event_names.index("answer_delta")
     assert any(event["event"] == "answer_delta" for event in resume_events)
     streamed_completed = next(
         event["data"] for event in resume_events if event["event"] == "run_completed"

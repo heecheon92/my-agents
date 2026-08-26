@@ -23,6 +23,13 @@ body와 내부 next cursor는 공개하지 않습니다.
 권한을 다시 검사합니다. 삭제되었거나 권한이 없으면 다른 document로 교체하지 않고
 unavailable-source warning과 빈 coverage/citation으로 종료합니다.
 
+`POST /conversations/{conversation_id}/runs/{run_id}/resume/stream`은 waiting run을 먼저
+atomic하게 claim하고 첫 SSE event로 `run_resumed`를 보냅니다. 그 뒤 checkpoint가 계속
+실행되는 동안 실제 `retrieval_completed`, `graph_invoked`, `answer_delta`를 전송하고 stream
+step 사이에 cancellation을 확인합니다. 사용자가 option을 고른 순간 frontend는 suspended
+card를 내리고 일반 streaming answer처럼 progress, stop, follow-up queue를 제공해야 합니다.
+이전처럼 sync resume을 끝까지 실행한 뒤 완성된 text를 가짜 delta로 재생하지 않습니다.
+
 완료 응답은 `consulted_sources`와 `citations`를 구분합니다. 전자는 모델에 제공된
 user-visible source 전체 superset이고 후자는 최종 답변에서 근거가 확인된 보수적 subset입니다.
 두 배열에 같은 source가 있으면 동일한 persisted `id`와 `chunk_id`를 사용합니다.
