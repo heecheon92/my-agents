@@ -170,7 +170,7 @@ Current honest status:
 - [~] RAG source policy for unified `knowledge_base_selection` across authorized personal, published, and group KBs exists for the current product path; owner-private transcripts, membership-scoped group knowledge, hidden staging exclusion, and no source leakage are covered, while deletion/retention edge cases still need production hardening.
 - [~] Hybrid retrieval strategy: independent permission-filtered vector and request-local `BM25Okapi` lexical rankings now use `chunk_id`-keyed Reciprocal Rank Fusion (`k=60`) by default, alongside graph/entity/structured expansion. BM25 reuses authorized chunk text and needs no dedicated DB index or migration; production corpus caching/full-text indexing, multilingual tokenization, and retrieval-quality/latency evaluation remain guided by [`docs/product-chat-service/en/12-retrieval-agent-hybrid-reference.md`](./docs/product-chat-service/en/12-retrieval-agent-hybrid-reference.md).
 - [~] Cross-encoder reranker stage over top-k authorized candidates after vector/full-text retrieval; the interface and `MY_AGENTS_RERANKER_MODE=cross_encoder` path exist, while production model packaging/latency evals remain follow-up work. Local tests stay offline through the deterministic default and fake-model unit coverage. On small hosted runtimes, switch to deterministic mode if memory/startup latency becomes unstable.
-- [ ] **Critical next move — tokenizer-aware retrieval and embedding-index safety.** Keep `BAAI/bge-reranker-v2-m3` as the Korean/multilingual cross-encoder direction instead of the effective MS MARCO override; add query-aware reranker token windows so over-limit Korean/code chunks do not silently lose tail evidence; persist embedding provider/model/dimensions/encoding/index-version identity and exclude incompatible stored vectors even when dimensions match; add a re-embed/backfill decision for existing documents; and make final answer-context token usage observable while preserving the current character cap as a fallback. Require Korean, English, and code quality/latency fixtures before calling the milestone complete. See [`docs/learning/project-notes/tokenizer-consistency-audit-and-rag-index-safety.md`](./docs/learning/project-notes/tokenizer-consistency-audit-and-rag-index-safety.md).
+- [ ] **Next retrieval hardening move — tokenizer-aware retrieval and embedding-index safety.** Keep `BAAI/bge-reranker-v2-m3` as the Korean/multilingual cross-encoder direction instead of the effective MS MARCO override; add query-aware reranker token windows so over-limit Korean/code chunks do not silently lose tail evidence; persist embedding provider/model/dimensions/encoding/index-version identity and exclude incompatible stored vectors even when dimensions match; add a re-embed/backfill decision for existing documents; and make final answer-context token usage observable while preserving the current character cap as a fallback. Require Korean, English, and code quality/latency fixtures before calling the milestone complete. See [`docs/learning/project-notes/tokenizer-consistency-audit-and-rag-index-safety.md`](./docs/learning/project-notes/tokenizer-consistency-audit-and-rag-index-safety.md).
 - [~] **Read-only full-document pull tool for comprehensive document tasks.**
   - **Implemented vertical slice:** after private-knowledge delegation, a fixed `gpt-5.6-luna` standard/low RAG planner chooses `search_authorized_chunks` or `read_authorized_document_comprehensively`; deterministic mode, invalid tool output, and provider failure use a local semantic fallback. The graph resolves one authorized personal/group document, reuses typed document selection when needed, prepares coverage metadata, recalls memory, and answers through `respond_full_document`. Ordinary fact lookup, ordinary summaries, and section-specific questions stay on focused chunk retrieval.
   - **Authorization and read contract:** `RagAgentRuntime` exposes typed target-resolution and bounded extracted-text range reads. The authenticated principal and selected-KB scope come only from application runtime context; owner/group/explicit document permission is revalidated at every read, and ambient system documents are excluded from resolution, options, resume values, and full-document reads.
@@ -253,6 +253,12 @@ This is the product-facing equivalent of repo-local `AGENTS.md`: durable Markdow
 - [x] Redacted event payloads for frontend-safe activity display.
 - [x] Deterministic eval helper module for grounding, leakage, redaction, and latency budgets.
 - [x] Tests for event ordering and redaction behavior.
+- [ ] **Immediate next task — dynamic model-authored reasoning summaries.** Add bounded nullable
+  `retrieval_planning` and `answer_synthesis` summaries, typed summary SSE/persistence, and
+  refresh/replay reconstruction while keeping final answer text, verified `agent_trace`, and
+  evidence separate. Raw chain-of-thought, prompts, provider traces, hidden provenance,
+  credentials, and document body text remain forbidden. See
+  [`28-dynamic-reasoning-summary-contract.md`](./docs/product-chat-service/en/28-dynamic-reasoning-summary-contract.md).
 - [x] Tests keep OpenAI calls offline/mocked by default.
 - [~] Evals are deterministic fixtures, not a production evaluation platform.
 - [~] Structured application logging policy; permanent redacted deployment diagnostics exist and should be tuned into the broader logging policy.
@@ -318,7 +324,19 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
 
 ## 13. Near-term recommended sequence
 
-0. **Critical next move — tokenizer-aware retrieval and embedding-index safety**
+0. **Immediate next task — dynamic model-authored reasoning summaries**
+   - Preserve three distinct trust channels: model-authored approach summaries, verified
+     `agent_trace`, and evidence/citations.
+   - Add nullable bounded summaries for Luna retrieval planning and Sol answer synthesis.
+   - Request and parse provider summaries without allowing reasoning blocks into `reply` or
+     `answer_delta`.
+   - Add typed summary SSE/persistence, refresh/replay recovery, redaction, authorization,
+     prompt-injection, ordering, empty-summary, deterministic-mode, and cost-accounting tests.
+   - Publish hosted OpenAPI before frontend work. Use
+     [`28-dynamic-reasoning-summary-contract.md`](./docs/product-chat-service/en/28-dynamic-reasoning-summary-contract.md)
+     as the rationale and definition of done.
+
+1. **Tokenizer-aware retrieval and embedding-index safety**
    - Keep the committed `BAAI/bge-reranker-v2-m3` direction for Korean/multilingual reranking and remove the MS MARCO override from the intended runtime before evaluation.
    - Add Korean, English, and code retrieval fixtures, then record relevance, latency, memory, and reranker window/truncation evidence.
    - Add model-tokenizer-aware query/document windows so the reranker never silently discards relevant tail content from an over-limit pair.
@@ -328,7 +346,7 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
    - Stop when multilingual/code reranker fixtures preserve relevant evidence, the BAAI candidate has measured runtime evidence, incompatible embedding spaces cannot be compared, existing data has an explicit migration decision, and permission-first/offline tests remain green.
    - Use [`docs/learning/project-notes/tokenizer-consistency-audit-and-rag-index-safety.md`](./docs/learning/project-notes/tokenizer-consistency-audit-and-rag-index-safety.md) as the analysis and acceptance note.
 
-1. **Internal performance / quality analysis baseline**
+2. **Internal performance / quality analysis baseline**
    - Enable `MY_AGENTS_METRICS_ENABLED=true` only in local, staging, or trusted internal runs.
    - Use `/metrics` to compare request, conversation, ContextForge, retrieval-phase, embedding, reranker, and graph p95 before changing retrieval behavior.
    - Keep labels redacted and low-cardinality; do not turn metrics into a frontend product API.
@@ -337,36 +355,36 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
    - Evaluate Langfuse vs LangSmith for LLM-specific latency, token/cost, trace, eval, and prompt/version metrics.
    - Add OpenTelemetry traces only after aggregate latency shows where per-request waterfalls are needed.
 
-2. **Controlled alpha deploy smoke and tester handoff**
+3. **Controlled alpha deploy smoke and tester handoff**
    - Deploy backend and frontend together after the latest nickname, invite-only group, publish-review, and route-addressable Groups changes.
    - Run hosted smoke: signup with nickname -> email verification/approval as configured -> login -> group invitation/acceptance -> small document upload/ingest -> publish request review/approval -> cited group-knowledge chat.
    - Keep permanent redacted `DEPLOY_DIAG` logs available for hosted smoke/debug; tune noisy call sites only if needed.
    - Record smoke evidence and remaining risks in `docs/product-chat-service/en/15-deployment-troubleshooting-log.md` if anything new is found.
    - Invite only trusted testers at first, with explicit alpha framing and a warning against sensitive uploads.
 
-3. **Hosted ingestion performance pass**
+4. **Hosted ingestion performance pass**
    - Treat Render free-tier PDF/Markdown ingestion slowness as a resource/process-isolation limitation, not a parser correctness bug.
    - Prefer small Markdown/plain-text/native-text PDFs for public demo.
    - Deploy `MY_AGENTS_INGESTION_EXECUTION_MODE=external_worker` with a separate `python -m my_agents.knowledge.ingestion_worker` process before trying large files in production.
    - Add stale-run recovery, worker health checks, and parser policy controls before treating ingestion as production-grade.
    - Consider disabling `MY_AGENTS_RERANKER_MODE=cross_encoder` on tiny hosts if memory pressure affects ingestion or startup.
 
-4. **Deployment hardening**
+5. **Deployment hardening**
    - Keep Render/Vercel/Neon/Resend as the current basic CI/CD demo path.
    - Add automated smoke checks, migration run evidence, rollback steps, and secret rotation notes before calling it production.
    - Keep AWS/ECS-lite as an optional future migration path, not the immediate next requirement.
 
-5. **Production-ish auth hardening**
+6. **Production-ish auth hardening**
    - Promote local auth abuse protection to a shared limiter when deployment topology requires it.
    - Keep the offline/local auth email boundary testable.
    - Prepare real email-provider integration notes before public demo exposure.
 
-6. **Scoped instruction profiles**
+7. **Scoped instruction profiles**
    - Add user and group/workspace instruction profiles as durable Markdown guidance for assistant and future agent behavior.
    - Enforce precedence explicitly: group/workspace instructions override personal instructions, but neither can override app safety, security, or document-permission rules.
    - Propagate the assembled instruction stack into conversation runs, retrieval-agent planning, and observability metadata.
 
-7. **Real retrieval upgrade / retrieval-agent track**
+8. **Real retrieval upgrade / retrieval-agent track**
    - Keep the embedding provider boundary and JSON-backed semantic ranking as the deterministic fallback.
    - Treat pgvector as the first-stage candidate retrieval accelerator on Postgres, not the final relevance judge.
    - Keep permission filtering before every retrieval/reranking step.
@@ -375,7 +393,7 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
    - Extend the implemented read-only full-document vertical slice with automatic multi-range traversal and synthesis. Keep it limited to explicit comprehensive-document intent, one resolved authorized document, bounded reads, and chunk/page/offset citation provenance.
    - Add ANN/vector indexes only after the fixed production embedding dimensionality and backfill policy are settled.
 
-8. **Production ingestion upgrade**
+9. **Production ingestion upgrade**
    - Add file upload and parser pipeline, then evolve it toward the layout-aware artifact plan in [`docs/idea/layout-aware-ingestion-rag-agent.md`](./docs/idea/layout-aware-ingestion-rag-agent.md).
    - [done for local/demo] Move ingestion start to an additive in-process async runner with polling.
    - [done for hosted baseline] Add an external-worker execution mode that keeps ingestion work out of the web request process.

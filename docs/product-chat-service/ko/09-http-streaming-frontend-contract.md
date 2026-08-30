@@ -38,6 +38,18 @@ legacy run이면 `consulted_sources: null`입니다. 이 필드는 sync 완료, 
 `run_completed`, replay 완료, `GET /conversations/{conversation_id}/runs/{run_id}`에서 동일하게
 직렬화되어 새로고침 뒤에도 구분이 유지됩니다.
 
+## 다음 즉시 제안하는 stream: 동적 reasoning summary
+
+다음 backend task는 SSE 전용 `reasoning_summary_delta`와 bounded persisted
+`reasoning_summary_generated` event를 추가합니다. 이는 현재 event type이 아니라 proposed
+contract입니다. Closed `stage`, text delta/final text, stage별 sequence를 제공하고
+`answer_delta`에는 final answer text만 남겨야 합니다. 구현 뒤 `run_completed`와 run detail은
+refresh-safe `reasoning_summaries` list를 반환합니다.
+
+Frontend는 이를 model-generated 접근 요약으로 표시하고 verified `agent_trace`와 분리해야
+합니다. 자세한 내용은 [동적 reasoning summary 계약](./28-dynamic-reasoning-summary-contract.md)을
+봅니다.
+
 Backend attribution/audit 배열은 chunk 단위를 유지하지만 frontend citation presentation은
 document 단위입니다. `document_id`로 grouping하고 `source_filename`이 있으면 우선 표시하며,
 없으면 `document_title`을 사용합니다. `knowledge_base_name`과 deduplicated optional

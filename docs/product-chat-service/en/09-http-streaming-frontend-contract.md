@@ -1,6 +1,6 @@
 ---
 created: 2026-05-19
-updated: 2026-08-24
+updated: 2026-08-30
 status: active
 topics:
   - streaming
@@ -97,6 +97,17 @@ runs keep their existing sequence without that event.
   "sequence": 1
 }
 ```
+
+## Immediate next proposed stream: dynamic reasoning summaries
+
+The next backend task will add `reasoning_summary_delta` as a separate SSE-only event and
+`reasoning_summary_generated` as a bounded persisted event. These are proposed contracts, not
+current event types. They must carry a closed `stage`, text delta/final text, and per-stage sequence;
+`answer_delta` must remain final-answer text only. Completed `run_completed` and run detail will
+return the refresh-safe `reasoning_summaries` list when implemented.
+
+The frontend must present these as model-generated approach summaries and keep them separate from
+the verified `agent_trace`. See the [dynamic reasoning summary contract](./28-dynamic-reasoning-summary-contract.md).
 
 When the OpenAI-backed graph/provider yields token chunks, these deltas are emitted while
 the graph is still running. Deterministic/local graph spies can also emit multiple deltas

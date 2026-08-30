@@ -28,6 +28,17 @@ source 전체이고, `citations`는 최종 답변에서 보수적인 lexical 근
 authorized-context count는 consulted evidence를 설명합니다. Production persistence와
 `evaluate_grounded_citations`는 같은 deterministic selector를 사용합니다.
 
+## 다음 즉시 수행할 task: verified trace 옆의 model-authored channel
+
+현재 verified trace는 model이 요청별로 왜 다른 접근을 골랐는지 표현할 수 없습니다. 다음
+backend task는 redaction boundary를 약화하지 않고 bounded dynamic reasoning summary를
+추가합니다. `reasoning_summaries`는 model-authored 접근 설명이고 `agent_trace`는 application이
+검증한 실행 기록입니다. 두 contract는 구조와 UI에서 분리하며 summary를 evidence로 세거나
+trace와 충돌할 때 trace를 덮어쓰면 안 됩니다.
+
+필요성, safety rule, test, 완료 정의는
+[동적 reasoning summary 계약](./28-dynamic-reasoning-summary-contract.md)을 봅니다.
+
 ## 문서 상태
 
 - 영어 원문은 `docs/product-chat-service/en/07-agent-observability-evals.md`에 있습니다.

@@ -1,6 +1,6 @@
 # Implementation tracking
 
-Last updated: 2026-08-25
+Last updated: 2026-08-30
 Status owner: repo-tracked source of truth for cross-machine agent handoff
 
 This file exists because `.omx/` is local runtime state and is not shared across machines. When working with an agent on any machine, start here before re-discovering project status from the codebase.
@@ -432,6 +432,12 @@ Earlier hosted smoke status on 2026-06-03:
 ### Agent/product behavior
 
 - Product conversation runs support SSE progress streaming and incremental `answer_delta` assistant text events.
+- The immediate next backend task is a dynamic model-authored reasoning-summary channel. Current
+  `agent_trace` accurately reports verified execution but cannot explain why Luna or Sol selected a
+  request-specific approach; reasoning mode/effort expose computation settings only. The proposed
+  nullable `reasoning_summaries`, `reasoning_summary_delta`, and persisted summary event must stay
+  separate from final answer text, verified trace, and evidence. See
+  [`28-dynamic-reasoning-summary-contract.md`](./product-chat-service/en/28-dynamic-reasoning-summary-contract.md).
 - Known near-future gap: streamed run execution is still coupled to the client HTTP/SSE request. If the client disconnects before `run_completed`, the assistant response may never be persisted; durable server-owned/background run execution is required.
 - Completed conversation runs can be refetched with persisted reply, route, and citations.
 - `uv run python -m scripts.local_demo_seed` seeds a verified local demo user, text document, and extraction run for file-backed SQLite demos.
@@ -471,7 +477,25 @@ Earlier hosted smoke status on 2026-06-03:
 
 ## Recommended next workflow
 
-### Critical next move: tokenizer-aware retrieval and embedding-index safety
+### Immediate next task: dynamic model-authored reasoning summaries
+
+1. Verify current GPT-5.6 / `langchain-openai` final and streaming reasoning-summary shapes through
+   mocked compatibility tests plus one bounded credentialed spike.
+2. Add a closed, nullable, length-bounded `reasoning_summaries` response contract with
+   `retrieval_planning` and `answer_synthesis` stages.
+3. Keep Luna's user-displayable retrieval rationale strictly separate from its trusted tool choice,
+   and keep Sol provider summary blocks separate from `reply` / `answer_delta`.
+4. Add typed SSE delta and persisted refresh/replay behavior without weakening the current control-
+   token and chain-of-thought filters.
+5. Prove redaction, prompt-injection resistance, system-knowledge/authorization boundaries, empty
+   summary fallback, deterministic-mode behavior, ordering, and output-budget/cost accounting.
+6. Publish hosted OpenAPI before asking the sibling frontend to render “AI 작업 과정 요약” beside,
+   but never as a replacement for, the verified execution trace.
+
+The rationale and definition of done are authoritative in
+[`28-dynamic-reasoning-summary-contract.md`](./product-chat-service/en/28-dynamic-reasoning-summary-contract.md).
+
+### Next retrieval move: tokenizer-aware retrieval and embedding-index safety
 
 The next RAG correctness milestone is not to force one tokenizer across every model. It is to keep
 each model paired with its own tokenizer while preventing silent reranker truncation and incompatible

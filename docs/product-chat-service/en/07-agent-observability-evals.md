@@ -1,6 +1,6 @@
 ---
 created: 2026-05-17
-updated: 2026-08-24
+updated: 2026-08-30
 status: active
 topics:
   - observability
@@ -116,6 +116,17 @@ full-body `retrieved_context`; existing opt-in DEBUG retrieval logs may still in
 normal bounded 240-character citation-chunk previews. A synthesized assistant reply remains
 normal product content, but the source document body is never copied wholesale into an
 event, checkpoint, log payload, or provider trace.
+
+## Immediate next task: add a model-authored channel beside the trace
+
+The verified trace cannot express why the model chose a request-specific approach. The next
+backend task therefore adds bounded dynamic reasoning summaries without weakening this redaction
+boundary. `reasoning_summaries` will contain model-authored approach descriptions; `agent_trace`
+will remain the application-verified execution record. The two must be visibly and structurally
+distinct, and a summary must never count as evidence or override a conflicting trace.
+
+See the proposed [dynamic reasoning summary contract](./28-dynamic-reasoning-summary-contract.md)
+for the rationale, safety rules, tests, and definition of done.
 
 ## Internal Prometheus timing metrics
 

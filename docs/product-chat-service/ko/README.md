@@ -32,6 +32,7 @@
 24. [OpenAI hosted document workspace](./25-openai-document-workspace.md)
 25. [Run reasoning 설정 계약](./26-run-reasoning-preferences.md)
 26. [Agent와 frontend 사이의 interaction 계약](./27-agent-frontend-interaction-contract.md)
+27. [동적 model-authored reasoning summary 계약](./28-dynamic-reasoning-summary-contract.md)
 
 ## 관련 maintenance ledger
 
