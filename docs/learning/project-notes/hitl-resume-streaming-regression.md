@@ -1,6 +1,6 @@
 ---
 created: 2026-08-26
-updated: 2026-08-26
+updated: 2026-08-31
 status: active
 topics:
   - langgraph
@@ -64,6 +64,19 @@ sequenceDiagram
   used only when the graph emits no message chunks.
 - Cancellation is checked between graph updates and deltas.
 
+### Terminal finalization must share the failure boundary
+
+Resume preparation atomically claims the waiting Product DB run by changing it to `running`
+before the SSE generator executes. The first streaming implementation guarded graph iteration,
+but terminal retrieval reconciliation, coverage validation, answer persistence, and event
+serialization ran after that `try` block. An unexpected exception there could close the stream
+without changing the claimed run from `running` or deleting its checkpoint.
+
+The resume stream now keeps graph-iteration handling and terminal-finalization handling separate,
+so an already-handled graph failure is not processed twice. Both phases reuse one safe failure
+helper: persist `run_failed`, emit `run_failed` then `run_error`, redact the exception to its class,
+and best-effort delete the run-scoped checkpoint.
+
 The frontend companion clears the answered interaction immediately, ignores stale waiting-run
 cache recovery while resume is in flight, and restores the card only if server truth remains
 waiting after failure.
@@ -72,6 +85,9 @@ waiting after failure.
 
 - The backend regression requires `run_resumed` to be the first resume SSE event and requires
   `retrieval_completed` and `graph_invoked` before `answer_delta`.
+- A finalization-failure regression raises after graph streaming has completed and verifies the
+  Product DB run is `failed`, exactly one persisted `run_failed` event exists, the SSE terminates
+  with `run_failed` / `run_error`, and the checkpoint thread is empty.
 - The frontend regression deliberately withholds the first resume response event and verifies the
   pre-event interval at 390px and 1280px: no card, no waiting terminal, active progress, steering
   control, and a queueable follow-up.
@@ -86,4 +102,5 @@ waiting after failure.
 
 ## Revision history
 
+- 2026-08-31: Added the post-loop terminal-finalization failure boundary so a claimed resume cannot remain stranded in `running` after reconciliation or persistence errors.
 - 2026-08-26: Created after replacing buffered resume replay with true checkpoint streaming.

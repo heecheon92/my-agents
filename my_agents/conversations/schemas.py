@@ -5,7 +5,14 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 
 from my_agents.agents.rag_agent.contracts import RagAgentStageId
 from my_agents.document_workspace.schemas import (
@@ -118,6 +125,20 @@ class DocumentCoverageResponse(BaseModel):
     start_offset: int = Field(ge=0)
     end_offset: int = Field(ge=0)
     total_chars: int = Field(ge=0)
+
+    @model_validator(mode="after")
+    def validate_coverage_range(self) -> DocumentCoverageResponse:
+        if self.start_offset > self.end_offset:
+            raise ValueError("document coverage start_offset must not exceed end_offset")
+        if self.end_offset > self.total_chars:
+            raise ValueError("document coverage end_offset must not exceed total_chars")
+        if self.mode == "complete" and (
+            self.start_offset != 0 or self.end_offset != self.total_chars
+        ):
+            raise ValueError(
+                "complete document coverage must span from offset zero through total_chars"
+            )
+        return self
 
 
 class ConversationClarificationRequest(BaseModel):

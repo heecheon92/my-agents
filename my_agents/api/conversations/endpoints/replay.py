@@ -487,10 +487,13 @@ def replay_conversation_run_events(
 
         if result is None:
             raise RuntimeError("conversation graph stream ended without a final result")
+        final_retrieval_context = retrieval_context_from_graph_state(result, db)
         if retrieval_context is None:
-            retrieval_context = retrieval_context_from_graph_state(result, db)
-            retrieval_payload = record_retrieval_completed_event(db, run.id, retrieval_context)
+            retrieval_payload = record_retrieval_completed_event(
+                db, run.id, final_retrieval_context
+            )
             yield sse_event(AgentEventType.RETRIEVAL_COMPLETED.value, retrieval_payload)
+        retrieval_context = final_retrieval_context
         if retrieval_context.decision.route == "clarification_required":
             route = coerce_route(result.get("route") or classify_messages(messages))
             clarification = clarification_request(retrieval_context.decision)

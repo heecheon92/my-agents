@@ -16,6 +16,7 @@ from my_agents.api import create_app
 from my_agents.api.assistant import get_graph_runner
 from my_agents.api.conversations import retrieval_context as retrieval_context_module
 from my_agents.api.conversations.endpoints import replay as replay_endpoint
+from my_agents.api.conversations.endpoints import stream as stream_endpoint
 from my_agents.api.conversations.endpoints.stream import conversation_run_events
 from my_agents.conversations.models import (
     AgentEventModel,
@@ -692,6 +693,89 @@ def test_checkpointed_document_selection_interrupts_and_resumes_same_run(monkeyp
     assert {source["document_id"] for source in streamed_completed["consulted_sources"]} == {
         documents[1]["id"]
     }
+
+
+def test_resume_stream_finalization_failure_marks_run_failed_and_cleans_checkpoint(
+    monkeypatch,
+) -> None:  # noqa: ANN001
+    graph = build_graph(
+        checkpointer=InMemorySaver(serde=checkpoint_serializer()),
+        document_selection_hitl_enabled=True,
+    )
+    client = _client(monkeypatch, graph)  # type: ignore[arg-type]
+    _signup_login(client, "resume-finalization-failure@example.com")
+    kb_id = _create_knowledge_base(client, "Resume finalization failure KB")
+    documents = []
+    for title in ("Failure Source A", "Failure Source B"):
+        document = _create_document(
+            client,
+            json={
+                "title": title,
+                "content": f"{title} authorized evidence.",
+                "knowledge_base_id": kb_id,
+            },
+        )
+        assert document.status_code == 201
+        assert client.post(f"/documents/{document.json()['id']}/ingest").status_code == 200
+        documents.append(document.json())
+    conversation_id = client.post(
+        "/conversations", json={"title": "Resume finalization failure"}
+    ).json()["id"]
+    interrupted = client.post(
+        f"/conversations/{conversation_id}/runs",
+        json={
+            "message": "Summarize this document",
+            "knowledge_base_selection": {"mode": "selected", "knowledge_base_ids": [kb_id]},
+        },
+    )
+    assert interrupted.status_code == 202
+    pending = interrupted.json()
+
+    def fail_terminal_coverage_reconciliation(graph_state):  # noqa: ANN001, ANN202, ARG001
+        raise RuntimeError("post-loop finalization failure")
+
+    monkeypatch.setattr(
+        stream_endpoint,
+        "document_coverage_from_graph_state",
+        fail_terminal_coverage_reconciliation,
+    )
+
+    with client.stream(
+        "POST",
+        f"/conversations/{conversation_id}/runs/{pending['run_id']}/resume/stream",
+        json={
+            "schema_version": 1,
+            "interaction_id": pending["interaction"]["interaction_id"],
+            "type": "document_selection",
+            "document_id": documents[0]["id"],
+        },
+    ) as response:
+        assert response.status_code == 200
+        body = response.read().decode()
+        events = _parse_sse(body)
+
+    event_names = [event["event"] for event in events]
+    assert event_names[-2:] == ["run_failed", "run_error"]
+    assert "run_completed" not in event_names
+    assert events[-2]["data"] == {
+        "run_id": pending["run_id"],
+        "safe_error_type": "RuntimeError",
+    }
+    assert events[-1]["data"] == {"run_id": pending["run_id"], "status_code": 502}
+    assert "post-loop finalization failure" not in body
+
+    run = next(
+        item
+        for item in client.get(f"/conversations/{conversation_id}/runs").json()
+        if item["run_id"] == pending["run_id"]
+    )
+    assert run["status"] == "failed"
+    persisted = client.get(
+        f"/conversations/{conversation_id}/runs/{pending['run_id']}/events"
+    ).json()
+    assert [event["event_type"] for event in persisted].count("run_failed") == 1
+    assert persisted[-1]["event_type"] == "run_failed"
+    assert list(graph.get_state_history({"configurable": {"thread_id": pending["run_id"]}})) == []
 
 
 def test_filename_reference_retrieves_matching_document_metadata(monkeypatch) -> None:  # noqa: ANN001

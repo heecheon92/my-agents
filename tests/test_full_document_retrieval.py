@@ -4,13 +4,18 @@ from __future__ import annotations
 
 import pytest
 from langgraph.checkpoint.memory import InMemorySaver
+from pydantic import ValidationError
 from sqlalchemy import select
 
 from my_agents.agents.general_assistant.graph import build_graph
 from my_agents.agents.rag_agent import SqlAlchemyRagAgentRuntime
 from my_agents.api.assistant import get_graph_runner
 from my_agents.api.conversations.graph_streaming import fallback_answer_deltas
+from my_agents.api.conversations.retrieval_context import (
+    document_coverage_from_graph_state,
+)
 from my_agents.conversations.models import AgentEventModel
+from my_agents.conversations.schemas import DocumentCoverageResponse
 from my_agents.knowledge.auth import KnowledgeBaseSelectionContext
 from my_agents.knowledge.models import (
     CitationModel,
@@ -34,6 +39,47 @@ from .test_conversations_api import (
     _signup_login,
 )
 from .test_graph import FakeRetrievalSourceDecider
+
+
+def _make_document_stale_after_prepared_read(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    document_id: str,
+) -> list[int]:
+    """Change the document after preparation so the response-node re-read downgrades."""
+    original_read = SqlAlchemyRagAgentRuntime.read_full_document_range
+    calls: list[int] = []
+
+    def read_then_change_document(self, **kwargs):  # noqa: ANN001, ANN003, ANN202
+        result = original_read(self, **kwargs)
+        calls.append(1)
+        if len(calls) == 1:
+            document = self.db.get(DocumentModel, document_id)
+            assert document is not None
+            document.content = f"{document.content}\n\nChanged after coverage preparation."
+            self.db.commit()
+        return result
+
+    monkeypatch.setattr(
+        SqlAlchemyRagAgentRuntime,
+        "read_full_document_range",
+        read_then_change_document,
+    )
+    return calls
+
+
+def _coverage_payload(**overrides: object) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "mode": "complete",
+        "document_id": "document-1",
+        "title": "Coverage Source",
+        "source_filename": None,
+        "start_offset": 0,
+        "end_offset": 10,
+        "total_chars": 10,
+    }
+    payload.update(overrides)
+    return payload
 
 
 @pytest.mark.parametrize(
@@ -61,6 +107,46 @@ def test_explicit_comprehensive_document_intent(message: str) -> None:
 )
 def test_non_task_or_ordinary_document_requests_do_not_trigger_full_read(message: str) -> None:
     assert is_comprehensive_document_request(message) is False
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        (
+            {"start_offset": 6, "end_offset": 5},
+            "start_offset must not exceed end_offset",
+        ),
+        (
+            {"end_offset": 11},
+            "end_offset must not exceed total_chars",
+        ),
+        (
+            {"start_offset": 1},
+            "complete document coverage must span",
+        ),
+        (
+            {"end_offset": 9},
+            "complete document coverage must span",
+        ),
+    ],
+)
+def test_document_coverage_rejects_inconsistent_ranges(
+    overrides: dict[str, object],
+    message: str,
+) -> None:
+    with pytest.raises(ValidationError, match=message):
+        DocumentCoverageResponse.model_validate(_coverage_payload(**overrides))
+
+
+def test_partial_document_coverage_mode_remains_authoritative_at_total_chars() -> None:
+    coverage = DocumentCoverageResponse.model_validate(_coverage_payload(mode="partial"))
+
+    assert coverage.mode == "partial"
+    assert coverage.end_offset == coverage.total_chars
+
+
+def test_empty_document_coverage_sentinel_means_no_public_coverage() -> None:
+    assert document_coverage_from_graph_state({"document_coverage": {}}) is None
 
 
 def test_authorized_full_document_read_uses_half_open_ranges(monkeypatch) -> None:  # noqa: ANN001
@@ -467,6 +553,57 @@ def test_large_full_document_run_is_partial_and_streams_honest_disclosure(
         session_generator.close()
 
 
+def test_streaming_full_document_reread_downgrade_uses_final_graph_context(
+    monkeypatch,
+) -> None:  # noqa: ANN001
+    client = _client(monkeypatch)
+    _signup_login(client, "full-stream-toctou@example.com")
+    kb_id = _create_knowledge_base(client, "Streaming TOCTOU KB")
+    document = _create_document(
+        client,
+        json={
+            "title": "Streaming TOCTOU Source",
+            "content": "Requirement one. Requirement two.",
+            "knowledge_base_id": kb_id,
+        },
+    ).json()
+    assert client.post(f"/documents/{document['id']}/ingest").status_code == 200
+    read_calls = _make_document_stale_after_prepared_read(
+        monkeypatch,
+        document_id=document["id"],
+    )
+    conversation_id = client.post("/conversations", json={"title": "Streaming TOCTOU"}).json()["id"]
+
+    with client.stream(
+        "POST",
+        f"/conversations/{conversation_id}/runs/stream",
+        json={
+            "message": "Review the entire document and identify every requirement.",
+            "knowledge_base_selection": {"mode": "selected", "knowledge_base_ids": [kb_id]},
+        },
+    ) as response:
+        assert response.status_code == 200
+        events = _parse_sse(response.read().decode())
+
+    event_names = [event["event"] for event in events]
+    completed = next(event["data"] for event in events if event["event"] == "run_completed")
+    answer_composed = next(event["data"] for event in events if event["event"] == "answer_composed")
+    assert len(read_calls) == 2
+    assert event_names.count("retrieval_completed") == 1
+    assert "full_document_read" not in event_names
+    assert answer_composed["insufficient_evidence"] is True
+    assert completed["document_coverage"] is None
+    assert completed["citations"] == []
+    assert completed["consulted_sources"] == []
+    assert "enough relevant authorized document evidence" in completed["reply"]
+
+    persisted = client.get(
+        f"/conversations/{conversation_id}/runs/{completed['run_id']}/events"
+    ).json()
+    assert [event["event_type"] for event in persisted].count("retrieval_completed") == 1
+    assert all(event["event_type"] != "full_document_read" for event in persisted)
+
+
 def test_full_document_selection_interrupt_resumes_exact_document(monkeypatch) -> None:  # noqa: ANN001
     graph = build_graph(
         checkpointer=InMemorySaver(serde=checkpoint_serializer()),
@@ -516,6 +653,143 @@ def test_full_document_selection_interrupt_resumes_exact_document(monkeypatch) -
     assert {source["document_id"] for source in completed["consulted_sources"]} == {
         documents[1]["id"]
     }
+
+
+def test_full_document_resume_stream_preserves_coverage_event_and_refresh_parity(
+    monkeypatch,
+) -> None:  # noqa: ANN001
+    graph = build_graph(
+        checkpointer=InMemorySaver(serde=checkpoint_serializer()),
+        document_selection_hitl_enabled=True,
+    )
+    client = _client(monkeypatch)
+    client.app.dependency_overrides[get_graph_runner] = lambda: graph
+    _signup_login(client, "full-resume-stream-coverage@example.com")
+    kb_id = _create_knowledge_base(client, "Resume stream coverage KB")
+    documents = []
+    for title in ("Resume First Source", "Resume Second Source"):
+        document = _create_document(
+            client,
+            json={
+                "title": title,
+                "content": f"{title} complete evidence.",
+                "knowledge_base_id": kb_id,
+            },
+        ).json()
+        assert client.post(f"/documents/{document['id']}/ingest").status_code == 200
+        documents.append(document)
+    conversation_id = client.post(
+        "/conversations", json={"title": "Resume stream coverage"}
+    ).json()["id"]
+    pending_response = client.post(
+        f"/conversations/{conversation_id}/runs",
+        json={
+            "message": "Review this entire document from beginning to end.",
+            "knowledge_base_selection": {"mode": "selected", "knowledge_base_ids": [kb_id]},
+        },
+    )
+    assert pending_response.status_code == 202
+    pending = pending_response.json()
+
+    with client.stream(
+        "POST",
+        f"/conversations/{conversation_id}/runs/{pending['run_id']}/resume/stream",
+        json={
+            "schema_version": 1,
+            "interaction_id": pending["interaction"]["interaction_id"],
+            "type": "document_selection",
+            "document_id": documents[1]["id"],
+        },
+    ) as response:
+        assert response.status_code == 200
+        events = _parse_sse(response.read().decode())
+
+    event_names = [event["event"] for event in events]
+    completed = next(event["data"] for event in events if event["event"] == "run_completed")
+    full_document_read = next(
+        event["data"] for event in events if event["event"] == "full_document_read"
+    )
+    assert event_names.count("retrieval_completed") == 1
+    assert event_names.count("full_document_read") == 1
+    assert completed["document_coverage"]["mode"] == "complete"
+    assert completed["document_coverage"]["document_id"] == documents[1]["id"]
+    assert {
+        key: full_document_read[key] for key in DocumentCoverageResponse.model_fields
+    } == completed["document_coverage"]
+    assert full_document_read["latency_ms"] >= 0
+    assert {source["document_id"] for source in completed["consulted_sources"]} == {
+        documents[1]["id"]
+    }
+
+    detail = client.get(f"/conversations/{conversation_id}/runs/{pending['run_id']}")
+    assert detail.status_code == 200
+    assert detail.json()["document_coverage"] == completed["document_coverage"]
+
+
+def test_full_document_resume_stream_reread_downgrade_uses_final_graph_context(
+    monkeypatch,
+) -> None:  # noqa: ANN001
+    graph = build_graph(
+        checkpointer=InMemorySaver(serde=checkpoint_serializer()),
+        document_selection_hitl_enabled=True,
+    )
+    client = _client(monkeypatch)
+    client.app.dependency_overrides[get_graph_runner] = lambda: graph
+    _signup_login(client, "full-resume-stream-toctou@example.com")
+    kb_id = _create_knowledge_base(client, "Resume stream TOCTOU KB")
+    documents = []
+    for title in ("TOCTOU First Source", "TOCTOU Second Source"):
+        document = _create_document(
+            client,
+            json={
+                "title": title,
+                "content": f"{title} complete evidence.",
+                "knowledge_base_id": kb_id,
+            },
+        ).json()
+        assert client.post(f"/documents/{document['id']}/ingest").status_code == 200
+        documents.append(document)
+    conversation_id = client.post("/conversations", json={"title": "Resume stream TOCTOU"}).json()[
+        "id"
+    ]
+    pending_response = client.post(
+        f"/conversations/{conversation_id}/runs",
+        json={
+            "message": "Review this entire document from beginning to end.",
+            "knowledge_base_selection": {"mode": "selected", "knowledge_base_ids": [kb_id]},
+        },
+    )
+    assert pending_response.status_code == 202
+    pending = pending_response.json()
+    read_calls = _make_document_stale_after_prepared_read(
+        monkeypatch,
+        document_id=documents[1]["id"],
+    )
+
+    with client.stream(
+        "POST",
+        f"/conversations/{conversation_id}/runs/{pending['run_id']}/resume/stream",
+        json={
+            "schema_version": 1,
+            "interaction_id": pending["interaction"]["interaction_id"],
+            "type": "document_selection",
+            "document_id": documents[1]["id"],
+        },
+    ) as response:
+        assert response.status_code == 200
+        events = _parse_sse(response.read().decode())
+
+    event_names = [event["event"] for event in events]
+    completed = next(event["data"] for event in events if event["event"] == "run_completed")
+    answer_composed = next(event["data"] for event in events if event["event"] == "answer_composed")
+    assert len(read_calls) == 2
+    assert event_names.count("retrieval_completed") == 1
+    assert "full_document_read" not in event_names
+    assert answer_composed["insufficient_evidence"] is True
+    assert completed["document_coverage"] is None
+    assert completed["citations"] == []
+    assert completed["consulted_sources"] == []
+    assert "enough relevant authorized document evidence" in completed["reply"]
 
 
 def test_full_document_replay_preserves_target_and_never_substitutes_after_delete(
@@ -578,6 +852,64 @@ def test_full_document_replay_preserves_target_and_never_substitutes_after_delet
     assert unavailable_payload["consulted_sources"] == []
     assert unavailable_payload["warnings"][0]["missing_document_ids"] == [original["id"]]
     assert "Later Distractor" not in unavailable_payload["reply"]
+
+
+def test_full_document_replay_stream_reread_downgrade_uses_final_graph_context(
+    monkeypatch,
+) -> None:  # noqa: ANN001
+    client = _client(monkeypatch)
+    _signup_login(client, "full-replay-stream-toctou@example.com")
+    kb_id = _create_knowledge_base(client, "Replay stream TOCTOU KB")
+    document = _create_document(
+        client,
+        json={
+            "title": "Replay Stream TOCTOU Source",
+            "content": "Original complete evidence for replay.",
+            "knowledge_base_id": kb_id,
+        },
+    ).json()
+    assert client.post(f"/documents/{document['id']}/ingest").status_code == 200
+    conversation_id = client.post("/conversations", json={"title": "Replay stream TOCTOU"}).json()[
+        "id"
+    ]
+    original_run = client.post(
+        f"/conversations/{conversation_id}/runs",
+        json={
+            "message": "Review the entire document and identify every requirement.",
+            "knowledge_base_selection": {"mode": "selected", "knowledge_base_ids": [kb_id]},
+        },
+    )
+    assert original_run.status_code == 200
+    assistant_message_id = client.get(f"/conversations/{conversation_id}/messages").json()[-1]["id"]
+    read_calls = _make_document_stale_after_prepared_read(
+        monkeypatch,
+        document_id=document["id"],
+    )
+
+    with client.stream(
+        "POST",
+        f"/conversations/{conversation_id}/messages/{assistant_message_id}/replay/stream",
+    ) as response:
+        assert response.status_code == 200
+        events = _parse_sse(response.read().decode())
+
+    event_names = [event["event"] for event in events]
+    completed = next(event["data"] for event in events if event["event"] == "run_completed")
+    answer_composed = next(event["data"] for event in events if event["event"] == "answer_composed")
+    assert len(read_calls) == 2
+    assert event_names.count("retrieval_completed") == 1
+    assert "full_document_read" not in event_names
+    assert answer_composed["insufficient_evidence"] is True
+    assert completed["document_coverage"] is None
+    assert completed["citations"] == []
+    assert completed["consulted_sources"] == []
+    assert "enough relevant authorized document evidence" in completed["reply"]
+
+    persisted = client.get(
+        f"/conversations/{conversation_id}/runs/{completed['run_id']}/events"
+    ).json()
+    assert [event["event_type"] for event in persisted].count("retrieval_completed") == 1
+    assert all(event["event_type"] != "full_document_read" for event in persisted)
 
 
 def test_fallback_deltas_reconstruct_partial_disclosure() -> None:

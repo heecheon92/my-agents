@@ -99,7 +99,7 @@ def document_coverage_from_graph_state(
 ) -> DocumentCoverageResponse | None:
     """Validate compact coverage metadata returned by the full-document graph path."""
     value = graph_state.get("document_coverage")
-    if not isinstance(value, Mapping):
+    if not isinstance(value, Mapping) or not value:
         return None
     return DocumentCoverageResponse.model_validate(dict(value))
 

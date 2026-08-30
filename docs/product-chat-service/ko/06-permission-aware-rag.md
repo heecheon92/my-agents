@@ -48,6 +48,15 @@ Deterministic mode, invalid output, provider failure는 같은 two-tool local fa
 - Raw full-document body는 application checkpoint, run event, full-body logging payload에
   저장하지 않습니다. 해당 provider call은 LangSmith tracing도 끕니다. 기존 opt-in DEBUG
   logging의 제한된 citation-chunk snippet은 별도 기존 동작입니다.
+- Run/resume/replay SSE는 retrieval이 처음 준비됐을 때 `retrieval_completed` progress event를
+  최대 한 번만 보냅니다. 하지만 terminal persistence는 그 early snapshot을 재사용하지 않고
+  response node의 authorization/content 재읽기가 끝난 final graph result에서 retrieval context를
+  다시 구성합니다. 준비와 응답 사이에 문서가 바뀌거나 접근할 수 없게 되면 empty coverage
+  sentinel은 public `document_coverage: null`이 되고, `full_document_read` event와 consulted
+  citation을 남기지 않은 채 안전한 insufficient-evidence 응답으로 완료됩니다. Coverage contract는
+  `start_offset <= end_offset <= total_chars`를 강제하고, `complete`는 정확히
+  `[0, total_chars)`여야 합니다. `partial`은 end offset이 우연히 current total과 같아도 mode 값
+  그대로 partial입니다.
 - 큰 문서의 자동 multi-range 순회/최종 synthesis는 아직 없고 budget은 token이 아니라
   character 기준입니다. Content/chunk revision이 바뀌면 offset provenance가 stale해질 수
   있어 검증 실패 시 insufficient evidence로 안전하게 종료합니다.
@@ -69,6 +78,7 @@ Deterministic mode, invalid output, provider failure는 같은 two-tool local fa
 
 ## Revision history
 
+- 2026-08-31: Run/resume/replay SSE terminal이 post-re-read final retrieval context를 사용하도록 하고 coverage 관계 검증과 TOCTOU 안전 downgrade 동작을 기록했습니다.
 - 2026-08-25: Chunk-level audit provenance 위에 document/knowledge-base 이름을 추가하고 document-level UI grouping 계약을 기록했습니다.
 - 2026-08-25: Consulted source 전체 집합과 보수적인 answer-supported citation subset을 분리하고 legacy `null`/신규 빈 배열 의미 및 동일 ID 계약을 기록했습니다.
 - 2026-08-25: Valid 190-chunk Markdown 문서가 insufficient evidence로 잘못 종료되던 문제를 bounded distributed provenance sampling으로 수정했습니다.

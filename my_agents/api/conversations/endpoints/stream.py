@@ -211,54 +211,87 @@ def resumed_conversation_run_events(
             elif item.kind == "result":
                 result = item.result
     except ResponseProviderConfigurationError as exc:
-        failed_run_id = persist_failed_run(
+        yield from _failed_resumed_conversation_run_events(
             db=db,
-            run_id=run.id,
-            conversation_id=run.conversation_id,
-            error_type=type(exc).__name__,
-            memory_source_snapshot=memory_snapshot,
-        )
-        _log_stream_failure(
-            exc,
-            conversation_id=run.conversation_id,
-            run_id=failed_run_id,
+            run=run,
+            graph_runner=graph_runner,
+            error=exc,
             status_code=503,
+            memory_snapshot=memory_snapshot,
         )
-        delete_checkpoint_thread(graph_runner, failed_run_id)
-        yield sse_event(
-            AgentEventType.RUN_FAILED.value,
-            {"run_id": failed_run_id, "safe_error_type": type(exc).__name__},
-        )
-        yield sse_event("run_error", {"run_id": failed_run_id, "status_code": 503})
         return
     except Exception as exc:
-        failed_run_id = persist_failed_run(
+        yield from _failed_resumed_conversation_run_events(
             db=db,
-            run_id=run.id,
-            conversation_id=run.conversation_id,
-            error_type=type(exc).__name__,
-            memory_source_snapshot=memory_snapshot,
-        )
-        _log_stream_failure(
-            exc,
-            conversation_id=run.conversation_id,
-            run_id=failed_run_id,
+            run=run,
+            graph_runner=graph_runner,
+            error=exc,
             status_code=502,
+            memory_snapshot=memory_snapshot,
         )
-        delete_checkpoint_thread(graph_runner, failed_run_id)
-        yield sse_event(
-            AgentEventType.RUN_FAILED.value,
-            {"run_id": failed_run_id, "safe_error_type": type(exc).__name__},
-        )
-        yield sse_event("run_error", {"run_id": failed_run_id, "status_code": 502})
         return
 
+    try:
+        yield from _finalize_resumed_conversation_run_events(
+            db=db,
+            prepared=prepared,
+            graph_runner=graph_runner,
+            settings=settings,
+            retrieval_context=retrieval_context,
+            memory_snapshot=memory_snapshot,
+            graph_invoked=graph_invoked,
+            graph_event=graph_event,
+            delta_sequence=delta_sequence,
+            streamed_base_reply_parts=streamed_base_reply_parts,
+            result=result,
+        )
+    except ResponseProviderConfigurationError as exc:
+        yield from _failed_resumed_conversation_run_events(
+            db=db,
+            run=run,
+            graph_runner=graph_runner,
+            error=exc,
+            status_code=503,
+            memory_snapshot=memory_snapshot,
+        )
+        return
+    except Exception as exc:
+        yield from _failed_resumed_conversation_run_events(
+            db=db,
+            run=run,
+            graph_runner=graph_runner,
+            error=exc,
+            status_code=502,
+            memory_snapshot=memory_snapshot,
+        )
+        return
+
+
+def _finalize_resumed_conversation_run_events(
+    *,
+    db: Session,
+    prepared: PreparedConversationRunResume,
+    graph_runner: GraphRunner,
+    settings: Settings,
+    retrieval_context: ConversationRetrievalContext | None,
+    memory_snapshot: str | None,
+    graph_invoked: bool,
+    graph_event: AgentEventModel | None,
+    delta_sequence: int,
+    streamed_base_reply_parts: list[str],
+    result: dict[str, Any] | None,
+) -> Iterator[str]:
+    """Finalize one completed resume while keeping the claimed run terminal on failure."""
+    run = prepared.run
+    messages = prepared.messages
+    selection_context = prepared.selection_context
     if result is None:
         raise RuntimeError("resumed graph stream ended without a final result")
+    final_retrieval_context = retrieval_context_from_graph_state(result, db)
     if retrieval_context is None:
-        retrieval_context = retrieval_context_from_graph_state(result, db)
-        retrieval_payload = record_retrieval_completed_event(db, run.id, retrieval_context)
+        retrieval_payload = record_retrieval_completed_event(db, run.id, final_retrieval_context)
         yield sse_event(AgentEventType.RETRIEVAL_COMPLETED.value, retrieval_payload)
+    retrieval_context = final_retrieval_context
     if is_run_cancelling(db, run.id):
         yield cancelled_sse_event(db, run.id)
         delete_checkpoint_thread(graph_runner, run.id)
@@ -397,6 +430,37 @@ def resumed_conversation_run_events(
     )
     delete_checkpoint_thread(graph_runner, run.id)
     yield sse_event("run_completed", response.model_dump(mode="json"))
+
+
+def _failed_resumed_conversation_run_events(
+    *,
+    db: Session,
+    run: AgentRunModel,
+    graph_runner: GraphRunner,
+    error: Exception,
+    status_code: int,
+    memory_snapshot: str | None,
+) -> Iterator[str]:
+    """Persist and stream the shared safe failure contract for a claimed resume."""
+    failed_run_id = persist_failed_run(
+        db=db,
+        run_id=run.id,
+        conversation_id=run.conversation_id,
+        error_type=type(error).__name__,
+        memory_source_snapshot=memory_snapshot,
+    )
+    _log_stream_failure(
+        error,
+        conversation_id=run.conversation_id,
+        run_id=failed_run_id,
+        status_code=status_code,
+    )
+    delete_checkpoint_thread(graph_runner, failed_run_id)
+    yield sse_event(
+        AgentEventType.RUN_FAILED.value,
+        {"run_id": failed_run_id, "safe_error_type": type(error).__name__},
+    )
+    yield sse_event("run_error", {"run_id": failed_run_id, "status_code": status_code})
 
 
 @router.post(
@@ -733,16 +797,19 @@ def conversation_run_events(
 
         if result is None:
             raise RuntimeError("conversation graph stream ended without a final result")
+        final_retrieval_context = retrieval_context_from_graph_state(result, db)
         if retrieval_context is None:
-            retrieval_context = retrieval_context_from_graph_state(result, db)
-            retrieval_route = retrieval_context.decision.route
-            answer_mode = retrieval_context.answer_mode
-            retrieval_payload = record_retrieval_completed_event(db, run.id, retrieval_context)
+            retrieval_payload = record_retrieval_completed_event(
+                db, run.id, final_retrieval_context
+            )
             yield sse_event(AgentEventType.RETRIEVAL_COMPLETED.value, retrieval_payload)
             if is_run_cancelling(db, run.id):
                 yield cancelled_sse_event(db, run.id)
                 record_run_metric("cancelled")
                 return
+        retrieval_context = final_retrieval_context
+        retrieval_route = retrieval_context.decision.route
+        answer_mode = retrieval_context.answer_mode
         if graph_interrupt_payload(result) is not None:
             route = coerce_route(result.get("route") or classify_messages(messages))
             run.route_label = route.label

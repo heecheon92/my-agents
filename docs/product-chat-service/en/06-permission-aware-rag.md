@@ -1,6 +1,6 @@
 ---
 created: 2026-05-17
-updated: 2026-08-25
+updated: 2026-08-31
 status: active
 topics:
   - rag
@@ -190,6 +190,17 @@ absent from the application logging path and LangSmith tracing is disabled aroun
 provider call. Existing opt-in DEBUG retrieval logging may still show its previously
 documented bounded citation-chunk snippets; it does not receive the full-document body.
 
+Streaming run, resume, and replay paths emit at most one `retrieval_completed` progress
+event when retrieval first becomes ready. Terminal persistence does not reuse that early
+snapshot: it reconstructs the retrieval context from the final graph result after the
+response-node authorization/content re-read. If the document changed or became unavailable
+between preparation and composition, the final empty coverage sentinel becomes public
+`document_coverage: null`, no `full_document_read` event or consulted citation is persisted,
+and the run completes with the safe insufficient-evidence response. Coverage validation also
+enforces `start_offset <= end_offset <= total_chars`; `complete` must span exactly
+`[0, total_chars)`, while an explicit `partial` mode remains partial even when its end offset
+happens to equal the current total.
+
 ## Current limitations
 
 - Broad source routing remains General Assistant-owned. Focused-versus-comprehensive tool choice is Luna-backed in OpenAI mode with deterministic fallback; Postgres ranking uses pgvector SQL vector search after permission filtering, with JSON-backed cosine similarity as the SQLite/test fallback.
@@ -278,7 +289,8 @@ flowchart LR
 `tests/test_full_document_retrieval.py` verifies explicit-intent gating, owner and explicit
 permission access, half-open cursor ranges, complete and partial coverage, overlapping
 consulted sources, ambiguous selection/resume, system-safe checkpoint/event persistence, buffered
-partial-stream disclosure, refresh recovery, and replay without source substitution.
+partial-stream disclosure, refresh recovery, replay without source substitution, resume-stream
+coverage parity, and final-state TOCTOU downgrades across run/resume/replay SSE paths.
 
 `tests/test_citation_attribution.py` and `tests/test_conversations_api.py` verify the conservative
 selector and the wire contract. New attributed runs return `consulted_sources: []` when no source
@@ -287,6 +299,7 @@ was consulted. Legacy runs return `consulted_sources: null` and retain their his
 
 ## Revision history
 
+- 2026-08-31: Made run/resume/replay SSE terminal persistence use the final post-re-read retrieval context, added relational coverage validation, and documented safe TOCTOU downgrade behavior.
 - 2026-08-25: Added human-readable document and knowledge-base citation metadata and documented document-level UI grouping over chunk-level audit provenance.
 - 2026-08-25: Separated the complete consulted-source set from conservative answer-supported citations, including legacy `null` versus attributed empty-list semantics and stable shared IDs.
 - 2026-08-25: Replaced the 100-chunk fail-closed cutoff with bounded distributed provenance sampling after a valid 190-chunk Markdown document reproduced the insufficient-evidence fallback.

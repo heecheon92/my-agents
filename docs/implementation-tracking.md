@@ -123,6 +123,7 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
   every event payload and nested `agent_trace.evidence` object passes through a typed
   allowlist before leaving the API.
 - Completed comprehensive-document runs expose refresh-safe `document_coverage` in run responses/details and a redacted `full_document_read` persisted/SSE event with document metadata, half-open character offsets, total length, and latency. Neither contract includes raw document text or the internal continuation cursor.
+- Run, resume, and replay SSE keep `retrieval_completed` as a single progress event, but derive terminal citations, insufficiency, and coverage from the final graph retrieval state after the full-document response-node re-read. A TOCTOU change therefore fails closed with null coverage and no stale full-document evidence.
 - Completed attributed runs expose the complete user-visible consulted evidence through nullable
   `consulted_sources` and the conservative answer-supported subset through `citations`. Both
   arrays reuse persisted evidence IDs. Legacy runs return `consulted_sources=null`; new runs use
