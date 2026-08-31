@@ -55,4 +55,15 @@ Effective pair는 마지막 answer generation call에 적용합니다.
 
 Raw chain-of-thought는 요청하거나 저장하거나 반환하지 않습니다. 이 설정은 provider computation만 조절합니다. OpenAI 문서상 `pro`는 더 많은 model work를 수행하므로 latency와 token usage가 늘 수 있습니다. Product credit enforcement는 별도의 usage-ledger 책임입니다.
 
+## 다음 즉시 수행할 task: 동적 reasoning summary
+
+정적인 reasoning preference만으로는 원하는 product UX를 제공할 수 없습니다. 다음 backend
+task는 retrieval planning의 Luna와 answer synthesis의 Sol이 선택한 접근을 요청별로 설명하는
+model-authored summary를 추가하는 것입니다. 이 summary는 raw chain-of-thought 및 verified
+`agent_trace`와 구분하고, nullable/bounded/model-generated contract로 다루며 final answer text에
+합치지 않습니다.
+
+필요성, proposed schema/SSE event, safety boundary, 구현 순서, 완료 정의는
+[동적 reasoning summary 계약](./28-dynamic-reasoning-summary-contract.md)을 기준으로 합니다.
+
 Reasoning token은 기존 output limit(`MY_AGENTS_OPENAI_MAX_OUTPUT_TOKENS`, `MY_AGENTS_DOCUMENT_WORKSPACE_MAX_OUTPUT_TOKENS`) 안에 포함됩니다. 높은 effort를 골라도 limit을 자동으로 늘리지 않으므로, operator는 `max`가 항상 더 긴 visible answer를 만든다고 가정하지 말고 실제 latency, incomplete response, cost 관측값을 보고 limit을 조정해야 합니다.

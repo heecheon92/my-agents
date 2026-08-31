@@ -36,6 +36,7 @@ class AgentEventType(StrEnum):
     RUN_STARTED = "run_started"
     USER_MESSAGE_STORED = "user_message_stored"
     RETRIEVAL_COMPLETED = "retrieval_completed"
+    FULL_DOCUMENT_READ = "full_document_read"
     GRAPH_INVOKED = "graph_invoked"
     ATTACHMENTS_READY = "attachments_ready"
     DOCUMENT_WORKSPACE_STARTED = "document_workspace_started"
@@ -101,6 +102,7 @@ class AgentRunModel(Base):
     resolved_knowledge_base_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     retrieval_source_snapshot_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     memory_source_snapshot_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    citation_attribution_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     graph_version: Mapped[str | None] = mapped_column(String(80), nullable=True)
     interaction_id: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
     interaction_type: Mapped[str | None] = mapped_column(String(80), nullable=True)

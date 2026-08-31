@@ -1,6 +1,6 @@
 ---
 created: 2026-05-17
-updated: 2026-06-16
+updated: 2026-08-30
 status: active
 topics:
   - observability
@@ -38,11 +38,17 @@ The persisted endpoint is a closed discriminated OpenAPI union. Its complete
 1. `run_started`
 2. `user_message_stored`
 3. `retrieval_completed`
-4. `graph_invoked`
-5. `answer_composed`
-6. `run_cancel_requested`
-7. `run_cancelled`
-8. `run_failed`
+4. `full_document_read`
+5. `graph_invoked`
+6. `attachments_ready`
+7. `document_workspace_started`
+8. `artifact_created`
+9. `answer_composed`
+10. `run_interrupted`
+11. `run_resumed`
+12. `run_cancel_requested`
+13. `run_cancelled`
+14. `run_failed`
 
 `answer_delta`, `run_completed`, and `run_error` belong only to the SSE streaming
 contract. They are not persisted `AgentEventModel` types and must not be added to a
@@ -56,6 +62,12 @@ safe error metadata before returning a client-safe error response. If a streamin
 cooperatively cancelled, the service emits `run_cancel_requested`/`run_cancelled` without
 persisting partial assistant text. Every response variant has its own typed payload
 model, and `AgentEventResponse` uses `event_type` as its OpenAPI discriminator.
+
+`full_document_read` is the redacted audit event for the explicit comprehensive-document
+path. Its typed payload contains only `mode`, document ID/title/source filename, covered
+character offsets, total character count, and latency. The same safe coverage fields are
+also recoverable from completed run detail after refresh. The event never contains the
+document body or the internal continuation cursor.
 
 The stable `agent_trace` shape is:
 
@@ -91,7 +103,30 @@ serialization time, stored payload JSON is filtered through the matching event m
 the same boundary recursively filters trace steps, localized text, and evidence. Unknown
 or accidentally stored keys such as `prompt`, `provider_trace`, `credentials`, or
 chain-of-thought fields therefore cannot reach this endpoint. Events explain
-what happened; citations explain which authorized knowledge supported the answer.
+what happened; `consulted_sources` explain which authorized knowledge was made available to
+the answer, while `citations` contain only the conservative answer-supported subset. The
+`answer_composed.citation_count` therefore counts answer-supported citations; retrieval and
+authorized-context counts continue to describe consulted evidence.
+
+The comprehensive-document path tightens this boundary further. Graph state/checkpoints
+hold compact coverage and citation metadata but not the raw extracted-text range. The
+authorized body is re-read only inside the response node, and LangSmith tracing is disabled
+around the provider call that receives it. The application log helper sees an empty
+full-body `retrieved_context`; existing opt-in DEBUG retrieval logs may still include their
+normal bounded 240-character citation-chunk previews. A synthesized assistant reply remains
+normal product content, but the source document body is never copied wholesale into an
+event, checkpoint, log payload, or provider trace.
+
+## Immediate next task: add a model-authored channel beside the trace
+
+The verified trace cannot express why the model chose a request-specific approach. The next
+backend task therefore adds bounded dynamic reasoning summaries without weakening this redaction
+boundary. `reasoning_summaries` will contain model-authored approach descriptions; `agent_trace`
+will remain the application-verified execution record. The two must be visibly and structurally
+distinct, and a summary must never count as evidence or override a conflicting trace.
+
+See the proposed [dynamic reasoning summary contract](./28-dynamic-reasoning-summary-contract.md)
+for the rationale, safety rules, tests, and definition of done.
 
 ## Internal Prometheus timing metrics
 
@@ -176,7 +211,8 @@ Future observability work should split into three lanes:
 
 `my_agents/agent_runtime/evals.py` provides small deterministic helpers:
 
-- `evaluate_grounded_citations` checks that a cited reply visibly uses citation text;
+- `evaluate_grounded_citations` uses the same conservative selector as response persistence
+  and checks that a cited reply visibly uses citation text;
 - `evaluate_permission_leakage` checks forbidden terms are absent from reply/citations;
 - `evaluate_event_redaction` checks forbidden terms are absent from event payloads;
 - `evaluate_event_latency_budget` checks emitted latency metrics fit a fixture budget.
@@ -196,13 +232,21 @@ claims testable: grounding, permission safety, redaction, and basic performance 
 - opt-in `/metrics` exposure records request and embedding timing histograms without exposing raw product data in labels.
 
 `tests/test_conversations_api.py` also verifies that failed graph invocation stores
-`status=failed` plus a redacted `run_failed` event.
+`status=failed` plus a redacted `run_failed` event. It also verifies that consulted and
+answer-supported sources retain the same persisted IDs and remain identical after run-detail
+refresh.
 
 `tests/test_agent_event_contract.py` verifies the OpenAPI-facing serializer strips
 uncontracted top-level and nested evidence fields before returning persisted events.
 
+`tests/test_full_document_retrieval.py` verifies that the raw source marker is absent from
+persisted event payloads and checkpoint history, while the typed `full_document_read`
+metadata remains refresh-safe.
+
 ## Revision history
 
+- 2026-08-25: Documented the consulted-source versus answer-supported citation split and shared production/eval selector.
+- 2026-08-24: Added the typed `full_document_read` event and full-body checkpoint/log/trace redaction boundary.
 - 2026-08-09: Froze the persisted event vocabulary as a discriminated OpenAPI union and added event/stage-specific response allowlists.
 - 2026-06-17: Added future Fast / Balanced / Thorough retrieval UX quality profile guidance.
 - 2026-06-16: Recorded future Prometheus/Grafana operations metrics and Langfuse/LangSmith LLM observability goals.

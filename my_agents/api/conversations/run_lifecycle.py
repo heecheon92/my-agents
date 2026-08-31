@@ -12,6 +12,7 @@ from langchain_core.messages import BaseMessage
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from my_agents.agent_runtime.citation_attribution import answer_supported_source_indices
 from my_agents.agents.context_forge.contracts import RetrievalEvidence
 from my_agents.agents.general_assistant.classifier import classify_messages
 from my_agents.agents.general_assistant.graph import GRAPH_VERSION
@@ -32,10 +33,11 @@ from my_agents.api.conversations.interactions import (
 )
 from my_agents.api.conversations.retrieval_context import (
     ConversationRetrievalContext,
-    chunks_used_for_answer,
+    chunks_consulted_for_answer,
     clarification_reply,
     clarification_request,
     compose_rag_reply,
+    document_coverage_from_graph_state,
     graph_has_retrieval_context,
     graph_input_for_run,
     graph_memory_source_snapshot_json,
@@ -71,6 +73,7 @@ from my_agents.conversations.schemas import (
     ConversationRunResponse,
     ConversationRunResult,
     ConversationRunWarning,
+    DocumentCoverageResponse,
 )
 from my_agents.knowledge.auth import KnowledgeBaseSelectionContext
 from my_agents.knowledge.models import CitationModel
@@ -86,6 +89,7 @@ ACTIVE_RUN_STATUSES = (
     RunStatus.CANCELLING.value,
 )
 _GROUNDING_VERIFIER = DeterministicRagAgentGroundingVerifier()
+_CITATION_ATTRIBUTION_VERSION = 1
 logger = logging.getLogger(__name__)
 
 
@@ -102,6 +106,8 @@ def complete_sync_conversation_run(
     document_workspace_runtime: object | None = None,
     warnings: list[ConversationRunWarning] | None = None,
     hitl_wait_seconds: int = 86_400,
+    document_selection_hitl_allowed: bool = True,
+    preselected_document_id: str | None = None,
 ) -> ConversationRunResult:
     try:
         result = _complete_sync_conversation_run(
@@ -116,6 +122,8 @@ def complete_sync_conversation_run(
             document_workspace_runtime=document_workspace_runtime,
             warnings=warnings,
             hitl_wait_seconds=hitl_wait_seconds,
+            document_selection_hitl_allowed=document_selection_hitl_allowed,
+            preselected_document_id=preselected_document_id,
         )
         if isinstance(result, ConversationRunResponse):
             delete_checkpoint_thread(graph_runner, run.id)
@@ -170,6 +178,8 @@ def _complete_sync_conversation_run(
     document_workspace_runtime: object | None = None,
     warnings: list[ConversationRunWarning] | None = None,
     hitl_wait_seconds: int = 86_400,
+    document_selection_hitl_allowed: bool = True,
+    preselected_document_id: str | None = None,
 ) -> ConversationRunResult:
     run_started = perf_counter()
     retrieval_route = "unknown"
@@ -189,6 +199,8 @@ def _complete_sync_conversation_run(
         user_id=user_id,
         conversation_id=conversation_id,
         run_id=run.id,
+        document_selection_hitl_allowed=document_selection_hitl_allowed,
+        preselected_document_id=preselected_document_id,
     )
     graph_context = graph_context_for_run(
         db=db,
@@ -299,7 +311,7 @@ def _complete_sync_conversation_run(
             db=db,
             run_id=run.id,
             conversation_id=conversation_id,
-            retrieved_chunks=[],
+            consulted_chunks=[],
             route=route,
             reply=clarification_reply(result.get("reply"), retrieval_context.decision),
             retrieval_decision=retrieval_context.decision,
@@ -317,7 +329,7 @@ def _complete_sync_conversation_run(
             db=db,
             run_id=run.id,
             conversation_id=conversation_id,
-            retrieved_chunks=[],
+            consulted_chunks=[],
             route=route,
             reply=insufficient_evidence_reply(),
             retrieval_decision=retrieval_context.decision,
@@ -354,11 +366,12 @@ def _complete_sync_conversation_run(
         ),
     )
     update_graph_invoked_event_memory_snapshot(db, graph_event, memory_source_snapshot)
-    used_chunks = chunks_used_for_answer(retrieval_context)
-    reply = compose_rag_reply(result["reply"], used_chunks, retrieval_context.answer_mode)
-    reply, used_chunks, completion_insufficient_evidence = _verified_grounding_or_fallback(
+    consulted_chunks = chunks_consulted_for_answer(retrieval_context)
+    document_coverage = document_coverage_from_graph_state(result)
+    reply = compose_rag_reply(result["reply"], consulted_chunks, retrieval_context.answer_mode)
+    reply, consulted_chunks, completion_insufficient_evidence = _verified_grounding_or_fallback(
         reply=reply,
-        cited_chunks=used_chunks,
+        consulted_chunks=consulted_chunks,
         retrieval_decision=retrieval_context.decision,
         answer_mode=retrieval_context.answer_mode,
         retrieval_attempt_count=retrieval_context.retrieval_attempt_count,
@@ -371,7 +384,7 @@ def _complete_sync_conversation_run(
         db=db,
         run_id=run.id,
         conversation_id=conversation_id,
-        retrieved_chunks=used_chunks,
+        consulted_chunks=consulted_chunks,
         route=route,
         reply=reply,
         retrieval_decision=retrieval_context.decision,
@@ -381,6 +394,8 @@ def _complete_sync_conversation_run(
         insufficient_evidence=completion_insufficient_evidence,
         retrieval_evidence=retrieval_context.retrieval_evidence,
         memory_source_snapshot=memory_source_snapshot,
+        document_coverage=document_coverage,
+        retrieval_latency_ms=retrieval_context.retrieval_latency_ms,
     )
     record_run_metric("completed")
     return response
@@ -392,7 +407,7 @@ def complete_resumed_conversation_run(
     run: AgentRunModel,
     messages: list[BaseMessage],
     selection_context: KnowledgeBaseSelectionContext,
-    selected_document_id: str,
+    resume_value: dict[str, object],
     graph_runner: GraphRunner,
     hitl_wait_seconds: int,
 ) -> ConversationRunResult:
@@ -408,7 +423,7 @@ def complete_resumed_conversation_run(
         result = invoke_graph_runner_resume_collecting_updates(
             graph_runner=graph_runner,
             run_id=run.id,
-            resume_value={"document_id": selected_document_id},
+            resume_value=resume_value,
             graph_context=graph_context,
         )
     except GraphRunnerExecutionError as exc:
@@ -445,7 +460,7 @@ def complete_resumed_conversation_run(
             db=db,
             run_id=run.id,
             conversation_id=run.conversation_id,
-            retrieved_chunks=[],
+            consulted_chunks=[],
             route=route,
             reply=insufficient_evidence_reply(),
             retrieval_decision=retrieval_context.decision,
@@ -473,11 +488,12 @@ def complete_resumed_conversation_run(
         ),
     )
     update_graph_invoked_event_memory_snapshot(db, graph_event, memory_source_snapshot)
-    used_chunks = chunks_used_for_answer(retrieval_context)
-    reply = compose_rag_reply(str(result["reply"]), used_chunks, retrieval_context.answer_mode)
-    reply, used_chunks, insufficient = _verified_grounding_or_fallback(
+    consulted_chunks = chunks_consulted_for_answer(retrieval_context)
+    document_coverage = document_coverage_from_graph_state(result)
+    reply = compose_rag_reply(str(result["reply"]), consulted_chunks, retrieval_context.answer_mode)
+    reply, consulted_chunks, insufficient = _verified_grounding_or_fallback(
         reply=reply,
-        cited_chunks=used_chunks,
+        consulted_chunks=consulted_chunks,
         retrieval_decision=retrieval_context.decision,
         answer_mode=retrieval_context.answer_mode,
         retrieval_attempt_count=retrieval_context.retrieval_attempt_count,
@@ -486,7 +502,7 @@ def complete_resumed_conversation_run(
         db=db,
         run_id=run.id,
         conversation_id=run.conversation_id,
-        retrieved_chunks=used_chunks,
+        consulted_chunks=consulted_chunks,
         route=route,
         reply=reply,
         retrieval_decision=retrieval_context.decision,
@@ -495,6 +511,8 @@ def complete_resumed_conversation_run(
         insufficient_evidence=insufficient,
         retrieval_evidence=retrieval_context.retrieval_evidence,
         memory_source_snapshot=memory_source_snapshot,
+        document_coverage=document_coverage,
+        retrieval_latency_ms=retrieval_context.retrieval_latency_ms,
     )
     delete_checkpoint_thread(graph_runner, run.id)
     return response
@@ -503,7 +521,7 @@ def complete_resumed_conversation_run(
 def _verified_grounding_or_fallback(
     *,
     reply: str,
-    cited_chunks: list[RetrievedChunk],
+    consulted_chunks: list[RetrievedChunk],
     retrieval_decision: RetrievalRoutingDecision,
     answer_mode: AnswerMode,
     retrieval_attempt_count: int,
@@ -511,18 +529,18 @@ def _verified_grounding_or_fallback(
     verification = _GROUNDING_VERIFIER.verify(
         retrieval_decision=retrieval_decision,
         answer_mode=answer_mode,
-        cited_chunks=cited_chunks,
-        citation_count=len(cited_chunks),
+        consulted_chunks=consulted_chunks,
+        consulted_count=len(consulted_chunks),
         retrieval_attempt_count=retrieval_attempt_count,
     )
     if verification.passed:
-        return reply, cited_chunks, False
+        return reply, consulted_chunks, False
     if retrieval_decision.route == "retrieval_required" and retrieval_attempt_count >= 2:
         fallback_verification = _GROUNDING_VERIFIER.verify(
             retrieval_decision=retrieval_decision,
             answer_mode=answer_mode,
-            cited_chunks=[],
-            citation_count=0,
+            consulted_chunks=[],
+            consulted_count=0,
             insufficient_evidence=True,
             retrieval_attempt_count=retrieval_attempt_count,
         )
@@ -537,7 +555,7 @@ def persist_completed_run(
     db: Session,
     run_id: str,
     conversation_id: str,
-    retrieved_chunks: list[RetrievedChunk],
+    consulted_chunks: list[RetrievedChunk],
     route: RouteDecision,
     reply: str,
     retrieval_decision: RetrievalRoutingDecision,
@@ -548,6 +566,8 @@ def persist_completed_run(
     insufficient_evidence: bool = False,
     retrieval_evidence: RetrievalEvidence | None = None,
     memory_source_snapshot: str | None = None,
+    document_coverage: DocumentCoverageResponse | None = None,
+    retrieval_latency_ms: float = 0.0,
 ) -> ConversationRunResponse:
     from my_agents.document_workspace.service import artifacts_for_run, attachments_for_run
 
@@ -567,29 +587,53 @@ def persist_completed_run(
     run.retrieval_route = retrieval_decision.route
     run.answer_mode = answer_mode
     run.document_scope = retrieval_decision.document_scope
-    run.retrieval_source_snapshot_json = _retrieval_source_snapshot_json(retrieved_chunks)
+    run.retrieval_source_snapshot_json = _retrieval_source_snapshot_json(consulted_chunks)
     run.memory_source_snapshot_json = memory_source_snapshot
+    run.citation_attribution_version = _CITATION_ATTRIBUTION_VERSION
     run.assistant_message_id = assistant_message.id
     run.interaction_id = None
     run.interaction_type = None
     run.interaction_payload_json = None
     run.interaction_expires_at = None
     db.flush()
+    answer_supported_indexes = set(
+        answer_supported_source_indices(
+            reply=reply,
+            # Attribute only against the evidence text the API actually discloses. A match
+            # outside the persisted 240-character snippet would be unverifiable in the panel.
+            source_texts=[item.chunk.content[:240] for item in consulted_chunks],
+        )
+    )
     citations = [
         CitationModel(
             run_id=run_id,
             document_id=item.document.id,
             chunk_id=item.chunk.id,
             snippet=item.chunk.content[:240],
+            used_in_answer=index in answer_supported_indexes,
         )
-        for item in retrieved_chunks
+        for index, item in enumerate(consulted_chunks)
     ]
     db.add_all(citations)
-    visible_pairs = user_visible_citation_pairs(
-        citations, retrieved_chunks, selection_context=selection_context
+    visible_consulted_pairs = user_visible_citation_pairs(
+        citations, consulted_chunks, selection_context=selection_context
     )
-    visible_citations = [citation for citation, _ in visible_pairs]
-    visible_chunks = [item for _, item in visible_pairs]
+    visible_used_pairs = [
+        pair for pair in visible_consulted_pairs if pair[0].used_in_answer is True
+    ]
+    visible_citations = [citation for citation, _ in visible_used_pairs]
+    visible_consulted_chunks = [item for _, item in visible_consulted_pairs]
+    if document_coverage is not None:
+        append_run_event(
+            db,
+            run.id,
+            AgentEventType.FULL_DOCUMENT_READ,
+            {
+                **document_coverage.model_dump(mode="json"),
+                "latency_ms": retrieval_latency_ms,
+            },
+            commit=False,
+        )
     append_run_event(
         db,
         run.id,
@@ -610,6 +654,7 @@ def persist_completed_run(
     for citation in citations:
         db.refresh(citation)
     return completed_run_response(
+        db=db,
         run=run,
         reply=reply,
         route=route,
@@ -617,12 +662,12 @@ def persist_completed_run(
         answer_mode=answer_mode,
         selection_context=selection_context,
         citations=citations,
-        retrieved_chunks=retrieved_chunks,
+        consulted_chunks=consulted_chunks,
         warnings=warnings or [],
         clarification=clarification,
         agent_trace=conversation_agent_trace_steps(
             route=route,
-            retrieved_chunks=visible_chunks,
+            retrieved_chunks=visible_consulted_chunks,
             retrieval_decision=retrieval_decision,
             answer_mode=answer_mode,
             selection_context=selection_context,
@@ -633,6 +678,7 @@ def persist_completed_run(
         ),
         attachments=attachments_for_run(db, run.id),
         artifacts=artifacts_for_run(db, run.id),
+        document_coverage=document_coverage,
     )
 
 

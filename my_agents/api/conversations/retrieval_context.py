@@ -17,12 +17,15 @@ from my_agents.agents.rag_agent import (
     RagAgentRetrievalResult,
 )
 from my_agents.agents.rag_agent import (
-    chunks_used_for_answer as rag_chunks_used_for_answer,
+    chunks_consulted_for_answer as rag_chunks_consulted_for_answer,
 )
 from my_agents.agents.rag_agent import (
     retrieved_context_for_graph as rag_retrieved_context_for_graph,
 )
-from my_agents.conversations.schemas import ConversationClarificationRequest
+from my_agents.conversations.schemas import (
+    ConversationClarificationRequest,
+    DocumentCoverageResponse,
+)
 from my_agents.knowledge.auth import KnowledgeBaseSelectionContext
 from my_agents.knowledge.models import DocumentChunkModel, DocumentModel
 from my_agents.knowledge.retrieval import RetrievedChunk
@@ -89,6 +92,16 @@ def graph_has_retrieval_context(graph_state: Mapping[str, object]) -> bool:
     return isinstance(
         graph_state.get("rag_retrieval_result"), RagAgentRetrievalResult
     ) or isinstance(graph_state.get("rag_retrieval_snapshot"), Mapping)
+
+
+def document_coverage_from_graph_state(
+    graph_state: Mapping[str, object],
+) -> DocumentCoverageResponse | None:
+    """Validate compact coverage metadata returned by the full-document graph path."""
+    value = graph_state.get("document_coverage")
+    if not isinstance(value, Mapping) or not value:
+        return None
+    return DocumentCoverageResponse.model_validate(dict(value))
 
 
 def _retrieval_context_from_snapshot(
@@ -186,6 +199,7 @@ def graph_input_for_run(
     conversation_id: str,
     run_id: str,
     document_selection_hitl_allowed: bool = True,
+    preselected_document_id: str | None = None,
 ) -> dict[str, object]:
     graph_input: dict[str, object] = {
         "messages": messages[-RECENT_CONVERSATION_MESSAGE_LIMIT:],
@@ -193,6 +207,11 @@ def graph_input_for_run(
         "conversation_id": conversation_id,
         "run_id": run_id,
         "document_selection_hitl_allowed": document_selection_hitl_allowed,
+        "document_selection_refinement_attempts": 0,
+        "document_selection_needs_resolution": False,
+        "document_selection_answer_kind": "",
+        "document_selection_preparation_status": "",
+        "full_document_requested": False,
         "retrieved_chunk_ids": [],
         "retrieval_records": [],
         "retrieved_context": [],
@@ -205,6 +224,8 @@ def graph_input_for_run(
         "document_scope": "unknown",
         "rag_halt_before_response": False,
     }
+    if preselected_document_id is not None:
+        graph_input["selected_document_id"] = preselected_document_id
     return graph_input
 
 
@@ -213,10 +234,10 @@ def insufficient_evidence_reply() -> str:
     return _INSUFFICIENT_EVIDENCE_REPLY
 
 
-def chunks_used_for_answer(
+def chunks_consulted_for_answer(
     retrieval_context: ConversationRetrievalContext,
 ) -> list[RetrievedChunk]:
-    return rag_chunks_used_for_answer(_rag_result_from_conversation_context(retrieval_context))
+    return rag_chunks_consulted_for_answer(_rag_result_from_conversation_context(retrieval_context))
 
 
 def retrieved_context_for_graph(retrieved_chunks: list[RetrievedChunk]) -> list[dict[str, object]]:

@@ -33,6 +33,8 @@ from my_agents.conversations.schemas import (
     ConversationClarificationRequest,
     DocumentWorkspaceStartedAgentEventResponse,
     DocumentWorkspaceStartedEventPayload,
+    FullDocumentReadAgentEventResponse,
+    FullDocumentReadEventPayload,
     GraphInvokedAgentEventResponse,
     GraphInvokedEventPayload,
     RetrievalCompletedAgentEventResponse,
@@ -314,6 +316,12 @@ def event_response(event: AgentEventModel) -> AgentEventResponse:
                 **common,
                 event_type=event_type.value,
                 payload=_safe_event_payload(RetrievalCompletedEventPayload, raw_payload),
+            )
+        case AgentEventType.FULL_DOCUMENT_READ:
+            return FullDocumentReadAgentEventResponse(
+                **common,
+                event_type=event_type.value,
+                payload=_safe_event_payload(FullDocumentReadEventPayload, raw_payload),
             )
         case AgentEventType.GRAPH_INVOKED:
             return GraphInvokedAgentEventResponse(

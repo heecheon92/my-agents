@@ -1,9 +1,12 @@
 """Conversation run endpoints."""
 
+import json
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from langchain_core.messages import BaseMessage
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
@@ -51,11 +54,23 @@ from my_agents.document_workspace.service import (
 )
 from my_agents.interactions.schemas import (
     INTERACTION_SCHEMA_VERSION,
+    ConversationRunRefineRequestV2,
     ConversationRunResumeRequest,
+    ConversationRunResumeRequestType,
+    ConversationRunSelectRequestV2,
     DocumentSelectionOption,
     DocumentSelectionOptionsResponse,
+    DocumentSelectionOptionsResponseV2,
+    DocumentSelectionOptionsResult,
+    DocumentSelectionOptionV2,
+    PendingDocumentSelection,
+    PendingDocumentSelectionV2,
+    pending_interaction_adapter,
 )
-from my_agents.knowledge.auth import resolve_conversation_knowledge_context
+from my_agents.knowledge.auth import (
+    KnowledgeBaseSelectionContext,
+    resolve_conversation_knowledge_context,
+)
 from my_agents.knowledge.retrieval import RetrievalService
 from my_agents.observability.metrics import record_langgraph_persistence_operation
 from my_agents.persistence.database import get_database_session
@@ -147,21 +162,27 @@ def run_conversation(
     return result
 
 
-@router.post(
-    "/{conversation_id}/runs/{run_id}/resume",
-    response_model=ConversationRunResult,
-)
-def resume_conversation_run(
+@dataclass(frozen=True)
+class PreparedConversationRunResume:
+    """Authorized, atomically claimed resume state shared by sync and SSE paths."""
+
+    run: AgentRunModel
+    messages: list[BaseMessage]
+    selection_context: KnowledgeBaseSelectionContext
+    resume_value: dict[str, object]
+    resumed_event_payload: dict[str, object]
+
+
+def prepare_conversation_run_resume(
+    *,
     conversation_id: str,
     run_id: str,
-    request: ConversationRunResumeRequest,
-    response: Response,
-    principal: Annotated[Principal, Depends(get_current_principal)],
-    db: Annotated[Session, Depends(get_database_session)],
-    graph_runner: Annotated[GraphRunner, Depends(get_graph_runner)],
-    settings: Annotated[Settings, Depends(get_settings)],
-) -> ConversationRunResult:
-    """Resume one authorized document-selection checkpoint without storing a new prompt."""
+    request: ConversationRunResumeRequestType,
+    principal: Principal,
+    db: Session,
+    graph_runner: GraphRunner,
+) -> PreparedConversationRunResume:
+    """Validate and atomically claim one waiting run before execution starts."""
     assert_guest_access_active(db, principal)
     get_authorized_conversation(db, conversation_id, principal.user_id)
     run = db.get(AgentRunModel, run_id, populate_existing=True)
@@ -214,16 +235,67 @@ def resume_conversation_run(
             code=APIErrorCode.LANGGRAPH_PERSISTENCE_UNAVAILABLE,
         )
     selection_context = run_knowledge_base_context(run)
-    if not RetrievalService(db).document_is_user_selectable(
-        user_id=principal.user_id,
-        document_id=request.document_id,
-        knowledge_base_ids=selection_context.retrieval_knowledge_base_ids,
+    try:
+        stored_interaction = pending_interaction_adapter.validate_python(
+            json.loads(run.interaction_payload_json or "{}")
+        )
+    except (ValueError, json.JSONDecodeError) as exc:
+        raise APIHTTPException(
+            status_code=409,
+            detail="stored run interaction is invalid",
+            code=APIErrorCode.RUN_INTERACTION_MISMATCH,
+        ) from exc
+    if (
+        stored_interaction.schema_version != request.schema_version
+        or stored_interaction.type != request.type
     ):
         raise APIHTTPException(
             status_code=409,
-            detail="selected document is unavailable",
-            code=APIErrorCode.RUN_SELECTED_DOCUMENT_UNAVAILABLE,
+            detail="run interaction version does not match",
+            code=APIErrorCode.RUN_INTERACTION_MISMATCH,
         )
+    retrieval_service = RetrievalService(db)
+    if isinstance(request, (ConversationRunResumeRequest, ConversationRunSelectRequestV2)):
+        document_id = request.document_id
+        if isinstance(stored_interaction, PendingDocumentSelectionV2):
+            shortlist_ids = {option.document_id for option in stored_interaction.options}
+            if document_id not in shortlist_ids and not stored_interaction.browse.allowed:
+                raise APIHTTPException(
+                    status_code=409,
+                    detail="selected document is outside the offered candidates",
+                    code=APIErrorCode.RUN_INTERACTION_SELECTION_UNAVAILABLE,
+                )
+        if not retrieval_service.document_is_user_selectable(
+            user_id=principal.user_id,
+            document_id=document_id,
+            knowledge_base_ids=selection_context.retrieval_knowledge_base_ids,
+        ):
+            raise APIHTTPException(
+                status_code=409,
+                detail="selected document is unavailable",
+                code=APIErrorCode.RUN_SELECTED_DOCUMENT_UNAVAILABLE,
+            )
+        resume_value: dict[str, object] = (
+            {"document_id": document_id}
+            if isinstance(request, ConversationRunResumeRequest)
+            else {"kind": "select", "document_id": document_id}
+        )
+    elif isinstance(request, ConversationRunRefineRequestV2):
+        if not isinstance(stored_interaction, PendingDocumentSelectionV2):
+            raise APIHTTPException(
+                status_code=409,
+                detail="run interaction does not support refinement",
+                code=APIErrorCode.RUN_INTERACTION_MISMATCH,
+            )
+        if not stored_interaction.refinement.allowed:
+            raise APIHTTPException(
+                status_code=409,
+                detail="document refinement attempts are exhausted",
+                code=APIErrorCode.RUN_INTERACTION_REFINEMENT_EXHAUSTED,
+            )
+        resume_value = {"kind": "refine", "text": request.text}
+    else:  # pragma: no cover - closed request union
+        raise AssertionError("unsupported conversation run resume request")
     claimed = db.execute(
         update(AgentRunModel)
         .where(
@@ -242,27 +314,60 @@ def resume_conversation_run(
         )
     db.flush()
     db.refresh(run)
+    resumed_event_payload: dict[str, object] = {
+        "run_id": run.id,
+        "status": RunStatus.RUNNING.value,
+        "interaction_id": request.interaction_id,
+        "interaction_schema_version": request.schema_version,
+        "interaction_type": "document_selection",
+    }
     append_run_event(
         db,
         run.id,
         AgentEventType.RUN_RESUMED,
-        {
-            "run_id": run.id,
-            "status": RunStatus.RUNNING.value,
-            "interaction_id": request.interaction_id,
-            "interaction_schema_version": request.schema_version,
-            "interaction_type": "document_selection",
-        },
+        resumed_event_payload,
         commit=False,
     )
     db.commit()
     record_langgraph_persistence_operation(operation="resume", outcome="accepted")
-    result = complete_resumed_conversation_run(
-        db=db,
+    return PreparedConversationRunResume(
         run=run,
         messages=messages_for_conversation(db, conversation_id),
         selection_context=selection_context,
-        selected_document_id=request.document_id,
+        resume_value=resume_value,
+        resumed_event_payload=resumed_event_payload,
+    )
+
+
+@router.post(
+    "/{conversation_id}/runs/{run_id}/resume",
+    response_model=ConversationRunResult,
+)
+def resume_conversation_run(
+    conversation_id: str,
+    run_id: str,
+    request: ConversationRunResumeRequestType,
+    response: Response,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    db: Annotated[Session, Depends(get_database_session)],
+    graph_runner: Annotated[GraphRunner, Depends(get_graph_runner)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> ConversationRunResult:
+    """Resume one authorized document-selection checkpoint without storing a new prompt."""
+    prepared = prepare_conversation_run_resume(
+        conversation_id=conversation_id,
+        run_id=run_id,
+        request=request,
+        principal=principal,
+        db=db,
+        graph_runner=graph_runner,
+    )
+    result = complete_resumed_conversation_run(
+        db=db,
+        run=prepared.run,
+        messages=prepared.messages,
+        selection_context=prepared.selection_context,
+        resume_value=prepared.resume_value,
         graph_runner=graph_runner,
         hitl_wait_seconds=settings.hitl_wait_seconds,
     )
@@ -279,7 +384,7 @@ def _as_utc(value: datetime) -> datetime:
 
 @router.get(
     "/{conversation_id}/runs/{run_id}/interactions/{interaction_id}/options",
-    response_model=DocumentSelectionOptionsResponse,
+    response_model=DocumentSelectionOptionsResult,
 )
 def list_document_selection_options(
     conversation_id: str,
@@ -288,7 +393,7 @@ def list_document_selection_options(
     principal: Annotated[Principal, Depends(get_current_principal)],
     db: Annotated[Session, Depends(get_database_session)],
     cursor: Annotated[str | None, Query()] = None,
-) -> DocumentSelectionOptionsResponse:
+) -> DocumentSelectionOptionsResult:
     """Page through the live authorized source scope for one waiting run."""
     assert_guest_access_active(db, principal)
     get_authorized_conversation(db, conversation_id, principal.user_id)
@@ -300,6 +405,33 @@ def list_document_selection_options(
             status_code=409,
             detail="run interaction does not match",
             code=APIErrorCode.RUN_INTERACTION_MISMATCH,
+        )
+    if run.interaction_expires_at is None or _as_utc(run.interaction_expires_at) <= datetime.now(
+        UTC
+    ):
+        raise APIHTTPException(
+            status_code=409,
+            detail="run interaction expired",
+            code=APIErrorCode.RUN_INTERACTION_EXPIRED,
+        )
+    try:
+        stored_interaction = pending_interaction_adapter.validate_python(
+            json.loads(run.interaction_payload_json or "{}")
+        )
+    except (ValueError, json.JSONDecodeError) as exc:
+        raise APIHTTPException(
+            status_code=409,
+            detail="stored run interaction is invalid",
+            code=APIErrorCode.RUN_INTERACTION_MISMATCH,
+        ) from exc
+    if (
+        isinstance(stored_interaction, PendingDocumentSelectionV2)
+        and not stored_interaction.browse.allowed
+    ):
+        raise APIHTTPException(
+            status_code=409,
+            detail="broad document browsing is not available",
+            code=APIErrorCode.RUN_INTERACTION_REFINEMENT_EXHAUSTED,
         )
     try:
         offset = max(int(cursor or "0"), 0)
@@ -316,12 +448,23 @@ def list_document_selection_options(
         offset=offset,
     )
     next_offset = offset + len(options)
-    return DocumentSelectionOptionsResponse(
+    if isinstance(stored_interaction, PendingDocumentSelection):
+        return DocumentSelectionOptionsResponse(
+            schema_version=1,
+            interaction_id=interaction_id,
+            type="document_selection",
+            option_count=total,
+            options=[DocumentSelectionOption(**option.__dict__) for option in options],
+            next_cursor=str(next_offset) if next_offset < total else None,
+        )
+    return DocumentSelectionOptionsResponseV2(
         schema_version=INTERACTION_SCHEMA_VERSION,
         interaction_id=interaction_id,
         type="document_selection",
+        mode="broad",
         option_count=total,
-        options=[DocumentSelectionOption(**option.__dict__) for option in options],
+        library_count=total,
+        options=[DocumentSelectionOptionV2(**option.__dict__) for option in options],
         next_cursor=str(next_offset) if next_offset < total else None,
     )
 
@@ -364,7 +507,75 @@ def get_run(
     if run is None or run.conversation_id != conversation_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="run not found")
     if run.status == RunStatus.WAITING_FOR_INPUT.value:
-        return interrupted_run_response(run)
+        if run.interaction_expires_at is None or _as_utc(
+            run.interaction_expires_at
+        ) <= datetime.now(UTC):
+            raise APIHTTPException(
+                status_code=409,
+                detail="run interaction expired",
+                code=APIErrorCode.RUN_INTERACTION_EXPIRED,
+            )
+        response = interrupted_run_response(run)
+        interaction = response.interaction
+        service = RetrievalService(db)
+        selection_context = run_knowledge_base_context(run)
+        if isinstance(interaction, PendingDocumentSelection):
+            current_options, library_count = service.authorized_document_options(
+                user_id=principal.user_id,
+                knowledge_base_ids=selection_context.retrieval_knowledge_base_ids,
+                limit=50,
+                offset=0,
+            )
+            refreshed_interaction = interaction.model_copy(
+                update={
+                    "option_count": library_count,
+                    "options": [
+                        DocumentSelectionOption(**option.__dict__) for option in current_options
+                    ],
+                    "next_cursor": "50" if library_count > 50 else None,
+                }
+            )
+            return ConversationRunInterruptedResponse(
+                run_id=response.run_id,
+                conversation_id=response.conversation_id,
+                interaction=refreshed_interaction,
+            )
+        current_options = service.authorized_document_options_by_ids(
+            user_id=principal.user_id,
+            document_ids=[option.document_id for option in interaction.options],
+            knowledge_base_ids=selection_context.retrieval_knowledge_base_ids,
+        )
+        current_by_id = {option.document_id: option for option in current_options}
+        options = [
+            DocumentSelectionOptionV2(
+                **current_by_id[option.document_id].__dict__,
+                match_confidence=option.match_confidence,
+                match_reason_code=option.match_reason_code,
+            )
+            for option in interaction.options
+            if option.document_id in current_by_id
+        ]
+        _first_page, library_count = service.authorized_document_options(
+            user_id=principal.user_id,
+            knowledge_base_ids=selection_context.retrieval_knowledge_base_ids,
+            limit=1,
+            offset=0,
+        )
+        refreshed_interaction = interaction.model_copy(
+            update={
+                "reason_code": (
+                    interaction.reason_code if options else "unresolved_document_reference"
+                ),
+                "option_count": len(options),
+                "library_count": library_count,
+                "options": options,
+            }
+        )
+        return ConversationRunInterruptedResponse(
+            run_id=response.run_id,
+            conversation_id=response.conversation_id,
+            interaction=refreshed_interaction,
+        )
     if run.status != RunStatus.COMPLETED.value:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="run is not completed")
     return run_detail_response(db, run)

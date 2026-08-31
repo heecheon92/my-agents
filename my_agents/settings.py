@@ -237,6 +237,18 @@ class Settings(BaseSettings):
         le=604_800,
         validation_alias=AliasChoices("MY_AGENTS_HITL_WAIT_SECONDS"),
     )
+    full_document_max_chars: int = Field(
+        default=24_000,
+        ge=4_000,
+        le=120_000,
+        validation_alias=AliasChoices("MY_AGENTS_FULL_DOCUMENT_MAX_CHARS"),
+    )
+    full_document_range_chars: int = Field(
+        default=12_000,
+        ge=2_000,
+        le=120_000,
+        validation_alias=AliasChoices("MY_AGENTS_FULL_DOCUMENT_RANGE_CHARS"),
+    )
     test_database_url: str | None = Field(
         default=None,
         validation_alias=AliasChoices("MY_AGENTS_TEST_DATABASE_URL"),
@@ -600,6 +612,11 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def validate_runtime_security_settings(self) -> Settings:
         """Fail fast when runtime settings would make auth/session behavior unsafe."""
+        if self.full_document_range_chars > self.full_document_max_chars:
+            raise ValueError(
+                "MY_AGENTS_FULL_DOCUMENT_RANGE_CHARS must be less than or equal to "
+                "MY_AGENTS_FULL_DOCUMENT_MAX_CHARS"
+            )
         if self.response_mode == "openai" and self.openai_api_key is None:
             raise ValueError("OPENAI_API_KEY is required when MY_AGENTS_RESPONSE_MODE=openai")
         if self.embedding_mode == "openai" and self.openai_api_key is None:

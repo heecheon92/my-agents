@@ -16,6 +16,7 @@ from my_agents.api import create_app
 from my_agents.api.assistant import get_graph_runner
 from my_agents.api.conversations import retrieval_context as retrieval_context_module
 from my_agents.api.conversations.endpoints import replay as replay_endpoint
+from my_agents.api.conversations.endpoints import stream as stream_endpoint
 from my_agents.api.conversations.endpoints.stream import conversation_run_events
 from my_agents.conversations.models import (
     AgentEventModel,
@@ -52,6 +53,15 @@ class SpyGraph:
             "reply": f"saw {len(messages)} messages",
             "route": RouteDecision(label="general_assistant", explanation="spy route"),
         }
+
+
+class SupportingSpyGraph(SpyGraph):
+    """Graph spy whose answer visibly uses one consulted source phrase."""
+
+    def invoke(self, input: dict, **kwargs: Any) -> dict:  # noqa: A002 - LangGraph API
+        result = super().invoke(input, **kwargs)
+        result["reply"] = "우리 서비스 인증 로직은 세션 쿠키와 CSRF 토큰으로 정리합니다."
+        return result
 
 
 class _TextChunk:
@@ -382,9 +392,95 @@ def test_optional_retrieval_with_relevant_context_uses_mixed_mode(monkeypatch) -
     payload = response.json()
     assert payload["retrieval_route"] == "retrieval_optional"
     assert payload["answer_mode"] == "mixed"
-    assert payload["citations"]
+    assert payload["citations"] == []
+    assert payload["consulted_sources"]
     assert graph.calls[-1]["answer_mode"] == "mixed"
     assert graph.calls[-1]["retrieved_context"]
+
+
+def test_answer_supported_citation_is_subset_of_consulted_sources_with_same_id(
+    monkeypatch,
+) -> None:  # noqa: ANN001
+    graph = SupportingSpyGraph()
+    client = _client(monkeypatch, graph)
+    _signup_login(client, "answer-supported-citation@example.com")
+    kb_id = _create_knowledge_base(client, "Answer-supported citation KB")
+    document = _create_document(
+        client,
+        json={
+            "title": "Auth Evidence",
+            "content": "우리 서비스 인증 로직은 세션 쿠키와 CSRF 토큰으로 정리합니다.",
+            "knowledge_base_id": kb_id,
+        },
+    )
+    assert document.status_code == 201
+    assert client.post(f"/documents/{document.json()['id']}/ingest").status_code == 200
+    conversation_id = client.post(
+        "/conversations", json={"title": "Answer-supported citation"}
+    ).json()["id"]
+
+    response = client.post(
+        f"/conversations/{conversation_id}/runs",
+        json={"message": "우리 서비스 인증 로직을 설명해줘"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload["citations"]) == 1
+    assert len(payload["consulted_sources"]) == 1
+    assert payload["citations"][0]["id"] == payload["consulted_sources"][0]["id"]
+    assert payload["citations"][0]["chunk_id"] == payload["consulted_sources"][0]["chunk_id"]
+    assert payload["citations"][0]["document_title"] == "Auth Evidence"
+    assert payload["citations"][0]["knowledge_base_name"] == "Answer-supported citation KB"
+    detail = client.get(f"/conversations/{conversation_id}/runs/{payload['run_id']}")
+    assert detail.status_code == 200
+    assert detail.json()["citations"] == payload["citations"]
+    assert detail.json()["consulted_sources"] == payload["consulted_sources"]
+
+
+def test_legacy_run_serializes_consulted_sources_as_null(monkeypatch) -> None:  # noqa: ANN001
+    graph = SupportingSpyGraph()
+    client = _client(monkeypatch, graph)
+    _signup_login(client, "legacy-citation-attribution@example.com")
+    kb_id = _create_knowledge_base(client, "Legacy citation attribution KB")
+    document = _create_document(
+        client,
+        json={
+            "title": "Legacy Auth Evidence",
+            "content": "우리 서비스 인증 로직은 세션 쿠키와 CSRF 토큰으로 정리합니다.",
+            "knowledge_base_id": kb_id,
+        },
+    )
+    assert document.status_code == 201
+    assert client.post(f"/documents/{document.json()['id']}/ingest").status_code == 200
+    conversation_id = client.post(
+        "/conversations", json={"title": "Legacy citation attribution"}
+    ).json()["id"]
+    completed = client.post(
+        f"/conversations/{conversation_id}/runs",
+        json={"message": "우리 서비스 인증 로직을 설명해줘"},
+    ).json()
+
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        run = db.get(AgentRunModel, completed["run_id"])
+        assert run is not None
+        run.citation_attribution_version = None
+        citations = list(
+            db.scalars(select(CitationModel).where(CitationModel.run_id == run.id)).all()
+        )
+        assert citations
+        for citation in citations:
+            citation.used_in_answer = None
+        db.commit()
+    finally:
+        session_generator.close()
+
+    detail = client.get(f"/conversations/{conversation_id}/runs/{completed['run_id']}")
+    assert detail.status_code == 200
+    assert detail.json()["consulted_sources"] is None
+    assert detail.json()["citations"]
 
 
 def test_debug_logging_exposes_retrieved_context_injected_to_llm(monkeypatch, capsys) -> None:  # noqa: ANN001
@@ -510,26 +606,106 @@ def test_checkpointed_document_selection_interrupts_and_resumes_same_run(monkeyp
     assert interrupted.status_code == 202
     pending = interrupted.json()
     assert pending["status"] == "waiting_for_input"
-    assert pending["interaction"]["schema_version"] == 1
+    assert pending["interaction"]["schema_version"] == 2
     assert pending["interaction"]["type"] == "document_selection"
-    assert pending["interaction"]["option_count"] == 2
+    assert pending["interaction"]["option_count"] == 0
+    assert pending["interaction"]["library_count"] == 2
+    assert pending["interaction"]["refinement"]["attempts_used"] == 0
 
-    encoded_interaction_id = pending["interaction"]["interaction_id"].replace(":", "%3A")
     options = client.get(
         f"/conversations/{conversation_id}/runs/{pending['run_id']}"
-        f"/interactions/{encoded_interaction_id}/options"
+        f"/interactions/{pending['interaction']['interaction_id']}/options"
+    )
+    assert options.status_code == 409
+    off_shortlist = client.post(
+        f"/conversations/{conversation_id}/runs/{pending['run_id']}/resume",
+        json={
+            "schema_version": 2,
+            "interaction_id": pending["interaction"]["interaction_id"],
+            "type": "document_selection",
+            "kind": "select",
+            "document_id": documents[0]["id"],
+        },
+    )
+    assert off_shortlist.status_code == 409
+    assert off_shortlist.json()["code"] == "run_interaction_selection_unavailable"
+
+    first_refinement = client.post(
+        f"/conversations/{conversation_id}/runs/{pending['run_id']}/resume",
+        json={
+            "schema_version": 2,
+            "interaction_id": pending["interaction"]["interaction_id"],
+            "type": "document_selection",
+            "kind": "refine",
+            "text": "unknown filename one",
+        },
+    )
+    assert first_refinement.status_code == 202
+    refined_once = first_refinement.json()
+    assert refined_once["run_id"] == pending["run_id"]
+    assert refined_once["interaction"]["interaction_id"] != pending["interaction"]["interaction_id"]
+    assert refined_once["interaction"]["expires_at"] == pending["interaction"]["expires_at"]
+    assert refined_once["interaction"]["refinement"]["attempts_used"] == 1
+    stale_refinement = client.post(
+        f"/conversations/{conversation_id}/runs/{pending['run_id']}/resume",
+        json={
+            "schema_version": 2,
+            "interaction_id": pending["interaction"]["interaction_id"],
+            "type": "document_selection",
+            "kind": "refine",
+            "text": "stale clue",
+        },
+    )
+    assert stale_refinement.status_code == 409
+    assert stale_refinement.json()["code"] == "run_interaction_mismatch"
+
+    second_refinement = client.post(
+        f"/conversations/{conversation_id}/runs/{pending['run_id']}/resume",
+        json={
+            "schema_version": 2,
+            "interaction_id": refined_once["interaction"]["interaction_id"],
+            "type": "document_selection",
+            "kind": "refine",
+            "text": "unknown filename two",
+        },
+    )
+    assert second_refinement.status_code == 202
+    broadened = second_refinement.json()
+    assert broadened["run_id"] == pending["run_id"]
+    assert broadened["interaction"]["expires_at"] == pending["interaction"]["expires_at"]
+    assert broadened["interaction"]["refinement"]["attempts_used"] == 2
+    assert broadened["interaction"]["refinement"]["allowed"] is False
+    assert broadened["interaction"]["browse"] == {"allowed": True, "cursor": "0"}
+    exhausted_refinement = client.post(
+        f"/conversations/{conversation_id}/runs/{pending['run_id']}/resume",
+        json={
+            "schema_version": 2,
+            "interaction_id": broadened["interaction"]["interaction_id"],
+            "type": "document_selection",
+            "kind": "refine",
+            "text": "third clue",
+        },
+    )
+    assert exhausted_refinement.status_code == 409
+    assert exhausted_refinement.json()["code"] == "run_interaction_refinement_exhausted"
+    assert _row_count(MessageModel) == 1
+
+    options = client.get(
+        f"/conversations/{conversation_id}/runs/{pending['run_id']}"
+        f"/interactions/{broadened['interaction']['interaction_id']}/options"
     )
     assert options.status_code == 200
-    assert options.json()["schema_version"] == 1
-    assert options.json()["type"] == "document_selection"
+    assert options.json()["schema_version"] == 2
+    assert options.json()["mode"] == "broad"
     assert options.json()["option_count"] == 2
 
     resumed = client.post(
         f"/conversations/{conversation_id}/runs/{pending['run_id']}/resume",
         json={
-            "schema_version": 1,
-            "interaction_id": pending["interaction"]["interaction_id"],
+            "schema_version": 2,
+            "interaction_id": broadened["interaction"]["interaction_id"],
             "type": "document_selection",
+            "kind": "select",
             "document_id": documents[0]["id"],
         },
     )
@@ -538,14 +714,18 @@ def test_checkpointed_document_selection_interrupts_and_resumes_same_run(monkeyp
     completed = resumed.json()
     assert completed["status"] == "completed"
     assert completed["run_id"] == pending["run_id"]
-    assert {citation["document_id"] for citation in completed["citations"]} == {documents[0]["id"]}
+    assert completed["citations"] == []
+    assert {source["document_id"] for source in completed["consulted_sources"]} == {
+        documents[0]["id"]
+    }
     detail = client.get(f"/conversations/{conversation_id}/runs/{pending['run_id']}")
     assert detail.status_code == 200
     assert detail.json()["status"] == "completed"
     events = client.get(f"/conversations/{conversation_id}/runs/{pending['run_id']}/events").json()
+    assert "unknown filename" not in json.dumps(events)
     for event_type in ("run_interrupted", "run_resumed"):
         payload = next(event["payload"] for event in events if event["event_type"] == event_type)
-        assert payload["interaction_schema_version"] == 1
+        assert payload["interaction_schema_version"] == 2
 
     stream_conversation_id = client.post(
         "/conversations", json={"title": "Checkpointed selection stream"}
@@ -569,22 +749,116 @@ def test_checkpointed_document_selection_interrupts_and_resumes_same_run(monkeyp
         "POST",
         (f"/conversations/{stream_conversation_id}/runs/{stream_pending['run_id']}/resume/stream"),
         json={
-            "schema_version": 1,
+            "schema_version": 2,
             "interaction_id": stream_pending["interaction"]["interaction_id"],
             "type": "document_selection",
-            "document_id": documents[1]["id"],
+            "kind": "refine",
+            "text": "Beta Source",
         },
     ) as response:
         assert response.status_code == 200
         resume_events = _parse_sse(response.read().decode())
+    resume_event_names = [event["event"] for event in resume_events]
+    assert resume_event_names[0] == "run_resumed"
+    assert "retrieval_completed" in resume_event_names
+    assert "graph_invoked" in resume_event_names
+    assert resume_event_names.index("retrieval_completed") < resume_event_names.index(
+        "answer_delta"
+    )
+    assert resume_event_names.index("graph_invoked") < resume_event_names.index("answer_delta")
     assert any(event["event"] == "answer_delta" for event in resume_events)
     streamed_completed = next(
         event["data"] for event in resume_events if event["event"] == "run_completed"
     )
     assert streamed_completed["run_id"] == stream_pending["run_id"]
-    assert {citation["document_id"] for citation in streamed_completed["citations"]} == {
+    assert streamed_completed["citations"] == []
+    assert {source["document_id"] for source in streamed_completed["consulted_sources"]} == {
         documents[1]["id"]
     }
+
+
+def test_resume_stream_finalization_failure_marks_run_failed_and_cleans_checkpoint(
+    monkeypatch,
+) -> None:  # noqa: ANN001
+    graph = build_graph(
+        checkpointer=InMemorySaver(serde=checkpoint_serializer()),
+        document_selection_hitl_enabled=True,
+    )
+    client = _client(monkeypatch, graph)  # type: ignore[arg-type]
+    _signup_login(client, "resume-finalization-failure@example.com")
+    kb_id = _create_knowledge_base(client, "Resume finalization failure KB")
+    documents = []
+    for title in ("Failure Source A", "Failure Source B"):
+        document = _create_document(
+            client,
+            json={
+                "title": title,
+                "content": f"{title} authorized evidence.",
+                "knowledge_base_id": kb_id,
+            },
+        )
+        assert document.status_code == 201
+        assert client.post(f"/documents/{document.json()['id']}/ingest").status_code == 200
+        documents.append(document.json())
+    conversation_id = client.post(
+        "/conversations", json={"title": "Resume finalization failure"}
+    ).json()["id"]
+    interrupted = client.post(
+        f"/conversations/{conversation_id}/runs",
+        json={
+            "message": "Summarize this document",
+            "knowledge_base_selection": {"mode": "selected", "knowledge_base_ids": [kb_id]},
+        },
+    )
+    assert interrupted.status_code == 202
+    pending = interrupted.json()
+
+    def fail_terminal_coverage_reconciliation(graph_state):  # noqa: ANN001, ANN202, ARG001
+        raise RuntimeError("post-loop finalization failure")
+
+    monkeypatch.setattr(
+        stream_endpoint,
+        "document_coverage_from_graph_state",
+        fail_terminal_coverage_reconciliation,
+    )
+
+    with client.stream(
+        "POST",
+        f"/conversations/{conversation_id}/runs/{pending['run_id']}/resume/stream",
+        json={
+            "schema_version": 2,
+            "interaction_id": pending["interaction"]["interaction_id"],
+            "type": "document_selection",
+            "kind": "refine",
+            "text": "Failure Source A",
+        },
+    ) as response:
+        assert response.status_code == 200
+        body = response.read().decode()
+        events = _parse_sse(body)
+
+    event_names = [event["event"] for event in events]
+    assert event_names[-2:] == ["run_failed", "run_error"]
+    assert "run_completed" not in event_names
+    assert events[-2]["data"] == {
+        "run_id": pending["run_id"],
+        "safe_error_type": "RuntimeError",
+    }
+    assert events[-1]["data"] == {"run_id": pending["run_id"], "status_code": 502}
+    assert "post-loop finalization failure" not in body
+
+    run = next(
+        item
+        for item in client.get(f"/conversations/{conversation_id}/runs").json()
+        if item["run_id"] == pending["run_id"]
+    )
+    assert run["status"] == "failed"
+    persisted = client.get(
+        f"/conversations/{conversation_id}/runs/{pending['run_id']}/events"
+    ).json()
+    assert [event["event_type"] for event in persisted].count("run_failed") == 1
+    assert persisted[-1]["event_type"] == "run_failed"
+    assert list(graph.get_state_history({"configurable": {"thread_id": pending["run_id"]}})) == []
 
 
 def test_filename_reference_retrieves_matching_document_metadata(monkeypatch) -> None:  # noqa: ANN001
@@ -627,8 +901,9 @@ def test_filename_reference_retrieves_matching_document_metadata(monkeypatch) ->
     assert payload["retrieval_route"] == "retrieval_required"
     assert payload["answer_mode"] == "document_grounded"
     assert payload["clarification"] is None
-    assert payload["citations"][0]["document_id"] == target.json()["id"]
-    assert payload["citations"][0]["source_filename"] == "NCT06159946_Prot_000.txt"
+    assert payload["citations"] == []
+    assert payload["consulted_sources"][0]["document_id"] == target.json()["id"]
+    assert payload["consulted_sources"][0]["source_filename"] == "NCT06159946_Prot_000.txt"
     assert graph.calls[-1]["retrieved_context"][0]["document_id"] == target.json()["id"]
     assert graph.calls[-1]["retrieved_context"][0]["source"] == "document_metadata"
 
@@ -760,7 +1035,7 @@ def test_delete_conversation_removes_transcript_runs_events_and_citations(monkey
         },
     )
     assert run.status_code == 200
-    assert run.json()["citations"]
+    assert run.json()["consulted_sources"]
 
     response = client.delete(f"/conversations/{conversation_id}")
 
@@ -1136,7 +1411,7 @@ def test_assistant_message_replay_warns_when_original_sources_are_deleted(monkey
         },
     )
     assert original.status_code == 200
-    assert original.json()["citations"]
+    assert original.json()["consulted_sources"]
     assert original.json()["warnings"] == []
     assert _run_source_snapshot(original.json()["run_id"]) is not None
     assert len(graph.calls) == 1
@@ -1158,7 +1433,7 @@ def test_assistant_message_replay_warns_when_original_sources_are_deleted(monkey
             "missing_source_filenames": [],
         }
     ]
-    assert all(citation["document_id"] != document_id for citation in payload["citations"])
+    assert all(source["document_id"] != document_id for source in payload["consulted_sources"])
     assert "enough relevant authorized document evidence" in payload["reply"]
     assert len(graph.calls) == 2
     assert graph.calls[-1]["rag_halt_before_response"] is True
@@ -1212,8 +1487,8 @@ def test_assistant_message_replay_preserves_original_kb_selection(monkeypatch) -
         "knowledge_base_ids": [kb_a],
     }
     assert payload["resolved_knowledge_base_count"] == 1
-    assert {citation["knowledge_base_id"] for citation in payload["citations"]} == {kb_a}
-    assert any("ReplayAlphaOnly" in citation["snippet"] for citation in payload["citations"])
+    assert {source["knowledge_base_id"] for source in payload["consulted_sources"]} == {kb_a}
+    assert any("ReplayAlphaOnly" in source["snippet"] for source in payload["consulted_sources"])
     assert "ReplayBetaOnly" not in payload["reply"]
     assert {context["document_id"] for context in graph.calls[-1]["retrieved_context"]} == {
         doc_a.json()["id"]
@@ -1258,8 +1533,8 @@ def test_assistant_message_replay_uses_request_kb_selection_when_original_run_mi
         "mode": "selected",
         "knowledge_base_ids": [kb_id],
     }
-    assert payload["citations"]
-    assert any("ReplayFallbackOnly" in citation["snippet"] for citation in payload["citations"])
+    assert payload["consulted_sources"]
+    assert any("ReplayFallbackOnly" in source["snippet"] for source in payload["consulted_sources"])
 
 
 def test_failed_conversation_run_detail_returns_conflict(monkeypatch) -> None:  # noqa: ANN001
@@ -1505,11 +1780,11 @@ def test_streaming_selected_kb_run_uses_fallback_only_in_selected_scope(monkeypa
     assert graph_invoked["knowledge_base_selection"] == selected_payload
     assert graph_invoked["retrieved_chunk_count"] == 1
     assert answer_composed["knowledge_base_selection"] == selected_payload
-    assert answer_composed["citation_count"] == 1
+    assert answer_composed["citation_count"] == 0
     assert completed["knowledge_base_selection"] == selected_payload
     assert completed["resolved_knowledge_base_count"] == 1
-    assert {citation["knowledge_base_id"] for citation in completed["citations"]} == {kb_a}
-    assert any("AlphaStreamOnly" in citation["snippet"] for citation in completed["citations"])
+    assert {source["knowledge_base_id"] for source in completed["consulted_sources"]} == {kb_a}
+    assert any("AlphaStreamOnly" in source["snippet"] for source in completed["consulted_sources"])
     assert "BetaStreamOnly" not in completed["reply"]
     assert {context["document_id"] for context in graph.calls[-1]["retrieved_context"]} == {
         doc_a.json()["id"]
@@ -1521,7 +1796,7 @@ def test_streaming_selected_kb_run_uses_fallback_only_in_selected_scope(monkeypa
 
     assert detail.status_code == 200
     assert detail.json()["knowledge_base_selection"] == selected_payload
-    assert {citation["knowledge_base_id"] for citation in detail.json()["citations"]} == {kb_a}
+    assert {source["knowledge_base_id"] for source in detail.json()["consulted_sources"]} == {kb_a}
     persisted_payloads = {event["event_type"]: event["payload"] for event in run_events.json()}
     assert persisted_payloads["retrieval_completed"]["knowledge_base_selection"] == selected_payload
     assert persisted_payloads["retrieval_completed"]["fallback_count"] == 1

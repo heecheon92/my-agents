@@ -1,6 +1,6 @@
 ---
 created: 2026-05-19
-updated: 2026-06-09
+updated: 2026-08-30
 status: active
 topics:
   - streaming
@@ -71,8 +71,13 @@ Successful streams emit:
 3. `retrieval_completed`
 4. `graph_invoked`
 5. zero or more `answer_delta`
-6. `answer_composed`
-7. `run_completed`
+6. optional `full_document_read`
+7. `answer_composed`
+8. `run_completed`
+
+`full_document_read` appears only for the explicit comprehensive-document path. It is
+persisted and streamed after the final answer deltas but before `answer_composed`; ordinary
+runs keep their existing sequence without that event.
 
 `run_started` carries the server run id early enough for explicit cancellation:
 
@@ -92,6 +97,17 @@ Successful streams emit:
   "sequence": 1
 }
 ```
+
+## Immediate next proposed stream: dynamic reasoning summaries
+
+The next backend task will add `reasoning_summary_delta` as a separate SSE-only event and
+`reasoning_summary_generated` as a bounded persisted event. These are proposed contracts, not
+current event types. They must carry a closed `stage`, text delta/final text, and per-stage sequence;
+`answer_delta` must remain final-answer text only. Completed `run_completed` and run detail will
+return the refresh-safe `reasoning_summaries` list when implemented.
+
+The frontend must present these as model-generated approach summaries and keep them separate from
+the verified `agent_trace`. See the [dynamic reasoning summary contract](./28-dynamic-reasoning-summary-contract.md).
 
 When the OpenAI-backed graph/provider yields token chunks, these deltas are emitted while
 the graph is still running. Deterministic/local graph spies can also emit multiple deltas
@@ -128,9 +144,49 @@ The final `run_completed` event contains the same response shape as
   "retrieval_route": "no_retrieval",
   "answer_mode": "general_knowledge",
   "document_scope": "unknown",
-  "citations": []
+  "citations": [],
+  "consulted_sources": [],
+  "document_coverage": null
 }
 ```
+
+For attributed runs, `consulted_sources` is the complete user-visible consulted superset and
+`citations` is its conservative answer-supported subset. A source in both arrays has the same
+persisted `id` and `chunk_id`. `consulted_sources: []` means attribution ran and found no
+consulted source; `consulted_sources: null` means the run predates attribution, in which case
+the legacy flat `citations` list is preserved without reclassifying it as answer-supported.
+
+This response field is present consistently in synchronous run completion, normal SSE
+`run_completed`, resumed-run SSE `run_completed`, non-streaming and streaming replay completion,
+and `GET /conversations/{conversation_id}/runs/{run_id}`. A refresh must therefore not collapse
+the two evidence sets back into one.
+
+Evidence arrays remain chunk-granular for backend attribution and audit, but frontend citation
+presentation is document-granular. Group by `document_id`; display `source_filename` when present,
+otherwise `document_title`, plus `knowledge_base_name` and optional deduplicated `source_page`
+values. Do not show snippets or document, knowledge-base, or chunk IDs in the ordinary citation
+detail UI.
+
+## Full-document buffering and coverage disclosure
+
+The full-document response node is intentionally excluded from direct provider-token
+streaming. Its provider output is buffered until the backend can prepend the deterministic
+Korean/English partial-review notice when `document_coverage.mode` is `partial`. Only then
+does the SSE adapter emit fallback `answer_delta` chunks. Therefore clients never see an
+apparently comprehensive answer first and a limitation notice later.
+
+For a partial read, `run_completed.reply` and the concatenated `answer_delta` values are
+identical and begin with a notice like:
+
+```text
+Partial-review notice: I reviewed characters 0-12000 of 48000.
+This is not yet a complete-document review.
+```
+
+`run_completed.document_coverage` and the preceding `full_document_read` event contain the
+same public range metadata: mode, document ID/title/source filename, start/end offsets, and
+total characters. The event adds `latency_ms`. Neither surface includes the raw normalized
+document text or the internal next cursor.
 
 Failed graph execution after the stream starts emits a redacted failure path:
 
@@ -146,6 +202,26 @@ partial `answer_delta` events before the failure event. The persisted run status
 redacted persisted event sequence. The stream intentionally does not expose raw user
 prompts, private provider exceptions, chain-of-thought, or document content.
 
+## Durable-interaction resume streaming
+
+```text
+POST /conversations/{conversation_id}/runs/{run_id}/resume/stream
+Content-Type: application/json
+Accept: text/event-stream
+```
+
+The endpoint validates and atomically claims the waiting run before opening the stream. Its first
+event is `run_resumed`, followed by real `retrieval_completed` and `graph_invoked` progress as
+LangGraph continues the checkpoint. Provider message chunks are emitted as `answer_delta`; a
+buffered fallback is used only when the graph produces no live message chunks. Cancellation is
+checked between graph updates and deltas. A repeated interrupt emits `run_interrupted`; normal
+completion persists the same response returned by sync resume and emits `run_completed`.
+
+This ordering is a product contract: once the user answers the interaction, the frontend must
+leave its suspended presentation immediately and behave like an ordinary streaming answer. The
+previous adapter called sync resume to completion before its first yield and then replayed the
+finished text as fake deltas, which kept the choice UI frozen for the entire run.
+
 ## Assistant-message replay streaming
 
 ```text
@@ -158,6 +234,11 @@ Request body is the same optional `ConversationReplayRequest` accepted by the
 non-streaming replay endpoint. When the original assistant run exists, replay uses that
 run's unified knowledge-base selection so regeneration matches the original
 source boundary without reviving the deprecated group/private source split.
+
+If the original run used `full_document_read`, replay also preselects that exact document.
+It revalidates current authorization and never substitutes a newly available document. If
+the original target was deleted or access was revoked, replay completes with an
+unavailable-source warning, no full-document coverage/citations, and no replacement target.
 
 The replay stream emits the same frontend-safe event family as a normal streamed run:
 `run_started`, `user_message_stored`, `retrieval_completed`, optional `graph_invoked`,
@@ -259,6 +340,10 @@ that leaving a streaming conversation will finish and persist the assistant resp
 
 - `answer_delta` streams assistant text, but the final `run_completed.reply` remains the
   compatibility source of truth for the persisted answer.
+- Full-document answers are buffered rather than provider-token-streamed so partial coverage
+  can be disclosed before the first visible delta.
+- Large documents expose only the first configured character range; streaming does not imply
+  background multi-range traversal.
 - Deterministic fallback may chunk the final local reply immediately before completion when
   the graph provider does not emit token chunks.
 - Cancellation is cooperative and does not hard-abort a blocked provider call yet.
@@ -269,6 +354,10 @@ that leaving a streaming conversation will finish and persist the assistant resp
 
 ## Revision history
 
+- 2026-08-26: Replaced buffered checkpoint-resume replay with immediate `run_resumed`, live LangGraph progress, real answer deltas, and cooperative cancellation checks.
+- 2026-08-25: Defined document-level citation presentation using human-readable document/knowledge-base metadata over chunk-level wire provenance.
+- 2026-08-25: Added refresh-safe `consulted_sources` alongside answer-supported `citations`, including resume/replay parity and legacy `null` semantics.
+- 2026-08-24: Documented full-document buffering, typed coverage events, and replay target fidelity.
 - 2026-05-19: Created after adding the SSE conversation-run stream endpoint.
 - 2026-05-19: Added `answer_delta` events for incremental assistant text streaming.
 - 2026-05-21: Added early `run_started`, cooperative run cancellation, and active-run rejection for send-immediately steering.

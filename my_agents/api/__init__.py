@@ -11,6 +11,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from rich.logging import RichHandler
 
 from my_agents.agents.general_assistant.graph import build_graph
+from my_agents.agents.rag_agent.tool_selection import (
+    RAG_AGENT_PLANNER_MODEL,
+    RAG_AGENT_PLANNER_REASONING_EFFORT,
+)
 from my_agents.api.assistant import GraphRunner, assistant_router, get_graph_runner
 from my_agents.api.auth import auth_router
 from my_agents.api.conversations import conversations_router
@@ -174,6 +178,8 @@ def _log_runtime_configuration(settings: Settings) -> None:
         "runtime.config",
         deployment_environment=settings.deployment_environment,
         response_mode=settings.response_mode,
+        rag_planner_model=RAG_AGENT_PLANNER_MODEL,
+        rag_planner_reasoning_effort=RAG_AGENT_PLANNER_REASONING_EFFORT,
         embedding_mode=settings.embedding_mode,
         reranker_mode=settings.reranker_mode,
         auth_email_mode=settings.auth_email_mode,

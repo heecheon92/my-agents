@@ -50,8 +50,8 @@ class DeterministicRagAgentGroundingVerifier:
 
     This is not a semantic model-output judge. It enforces the v1 invariants the
     service can prove without provider calls: required-RAG completions must carry
-    relevant authorized chunks into citations, safe fallback paths must not cite
-    anything, and general-knowledge completions must not pretend to be grounded.
+    relevant authorized chunks into answer composition, safe fallback paths must not
+    consult document evidence, and general-knowledge completions must not pretend to be grounded.
     """
 
     def verify(
@@ -59,8 +59,8 @@ class DeterministicRagAgentGroundingVerifier:
         *,
         retrieval_decision: RetrievalRoutingDecision,
         answer_mode: AnswerMode,
-        cited_chunks: list[RetrievedChunk],
-        citation_count: int,
+        consulted_chunks: list[RetrievedChunk],
+        consulted_count: int,
         insufficient_evidence: bool = False,
         clarification_required: bool = False,
         retrieval_attempt_count: int = 1,
@@ -69,7 +69,7 @@ class DeterministicRagAgentGroundingVerifier:
         route = retrieval_decision.route
         relevant_chunk_count = sum(
             1
-            for item in cited_chunks
+            for item in consulted_chunks
             if is_relevant_retrieval_result(
                 route=route,
                 source=item.source,
@@ -77,36 +77,36 @@ class DeterministicRagAgentGroundingVerifier:
             )
         )
 
-        if citation_count != len(cited_chunks):
-            errors.append("citation count must match cited chunk count")
-        if relevant_chunk_count != len(cited_chunks):
-            errors.append("all cited chunks must be relevant for the retrieval route")
+        if consulted_count != len(consulted_chunks):
+            errors.append("consulted count must match consulted chunk count")
+        if relevant_chunk_count != len(consulted_chunks):
+            errors.append("all consulted chunks must be relevant for the retrieval route")
 
         if clarification_required:
-            if cited_chunks or citation_count:
-                errors.append("clarification runs must not cite document evidence")
+            if consulted_chunks or consulted_count:
+                errors.append("clarification runs must not consult document evidence")
             return RagAgentGroundingVerification(passed=not errors, errors=tuple(errors))
 
         if insufficient_evidence:
             if route != "retrieval_required":
                 errors.append("insufficient evidence fallback is only valid for required retrieval")
-            if cited_chunks or citation_count:
-                errors.append("insufficient evidence fallback must not persist citations")
+            if consulted_chunks or consulted_count:
+                errors.append("insufficient evidence fallback must not persist consulted evidence")
             if retrieval_attempt_count < 2:
                 errors.append("required retrieval fallback must follow the bounded retry")
             return RagAgentGroundingVerification(passed=not errors, errors=tuple(errors))
 
         if answer_mode == "general_knowledge":
-            if cited_chunks or citation_count:
-                errors.append("general knowledge answers must not persist document citations")
-        elif not cited_chunks:
-            errors.append("document-grounded answers must include at least one citation")
+            if consulted_chunks or consulted_count:
+                errors.append("general knowledge answers must not persist consulted evidence")
+        elif not consulted_chunks:
+            errors.append("document-grounded answers must consult at least one source")
 
         if route == "retrieval_required":
             if answer_mode != "document_grounded":
                 errors.append("required retrieval completions must be document grounded")
-            if not cited_chunks or citation_count < 1:
-                errors.append("required retrieval completions must include citations")
+            if not consulted_chunks or consulted_count < 1:
+                errors.append("required retrieval completions must consult source evidence")
 
         return RagAgentGroundingVerification(passed=not errors, errors=tuple(errors))
 

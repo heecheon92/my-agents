@@ -7,7 +7,7 @@ from collections.abc import Iterator
 from time import perf_counter
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -16,8 +16,16 @@ from my_agents.agents.general_assistant.classifier import classify_messages
 from my_agents.agents.general_assistant.responders import ResponseProviderConfigurationError
 from my_agents.api.assistant import GraphRunner, get_graph_runner
 from my_agents.api.conversations.auth import get_authorized_conversation
+from my_agents.api.conversations.endpoints.runs import (
+    PreparedConversationRunResume,
+    prepare_conversation_run_resume,
+)
 from my_agents.api.conversations.graph_invocation import graph_context_for_run
-from my_agents.api.conversations.graph_streaming import fallback_answer_deltas, stream_graph_items
+from my_agents.api.conversations.graph_streaming import (
+    fallback_answer_deltas,
+    stream_graph_items,
+    stream_resumed_graph_items,
+)
 from my_agents.api.conversations.interactions import (
     delete_checkpoint_thread,
     graph_interrupt_payload,
@@ -25,10 +33,11 @@ from my_agents.api.conversations.interactions import (
 )
 from my_agents.api.conversations.retrieval_context import (
     ConversationRetrievalContext,
-    chunks_used_for_answer,
+    chunks_consulted_for_answer,
     clarification_reply,
     clarification_request,
     compose_rag_reply,
+    document_coverage_from_graph_state,
     graph_has_retrieval_context,
     graph_input_for_run,
     graph_memory_source_snapshot_json,
@@ -69,7 +78,6 @@ from my_agents.auth.dependencies import get_current_principal
 from my_agents.auth.guest_limits import assert_guest_can_send_prompt
 from my_agents.conversations.models import AgentEventModel, AgentEventType, AgentRunModel, RunStatus
 from my_agents.conversations.schemas import (
-    ConversationRunInterruptedResponse,
     ConversationRunRequest,
 )
 from my_agents.document_workspace.provider import DocumentWorkspaceProvider
@@ -77,7 +85,7 @@ from my_agents.document_workspace.service import (
     assert_document_workspace_access,
     prepare_document_workspace_runtime,
 )
-from my_agents.interactions.schemas import ConversationRunResumeRequest
+from my_agents.interactions.schemas import ConversationRunResumeRequestType
 from my_agents.knowledge.auth import (
     KnowledgeBaseSelectionContext,
     resolve_conversation_knowledge_context,
@@ -95,35 +103,364 @@ logger = logging.getLogger(__name__)
 def stream_resumed_conversation_run(
     conversation_id: str,
     run_id: str,
-    request: ConversationRunResumeRequest,
+    request: ConversationRunResumeRequestType,
     principal: Annotated[Principal, Depends(get_current_principal)],
     db: Annotated[Session, Depends(get_database_session)],
     graph_runner: Annotated[GraphRunner, Depends(get_graph_runner)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> StreamingResponse:
     """Resume a paused run and expose the result through the existing SSE vocabulary."""
-    from my_agents.api.conversations.endpoints.runs import resume_conversation_run
+    prepared = prepare_conversation_run_resume(
+        conversation_id=conversation_id,
+        run_id=run_id,
+        request=request,
+        principal=principal,
+        db=db,
+        graph_runner=graph_runner,
+    )
 
     def events() -> Iterator[str]:
-        http_response = Response()
-        result = resume_conversation_run(
-            conversation_id=conversation_id,
-            run_id=run_id,
-            request=request,
-            response=http_response,
-            principal=principal,
+        yield sse_event(
+            AgentEventType.RUN_RESUMED.value,
+            prepared.resumed_event_payload,
+        )
+        yield from resumed_conversation_run_events(
             db=db,
+            prepared=prepared,
             graph_runner=graph_runner,
             settings=settings,
         )
-        if isinstance(result, ConversationRunInterruptedResponse):
-            yield sse_event("run_interrupted", result.model_dump(mode="json"))
-            return
-        for sequence, delta in enumerate(fallback_answer_deltas(result.reply), start=1):
-            yield sse_event("answer_delta", {"delta": delta, "sequence": sequence})
-        yield sse_event("run_completed", result.model_dump(mode="json"))
 
     return StreamingResponse(events(), media_type="text/event-stream")
+
+
+def resumed_conversation_run_events(
+    *,
+    db: Session,
+    prepared: PreparedConversationRunResume,
+    graph_runner: GraphRunner,
+    settings: Settings,
+) -> Iterator[str]:
+    """Stream one claimed checkpoint resume through persistence and completion."""
+    run = prepared.run
+    messages = prepared.messages
+    selection_context = prepared.selection_context
+    graph_context = graph_context_for_run(
+        db=db,
+        user_id=run.user_id,
+        selection_context=selection_context,
+        reasoning_mode=run.reasoning_mode,  # type: ignore[arg-type]
+        reasoning_effort=run.reasoning_effort,  # type: ignore[arg-type]
+    )
+    retrieval_context: ConversationRetrievalContext | None = None
+    memory_snapshot: str | None = None
+    stream_route = classify_messages(messages)
+    graph_invoked = False
+    graph_event = None
+    delta_sequence = 0
+    streamed_base_reply_parts: list[str] = []
+    result: dict[str, Any] | None = None
+
+    try:
+        for item in stream_resumed_graph_items(
+            graph_runner=graph_runner,
+            run_id=run.id,
+            resume_value=prepared.resume_value,
+            graph_context=graph_context,
+        ):
+            if item.result:
+                memory_snapshot = graph_memory_source_snapshot_json(item.result) or memory_snapshot
+                if retrieval_context is None and graph_has_retrieval_context(item.result):
+                    retrieval_context = retrieval_context_from_graph_state(item.result, db)
+                    retrieval_payload = record_retrieval_completed_event(
+                        db, run.id, retrieval_context
+                    )
+                    yield sse_event(
+                        AgentEventType.RETRIEVAL_COMPLETED.value,
+                        retrieval_payload,
+                    )
+            if retrieval_context is not None and not graph_invoked:
+                graph_payload = graph_invoked_payload(
+                    route=stream_route,
+                    messages=messages,
+                    retrieved_chunks=retrieval_context.retrieved_chunks,
+                    retrieval_decision=retrieval_context.decision,
+                    answer_mode=retrieval_context.answer_mode,
+                    selection_context=selection_context,
+                    memory_source_snapshot_json=memory_snapshot,
+                )
+                graph_event = append_run_event(
+                    db,
+                    run.id,
+                    AgentEventType.GRAPH_INVOKED,
+                    graph_payload,
+                )
+                yield sse_event(AgentEventType.GRAPH_INVOKED.value, graph_payload)
+                graph_invoked = True
+            if is_run_cancelling(db, run.id):
+                yield cancelled_sse_event(db, run.id)
+                delete_checkpoint_thread(graph_runner, run.id)
+                return
+            if item.kind == "delta":
+                delta_sequence += 1
+                streamed_base_reply_parts.append(item.delta)
+                yield sse_event(
+                    "answer_delta",
+                    {"delta": item.delta, "sequence": delta_sequence},
+                )
+            elif item.kind == "result":
+                result = item.result
+    except ResponseProviderConfigurationError as exc:
+        yield from _failed_resumed_conversation_run_events(
+            db=db,
+            run=run,
+            graph_runner=graph_runner,
+            error=exc,
+            status_code=503,
+            memory_snapshot=memory_snapshot,
+        )
+        return
+    except Exception as exc:
+        yield from _failed_resumed_conversation_run_events(
+            db=db,
+            run=run,
+            graph_runner=graph_runner,
+            error=exc,
+            status_code=502,
+            memory_snapshot=memory_snapshot,
+        )
+        return
+
+    try:
+        yield from _finalize_resumed_conversation_run_events(
+            db=db,
+            prepared=prepared,
+            graph_runner=graph_runner,
+            settings=settings,
+            retrieval_context=retrieval_context,
+            memory_snapshot=memory_snapshot,
+            graph_invoked=graph_invoked,
+            graph_event=graph_event,
+            delta_sequence=delta_sequence,
+            streamed_base_reply_parts=streamed_base_reply_parts,
+            result=result,
+        )
+    except ResponseProviderConfigurationError as exc:
+        yield from _failed_resumed_conversation_run_events(
+            db=db,
+            run=run,
+            graph_runner=graph_runner,
+            error=exc,
+            status_code=503,
+            memory_snapshot=memory_snapshot,
+        )
+        return
+    except Exception as exc:
+        yield from _failed_resumed_conversation_run_events(
+            db=db,
+            run=run,
+            graph_runner=graph_runner,
+            error=exc,
+            status_code=502,
+            memory_snapshot=memory_snapshot,
+        )
+        return
+
+
+def _finalize_resumed_conversation_run_events(
+    *,
+    db: Session,
+    prepared: PreparedConversationRunResume,
+    graph_runner: GraphRunner,
+    settings: Settings,
+    retrieval_context: ConversationRetrievalContext | None,
+    memory_snapshot: str | None,
+    graph_invoked: bool,
+    graph_event: AgentEventModel | None,
+    delta_sequence: int,
+    streamed_base_reply_parts: list[str],
+    result: dict[str, Any] | None,
+) -> Iterator[str]:
+    """Finalize one completed resume while keeping the claimed run terminal on failure."""
+    run = prepared.run
+    messages = prepared.messages
+    selection_context = prepared.selection_context
+    if result is None:
+        raise RuntimeError("resumed graph stream ended without a final result")
+    final_retrieval_context = retrieval_context_from_graph_state(result, db)
+    if retrieval_context is None:
+        retrieval_payload = record_retrieval_completed_event(db, run.id, final_retrieval_context)
+        yield sse_event(AgentEventType.RETRIEVAL_COMPLETED.value, retrieval_payload)
+    retrieval_context = final_retrieval_context
+    if is_run_cancelling(db, run.id):
+        yield cancelled_sse_event(db, run.id)
+        delete_checkpoint_thread(graph_runner, run.id)
+        return
+    if graph_interrupt_payload(result) is not None:
+        route = coerce_route(result.get("route") or classify_messages(messages))
+        run.route_label = route.label
+        run.route_explanation = route.explanation
+        run.retrieval_route = retrieval_context.decision.route
+        run.answer_mode = retrieval_context.answer_mode
+        run.document_scope = retrieval_context.decision.document_scope
+        interrupted = persist_waiting_document_selection(
+            db=db,
+            run=run,
+            graph_state=result,
+            wait_seconds=settings.hitl_wait_seconds,
+        )
+        yield sse_event("run_interrupted", interrupted.model_dump(mode="json"))
+        return
+
+    route = coerce_route(result.get("route") or classify_messages(messages))
+    if retrieval_context.insufficient_evidence or "reply" not in result:
+        response = persist_completed_run(
+            db=db,
+            run_id=run.id,
+            conversation_id=run.conversation_id,
+            consulted_chunks=[],
+            route=route,
+            reply=insufficient_evidence_reply(),
+            retrieval_decision=retrieval_context.decision,
+            answer_mode=retrieval_context.answer_mode,
+            selection_context=selection_context,
+            insufficient_evidence=True,
+            retrieval_evidence=retrieval_context.retrieval_evidence,
+        )
+        yield sse_event(
+            AgentEventType.ANSWER_COMPOSED.value,
+            answer_composed_payload(
+                citation_count=0,
+                reply=response.reply,
+                retrieval_decision=retrieval_context.decision,
+                answer_mode=retrieval_context.answer_mode,
+                selection_context=selection_context,
+                insufficient_evidence=True,
+            ),
+        )
+        for delta in fallback_answer_deltas(response.reply):
+            delta_sequence += 1
+            yield sse_event(
+                "answer_delta",
+                {"delta": delta, "sequence": delta_sequence},
+            )
+        delete_checkpoint_thread(graph_runner, run.id)
+        yield sse_event("run_completed", response.model_dump(mode="json"))
+        return
+
+    memory_snapshot = graph_memory_source_snapshot_json(result) or memory_snapshot
+    if not graph_invoked:
+        graph_payload = graph_invoked_payload(
+            route=route,
+            messages=messages,
+            retrieved_chunks=retrieval_context.retrieved_chunks,
+            retrieval_decision=retrieval_context.decision,
+            answer_mode=retrieval_context.answer_mode,
+            selection_context=selection_context,
+            memory_source_snapshot_json=memory_snapshot,
+        )
+        graph_event = append_run_event(
+            db,
+            run.id,
+            AgentEventType.GRAPH_INVOKED,
+            graph_payload,
+        )
+        yield sse_event(AgentEventType.GRAPH_INVOKED.value, graph_payload)
+    update_graph_invoked_event_memory_snapshot(db, graph_event, memory_snapshot)
+    base_reply = result.get("reply") or "".join(streamed_base_reply_parts).strip()
+    consulted_chunks = chunks_consulted_for_answer(retrieval_context)
+    document_coverage = document_coverage_from_graph_state(result)
+    reply = compose_rag_reply(base_reply, consulted_chunks, retrieval_context.answer_mode)
+    reply, consulted_chunks, insufficient = _verified_grounding_or_fallback(
+        reply=reply,
+        consulted_chunks=consulted_chunks,
+        retrieval_decision=retrieval_context.decision,
+        answer_mode=retrieval_context.answer_mode,
+        retrieval_attempt_count=retrieval_context.retrieval_attempt_count,
+    )
+    if not streamed_base_reply_parts:
+        for delta in fallback_answer_deltas(reply):
+            if is_run_cancelling(db, run.id):
+                yield cancelled_sse_event(db, run.id)
+                delete_checkpoint_thread(graph_runner, run.id)
+                return
+            delta_sequence += 1
+            yield sse_event(
+                "answer_delta",
+                {"delta": delta, "sequence": delta_sequence},
+            )
+    if is_run_cancelling(db, run.id):
+        yield cancelled_sse_event(db, run.id)
+        delete_checkpoint_thread(graph_runner, run.id)
+        return
+    response = persist_completed_run(
+        db=db,
+        run_id=run.id,
+        conversation_id=run.conversation_id,
+        consulted_chunks=consulted_chunks,
+        route=route,
+        reply=reply,
+        retrieval_decision=retrieval_context.decision,
+        answer_mode=retrieval_context.answer_mode,
+        selection_context=selection_context,
+        insufficient_evidence=insufficient,
+        retrieval_evidence=retrieval_context.retrieval_evidence,
+        memory_source_snapshot=memory_snapshot,
+        document_coverage=document_coverage,
+        retrieval_latency_ms=retrieval_context.retrieval_latency_ms,
+    )
+    if document_coverage is not None:
+        yield sse_event(
+            AgentEventType.FULL_DOCUMENT_READ.value,
+            {
+                **document_coverage.model_dump(mode="json"),
+                "latency_ms": retrieval_context.retrieval_latency_ms,
+            },
+        )
+    yield sse_event(
+        AgentEventType.ANSWER_COMPOSED.value,
+        answer_composed_payload(
+            citation_count=len(response.citations),
+            reply=reply,
+            retrieval_decision=retrieval_context.decision,
+            answer_mode=retrieval_context.answer_mode,
+            selection_context=selection_context,
+            insufficient_evidence=insufficient,
+        ),
+    )
+    delete_checkpoint_thread(graph_runner, run.id)
+    yield sse_event("run_completed", response.model_dump(mode="json"))
+
+
+def _failed_resumed_conversation_run_events(
+    *,
+    db: Session,
+    run: AgentRunModel,
+    graph_runner: GraphRunner,
+    error: Exception,
+    status_code: int,
+    memory_snapshot: str | None,
+) -> Iterator[str]:
+    """Persist and stream the shared safe failure contract for a claimed resume."""
+    failed_run_id = persist_failed_run(
+        db=db,
+        run_id=run.id,
+        conversation_id=run.conversation_id,
+        error_type=type(error).__name__,
+        memory_source_snapshot=memory_snapshot,
+    )
+    _log_stream_failure(
+        error,
+        conversation_id=run.conversation_id,
+        run_id=failed_run_id,
+        status_code=status_code,
+    )
+    delete_checkpoint_thread(graph_runner, failed_run_id)
+    yield sse_event(
+        AgentEventType.RUN_FAILED.value,
+        {"run_id": failed_run_id, "safe_error_type": type(error).__name__},
+    )
+    yield sse_event("run_error", {"run_id": failed_run_id, "status_code": status_code})
 
 
 @router.post(
@@ -428,6 +765,7 @@ def conversation_run_events(
                 run_id=run_id,
                 status_code=503,
             )
+            delete_checkpoint_thread(graph_runner, run_id)
             yield sse_event(
                 AgentEventType.RUN_FAILED.value,
                 {"run_id": run_id, "safe_error_type": type(exc).__name__},
@@ -459,16 +797,19 @@ def conversation_run_events(
 
         if result is None:
             raise RuntimeError("conversation graph stream ended without a final result")
+        final_retrieval_context = retrieval_context_from_graph_state(result, db)
         if retrieval_context is None:
-            retrieval_context = retrieval_context_from_graph_state(result, db)
-            retrieval_route = retrieval_context.decision.route
-            answer_mode = retrieval_context.answer_mode
-            retrieval_payload = record_retrieval_completed_event(db, run.id, retrieval_context)
+            retrieval_payload = record_retrieval_completed_event(
+                db, run.id, final_retrieval_context
+            )
             yield sse_event(AgentEventType.RETRIEVAL_COMPLETED.value, retrieval_payload)
             if is_run_cancelling(db, run.id):
                 yield cancelled_sse_event(db, run.id)
                 record_run_metric("cancelled")
                 return
+        retrieval_context = final_retrieval_context
+        retrieval_route = retrieval_context.decision.route
+        answer_mode = retrieval_context.answer_mode
         if graph_interrupt_payload(result) is not None:
             route = coerce_route(result.get("route") or classify_messages(messages))
             run.route_label = route.label
@@ -492,7 +833,7 @@ def conversation_run_events(
                 db=db,
                 run_id=run.id,
                 conversation_id=conversation_id,
-                retrieved_chunks=[],
+                consulted_chunks=[],
                 route=route,
                 reply=clarification_reply(result.get("reply"), retrieval_context.decision),
                 retrieval_decision=retrieval_context.decision,
@@ -522,7 +863,7 @@ def conversation_run_events(
                 db=db,
                 run_id=run.id,
                 conversation_id=conversation_id,
-                retrieved_chunks=[],
+                consulted_chunks=[],
                 route=route,
                 reply=insufficient_evidence_reply(),
                 retrieval_decision=retrieval_context.decision,
@@ -557,11 +898,12 @@ def conversation_run_events(
         memory_snapshot = graph_memory_source_snapshot_json(result) or memory_snapshot
         update_graph_invoked_event_memory_snapshot(db, graph_event, memory_snapshot)
         base_reply = result.get("reply") or "".join(streamed_base_reply_parts).strip()
-        used_chunks = chunks_used_for_answer(retrieval_context)
-        reply = compose_rag_reply(base_reply, used_chunks, retrieval_context.answer_mode)
-        reply, used_chunks, completion_insufficient_evidence = _verified_grounding_or_fallback(
+        consulted_chunks = chunks_consulted_for_answer(retrieval_context)
+        document_coverage = document_coverage_from_graph_state(result)
+        reply = compose_rag_reply(base_reply, consulted_chunks, retrieval_context.answer_mode)
+        reply, consulted_chunks, completion_insufficient_evidence = _verified_grounding_or_fallback(
             reply=reply,
-            cited_chunks=used_chunks,
+            consulted_chunks=consulted_chunks,
             retrieval_decision=retrieval_context.decision,
             answer_mode=retrieval_context.answer_mode,
             retrieval_attempt_count=retrieval_context.retrieval_attempt_count,
@@ -607,7 +949,7 @@ def conversation_run_events(
             db=db,
             run_id=run.id,
             conversation_id=conversation_id,
-            retrieved_chunks=used_chunks,
+            consulted_chunks=consulted_chunks,
             route=route,
             reply=reply,
             retrieval_decision=retrieval_context.decision,
@@ -616,7 +958,17 @@ def conversation_run_events(
             insufficient_evidence=completion_insufficient_evidence,
             retrieval_evidence=retrieval_context.retrieval_evidence,
             memory_source_snapshot=memory_snapshot,
+            document_coverage=document_coverage,
+            retrieval_latency_ms=retrieval_context.retrieval_latency_ms,
         )
+        if document_coverage is not None:
+            yield sse_event(
+                AgentEventType.FULL_DOCUMENT_READ.value,
+                {
+                    **document_coverage.model_dump(mode="json"),
+                    "latency_ms": retrieval_context.retrieval_latency_ms,
+                },
+            )
         yield sse_event(
             AgentEventType.ANSWER_COMPOSED.value,
             answer_composed_payload(
@@ -637,6 +989,7 @@ def conversation_run_events(
             raise
         if is_run_active(db, run.id):
             cancelled_sse_event(db, run.id)
+        delete_checkpoint_thread(graph_runner, run.id)
         record_run_metric("cancelled")
         raise
     except ResponseProviderConfigurationError as exc:
@@ -674,6 +1027,7 @@ def conversation_run_events(
                 run_id=run_id,
                 status_code=502,
             )
+            delete_checkpoint_thread(graph_runner, run_id)
             yield sse_event(
                 AgentEventType.RUN_FAILED.value,
                 {"run_id": run_id, "safe_error_type": type(exc).__name__},

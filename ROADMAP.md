@@ -153,13 +153,15 @@ Current honest status:
 - [x] Entity/relationship expansion limited to authorized chunks.
 - [x] Product conversation run composes authorized context into the answer.
 - [x] Citations are persisted and returned in run responses.
+- [x] Run responses distinguish the full user-visible `consulted_sources` set from conservative answer-supported `citations`; legacy runs expose `consulted_sources=null` instead of receiving unverifiable attribution retroactively.
+- [x] Citation rows expose human-readable document and knowledge-base names so product UIs can group chunk-level provenance into one entry per document and hide internal IDs/snippets.
 - [x] Negative tests for permission leakage.
 - [x] Redacted event payloads avoid raw private content.
 - [x] Real embedding generation provider boundary.
 - [x] JSON-backed semantic cosine ranking over authorized chunks as the first real-embedding slice.
 - [x] pgvector schema columns and extension usage.
 - [x] Permission-filtered SQL vector search before ranking enters app memory on Postgres, with JSON/SQLite fallback.
-- [~] **ContextForge dedicated RAG agent milestone**: first-class document-grounded retrieval/service boundary exists under `my_agents/agents/context_forge/`. It owns deterministic query planning, source-boundary handoff, candidate fusion, deterministic or optional cross-encoder reranking, context packing, and redacted retrieval evidence before the general assistant composes an answer. OpenAI planning, graph/tool orchestration, layout-aware parser artifacts, and full hybrid production tuning remain follow-up work. See [`docs/idea/dedicated-rag-agent.md`](./docs/idea/dedicated-rag-agent.md) and [`docs/idea/layout-aware-ingestion-rag-agent.md`](./docs/idea/layout-aware-ingestion-rag-agent.md).
+- [~] **ContextForge dedicated RAG agent milestone**: first-class document-grounded retrieval/service boundary exists under `my_agents/agents/context_forge/`. It owns deterministic query planning, source-boundary handoff, candidate fusion, deterministic or optional cross-encoder reranking, context packing, and redacted retrieval evidence before the general assistant composes an answer. The public RAG Agent now adds a narrow Luna standard/low typed tool selector for focused versus comprehensive retrieval; iterative evidence-driven tool orchestration, layout-aware parser artifacts, and full hybrid production tuning remain follow-up work. See [`docs/idea/dedicated-rag-agent.md`](./docs/idea/dedicated-rag-agent.md) and [`docs/idea/layout-aware-ingestion-rag-agent.md`](./docs/idea/layout-aware-ingestion-rag-agent.md).
 - [x] Agentic RAG V1 — RAG Agent contract surface: `my_agents/agents/rag_agent/` names ContextForge as the Retrieval Agent and adds a dedicated deterministic graph form plus planner/verifier coverage for compact localized ko/en trace stages without moving authorization/retrieval/provider work out of service layers.
 - [x] Treat structured document questions as a production-level RAG requirement, not a demo nicety. Motivating case: a user uploads a PDF API reference and asks “list the API endpoints,” but generic vector/keyword retrieval misses chunks because the document lists `GET /...`, `POST /...`, etc. without saying “these are available endpoints.”
 - [x] Ingestion-time structured/entity extraction for domain-shaped artifacts, starting with API docs: detect HTTP method/path patterns, OpenAPI-like tables, request/response sections, config keys, commands, error codes, database tables, and other enumerable entities with source page/chunk provenance.
@@ -168,14 +170,15 @@ Current honest status:
 - [~] RAG source policy for unified `knowledge_base_selection` across authorized personal, published, and group KBs exists for the current product path; owner-private transcripts, membership-scoped group knowledge, hidden staging exclusion, and no source leakage are covered, while deletion/retention edge cases still need production hardening.
 - [~] Hybrid retrieval strategy: independent permission-filtered vector and request-local `BM25Okapi` lexical rankings now use `chunk_id`-keyed Reciprocal Rank Fusion (`k=60`) by default, alongside graph/entity/structured expansion. BM25 reuses authorized chunk text and needs no dedicated DB index or migration; production corpus caching/full-text indexing, multilingual tokenization, and retrieval-quality/latency evaluation remain guided by [`docs/product-chat-service/en/12-retrieval-agent-hybrid-reference.md`](./docs/product-chat-service/en/12-retrieval-agent-hybrid-reference.md).
 - [~] Cross-encoder reranker stage over top-k authorized candidates after vector/full-text retrieval; the interface and `MY_AGENTS_RERANKER_MODE=cross_encoder` path exist, while production model packaging/latency evals remain follow-up work. Local tests stay offline through the deterministic default and fake-model unit coverage. On small hosted runtimes, switch to deterministic mode if memory/startup latency becomes unstable.
-- [ ] **Critical next move — tokenizer-aware retrieval and embedding-index safety.** Keep `BAAI/bge-reranker-v2-m3` as the Korean/multilingual cross-encoder direction instead of the effective MS MARCO override; add query-aware reranker token windows so over-limit Korean/code chunks do not silently lose tail evidence; persist embedding provider/model/dimensions/encoding/index-version identity and exclude incompatible stored vectors even when dimensions match; add a re-embed/backfill decision for existing documents; and make final answer-context token usage observable while preserving the current character cap as a fallback. Require Korean, English, and code quality/latency fixtures before calling the milestone complete. See [`docs/learning/project-notes/tokenizer-consistency-audit-and-rag-index-safety.md`](./docs/learning/project-notes/tokenizer-consistency-audit-and-rag-index-safety.md).
-- [ ] **Read-only full-document pull tool for comprehensive document tasks.**
-  - **Intended usage:** expose a RAG Agent-owned tool to the general assistant only after one authorized document has been resolved and the user asks for whole-document coverage, such as summarizing the complete file, reviewing every section, extracting all requirements, or checking cross-section consistency. Normal fact lookup and section-specific questions should continue to use focused chunk retrieval.
-  - **Tool and authorization contract:** the application supplies the authenticated principal, conversation, and selected knowledge-base scope through runtime context; the model must not provide or override `user_id`. The tool must reuse permission-first document filtering, treat returned document text as untrusted content, return full extracted text only below an explicit size/token threshold, and use bounded range/cursor reads for larger documents.
-  - **Graph contract:** add an application-executed `assistant -> tool -> assistant` loop or equivalent typed graph node instead of treating the database read like an OpenAI-hosted provider tool. Preserve chunk/page/offset provenance in tool results so persisted citations can still identify precise supporting evidence.
-  - **Non-goal:** do not replace default chunk retrieval, automatically inject every selected document, retain original upload bytes solely for this tool, or allow full-document reads to bypass clarification, authorization, context budgets, or source-selection policy.
-  - **Expected outcome:** comprehensive-document requests should no longer miss relevant sections because of top-k, injected-chunk, or per-snippet limits, while ordinary RAG questions remain fast and focused. Users should receive answers that honestly distinguish complete-document coverage from partial retrieval and still include precise citations.
-  - **Acceptance evidence:** cover owner/group/explicit-permission/system-KB authorization and denial, ambiguous-document clarification, small-document full reads, large-document continuation, prompt-injection containment, citation provenance, deterministic offline tool tests, and latency/token-budget comparisons against the existing chunk-only path.
+- [ ] **Next retrieval hardening move — tokenizer-aware retrieval and embedding-index safety.** Keep `BAAI/bge-reranker-v2-m3` as the Korean/multilingual cross-encoder direction instead of the effective MS MARCO override; add query-aware reranker token windows so over-limit Korean/code chunks do not silently lose tail evidence; persist embedding provider/model/dimensions/encoding/index-version identity and exclude incompatible stored vectors even when dimensions match; add a re-embed/backfill decision for existing documents; and make final answer-context token usage observable while preserving the current character cap as a fallback. Require Korean, English, and code quality/latency fixtures before calling the milestone complete. See [`docs/learning/project-notes/tokenizer-consistency-audit-and-rag-index-safety.md`](./docs/learning/project-notes/tokenizer-consistency-audit-and-rag-index-safety.md).
+- [~] **Read-only full-document pull tool for comprehensive document tasks.**
+  - **Implemented vertical slice:** after private-knowledge delegation, a fixed `gpt-5.6-luna` standard/low RAG planner chooses `search_authorized_chunks` or `read_authorized_document_comprehensively`; deterministic mode, invalid tool output, and provider failure use a local semantic fallback. The graph resolves one authorized personal/group document, reuses typed document selection when needed, prepares coverage metadata, recalls memory, and answers through `respond_full_document`. Ordinary fact lookup, ordinary summaries, and section-specific questions stay on focused chunk retrieval.
+  - **Authorization and read contract:** `RagAgentRuntime` exposes typed target-resolution and bounded extracted-text range reads. The authenticated principal and selected-KB scope come only from application runtime context; owner/group/explicit document permission is revalidated at every read, and ambient system documents are excluded from resolution, options, resume values, and full-document reads.
+  - **Coverage and persistence contract:** normalized extracted text up to 24,000 characters is provided as complete coverage. Larger documents provide only the first 12,000-character half-open range and an unavoidable localized partial-review disclosure. Run responses/details expose compact `document_coverage`, and a redacted `full_document_read` event preserves offsets, totals, and latency without storing raw text. Overlapping authorized chunks retain citation provenance.
+  - **Checkpoint boundary:** graph version `general-assistant-checkpoint-v2` stores only compact IDs, coverage metadata, retrieval snapshots, and an internal continuation cursor. The response node re-reads the authorized range at invocation time; raw full-document text is not written to checkpoint state, Product DB events, or application logs/traces.
+  - **Non-goal:** this slice does not replace default chunk retrieval, inject every selected document, retain original upload bytes solely for this path, or allow document reads to bypass clarification, authorization, context budgets, or source-selection policy.
+  - **Remaining before complete:** add automatic multi-range traversal and synthesis for large documents, provider/tokenizer-aware budgets and usage evidence, prompt-injection/eval coverage across entire documents, latency/quality comparisons against chunk retrieval, and a deployment procedure that drains or fails older waiting runs before the checkpoint graph-version change.
+- [ ] **Adaptive surrounding-context expansion for focused retrieval.** Keep this separate from explicit comprehensive-document review. After normal hybrid retrieval, a bounded sufficiency decision may request adjacent chunks around one or more authorized anchor chunks when local context is needed for definitions, qualifications, cross-paragraph semantics, or continuation. The model may request expansion, but backend code must revalidate document authorization and selected-KB scope, constrain same-document ordinal/offset windows, cap rounds and token budget, rerank/repack the expanded candidates, and expose only compact redacted decision evidence. Retrieved neighbors are candidates, not automatic citations; only chunks materially supporting the final answer should appear as citations. Acceptance requires deterministic/offline fixtures, weak-context and no-expansion controls, permission-negative tests, citation-selectivity coverage, and quality/latency evidence.
 - [ ] Query expansion stage for synonyms/related concepts while preserving original user intent.
 - [ ] HyDE-style hypothetical-document retrieval path for broad conceptual questions when normal hybrid search under-recovers.
 - [ ] Retrieval-quality eval set with precision/recall-style fixtures, expected source/chunk fixtures, and before/after comparison for hybrid, reranked, and HyDE paths.
@@ -250,6 +253,12 @@ This is the product-facing equivalent of repo-local `AGENTS.md`: durable Markdow
 - [x] Redacted event payloads for frontend-safe activity display.
 - [x] Deterministic eval helper module for grounding, leakage, redaction, and latency budgets.
 - [x] Tests for event ordering and redaction behavior.
+- [ ] **Immediate next task — dynamic model-authored reasoning summaries.** Add bounded nullable
+  `retrieval_planning` and `answer_synthesis` summaries, typed summary SSE/persistence, and
+  refresh/replay reconstruction while keeping final answer text, verified `agent_trace`, and
+  evidence separate. Raw chain-of-thought, prompts, provider traces, hidden provenance,
+  credentials, and document body text remain forbidden. See
+  [`28-dynamic-reasoning-summary-contract.md`](./docs/product-chat-service/en/28-dynamic-reasoning-summary-contract.md).
 - [x] Tests keep OpenAI calls offline/mocked by default.
 - [~] Evals are deterministic fixtures, not a production evaluation platform.
 - [~] Structured application logging policy; permanent redacted deployment diagnostics exist and should be tuned into the broader logging policy.
@@ -315,7 +324,19 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
 
 ## 13. Near-term recommended sequence
 
-0. **Critical next move — tokenizer-aware retrieval and embedding-index safety**
+0. **Immediate next task — dynamic model-authored reasoning summaries**
+   - Preserve three distinct trust channels: model-authored approach summaries, verified
+     `agent_trace`, and evidence/citations.
+   - Add nullable bounded summaries for Luna retrieval planning and Sol answer synthesis.
+   - Request and parse provider summaries without allowing reasoning blocks into `reply` or
+     `answer_delta`.
+   - Add typed summary SSE/persistence, refresh/replay recovery, redaction, authorization,
+     prompt-injection, ordering, empty-summary, deterministic-mode, and cost-accounting tests.
+   - Publish hosted OpenAPI before frontend work. Use
+     [`28-dynamic-reasoning-summary-contract.md`](./docs/product-chat-service/en/28-dynamic-reasoning-summary-contract.md)
+     as the rationale and definition of done.
+
+1. **Tokenizer-aware retrieval and embedding-index safety**
    - Keep the committed `BAAI/bge-reranker-v2-m3` direction for Korean/multilingual reranking and remove the MS MARCO override from the intended runtime before evaluation.
    - Add Korean, English, and code retrieval fixtures, then record relevance, latency, memory, and reranker window/truncation evidence.
    - Add model-tokenizer-aware query/document windows so the reranker never silently discards relevant tail content from an over-limit pair.
@@ -325,7 +346,7 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
    - Stop when multilingual/code reranker fixtures preserve relevant evidence, the BAAI candidate has measured runtime evidence, incompatible embedding spaces cannot be compared, existing data has an explicit migration decision, and permission-first/offline tests remain green.
    - Use [`docs/learning/project-notes/tokenizer-consistency-audit-and-rag-index-safety.md`](./docs/learning/project-notes/tokenizer-consistency-audit-and-rag-index-safety.md) as the analysis and acceptance note.
 
-1. **Internal performance / quality analysis baseline**
+2. **Internal performance / quality analysis baseline**
    - Enable `MY_AGENTS_METRICS_ENABLED=true` only in local, staging, or trusted internal runs.
    - Use `/metrics` to compare request, conversation, ContextForge, retrieval-phase, embedding, reranker, and graph p95 before changing retrieval behavior.
    - Keep labels redacted and low-cardinality; do not turn metrics into a frontend product API.
@@ -334,44 +355,45 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
    - Evaluate Langfuse vs LangSmith for LLM-specific latency, token/cost, trace, eval, and prompt/version metrics.
    - Add OpenTelemetry traces only after aggregate latency shows where per-request waterfalls are needed.
 
-2. **Controlled alpha deploy smoke and tester handoff**
+3. **Controlled alpha deploy smoke and tester handoff**
    - Deploy backend and frontend together after the latest nickname, invite-only group, publish-review, and route-addressable Groups changes.
    - Run hosted smoke: signup with nickname -> email verification/approval as configured -> login -> group invitation/acceptance -> small document upload/ingest -> publish request review/approval -> cited group-knowledge chat.
    - Keep permanent redacted `DEPLOY_DIAG` logs available for hosted smoke/debug; tune noisy call sites only if needed.
    - Record smoke evidence and remaining risks in `docs/product-chat-service/en/15-deployment-troubleshooting-log.md` if anything new is found.
    - Invite only trusted testers at first, with explicit alpha framing and a warning against sensitive uploads.
 
-3. **Hosted ingestion performance pass**
+4. **Hosted ingestion performance pass**
    - Treat Render free-tier PDF/Markdown ingestion slowness as a resource/process-isolation limitation, not a parser correctness bug.
    - Prefer small Markdown/plain-text/native-text PDFs for public demo.
    - Deploy `MY_AGENTS_INGESTION_EXECUTION_MODE=external_worker` with a separate `python -m my_agents.knowledge.ingestion_worker` process before trying large files in production.
    - Add stale-run recovery, worker health checks, and parser policy controls before treating ingestion as production-grade.
    - Consider disabling `MY_AGENTS_RERANKER_MODE=cross_encoder` on tiny hosts if memory pressure affects ingestion or startup.
 
-4. **Deployment hardening**
+5. **Deployment hardening**
    - Keep Render/Vercel/Neon/Resend as the current basic CI/CD demo path.
    - Add automated smoke checks, migration run evidence, rollback steps, and secret rotation notes before calling it production.
    - Keep AWS/ECS-lite as an optional future migration path, not the immediate next requirement.
 
-5. **Production-ish auth hardening**
+6. **Production-ish auth hardening**
    - Promote local auth abuse protection to a shared limiter when deployment topology requires it.
    - Keep the offline/local auth email boundary testable.
    - Prepare real email-provider integration notes before public demo exposure.
 
-6. **Scoped instruction profiles**
+7. **Scoped instruction profiles**
    - Add user and group/workspace instruction profiles as durable Markdown guidance for assistant and future agent behavior.
    - Enforce precedence explicitly: group/workspace instructions override personal instructions, but neither can override app safety, security, or document-permission rules.
    - Propagate the assembled instruction stack into conversation runs, retrieval-agent planning, and observability metadata.
 
-7. **Real retrieval upgrade / retrieval-agent track**
+8. **Real retrieval upgrade / retrieval-agent track**
    - Keep the embedding provider boundary and JSON-backed semantic ranking as the deterministic fallback.
    - Treat pgvector as the first-stage candidate retrieval accelerator on Postgres, not the final relevance judge.
    - Keep permission filtering before every retrieval/reranking step.
    - Promote retrieval into a dedicated retrieval-agent/service boundary once hybrid search needs more than a thin service call: vector + keyword/full-text + graph expansion, top-k candidate fusion, cross-encoder reranking, query expansion, HyDE, context packing, layout-aware section/table tools, and retrieval eval reporting.
-   - Add the read-only full-document pull tool only after the custom application-tool execution loop exists; keep it limited to explicit comprehensive-document intent, one resolved authorized document, bounded full/range reads, and chunk/page/offset citation provenance.
+   - Add bounded adaptive surrounding-context expansion for focused retrieval as a distinct milestone: a sufficiency decision may request same-document neighbors around authorized anchors, while deterministic service code owns authorization, ordinal/offset windows, round/token budgets, reranking, packing, and citation selectivity.
+   - Extend the implemented read-only full-document vertical slice with automatic multi-range traversal and synthesis. Keep it limited to explicit comprehensive-document intent, one resolved authorized document, bounded reads, and chunk/page/offset citation provenance.
    - Add ANN/vector indexes only after the fixed production embedding dimensionality and backfill policy are settled.
 
-8. **Production ingestion upgrade**
+9. **Production ingestion upgrade**
    - Add file upload and parser pipeline, then evolve it toward the layout-aware artifact plan in [`docs/idea/layout-aware-ingestion-rag-agent.md`](./docs/idea/layout-aware-ingestion-rag-agent.md).
    - [done for local/demo] Move ingestion start to an additive in-process async runner with polling.
    - [done for hosted baseline] Add an external-worker execution mode that keeps ingestion work out of the web request process.

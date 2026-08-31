@@ -1,6 +1,6 @@
 ---
 created: 2026-05-17
-updated: 2026-06-16
+updated: 2026-08-31
 status: active
 topics:
   - rag
@@ -15,6 +15,7 @@ related_code:
   - my_agents/knowledge/models.py
   - my_agents/conversations/schemas.py
   - tests/test_permission_aware_rag.py
+  - tests/test_full_document_retrieval.py
 ---
 
 # Permission-aware RAG and citation-backed answers
@@ -27,7 +28,12 @@ A product chat run can now answer with context from ingested personal or group d
 The important rule is simple: retrieval starts from the user's authorized documents, not
 from the entire knowledge corpus.
 
-The current implementation is intentionally deterministic so tests stay offline:
+The retrieval execution remains deterministic and permission-first, while OpenAI mode now
+adds one bounded RAG-owned model decision. After the General Assistant delegates to private
+knowledge, fixed `gpt-5.6-luna` in standard mode with low reasoning effort chooses exactly
+one typed operation: focused authorized chunk search or comprehensive document read.
+Deterministic mode, invalid tool output, and provider failure keep an offline fallback with
+the same two-tool contract:
 
 - retrieval routing classifies each prompt as `no_retrieval`, `retrieval_required`, `retrieval_optional`, or `clarification_required`;
 - direct retrieval uses term matching over authorized chunks only when routing calls for retrieval;
@@ -38,8 +44,22 @@ The current implementation is intentionally deterministic so tests stay offline:
 - filename/title-like document references are matched against authorized document metadata
   before body-only retrieval, so visible upload names can resolve even when absent from text;
 - conversation runs enter retrieval through the `general_assistant` graph, which invokes the RAG Agent runtime; the RAG Agent delegates internally to the thin ContextForge LangGraph RetrievalGraph and records bounded retry/sufficiency state;
-- citations are stored against the `AgentRunModel` only when retrieved chunks are actually used;
-- the response payload returns routing metadata plus citation IDs, document IDs, chunk IDs, and snippets.
+- consulted sources are stored against the `AgentRunModel`; a conservative post-hoc selector
+  marks only sources with visible lexical support in the final reply as answer-supported citations;
+- the response payload returns `citations` as that answer-supported subset and
+  `consulted_sources` as the complete user-visible consulted superset, using the same persisted
+  citation `id` and `chunk_id` for a source appearing in both arrays;
+- each chunk-level response row also carries nullable `document_title` and
+  `knowledge_base_name`. The product UI should collapse rows by `document_id`, show one
+  human-readable document/knowledge-base entry with optional unique page numbers, and avoid
+  displaying snippets or internal document/KB/chunk IDs as ordinary citation details;
+- a semantic `comprehensive_document` path handles explicit or clearly implied English/Korean
+  exhaustive tasks without changing ordinary semantic/BM25 retrieval;
+- the path resolves exactly one currently authorized user-controllable document, excludes
+  ambient system documents, and reuses the durable `document_selection` interaction when
+  more than one eligible document remains ambiguous;
+- completed responses expose `document_coverage` as `complete` or `partial`, and citations
+  come only from chunks overlapping the covered character range.
 
 ## Request flow
 
@@ -107,12 +127,113 @@ The graph expansion step also stays inside the authorized row set. This means a 
 chunk can never become a citation or model context for an outsider just because it shares
 an entity with an authorized chunk.
 
+## Full-document retrieval path
+
+Full-document retrieval complements ranked chunk search for tasks where coverage matters
+more than finding a few relevant passages. After private-knowledge delegation, Luna chooses
+the comprehensive tool for explicit or clearly implied exhaustive intent, including a named
+document plus “without missing anything” / “빠짐없이 검토.” An ordinary “summarize this
+document” request and a weak chunk-search result do not activate it. Deterministic mode and
+provider failure compose the same decision from document reference, exhaustive language,
+and a task verb.
+
+```mermaid
+flowchart TD
+    Intent["Private-knowledge task"] --> Planner{"Luna or deterministic RAG tool choice"}
+    Planner -->|search_authorized_chunks| Ranked["Normal permission-aware chunk retrieval"]
+    Planner -->|read comprehensively| Resolve["Resolve one authorized user-controllable document"]
+    Resolve -->|Ambiguous| HITL["Existing document_selection interrupt"]
+    HITL --> Resolve
+    Resolve -->|Resolved| Read["Read normalized extracted text + overlapping chunks"]
+    Read -->|At or below max chars| Complete["coverage = complete"]
+    Read -->|Above max chars| Partial["first bounded range; coverage = partial"]
+    Complete --> Answer["Compose answer and persist compact coverage metadata"]
+    Partial --> Notice["Prepend mandatory partial-review notice"]
+    Notice --> Answer
+```
+
+Target resolution uses the resumed `selected_document_id`, the only eligible document,
+or one unique normalized title/source-filename match. If several documents remain, the
+same versioned `document_selection` HITL contract used by ordinary ambiguous retrieval
+pauses and resumes the run. Personal/group ownership, membership, explicit read grants,
+the selected KB scope, and current permission are enforced in `RetrievalService`. Ambient
+system KBs are never eligible targets or interaction options.
+
+The read source is `DocumentModel.content`: the current normalized extracted text, not the
+original upload bytes. Offsets are half-open character ranges `[start_offset, end_offset)`
+in that text. With defaults, documents up to 24,000 characters are supplied completely;
+larger documents supply characters `0..12,000` only. The completed response exposes:
+
+```json
+{
+  "document_coverage": {
+    "mode": "partial",
+    "document_id": "...",
+    "title": "...",
+    "source_filename": null,
+    "start_offset": 0,
+    "end_offset": 12000,
+    "total_chars": 48000
+  }
+}
+```
+
+`MY_AGENTS_FULL_DOCUMENT_MAX_CHARS` and
+`MY_AGENTS_FULL_DOCUMENT_RANGE_CHARS` control those character budgets; the range must not
+exceed the complete-read limit. The internal decimal continuation cursor is intentionally
+not a public API field in this slice.
+
+The graph prepares only compact coverage and chunk IDs, clears `retrieved_context`, and
+then re-reads the authorized range inside `respond_full_document`. The raw body therefore
+does not enter application checkpoints or run events. The full-body override is also
+absent from the application logging path and LangSmith tracing is disabled around this
+provider call. Existing opt-in DEBUG retrieval logging may still show its previously
+documented bounded citation-chunk snippets; it does not receive the full-document body.
+
+Streaming run, resume, and replay paths emit at most one `retrieval_completed` progress
+event when retrieval first becomes ready. Terminal persistence does not reuse that early
+snapshot: it reconstructs the retrieval context from the final graph result after the
+response-node authorization/content re-read. If the document changed or became unavailable
+between preparation and composition, the final empty coverage sentinel becomes public
+`document_coverage: null`, no `full_document_read` event or consulted citation is persisted,
+and the run completes with the safe insufficient-evidence response. Coverage validation also
+enforces `start_offset <= end_offset <= total_chars`; `complete` must span exactly
+`[0, total_chars)`, while an explicit `partial` mode remains partial even when its end offset
+happens to equal the current total.
+
 ## Current limitations
 
-- Retrieval routing is deterministic; Postgres ranking now uses pgvector SQL vector search after permission filtering, with JSON-backed cosine similarity as the SQLite/test fallback.
+- Broad source routing remains General Assistant-owned. Focused-versus-comprehensive tool choice is Luna-backed in OpenAI mode with deterministic fallback; Postgres ranking uses pgvector SQL vector search after permission filtering, with JSON-backed cosine similarity as the SQLite/test fallback.
 - LLM query planning, full-text fusion, and ANN/vector index tuning are still future work.
 - The reply composition is a thin service-layer scaffold, not a polished answer synthesis prompt.
-- Citations include snippets but not character offsets in the API response yet.
+- Citation objects still do not expose a per-citation character range; `document_coverage`
+  exposes the overall covered range instead.
+- Full-document reads validate every authorized chunk overlapping the read range, up to a
+  2,000-chunk scan bound. When more than 100 chunks are valid, the runtime keeps 100 evenly
+  distributed provenance chunks, including the beginning and end, instead of discarding all
+  evidence. They prove which document range was available to the answer, not that every consulted
+  chunk supports a particular generated claim. The conservative attribution selector recognizes
+  exact anchors and distinctive phrase/token overlap in the final reply. It deliberately prefers
+  false negatives over unsupported citation claims, so paraphrased answers may commonly produce
+  zero `citations` while retaining non-empty `consulted_sources`. Semantic or model-emitted
+  claim-level attribution remains future work.
+- Large documents receive only the first configured range. There is no automatic cursor
+  loop, per-range summary ledger, or final multi-pass whole-document synthesis yet.
+- Budgets are characters in normalized extracted text, not provider-token estimates.
+- Coverage offsets are coordinates in the current extracted-text revision. The service
+  validates overlapping chunk offsets/content and re-reads before composition, but there
+  is no durable document revision/hash contract yet; changed or stale chunk provenance
+  can make the full-document path return insufficient evidence.
+- At most 2,000 overlapping chunks are validated for one read and at most 100 distributed
+  chunks become persisted consulted sources. A range exceeding the scan bound still fails closed.
+- This path is explicit-intent-only and does not automatically retry a semantically weak
+  ranked retrieval result with full-document access.
+- Focused retrieval does not yet support adaptive surrounding-context expansion. That is a
+  separate milestone: a bounded sufficiency decision may request same-document neighbors
+  around authorized anchor chunks, while backend code owns permission revalidation,
+  ordinal/offset windows, round/token budgets, reranking/packing, and citation selectivity.
+  Neighboring chunks are candidates and must not become answer-supported citations merely because
+  they were read.
 - Streaming exists, but frontend display of retrieval route/answer mode still belongs to the separate frontend repository.
 - The legacy `/assistant/chat` endpoint still exists for smoke checks and does not own product KB access.
 
@@ -165,8 +286,24 @@ flowchart LR
 - optional retrieval can fall back to `general_knowledge` when no relevant authorized chunks exist;
 - the graph receives only retrieved chunk IDs/context that passed service-layer authorization, not raw unauthorized document text.
 
+`tests/test_full_document_retrieval.py` verifies explicit-intent gating, owner and explicit
+permission access, half-open cursor ranges, complete and partial coverage, overlapping
+consulted sources, ambiguous selection/resume, system-safe checkpoint/event persistence, buffered
+partial-stream disclosure, refresh recovery, replay without source substitution, resume-stream
+coverage parity, and final-state TOCTOU downgrades across run/resume/replay SSE paths.
+
+`tests/test_citation_attribution.py` and `tests/test_conversations_api.py` verify the conservative
+selector and the wire contract. New attributed runs return `consulted_sources: []` when no source
+was consulted. Legacy runs return `consulted_sources: null` and retain their historical flat
+`citations` list because those rows cannot honestly be reclassified after the fact.
+
 ## Revision history
 
+- 2026-08-31: Made run/resume/replay SSE terminal persistence use the final post-re-read retrieval context, added relational coverage validation, and documented safe TOCTOU downgrade behavior.
+- 2026-08-25: Added human-readable document and knowledge-base citation metadata and documented document-level UI grouping over chunk-level audit provenance.
+- 2026-08-25: Separated the complete consulted-source set from conservative answer-supported citations, including legacy `null` versus attributed empty-list semantics and stable shared IDs.
+- 2026-08-25: Replaced the 100-chunk fail-closed cutoff with bounded distributed provenance sampling after a valid 190-chunk Markdown document reproduced the insufficient-evidence fallback.
+- 2026-08-24: Added the explicit-intent comprehensive-document path, coverage contract, privacy boundary, and bounded large-document limitations.
 - 2026-06-17: Added future retrieval quality/speed profile guidance for balancing RAG accuracy with product UX latency.
 - 2026-06-16: Promoted `rag_agent` to the assistant-facing retrieval boundary invoked from `general_assistant`, while ContextForge remains the delegated permission-first retrieval graph.
 - 2026-06-10: Added the thin ContextForge RetrievalGraph wrapper as the active retrieval implementation seam while keeping deeper tool-using graph orchestration future-gated.

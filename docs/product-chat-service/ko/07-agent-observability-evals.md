@@ -6,6 +6,39 @@
 
 이 문서는 `product-chat-service/07-agent-observability-evals.md`의 한국어 문서 트랙 항목입니다. 현재는 핵심 목적과 영어 원문 위치를 안내하는 요약본입니다.
 
+Persisted event vocabulary에는 `run_started`, `user_message_stored`,
+`retrieval_completed`, `full_document_read`, `graph_invoked`, attachment/workspace/artifact
+event, `answer_composed`, `run_interrupted`, `run_resumed`, cancel event, `run_failed`가
+포함됩니다. `answer_delta`, `run_completed`, `run_error`는 SSE 전용이며 persisted event
+enum이 아닙니다.
+
+`full_document_read`는 opt-in 전체 문서 검토의 redacted audit event입니다. Payload에는
+`complete|partial` mode, document ID/title/source filename, 읽은 character offset,
+`total_chars`, latency만 들어가며 raw body나 내부 continuation cursor는 포함하지 않습니다.
+같은 coverage metadata는 run detail 새로고침 뒤에도 복원됩니다.
+
+전체 문서 body는 LangGraph checkpoint/state나 application event/log payload에 복사하지
+않고 response node 안에서 권한을 다시 확인한 뒤 일시적으로 읽습니다. Body를 받는 provider
+call 주위의 LangSmith tracing도 끕니다. 기존 opt-in DEBUG retrieval log는 이전처럼 제한된
+240-character citation chunk preview를 표시할 수 있지만 full-body override는 받지 않습니다.
+
+응답 provenance는 두 집합으로 나뉩니다. `consulted_sources`는 모델에 제공된 authorized
+source 전체이고, `citations`는 최종 답변에서 보수적인 lexical 근거가 확인된 subset입니다.
+따라서 `answer_composed.citation_count`는 answer-supported citation 수만 세고, retrieval 및
+authorized-context count는 consulted evidence를 설명합니다. Production persistence와
+`evaluate_grounded_citations`는 같은 deterministic selector를 사용합니다.
+
+## 다음 즉시 수행할 task: verified trace 옆의 model-authored channel
+
+현재 verified trace는 model이 요청별로 왜 다른 접근을 골랐는지 표현할 수 없습니다. 다음
+backend task는 redaction boundary를 약화하지 않고 bounded dynamic reasoning summary를
+추가합니다. `reasoning_summaries`는 model-authored 접근 설명이고 `agent_trace`는 application이
+검증한 실행 기록입니다. 두 contract는 구조와 UI에서 분리하며 summary를 evidence로 세거나
+trace와 충돌할 때 trace를 덮어쓰면 안 됩니다.
+
+필요성, safety rule, test, 완료 정의는
+[동적 reasoning summary 계약](./28-dynamic-reasoning-summary-contract.md)을 봅니다.
+
 ## 문서 상태
 
 - 영어 원문은 `docs/product-chat-service/en/07-agent-observability-evals.md`에 있습니다.

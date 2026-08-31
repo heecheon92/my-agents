@@ -298,7 +298,7 @@ def test_selected_personal_kb_retrieval_keeps_system_kb_ambient_and_unlisted(mon
     }
     assert payload["resolved_knowledge_base_ids"] == [personal_id]
     assert payload["resolved_knowledge_base_count"] == 1
-    assert {citation["knowledge_base_id"] for citation in payload["citations"]} == {personal_id}
+    assert {source["knowledge_base_id"] for source in payload["consulted_sources"]} == {personal_id}
     retrieved_context = graph.calls[-1]["retrieved_context"]
     assert {item.get("knowledge_base_id") for item in retrieved_context} == {personal_id, None}
     hidden_context = next(

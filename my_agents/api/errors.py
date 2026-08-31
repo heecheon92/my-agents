@@ -37,6 +37,8 @@ class APIErrorCode(StrEnum):
     RUN_NOT_WAITING_FOR_INPUT = "run_not_waiting_for_input"
     RUN_INTERACTION_MISMATCH = "run_interaction_mismatch"
     RUN_INTERACTION_EXPIRED = "run_interaction_expired"
+    RUN_INTERACTION_SELECTION_UNAVAILABLE = "run_interaction_selection_unavailable"
+    RUN_INTERACTION_REFINEMENT_EXHAUSTED = "run_interaction_refinement_exhausted"
     RUN_SELECTED_DOCUMENT_UNAVAILABLE = "run_selected_document_unavailable"
     RUN_GRAPH_VERSION_INCOMPATIBLE = "run_graph_version_incompatible"
     LANGGRAPH_PERSISTENCE_UNAVAILABLE = "langgraph_persistence_unavailable"

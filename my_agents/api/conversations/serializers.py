@@ -25,6 +25,7 @@ from my_agents.conversations.schemas import (
     ConversationResponse,
     ConversationRunResponse,
     ConversationRunWarning,
+    DocumentCoverageResponse,
     MessageResponse,
 )
 from my_agents.document_workspace.schemas import (
@@ -140,6 +141,12 @@ def run_detail_response(db: Session, run: AgentRunModel) -> ConversationRunRespo
         select(CitationModel).where(CitationModel.run_id == run.id).order_by(CitationModel.id)
     ).all()
     citations = user_visible_citations(db, citations)
+    legacy_attribution = run.citation_attribution_version is None
+    used_citations = (
+        citations
+        if legacy_attribution
+        else [citation for citation in citations if citation.used_in_answer is True]
+    )
     events = db.scalars(
         select(AgentEventModel)
         .where(AgentEventModel.run_id == run.id)
@@ -159,7 +166,13 @@ def run_detail_response(db: Session, run: AgentRunModel) -> ConversationRunRespo
         answer_mode=run.answer_mode or "general_knowledge",
         document_scope=run.document_scope or "unknown",
         **source_payload,
-        citations=[citation_response(db, citation) for citation in citations],
+        citations=[citation_response(db, citation) for citation in used_citations],
+        consulted_sources=(
+            None
+            if legacy_attribution
+            else [citation_response(db, citation) for citation in citations]
+        ),
+        document_coverage=document_coverage_from_events(events),
         clarification=_run_clarification_request(run),
         agent_trace=agent_trace_steps_from_event_payloads(
             json.loads(event.payload_json) for event in events
@@ -171,6 +184,7 @@ def run_detail_response(db: Session, run: AgentRunModel) -> ConversationRunRespo
 
 def completed_run_response(
     *,
+    db: Session,
     run: AgentRunModel,
     reply: str,
     route: RouteDecision,
@@ -178,18 +192,22 @@ def completed_run_response(
     answer_mode: AnswerMode,
     selection_context: KnowledgeBaseSelectionContext,
     citations: list[CitationModel],
-    retrieved_chunks: list[RetrievedChunk],
+    consulted_chunks: list[RetrievedChunk],
     warnings: list[ConversationRunWarning] | None = None,
     clarification: ConversationClarificationRequest | None = None,
     agent_trace: list[AgentTraceStep] | None = None,
     attachments: list[ConversationAttachmentResponse] | None = None,
     artifacts: list[ConversationArtifactResponse] | None = None,
+    document_coverage: DocumentCoverageResponse | None = None,
 ) -> ConversationRunResponse:
-    visible_pairs = user_visible_citation_pairs(
-        citations, retrieved_chunks, selection_context=selection_context
+    visible_consulted_pairs = user_visible_citation_pairs(
+        citations, consulted_chunks, selection_context=selection_context
     )
-    visible_citations = [citation for citation, _ in visible_pairs]
-    visible_chunks = [item for _, item in visible_pairs]
+    visible_used_pairs = [
+        pair for pair in visible_consulted_pairs if pair[0].used_in_answer is True
+    ]
+    visible_citations = [citation for citation, _ in visible_used_pairs]
+    visible_chunks = [item for _, item in visible_consulted_pairs]
     return ConversationRunResponse(
         run_id=run.id,
         conversation_id=run.conversation_id,
@@ -216,22 +234,37 @@ def completed_run_response(
             reply=reply,
             clarification_required=clarification is not None,
         ),
-        citations=[
-            CitationResponse(
-                id=citation.id,
-                document_id=citation.document_id,
-                knowledge_base_id=item.document.knowledge_base_id,
-                chunk_id=citation.chunk_id,
-                snippet=citation.snippet,
-                source_page=item.chunk.source_page,
-                source_location_json=parse_source_location_json(item.chunk.source_location_json),
-                source_filename=item.document.source_filename,
-            )
-            for citation, item in visible_pairs
+        citations=[citation_response(db, citation) for citation, _ in visible_used_pairs],
+        consulted_sources=[
+            citation_response(db, citation) for citation, _ in visible_consulted_pairs
         ],
+        document_coverage=document_coverage,
         attachments=attachments or [],
         artifacts=artifacts or [],
     )
+
+
+def document_coverage_from_events(
+    events: list[AgentEventModel],
+) -> DocumentCoverageResponse | None:
+    """Recover the latest safe coverage disclosure from persisted run events."""
+    for event in reversed(events):
+        if event.event_type != "full_document_read":
+            continue
+        try:
+            payload = json.loads(event.payload_json)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(payload, dict):
+            return None
+        allowed = DocumentCoverageResponse.model_fields.keys()
+        try:
+            return DocumentCoverageResponse.model_validate(
+                {key: value for key, value in payload.items() if key in allowed}
+            )
+        except ValueError:
+            return None
+    return None
 
 
 def user_visible_citation_pairs(
@@ -302,10 +335,15 @@ def _run_clarification_request(run: AgentRunModel) -> ConversationClarificationR
 def citation_response(db: Session, citation: CitationModel) -> CitationResponse:
     chunk = db.get(DocumentChunkModel, citation.chunk_id)
     document = db.get(DocumentModel, citation.document_id)
+    knowledge_base = (
+        db.get(KnowledgeBaseModel, document.knowledge_base_id) if document is not None else None
+    )
     return CitationResponse(
         id=citation.id,
         document_id=citation.document_id,
+        document_title=document.title if document is not None else None,
         knowledge_base_id=document.knowledge_base_id if document is not None else None,
+        knowledge_base_name=knowledge_base.name if knowledge_base is not None else None,
         chunk_id=citation.chunk_id,
         snippet=citation.snippet,
         source_page=chunk.source_page if chunk is not None else None,

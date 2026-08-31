@@ -262,7 +262,9 @@ class CitationResponse(BaseModel):
 
     id: str
     document_id: str
+    document_title: str | None = None
     knowledge_base_id: str | None = None
+    knowledge_base_name: str | None = None
     chunk_id: str
     snippet: str
     source_page: int | None = None

@@ -36,6 +36,7 @@ def test_openapi_exposes_kb_first_document_and_chat_selection_contract() -> None
 
     request_schema = schema["components"]["schemas"]["ConversationRunRequest"]
     run_response_schema = schema["components"]["schemas"]["ConversationRunResponse"]
+    document_coverage_schema = schema["components"]["schemas"]["DocumentCoverageResponse"]
     replay_request_schema = schema["components"]["schemas"]["ConversationReplayRequest"]
     run_summary_schema = schema["components"]["schemas"]["AgentRunSummaryResponse"]
     selection_schema = schema["components"]["schemas"]["KnowledgeBaseSelection"]
@@ -63,6 +64,65 @@ def test_openapi_exposes_kb_first_document_and_chat_selection_contract() -> None
     }
     assert run_response_schema["properties"]["resolved_knowledge_base_count"]["type"] == "integer"
     assert run_response_schema["properties"]["resolved_knowledge_base_ids"]["type"] == "array"
+    assert run_response_schema["properties"]["consulted_sources"]["anyOf"] == [
+        {
+            "items": {"$ref": "#/components/schemas/CitationResponse"},
+            "type": "array",
+        },
+        {"type": "null"},
+    ]
+    assert run_response_schema["properties"]["document_coverage"] == {
+        "anyOf": [
+            {"$ref": "#/components/schemas/DocumentCoverageResponse"},
+            {"type": "null"},
+        ]
+    }
+    assert "document_coverage" not in run_response_schema["required"]
+    assert document_coverage_schema == {
+        "additionalProperties": False,
+        "description": "Refresh-safe disclosure for one bounded comprehensive document read.",
+        "properties": {
+            "mode": {
+                "enum": ["complete", "partial"],
+                "title": "Mode",
+                "type": "string",
+            },
+            "document_id": {"title": "Document Id", "type": "string"},
+            "title": {"title": "Title", "type": "string"},
+            "source_filename": {
+                "anyOf": [{"type": "string"}, {"type": "null"}],
+                "title": "Source Filename",
+            },
+            "start_offset": {
+                "minimum": 0.0,
+                "title": "Start Offset",
+                "type": "integer",
+            },
+            "end_offset": {
+                "minimum": 0.0,
+                "title": "End Offset",
+                "type": "integer",
+            },
+            "total_chars": {
+                "minimum": 0.0,
+                "title": "Total Chars",
+                "type": "integer",
+            },
+        },
+        "required": [
+            "mode",
+            "document_id",
+            "title",
+            "start_offset",
+            "end_offset",
+            "total_chars",
+        ],
+        "title": "DocumentCoverageResponse",
+        "type": "object",
+    }
+    citation_schema = schema["components"]["schemas"]["CitationResponse"]
+    assert citation_schema["properties"]["document_title"]["anyOf"][0]["type"] == "string"
+    assert citation_schema["properties"]["knowledge_base_name"]["anyOf"][0]["type"] == "string"
     assert "ambient_system_knowledge_base_count" not in run_response_schema["properties"]
     assert run_summary_schema["properties"]["resolved_knowledge_base_count"]["type"] == "integer"
     assert selection_schema["properties"]["mode"]["enum"] == ["all", "selected"]

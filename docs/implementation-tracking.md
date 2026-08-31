@@ -1,6 +1,6 @@
 # Implementation tracking
 
-Last updated: 2026-08-24
+Last updated: 2026-08-30
 Status owner: repo-tracked source of truth for cross-machine agent handoff
 
 This file exists because `.omx/` is local runtime state and is not shared across machines. When working with an agent on any machine, start here before re-discovering project status from the codebase.
@@ -66,6 +66,8 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
 - Uses LangGraph `StateGraph` with explicit classification and response nodes.
 - Classification is deterministic.
 - Product graph now runs a source-selection gate before private KB retrieval; OpenAI mode can use a thin multilingual LLM decision, while deterministic mode keeps an offline fallback and explicit no-retrieval result for bypassed turns.
+- After private-knowledge delegation, the RAG Agent now uses fixed `gpt-5.6-luna` standard/low tool selection to choose focused authorized chunk search or comprehensive document reading. Deterministic mode, invalid tool output, and provider failure retain an offline semantic fallback. The comprehensive branch resolves one authorized personal/group document, prepares bounded coverage, recalls memory, and answers through `respond_full_document`; normal questions stay on focused retrieval.
+- Graph version `general-assistant-checkpoint-v2` keeps only compact IDs, retrieval snapshots, offsets, and coverage metadata in persisted execution state; raw full-document text is re-read inside the response node and is not checkpointed.
 - OpenAI-backed response generation uses `langchain-openai` / `ChatOpenAI` by default.
 - Deterministic mode remains available for tests and offline smoke checks.
 - Hosted web search is exposed at the OpenAI response-provider boundary for both `general_assistant` and `research_helper`; the provider prompt, not app-side language-specific keyword hints, decides when the model should call it.
@@ -120,8 +122,14 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
 - Persisted activity events use a closed, `event_type`-discriminated OpenAPI union;
   every event payload and nested `agent_trace.evidence` object passes through a typed
   allowlist before leaving the API.
+- Completed comprehensive-document runs expose refresh-safe `document_coverage` in run responses/details and a redacted `full_document_read` persisted/SSE event with document metadata, half-open character offsets, total length, and latency. Neither contract includes raw document text or the internal continuation cursor.
+- Run, resume, and replay SSE keep `retrieval_completed` as a single progress event, but derive terminal citations, insufficiency, and coverage from the final graph retrieval state after the full-document response-node re-read. A TOCTOU change therefore fails closed with null coverage and no stale full-document evidence.
+- Completed attributed runs expose the complete user-visible consulted evidence through nullable
+  `consulted_sources` and the conservative answer-supported subset through `citations`. Both
+  arrays reuse persisted evidence IDs. Legacy runs return `consulted_sources=null`; new runs use
+  a list, including `[]` for a genuinely empty consulted set.
 - Failure path records a failed run with redacted event metadata.
-- Opt-in document-selection HITL exposes a required `schema_version=1` semantic interaction contract, persists refresh-safe waiting state in Product DB, and resumes only through a type-specific answer. Frontend waiting-state support remains a hard gate before enabling the checkpointer in a shared environment.
+- Opt-in document-selection HITL emits V2 for new runs while retaining V1 waiting-checkpoint resume compatibility. Exact filenames resolve automatically; otherwise the backend exposes a ranked shortlist of at most five authorized documents, accepts two bounded human refinements on the same run, and opens broad browsing only after exhaustion. Product DB refresh refilters current authorization and preserves one original expiry across fresh per-attempt UUIDs.
 - Document-selection options are a narrower user-control boundary than retrieval: personal/group documents may be chosen, while ambient system knowledge remains automatically injected, hidden from the option list, and invalid as a submitted resume selection.
 - Conversation-run timing histograms cover sync and streaming outcomes for internal
   performance review when metrics are enabled.
@@ -133,6 +141,8 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
 - Upload path for PDF, Markdown, plain text, `.xlsx`, `.pptx`, and DOCX-only `.docx` with safe metadata persistence; PDFs keep page provenance, Office uploads keep Markdown parse artifacts where available, native-text PDF happy paths skip duplicate pypdf pre-classification after PyMuPDF passes the existing quality gate, and hosted ingestion can run through an external worker so heavy parser/embedding/indexing work no longer has to share the web request process.
 - Deterministic chunks, provider-backed JSON embeddings (deterministic by default, OpenAI opt-in), entity mentions, and co-occurrence relationships.
 - RAG Agent now owns the assistant-facing conversation-run retrieval boundary through `my_agents/agents/rag_agent/retrieval.py`; `general_assistant` invokes it inside the graph before memory/answer nodes only when the source-selection gate chooses private knowledge-base retrieval.
+- The same RAG Agent runtime now owns typed `resolve_full_document_target` and `read_full_document_range` seams for explicit whole-document tasks. Resolution and every read reuse the permission-first user-selectable-document filter, including owner/group/explicit-document grants while excluding ambient system KB documents.
+- For explicit comprehensive-document intent, normalized extracted text at or below 24,000 characters is one complete read. Larger documents currently contribute only characters `[0, 12000)` and receive a localized partial-review disclosure; overlapping authorized chunks remain the consulted provenance source.
 - ContextForge remains the delegated permission-first retrieval engine behind that boundary, with a thin LangGraph RetrievalGraph wrapper over deterministic query planning, source-boundary handoff, independent vector and request-local `BM25Okapi` lexical rankings, `chunk_id`-keyed RRF fusion (`k=60`), deterministic default or optional lazily loaded cross-encoder reranking, high-recall context packing, redacted retrieval evidence, and opt-in Rich debug traces for role handoff messages.
 - Retrieval candidate gathering includes authorized document title/source-filename metadata matching, so filename-only user references can find the matching uploaded document even when the filename is absent from chunk content.
 - Ingestion stores structured knowledge entities for API endpoints, config keys, shell commands, error codes, and database table references with document/chunk/run/page/offset provenance.
@@ -152,7 +162,7 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
 ### Persistence and migrations
 
 - SQLAlchemy models cover auth, auth lifecycle tokens, sessions, groups, documents, knowledge artifacts, structured knowledge entities, conversations, runs, events, and citations.
-- Alembic migrations cover the initial service schema, auth lifecycle, run detail refresh fields, PDF upload provenance fields, guest access state, retrieval-routing run metadata, pgvector chunk embeddings, async extraction-run progress fields, structured knowledge entities, and the `users.user_type` privilege column.
+- Alembic migrations cover the initial service schema, auth lifecycle, run detail refresh fields, PDF upload provenance fields, guest access state, retrieval-routing run metadata, pgvector chunk embeddings, async extraction-run progress fields, structured knowledge entities, the `users.user_type` privilege column, and nullable citation-attribution markers without legacy backfill.
 - SQLite in-memory auto-create supports offline tests.
 - Postgres/Neon readiness is documented, with external DB tests skipped unless configured.
 - Hosted Render deployment uses Neon/Postgres and was verified through redacted runtime diagnostics.
@@ -170,6 +180,52 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
 - Reusable LangGraph practice conventions, pattern docs, and runnable simulated-agent implementations now live in `~/Git/Playground/langgraph-playground`.
 
 ## Latest verification evidence
+
+True checkpoint-resume streaming on 2026-08-26:
+
+- Reproduced the UX regression in source: `/resume/stream` executed the synchronous checkpoint
+  resume to completion before its first SSE yield, then split the finished reply into artificial
+  deltas. It emitted no live `run_resumed`, retrieval, or graph progress.
+- Sync and SSE resume now share one authorization/atomic-claim helper. SSE emits `run_resumed`
+  first and drives the checkpoint with LangGraph `messages` plus `updates`, with real progress,
+  real provider deltas when available, and cancellation checks between stream steps.
+- The regression test failed before the fix because `answer_delta` was the first event. It now
+  requires `run_resumed` first and both `retrieval_completed` and `graph_invoked` before the first
+  answer delta.
+- The final backend suite passed: **534 passed, 2 skipped, 11 warnings** in 56.36s. Ruff lint,
+  Ruff format-check, and `git diff --check` passed.
+
+Consulted-source and answer-supported citation split on 2026-08-25:
+
+- Added nullable `ConversationRunResponse.consulted_sources` as the complete user-visible
+  consulted superset while `citations` is now the conservative post-hoc answer-supported subset.
+  Overlapping entries reuse the same persisted evidence row and therefore the same `id` and
+  `chunk_id`.
+- Added nullable Product DB attribution markers without legacy backfill. Legacy runs serialize
+  `consulted_sources=null`; attributed runs serialize a list, including `[]` for a genuinely
+  empty set. Sync, normal SSE, resume SSE, replay, and run-detail refresh share the serializer.
+- Generated OpenAPI declares `consulted_sources` as nullable array items referencing
+  `CitationResponse`; the exact contract is covered by `tests/test_kb_openapi_contract.py`.
+- `CitationResponse` also exposes nullable `document_title` and `knowledge_base_name` so the
+  product UI can collapse chunk rows into one human-readable entry per document, optionally
+  aggregating pages while hiding internal IDs and snippets.
+- The final offline suite passed: **534 passed, 2 skipped, 11 warnings** in 53.41s. Ruff lint,
+  Ruff format-check, and `git diff --check` passed on the final tree.
+
+Many-chunk full-document provenance fix on 2026-08-25:
+
+- Reproduced the reported local document as an authorized, completed 16,600-character Markdown extraction with 190 valid current chunks. The former 100-chunk safety cutoff converted that valid provenance into zero chunks and triggered insufficient evidence after document selection.
+- Full-document reads now validate at most 2,000 overlapping chunks and retain at most 100 evenly distributed provenance chunks, including the first and last. The exact local document now reports complete coverage with 100 unique consulted-source records spanning ordinals 0 through 189.
+- Added a 190-section Markdown service/API regression and deterministic coverage for the exact Korean `문서를 모두 읽고 내용을 요약해줘` intent. A credential-free graph invocation against the local document selected `read_authorized_document_comprehensively`, returned `document_grounded`/`complete`, produced 100 consulted-source records, and did not return the insufficient-evidence fallback.
+- The pre-attribution full-document suite passed: **528 passed, 2 skipped, 11 warnings** in 54.28s. Ruff lint, Ruff format-check, and `git diff --check` passed on that tree.
+
+Full-document retrieval vertical-slice implementation on 2026-08-24:
+
+- Added Luna and deterministic Korean/English semantic-intent fixtures, complete/partial range behavior, permission and exact-target replay checks, ambiguous document-selection resume, refresh-safe coverage, SSE disclosure, citation-range checks, and a checkpoint raw-body regression.
+- Added fixed Luna standard/low model-policy, strict required tool binding, natural Korean regression, focused negative controls, invalid-output fallback, provider-timeout fallback, and false-positive prevention in `tests/test_rag_agent_tool_selection.py`.
+- `uv run pytest -q tests/test_rag_agent_tool_selection.py tests/test_rag_agent_contracts.py tests/test_graph.py tests/test_full_document_retrieval.py tests/test_retrieval_gate.py tests/test_langgraph_persistence.py tests/test_agent_event_contract.py` passed: **57 passed, 1 skipped, 5 warnings** in 2.42s.
+- One credentialed Luna smoke selected `read_authorized_document_comprehensively` for the original natural Korean prompt without reading document content during planning.
+- The final reconciled offline suite passed after moving all comprehensive intent ownership out of `classify_request`: **525 passed, 3 skipped, 11 warnings** in 82.10s. Ruff lint, Ruff format-check, and `git diff --check` also passed on the final tree.
 
 Guest policy and email delivery verification on 2026-08-09:
 
@@ -295,7 +351,7 @@ The test harness sets `MY_AGENTS_ENV_FILE=` so a developer's local `.env` file c
 
 Agentic RAG workflow evidence on 2026-06-06:
 
-- Added `my_agents/agents/rag_agent/` as the deterministic RAG Agent contract/verifier layer for the V1 agentic RAG workflow. The public retrieval boundary is now RAG Agent, with ContextForge retained as the internal delegated retrieval implementation; authorization/retrieval/provider work stays in existing service boundaries.
+- Added `my_agents/agents/rag_agent/` as the RAG Agent contract/verifier layer for the V1 agentic RAG workflow. It now includes a bounded Luna retrieval-tool selector while keeping deterministic trace verification and offline fallback. The public retrieval boundary is RAG Agent, ContextForge remains the internal focused-retrieval implementation, and authorization/execution/final-response work stays in its existing service boundaries.
 - Conversation run responses, persisted events, and SSE payloads now expose compact localized ko/en `agent_trace` steps while preserving existing citation/evidence UI fields and avoiding raw prompt/snippet/provider-error leakage.
 - Local verification: `uv run ruff check my_agents/api/conversations/agent_trace.py my_agents/api/conversations/run_events.py my_agents/api/conversations/run_lifecycle.py my_agents/api/conversations/serializers.py my_agents/api/conversations/endpoints/stream.py my_agents/conversations/schemas.py my_agents/agents/rag_agent tests/test_rag_agent_contracts.py tests/test_conversations_api.py` passed; `uv run pytest -q tests/test_rag_agent_contracts.py tests/test_context_forge_contracts.py tests/test_conversations_api.py::test_conversation_run_uses_server_owned_history tests/test_conversations_api.py::test_streaming_conversation_run_emits_events_and_persists_result tests/test_conversations_api.py::test_streaming_ambiguous_document_scope_emits_human_clarification_state` passed.
 - Hosted smoke was not run for this worker slice; production smoke status remains the separate entry below.
@@ -377,6 +433,12 @@ Earlier hosted smoke status on 2026-06-03:
 ### Agent/product behavior
 
 - Product conversation runs support SSE progress streaming and incremental `answer_delta` assistant text events.
+- The immediate next backend task is a dynamic model-authored reasoning-summary channel. Current
+  `agent_trace` accurately reports verified execution but cannot explain why Luna or Sol selected a
+  request-specific approach; reasoning mode/effort expose computation settings only. The proposed
+  nullable `reasoning_summaries`, `reasoning_summary_delta`, and persisted summary event must stay
+  separate from final answer text, verified trace, and evidence. See
+  [`28-dynamic-reasoning-summary-contract.md`](./product-chat-service/en/28-dynamic-reasoning-summary-contract.md).
 - Known near-future gap: streamed run execution is still coupled to the client HTTP/SSE request. If the client disconnects before `run_completed`, the assistant response may never be persisted; durable server-owned/background run execution is required.
 - Completed conversation runs can be refetched with persisted reply, route, and citations.
 - `uv run python -m scripts.local_demo_seed` seeds a verified local demo user, text document, and extraction run for file-backed SQLite demos.
@@ -386,10 +448,14 @@ Earlier hosted smoke status on 2026-06-03:
 - `docs/product-chat-service/en/11-v1-phase-0-contract-freeze-evidence-map.md` freezes the Phase 0 strict V1 DoD evidence matrix, backend OpenAPI inventory, frontend gate expectations, and known backend contract gaps by phase.
 - `docs/product-chat-service/en/12-public-demo-deployment-readiness.md` defines hosted preview/public smoke gates, provider/dependency decision records, privacy boundaries, rollback paths, and redacted evidence bundle schema.
 - Current production graph is still one assistant/controller path, now with a graph-owned RAG Agent retrieval node before memory/answer synthesis.
+- Full-document retrieval is an explicit-intent-only first slice. Documents up to the configured 24,000-character threshold can be covered completely; larger documents stop after the first configured 12,000-character range and must disclose partial coverage. Automatic continuation, multi-range summary accumulation, and final whole-document synthesis are not implemented yet.
+- The current safety limits are character based, not provider-tokenizer based. Final answer-context token usage, provider-reported usage, and quality/latency comparisons against focused chunk retrieval remain open work.
+- The graph version is now `general-assistant-checkpoint-v2`. Waiting runs created under an older graph version cannot be resumed after this deployment; drain or cancel them before rollout, or allow the existing version-mismatch path to fail them safely with `run_graph_version_incompatible`.
 - Most route labels are capability metadata and response paths, not separate production specialist agents.
-- Tool workflows beyond hosted web search are not implemented as production graph capabilities yet.
+- Tool workflows beyond hosted web search are not yet general production capabilities. The narrow exception is RAG-owned typed tool selection between focused chunk search and comprehensive document read; backend services, not the model, execute and authorize both operations.
 - Memory runtime migration is partially implemented. Recall orchestration runs inside `general_assistant`; PostgreSQL deployments provide PostgresStore semantic candidate search, and every candidate is revalidated through the SQLAlchemy/Product DB governance adapter before entering context. SQLite retains the Product DB relevance fallback. The separate `memory_graph` extraction/update workflow is still unimplemented.
 - PostgreSQL deployments now treat run-scoped PostgresSaver and PostgresStore as baseline process-owned infrastructure. The per-user experimental setting controls memory consent and eligibility; HITL availability derives from PostgresSaver presence. Framework setup is an explicit deployment prerequisite, and neither persistence primitive replaces Product DB transcripts or audit records. SQLite keeps non-durable graph execution and Product DB memory recall fallbacks.
+- Focused retrieval does not yet let a bounded sufficiency decision request same-document neighboring chunks around authorized anchors. This adaptive expansion is a separate milestone from explicit comprehensive-document review; backend authorization, ordinal/offset windows, round/token budgets, reranking/packing, and citation selectivity must remain deterministic and test-backed even when a model requests more context.
 
 ### Deployment/ops
 
@@ -412,7 +478,25 @@ Earlier hosted smoke status on 2026-06-03:
 
 ## Recommended next workflow
 
-### Critical next move: tokenizer-aware retrieval and embedding-index safety
+### Immediate next task: dynamic model-authored reasoning summaries
+
+1. Verify current GPT-5.6 / `langchain-openai` final and streaming reasoning-summary shapes through
+   mocked compatibility tests plus one bounded credentialed spike.
+2. Add a closed, nullable, length-bounded `reasoning_summaries` response contract with
+   `retrieval_planning` and `answer_synthesis` stages.
+3. Keep Luna's user-displayable retrieval rationale strictly separate from its trusted tool choice,
+   and keep Sol provider summary blocks separate from `reply` / `answer_delta`.
+4. Add typed SSE delta and persisted refresh/replay behavior without weakening the current control-
+   token and chain-of-thought filters.
+5. Prove redaction, prompt-injection resistance, system-knowledge/authorization boundaries, empty
+   summary fallback, deterministic-mode behavior, ordering, and output-budget/cost accounting.
+6. Publish hosted OpenAPI before asking the sibling frontend to render “AI 작업 과정 요약” beside,
+   but never as a replacement for, the verified execution trace.
+
+The rationale and definition of done are authoritative in
+[`28-dynamic-reasoning-summary-contract.md`](./product-chat-service/en/28-dynamic-reasoning-summary-contract.md).
+
+### Next retrieval move: tokenizer-aware retrieval and embedding-index safety
 
 The next RAG correctness milestone is not to force one tokenizer across every model. It is to keep
 each model paired with its own tokenizer while preventing silent reranker truncation and incompatible
@@ -541,6 +625,9 @@ limits.
 
 | Date | Milestone | Evidence |
 | --- | --- | --- |
+| 2026-08-31 | Replaced broad default document HITL with authorization-first exact resolution, a bounded ranked shortlist, two private same-run filename refinements, and broad browsing only as the final fallback. Preserved V1 waiting checkpoints and fixed repeated-resume interrupt collection. | Interaction V2 schemas; retrieval resolver; general-assistant graph; conversation run/resume endpoints; `tests/test_interaction_contract.py`; `tests/test_graph.py`; `tests/test_full_document_retrieval.py`; `tests/test_conversations_api.py`; bilingual interaction contract and README pairs. |
+| 2026-08-25 | Fixed valid many-small-chunk full-document reads so the 100-citation ceiling no longer erases all provenance. The runtime validates up to 2,000 overlapping chunks and retains 100 evenly distributed citations; the reported 190-chunk Markdown document now completes from first through last chunk. | `my_agents/knowledge/retrieval.py`; `my_agents/knowledge/routing.py`; `tests/test_full_document_retrieval.py`; RAG Agent README/changelog pair; permission-aware RAG docs; learning note 16. |
+| 2026-08-24 | Completed the first semantic-intent full-document retrieval vertical slice and added fixed Luna standard/low RAG tool selection: one authorized user-selectable target, complete small-document reads, honest first-range coverage for large documents, typed coverage/event contracts, exact-target replay, checkpoint-safe response composition, and deterministic/provider-failure fallback. Automatic multi-range synthesis, adaptive surrounding-context expansion, and token-aware budgeting remain separate roadmap work. | `my_agents/agents/rag_agent/tool_selection.py`; `my_agents/agents/general_assistant/graph.py`; `my_agents/agents/general_assistant/rag_retrieval.py`; `my_agents/agents/rag_agent/retrieval.py`; `my_agents/knowledge/retrieval.py`; conversation schemas/events/serializers; `tests/test_rag_agent_tool_selection.py`; `tests/test_full_document_retrieval.py`; settings/env/docs. |
 | 2026-08-09 | Added an unauthenticated runtime guest-policy contract, removed stale numeric limits from guest email copy, and raised repo defaults to 3 conversations, 20 prompts, and 5 document uploads. Provider delivery passed with a Resend test recipient, while hosted automatic approval remained inactive pending its deployment flag. | `my_agents/api/auth.py`; `my_agents/auth/schemas.py`; `my_agents/settings.py`; auth email templates; `tests/test_guest_access_api.py`; `tests/test_auth_email.py`; README pair; auth/deployment docs. |
 | 2026-08-09 | Added stable additive API error codes, froze the persisted agent-event vocabulary and display-safe payload/trace schemas, and proved external-worker ingestion progress is visible through independent polling sessions. | `my_agents/api/errors.py`; `my_agents/conversations/schemas.py`; `my_agents/api/conversations/run_events.py`; `tests/test_api_error_contract.py`; `tests/test_agent_event_contract.py`; `tests/test_knowledge_ingestion.py`; README pair; observability/ingestion docs. |
 | 2026-07-24 | Made permission-filtered hybrid retrieval the ContextForge default with independent vector and request-local BM25Okapi rankings fused by RRF over stable `chunk_id`, without a database migration. | `pyproject.toml`; `uv.lock`; `my_agents/knowledge/retrieval.py`; `my_agents/agents/context_forge/candidates.py`; `my_agents/agents/context_forge/fusion.py`; `tests/test_context_forge_reranking.py`; `tests/test_permission_aware_rag.py`; README and ContextForge README pairs. |

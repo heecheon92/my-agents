@@ -121,12 +121,13 @@ def test_chat_run_events_are_ordered_structured_and_redacted(monkeypatch) -> Non
         == 1
     )
     assert payloads[3]["route_label"] == "general_assistant"
-    assert payloads[4]["citation_count"] == 1
+    assert payloads[4]["citation_count"] == 0
     assert private_phrase not in str(payloads)
     assert "How does Orion" not in str(payloads)
 
-    citations = [citation["snippet"] for citation in run_payload["citations"]]
-    assert any(private_phrase in snippet for snippet in citations)
+    assert run_payload["citations"] == []
+    consulted = [source["snippet"] for source in run_payload["consulted_sources"]]
+    assert any(private_phrase in snippet for snippet in consulted)
     assert private_phrase not in run_payload["reply"]
     assert evaluate_event_redaction(
         event_payloads=payloads,
@@ -163,7 +164,7 @@ def test_eval_fixture_detects_permission_leakage(monkeypatch) -> None:  # noqa: 
 
     assert run.status_code == 200
     payload = run.json()
-    snippets = [citation["snippet"] for citation in payload["citations"]]
+    snippets = [source["snippet"] for source in payload["consulted_sources"] or []]
     leakage = evaluate_permission_leakage(
         reply=payload["reply"],
         citation_snippets=snippets,

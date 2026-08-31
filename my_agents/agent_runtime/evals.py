@@ -6,6 +6,8 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
+from my_agents.agent_runtime.citation_attribution import answer_supported_source_indices
+
 
 @dataclass(frozen=True)
 class EvalCheck:
@@ -20,8 +22,7 @@ def evaluate_grounded_citations(*, reply: str, citation_snippets: list[str]) -> 
     """Check that a cited answer visibly uses at least one returned citation snippet."""
     if not citation_snippets:
         return EvalCheck("grounded_citations", False, "no citations returned")
-    normalized_reply = reply.casefold()
-    grounded = any(_snippet_anchor(snippet) in normalized_reply for snippet in citation_snippets)
+    grounded = bool(answer_supported_source_indices(reply=reply, source_texts=citation_snippets))
     return EvalCheck(
         "grounded_citations",
         grounded,
@@ -76,7 +77,3 @@ def evaluate_event_latency_budget(
         if worst <= max_latency_ms
         else f"max latency {worst}ms exceeds budget {max_latency_ms}ms",
     )
-
-
-def _snippet_anchor(snippet: str, size: int = 24) -> str:
-    return snippet.strip()[:size].casefold()

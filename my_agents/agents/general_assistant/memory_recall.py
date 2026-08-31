@@ -21,11 +21,14 @@ class AssistantRuntimeContext(TypedDict, total=False):
     user_id: str
     memory_runtime: MemoryRuntime
     rag_runtime: RagAgentRuntime
+    rag_retrieval_tool_decider: object
     retrieval_source_decider: object
     knowledge_base_selection: KnowledgeBaseSelectionContext
     document_workspace_runtime: object
     reasoning_mode: ReasoningMode
     reasoning_effort: ReasoningEffort
+    full_document_max_chars: int
+    full_document_range_chars: int
 
 
 def retrieve_memory_context(

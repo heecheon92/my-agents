@@ -5,14 +5,21 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 
 from my_agents.agents.rag_agent.contracts import RagAgentStageId
 from my_agents.document_workspace.schemas import (
     ConversationArtifactResponse,
     ConversationAttachmentResponse,
 )
-from my_agents.interactions.schemas import PendingDocumentSelection
+from my_agents.interactions.schemas import PendingInteraction
 from my_agents.knowledge.routing import AnswerMode, DocumentScope, RetrievalRoute
 from my_agents.knowledge.schemas import CitationResponse, KnowledgeBaseSelection
 from my_agents.schemas import RouteDecision
@@ -106,6 +113,34 @@ class ConversationRunWarning(BaseModel):
     missing_source_filenames: list[str] = Field(default_factory=list)
 
 
+class DocumentCoverageResponse(BaseModel):
+    """Refresh-safe disclosure for one bounded comprehensive document read."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    mode: Literal["complete", "partial"]
+    document_id: str
+    title: str
+    source_filename: str | None = None
+    start_offset: int = Field(ge=0)
+    end_offset: int = Field(ge=0)
+    total_chars: int = Field(ge=0)
+
+    @model_validator(mode="after")
+    def validate_coverage_range(self) -> DocumentCoverageResponse:
+        if self.start_offset > self.end_offset:
+            raise ValueError("document coverage start_offset must not exceed end_offset")
+        if self.end_offset > self.total_chars:
+            raise ValueError("document coverage end_offset must not exceed total_chars")
+        if self.mode == "complete" and (
+            self.start_offset != 0 or self.end_offset != self.total_chars
+        ):
+            raise ValueError(
+                "complete document coverage must span from offset zero through total_chars"
+            )
+        return self
+
+
 class ConversationClarificationRequest(BaseModel):
     """Language-neutral clarification contract for human-in-the-loop replies."""
 
@@ -169,6 +204,8 @@ class ConversationRunResponse(BaseModel):
     resolved_knowledge_base_ids: list[str] = Field(default_factory=list)
     resolved_knowledge_base_count: int = 0
     citations: list[CitationResponse] = Field(default_factory=list)
+    consulted_sources: list[CitationResponse] | None = None
+    document_coverage: DocumentCoverageResponse | None = None
     warnings: list[ConversationRunWarning] = Field(default_factory=list)
     clarification: ConversationClarificationRequest | None = None
     agent_trace: list[AgentTraceStep] = Field(default_factory=list)
@@ -184,7 +221,7 @@ class ConversationRunInterruptedResponse(BaseModel):
     status: Literal["waiting_for_input"] = "waiting_for_input"
     run_id: str
     conversation_id: str
-    interaction: PendingDocumentSelection
+    interaction: PendingInteraction
 
 
 type ConversationRunResult = ConversationRunResponse | ConversationRunInterruptedResponse
@@ -266,6 +303,17 @@ class RetrievalCompletedEventPayload(KnowledgeSelectionEventPayload):
     agent_trace: list[AgentTraceStep] = Field(default_factory=list)
 
 
+class FullDocumentReadEventPayload(AgentEventPayload):
+    mode: Literal["complete", "partial"]
+    document_id: str
+    title: str
+    source_filename: str | None = None
+    start_offset: int = Field(ge=0)
+    end_offset: int = Field(ge=0)
+    total_chars: int = Field(ge=0)
+    latency_ms: float = Field(default=0, ge=0)
+
+
 class GraphInvokedEventPayload(KnowledgeSelectionEventPayload):
     route_label: str = Field(default="general_assistant", max_length=160)
     retrieval_route: RetrievalRoute = "no_retrieval"
@@ -318,7 +366,7 @@ class RunInterruptedEventPayload(AgentEventPayload):
     run_id: str
     status: Literal["waiting_for_input"] = "waiting_for_input"
     interaction_id: str
-    interaction_schema_version: Literal[1]
+    interaction_schema_version: Literal[1, 2]
     interaction_type: Literal["document_selection"] = "document_selection"
     option_count: int = Field(ge=0)
     expires_at: datetime
@@ -328,7 +376,7 @@ class RunResumedEventPayload(AgentEventPayload):
     run_id: str
     status: Literal["running"] = "running"
     interaction_id: str
-    interaction_schema_version: Literal[1]
+    interaction_schema_version: Literal[1, 2]
     interaction_type: Literal["document_selection"] = "document_selection"
 
 
@@ -367,6 +415,11 @@ class UserMessageStoredAgentEventResponse(AgentEventResponseBase):
 class RetrievalCompletedAgentEventResponse(AgentEventResponseBase):
     event_type: Literal["retrieval_completed"]
     payload: RetrievalCompletedEventPayload
+
+
+class FullDocumentReadAgentEventResponse(AgentEventResponseBase):
+    event_type: Literal["full_document_read"]
+    payload: FullDocumentReadEventPayload
 
 
 class GraphInvokedAgentEventResponse(AgentEventResponseBase):
@@ -423,6 +476,7 @@ type AgentEventResponse = Annotated[
     RunStartedAgentEventResponse
     | UserMessageStoredAgentEventResponse
     | RetrievalCompletedAgentEventResponse
+    | FullDocumentReadAgentEventResponse
     | GraphInvokedAgentEventResponse
     | AttachmentsReadyAgentEventResponse
     | DocumentWorkspaceStartedAgentEventResponse
