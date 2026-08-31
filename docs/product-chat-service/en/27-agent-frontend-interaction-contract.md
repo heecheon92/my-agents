@@ -31,56 +31,80 @@ AG-UI or A2UI as a dependency.
 - Raw prompts, provider traces, credentials, chain-of-thought, and unreviewed arbitrary
   dictionaries are forbidden in interaction payloads.
 
-## V1 wire contract
+## V2 wire contract and V1 compatibility
 
 All interaction requests and answers carry both a semantic type and a schema version.
-The fields are required rather than inferred.
+New interactions use V2. Each attempt gets a new UUID while the run, selected KB scope,
+and original expiry remain unchanged.
 
 ```json
 {
-  "schema_version": 1,
-  "interaction_id": "<run_id>:document_selection",
+  "schema_version": 2,
+  "interaction_id": "<attempt UUID>",
   "type": "document_selection",
-  "reason_code": "ambiguous_document_reference",
+  "reason_code": "ambiguous_document_reference | unresolved_document_reference",
   "message_key": "clarification.document_scope.select_source",
   "expires_at": "2026-08-18T00:00:00Z",
   "option_count": 2,
+  "library_count": 4000,
   "options": [
     {
       "document_id": "...",
       "title": "Architecture notes",
       "source_filename": "architecture.pdf",
       "knowledge_base_id": "...",
-      "knowledge_base_name": "Personal knowledge"
+      "knowledge_base_name": "Personal knowledge",
+      "match_confidence": "high | medium | low",
+      "match_reason_code": "exact_title | exact_filename | partial_title | partial_filename | metadata_overlap"
     }
   ],
-  "next_cursor": null
+  "next_cursor": null,
+  "refinement": {
+    "allowed": true,
+    "attempts_used": 0,
+    "attempts_max": 2,
+    "max_length": 120
+  },
+  "browse": {"allowed": false, "cursor": null}
 }
 ```
 
-Resume requests are type-specific rather than an open `payload` object:
+Resume requests are a closed type-specific union. Selection and human refinement both
+resume the same checkpoint; refinement is never stored as a chat message.
 
 ```json
 {
-  "schema_version": 1,
-  "interaction_id": "<run_id>:document_selection",
+  "schema_version": 2,
+  "interaction_id": "<attempt UUID>",
   "type": "document_selection",
+  "kind": "select",
   "document_id": "..."
 }
 ```
 
-The options endpoint repeats `schema_version`, `interaction_id`, and `type` so a page is
-self-describing. Persisted `run_interrupted` and `run_resumed` activity events include
-`interaction_schema_version`; streamed `run_interrupted` data contains the complete
-waiting response.
+```json
+{
+  "schema_version": 2,
+  "interaction_id": "<attempt UUID>",
+  "type": "document_selection",
+  "kind": "refine",
+  "text": "Pydantic Annotated Literal.md"
+}
+```
+
+After two unresolved refinements, `browse.allowed=true`; only then may the options endpoint
+return the broad authorized library with opaque cursor pagination. V1 remains accepted for
+already-waiting checkpoints and keeps its legacy `<run_id>:document_selection` identity and
+`{document_id}` resume body. Persisted lifecycle events expose the applicable version.
 
 ## Lifecycle and durability
 
 The default chat source mode remains all authorized personal/group KBs plus ambient system
-knowledge. The interaction is not a replacement KB picker. It appears only when an
-ambiguous document reference has more than one user-selectable document in the current
-scope. One selectable document is resolved automatically, even when ambient system
-documents also exist. A client-selected KB subset narrows the eligible document options.
+knowledge. The interaction is not a replacement KB picker. Resolution first revalidates the
+authorized metadata scope, then applies this ladder: a unique exact filename/title resolves
+automatically; otherwise the backend returns at most five stable ranked candidates; the user
+may supply up to two 120-character one-line filename clues; only then is broad browsing
+available. A client-selected KB subset narrows every stage.
 
 For an explicit comprehensive-document request, “ambiguous” also includes a request that
 names no unique title/source filename while several eligible documents exist. After resume,
@@ -108,7 +132,7 @@ sequenceDiagram
     UI->>API: POST resume with typed answer
     API->>DB: revalidate run, expiry, and document permission
     API-->>UI: run_resumed
-    API->>Graph: Command(resume = document_id)
+    API->>Graph: Command(resume = select or refine)
     Graph-->>UI: retrieval/graph progress and answer_delta
     Graph-->>API: completed or another interrupt
     API->>DB: persist canonical run result
@@ -129,20 +153,20 @@ boundary but returns its completed result normally.
 
 The interaction can be reconstructed after refresh from `GET
 /conversations/{conversation_id}/runs/{run_id}`. SSE is a transition signal, not the only
-copy of state. Options are authorization-filtered when listed and the selected document
-is authorized again when resumed. The option boundary is narrower than retrieval: it
+copy of state. Shortlists are authorization-filtered again on refresh, broad options are
+filtered when listed, and the selected document is authorized again when resumed. The option boundary is narrower than retrieval: it
 contains only user-controllable personal/group documents, while ambient system knowledge
 continues to support the answer automatically and without visible provenance.
 
 `document_coverage` and `full_document_read` are result/audit contracts, not pending
 interactions. They disclose complete/partial character coverage after a run completes and
 must not be rendered as another question for the user. Large-document continuation is an
-internal future workflow, not a V1 resume-answer field.
+internal future workflow, not a V2 resume-answer field.
 
 ## Versioning and compatibility
 
-- `schema_version=1` owns the common semantic envelope and current type payloads.
-- A new interaction type may be added to V1 when it obeys the existing envelope.
+- `schema_version=2` is the current document-selection contract; V1 is resume-only compatibility.
+- A new interaction type may be added to V2 when it obeys the existing envelope.
 - Optional display-safe fields may be added without a version bump.
 - Removing a field, changing a field's meaning, or changing validation semantics requires
   a new schema version.
@@ -193,8 +217,8 @@ Do not enable shared-environment checkpointer interactions until all of these ar
 2. `python -m scripts.langgraph_persistence setup` has initialized LangGraph Postgres
    schemas.
 3. Memory-store reconciliation reports zero drift when the store flag is enabled.
-4. The frontend version with waiting-state parsing, refresh recovery, source choice,
-   resume routes, and held-queue behavior is deployed.
+4. The frontend version with V1/V2 parsing, ranked choices, bounded refinement, broad
+   fallback, refresh recovery, resume routes, and held-queue behavior is deployed.
 
 The comprehensive-document path is baseline behavior for explicit intent, so deploy it only
 where this interaction rollout is available whenever document selection may be required.

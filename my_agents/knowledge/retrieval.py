@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import heapq
 import json
 import math
 import re
+import unicodedata
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from difflib import SequenceMatcher
+from typing import Literal
 
 from rank_bm25 import BM25Okapi
 from sqlalchemy import and_, desc, false, func, inspect, or_, select, true
@@ -53,11 +56,31 @@ class AuthorizedDocumentOption:
 
 
 @dataclass(frozen=True)
+class RankedAuthorizedDocumentOption(AuthorizedDocumentOption):
+    """One authorization-filtered metadata candidate for document-selection HITL."""
+
+    score: float
+    matched_tokens: int
+    match_confidence: Literal["high", "medium", "low"]
+    match_reason_code: Literal[
+        "exact_title",
+        "exact_filename",
+        "partial_title",
+        "partial_filename",
+        "metadata_overlap",
+    ]
+    exact: bool = False
+
+
+@dataclass(frozen=True)
 class FullDocumentTargetResolution:
     """One authorized full-document target, or an ambiguity/unavailable result."""
 
     target: AuthorizedDocumentOption | None
     option_count: int
+    library_count: int = 0
+    candidates: tuple[RankedAuthorizedDocumentOption, ...] = ()
+    mode: Literal["selected", "single", "exact", "relevant", "unresolved"] = "unresolved"
 
 
 @dataclass(frozen=True)
@@ -104,7 +127,95 @@ class RankedBm25Chunk:
 
 
 MatchedDocumentChunkRowsCache = dict[str, list[tuple[DocumentChunkModel, DocumentModel]]]
-_FULL_DOCUMENT_TARGET_SCAN_LIMIT = 500
+_DOCUMENT_SELECTION_SHORTLIST_LIMIT = 5
+_DOCUMENT_CANDIDATE_MIN_SCORE = 0.35
+_DOCUMENT_REFERENCE_EXTENSION_TOKENS = {
+    "csv",
+    "doc",
+    "docx",
+    "html",
+    "htm",
+    "json",
+    "md",
+    "odt",
+    "pdf",
+    "ppt",
+    "pptx",
+    "rtf",
+    "text",
+    "txt",
+    "xls",
+    "xlsx",
+    "xml",
+}
+_DOCUMENT_REFERENCE_IGNORED_TOKENS = {
+    "all",
+    "analyze",
+    "and",
+    "beginning",
+    "check",
+    "compare",
+    "complete",
+    "completely",
+    "content",
+    "cover",
+    "document",
+    "end",
+    "entire",
+    "every",
+    "everything",
+    "extract",
+    "file",
+    "for",
+    "from",
+    "identify",
+    "list",
+    "me",
+    "omission",
+    "omissions",
+    "or",
+    "please",
+    "read",
+    "requirement",
+    "requirements",
+    "review",
+    "section",
+    "sections",
+    "source",
+    "summarize",
+    "summary",
+    "that",
+    "the",
+    "this",
+    "to",
+    "whole",
+    "without",
+    "검토해줘",
+    "끝까지",
+    "누락",
+    "내용을",
+    "모든",
+    "모두",
+    "문서",
+    "문서의",
+    "문서를",
+    "분석해줘",
+    "빠짐없이",
+    "섹션",
+    "없이",
+    "요구사항",
+    "요약",
+    "요약해줘",
+    "읽고",
+    "읽어줘",
+    "자료",
+    "전부",
+    "전체를",
+    "전체",
+    "정리해줘",
+    "처음부터",
+    "파일",
+}
 _FULL_DOCUMENT_MAX_CITATION_CHUNKS = 100
 _FULL_DOCUMENT_MAX_PROVENANCE_SCAN_CHUNKS = 2_000
 
@@ -352,6 +463,43 @@ class RetrievalService:
             total,
         )
 
+    def authorized_document_options_by_ids(
+        self,
+        *,
+        user_id: str,
+        document_ids: Sequence[str],
+        knowledge_base_ids: Sequence[str] | None = None,
+    ) -> list[AuthorizedDocumentOption]:
+        """Revalidate a bounded ordered candidate set in one authorization query."""
+        ordered_ids = list(dict.fromkeys(document_ids))
+        if not ordered_ids:
+            return []
+        predicate = _user_selectable_document_filter(
+            user_id,
+            knowledge_base_ids=knowledge_base_ids,
+            require_standard_purpose=_schema_has_knowledge_base_purpose(self._db),
+        )
+        rows = self._db.execute(
+            select(DocumentModel, KnowledgeBaseModel.name)
+            .join(KnowledgeBaseModel, KnowledgeBaseModel.id == DocumentModel.knowledge_base_id)
+            .where(predicate, DocumentModel.id.in_(ordered_ids))
+        ).all()
+        options_by_id = {
+            document.id: AuthorizedDocumentOption(
+                document_id=document.id,
+                title=document.title,
+                source_filename=document.source_filename,
+                knowledge_base_id=document.knowledge_base_id,
+                knowledge_base_name=knowledge_base_name,
+            )
+            for document, knowledge_base_name in rows
+        }
+        return [
+            options_by_id[document_id]
+            for document_id in ordered_ids
+            if document_id in options_by_id
+        ]
+
     def resolve_full_document_target(
         self,
         *,
@@ -387,20 +535,77 @@ class RetrievalService:
             ).first()
             return FullDocumentTargetResolution(
                 target=_authorized_document_option(selected_row) if selected_row else None,
-                option_count=total,
+                option_count=1 if selected_row else 0,
+                library_count=total,
+                mode="selected",
             )
-        rows = self._db.execute(statement.limit(_FULL_DOCUMENT_TARGET_SCAN_LIMIT + 1)).all()
-        options = [
-            _authorized_document_option(row) for row in rows[:_FULL_DOCUMENT_TARGET_SCAN_LIMIT]
+        if total == 1:
+            only_row = self._db.execute(statement.limit(1)).first()
+            only_option = _authorized_document_option(only_row) if only_row else None
+        else:
+            only_option = None
+        if (
+            only_option is not None
+            and not _document_query_tokens(query)
+            and not _query_has_filename_reference(query)
+        ):
+            return FullDocumentTargetResolution(
+                target=only_option,
+                option_count=1,
+                library_count=1,
+                mode="single",
+            )
+        rows = self._db.execute(statement).yield_per(500)
+        ranked = _rank_document_options(
+            (_authorized_document_option(row) for row in rows),
+            query=query,
+            limit=_DOCUMENT_SELECTION_SHORTLIST_LIMIT,
+        )
+        strongest_matched_tokens = ranked[0].matched_tokens if ranked else 0
+        exact_filenames = [
+            candidate
+            for candidate in ranked
+            if candidate.exact and candidate.match_reason_code == "exact_filename"
+            if candidate.matched_tokens == strongest_matched_tokens
         ]
-        if total == 1 and options:
-            return FullDocumentTargetResolution(target=options[0], option_count=1)
-        if total > _FULL_DOCUMENT_TARGET_SCAN_LIMIT:
-            return FullDocumentTargetResolution(target=None, option_count=total)
-        matched = _matching_document_options(options, query=query)
+        if exact_filenames:
+            if len(exact_filenames) == 1:
+                return FullDocumentTargetResolution(
+                    target=_unranked_document_option(exact_filenames[0]),
+                    option_count=1,
+                    library_count=total,
+                    mode="exact",
+                )
+            candidates = tuple(exact_filenames[:_DOCUMENT_SELECTION_SHORTLIST_LIMIT])
+        elif ranked and ranked[0].exact and ranked[0].match_reason_code != "exact_filename":
+            strongest = (ranked[0].matched_tokens, ranked[0].score)
+            strongest_exact = [
+                candidate
+                for candidate in ranked
+                if candidate.exact
+                if (candidate.matched_tokens, candidate.score) == strongest
+            ]
+            if len(strongest_exact) == 1:
+                candidate = strongest_exact[0]
+                return FullDocumentTargetResolution(
+                    target=_unranked_document_option(candidate),
+                    option_count=1,
+                    library_count=total,
+                    mode="exact",
+                )
+            candidates = tuple(strongest_exact[:_DOCUMENT_SELECTION_SHORTLIST_LIMIT])
+        else:
+            candidates = tuple(
+                candidate
+                for candidate in ranked
+                if candidate.score >= _DOCUMENT_CANDIDATE_MIN_SCORE
+            )[:_DOCUMENT_SELECTION_SHORTLIST_LIMIT]
         return FullDocumentTargetResolution(
-            target=matched[0] if len(matched) == 1 else None,
-            option_count=total,
+            target=None,
+            option_count=len(candidates),
+            library_count=total,
+            candidates=candidates,
+            mode="relevant" if candidates else "unresolved",
         )
 
     def read_full_document_range(
@@ -1736,32 +1941,237 @@ def _full_document_cursor_offset(cursor: str | None) -> int:
     return offset
 
 
-def _matching_document_options(
-    options: Sequence[AuthorizedDocumentOption], *, query: str
-) -> list[AuthorizedDocumentOption]:
-    normalized_query = _normalize_document_reference(query)
-    matched: list[AuthorizedDocumentOption] = []
-    for option in options:
-        references = [option.title]
-        if option.source_filename:
-            references.extend(
-                (
-                    option.source_filename,
-                    option.source_filename.rsplit(".", maxsplit=1)[0],
-                )
+def _rank_document_options(
+    options: Iterable[AuthorizedDocumentOption],
+    *,
+    query: str,
+    limit: int | None = None,
+) -> list[RankedAuthorizedDocumentOption]:
+    """Rank compact authorized metadata without reading or persisting document bodies."""
+    query_tokens = _document_query_tokens(query)
+    normalized_query = _normalize_document_text(query)
+    query_has_filename_reference = _query_has_filename_reference(query)
+    ranked = (
+        candidate
+        for option in options
+        if (
+            candidate := _rank_document_option(
+                option,
+                query_tokens=query_tokens,
+                normalized_query=normalized_query,
+                query_has_filename_reference=query_has_filename_reference,
             )
-        references_match = any(
-            reference in normalized_query
-            for raw_reference in references
-            if len(reference := _normalize_document_reference(raw_reference)) >= 4
         )
-        if references_match:
-            matched.append(option)
-    return matched
+        is not None
+    )
+    if limit is not None:
+        return heapq.nsmallest(limit, ranked, key=_document_candidate_sort_key)
+    return sorted(ranked, key=_document_candidate_sort_key)
+
+
+def _document_candidate_sort_key(
+    item: RankedAuthorizedDocumentOption,
+) -> tuple[int, bool, float, str, str]:
+    return (
+        -item.matched_tokens,
+        not item.exact,
+        -item.score,
+        _normalize_document_reference(item.title),
+        item.document_id,
+    )
+
+
+def _rank_document_option(
+    option: AuthorizedDocumentOption,
+    *,
+    query_tokens: Sequence[str],
+    normalized_query: str,
+    query_has_filename_reference: bool,
+) -> RankedAuthorizedDocumentOption | None:
+    references: list[tuple[str, str, bool]] = []
+    if option.source_filename:
+        references.extend(
+            (
+                (option.source_filename, "exact_filename", True),
+                (
+                    option.source_filename.rsplit(".", maxsplit=1)[0],
+                    "exact_filename",
+                    False,
+                ),
+            )
+        )
+    references.append((option.title, "exact_title", False))
+
+    best: RankedAuthorizedDocumentOption | None = None
+    for raw_reference, exact_reason, is_complete_filename in references:
+        reference_tokens = _document_reference_tokens(raw_reference)
+        if not reference_tokens:
+            continue
+        distinctive_reference_tokens = [
+            token for token in reference_tokens if token not in _DOCUMENT_REFERENCE_IGNORED_TOKENS
+        ]
+        exact_filename_match = is_complete_filename and _filename_appears_in_query(
+            raw_reference,
+            normalized_query=normalized_query,
+        )
+        exact_named_reference_match = (
+            not query_has_filename_reference
+            and bool(distinctive_reference_tokens)
+            and _named_reference_appears_in_query(
+                raw_reference,
+                normalized_query=normalized_query,
+            )
+        )
+        if exact_filename_match or exact_named_reference_match:
+            matched_tokens = len(reference_tokens)
+        else:
+            matched_tokens, _query_start, _reference_start = _longest_common_token_window(
+                query_tokens,
+                reference_tokens,
+            )
+        if matched_tokens == 0:
+            continue
+        covers_query_reference = not query_tokens or set(query_tokens).issubset(reference_tokens)
+        exact = (exact_filename_match or exact_named_reference_match) and covers_query_reference
+        overlap = len(set(query_tokens).intersection(reference_tokens))
+        dice = (2 * overlap) / max(len(set(query_tokens)) + len(set(reference_tokens)), 1)
+        reference_coverage = matched_tokens / len(reference_tokens)
+        if exact:
+            score = min(1.0, 0.9 + (0.02 * min(matched_tokens, 5)))
+            confidence: Literal["high", "medium", "low"] = "high"
+            reason: Literal[
+                "exact_title",
+                "exact_filename",
+                "partial_title",
+                "partial_filename",
+                "metadata_overlap",
+            ] = exact_reason  # type: ignore[assignment]
+        else:
+            query_coverage = matched_tokens / max(len(query_tokens), 1)
+            score = min(
+                0.89,
+                (0.5 * query_coverage) + (0.2 * reference_coverage) + (0.3 * dice),
+            )
+            confidence = "medium" if score >= 0.6 else "low"
+            if matched_tokens < 2:
+                reason = "metadata_overlap"
+            elif exact_reason == "exact_filename":
+                reason = "partial_filename"
+            else:
+                reason = "partial_title"
+        candidate = RankedAuthorizedDocumentOption(
+            **option.__dict__,
+            score=round(score, 6),
+            matched_tokens=matched_tokens,
+            match_confidence=confidence,
+            match_reason_code=reason,
+            exact=exact,
+        )
+        if best is None or (
+            candidate.exact,
+            candidate.matched_tokens,
+            candidate.score,
+        ) > (
+            best.exact,
+            best.matched_tokens,
+            best.score,
+        ):
+            best = candidate
+    return best
+
+
+def _document_reference_tokens(value: str) -> list[str]:
+    normalized = unicodedata.normalize("NFKC", value).casefold()
+    return [
+        token
+        for token in re.findall(r"[^\W_]+", normalized)
+        if token not in _DOCUMENT_REFERENCE_EXTENSION_TOKENS
+    ]
+
+
+def _document_query_tokens(value: str) -> list[str]:
+    return [
+        token
+        for token in _document_reference_tokens(value)
+        if token not in _DOCUMENT_REFERENCE_IGNORED_TOKENS
+    ]
+
+
+def _normalize_document_text(value: str) -> str:
+    return " ".join(unicodedata.normalize("NFKC", value).casefold().split())
+
+
+def _query_has_filename_reference(value: str) -> bool:
+    extensions = "|".join(sorted(_DOCUMENT_REFERENCE_EXTENSION_TOKENS, key=len, reverse=True))
+    return bool(re.search(rf"(?i)\.(?:{extensions})(?![a-z0-9])", value))
+
+
+def _filename_appears_in_query(raw_filename: str, *, normalized_query: str) -> bool:
+    filename = _normalize_document_text(raw_filename)
+    start = normalized_query.find(filename)
+    while start >= 0:
+        end = start + len(filename)
+        before_ok = start == 0 or not normalized_query[start - 1].isalnum()
+        after_character = normalized_query[end : end + 1]
+        after_ok = not after_character or not re.match(r"[a-z0-9_]", after_character)
+        if before_ok and after_ok:
+            return True
+        start = normalized_query.find(filename, start + 1)
+    return False
+
+
+def _named_reference_appears_in_query(raw_reference: str, *, normalized_query: str) -> bool:
+    reference = _normalize_document_text(raw_reference)
+    start = normalized_query.find(reference)
+    while start >= 0:
+        end = start + len(reference)
+        before_ok = start == 0 or not normalized_query[start - 1].isalnum()
+        after_ok = end == len(normalized_query) or not normalized_query[end].isalnum()
+        if re.match(r"\.[a-z0-9_]", normalized_query[end:]):
+            after_ok = False
+        if before_ok and after_ok:
+            return True
+        start = normalized_query.find(reference, start + 1)
+    return False
+
+
+def _longest_common_token_window(
+    left: Sequence[str],
+    right: Sequence[str],
+) -> tuple[int, int, int]:
+    """Return length and starts for the longest contiguous shared token window."""
+    if not left or not right:
+        return 0, 0, 0
+    previous = [0] * (len(right) + 1)
+    best = (0, 0, 0)
+    for left_index, left_token in enumerate(left):
+        current = [0] * (len(right) + 1)
+        for right_index, right_token in enumerate(right):
+            if left_token != right_token:
+                continue
+            current[right_index + 1] = previous[right_index] + 1
+            length = current[right_index + 1]
+            candidate = (length, left_index - length + 1, right_index - length + 1)
+            if candidate[0] > best[0]:
+                best = candidate
+        previous = current
+    return best
 
 
 def _normalize_document_reference(value: str) -> str:
-    return " ".join(value.casefold().split())
+    return " ".join(_document_reference_tokens(value))
+
+
+def _unranked_document_option(
+    candidate: RankedAuthorizedDocumentOption,
+) -> AuthorizedDocumentOption:
+    return AuthorizedDocumentOption(
+        document_id=candidate.document_id,
+        title=candidate.title,
+        source_filename=candidate.source_filename,
+        knowledge_base_id=candidate.knowledge_base_id,
+        knowledge_base_name=candidate.knowledge_base_name,
+    )
 
 
 def _distributed_chunk_sample(

@@ -109,6 +109,355 @@ def test_non_task_or_ordinary_document_requests_do_not_trigger_full_read(message
     assert is_comprehensive_document_request(message) is False
 
 
+def test_exact_filename_request_resolves_without_document_selection(monkeypatch) -> None:  # noqa: ANN001
+    client = _client(monkeypatch)
+    _signup_login(client, "exact-filename-full-read@example.com")
+    kb_id = _create_knowledge_base(client, "Exact filename KB")
+    target = _create_document(
+        client,
+        json={
+            "title": "Pydantic reference",
+            "content": "Annotated and Literal are combined through Pydantic metadata.",
+            "knowledge_base_id": kb_id,
+        },
+    ).json()
+    distractor = _create_document(
+        client,
+        json={
+            "title": "Pydantic",
+            "content": "A shorter distractor title.",
+            "knowledge_base_id": kb_id,
+        },
+    ).json()
+    for document in (target, distractor):
+        assert client.post(f"/documents/{document['id']}/ingest").status_code == 200
+
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        target_model = db.get(DocumentModel, target["id"])
+        assert target_model is not None
+        target_model.source_filename = "Pydantic Annotated Literal.md"
+        db.commit()
+    finally:
+        session_generator.close()
+
+    conversation_id = client.post(
+        "/conversations", json={"title": "Exact filename full read"}
+    ).json()["id"]
+    response = client.post(
+        f"/conversations/{conversation_id}/runs",
+        json={
+            "message": "Pydantic Annotated Literal.md 문서를 모두 읽고 내용을 요약해줘",
+            "knowledge_base_selection": {"mode": "selected", "knowledge_base_ids": [kb_id]},
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["document_coverage"]["document_id"] == target["id"]
+
+
+def test_approximate_filename_request_returns_only_ranked_relevant_options(
+    monkeypatch,
+) -> None:  # noqa: ANN001
+    graph = build_graph(
+        checkpointer=InMemorySaver(serde=checkpoint_serializer()),
+        document_selection_hitl_enabled=True,
+    )
+    client = _client(monkeypatch)
+    client.app.dependency_overrides[get_graph_runner] = lambda: graph
+    _signup_login(client, "approximate-filename-options@example.com")
+    kb_id = _create_knowledge_base(client, "Approximate filename KB")
+    documents = [
+        _create_document(
+            client,
+            json={"title": title, "content": title, "knowledge_base_id": kb_id},
+        ).json()
+        for title in (
+            "Markdown Langgraph - Pydantic Annotated Literal",
+            "Pydantic",
+            "Quarterly budget report",
+        )
+    ]
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        target_model = db.get(DocumentModel, documents[0]["id"])
+        assert target_model is not None
+        target_model.source_filename = "Markdown Langgraph - Pydantic Annotated Literal.md"
+        db.commit()
+    finally:
+        session_generator.close()
+    conversation_id = client.post(
+        "/conversations", json={"title": "Approximate filename options"}
+    ).json()["id"]
+
+    response = client.post(
+        f"/conversations/{conversation_id}/runs",
+        json={
+            "message": "Pydantic Annotated Literal.md 문서를 모두 읽고 내용을 요약해줘",
+            "knowledge_base_selection": {"mode": "selected", "knowledge_base_ids": [kb_id]},
+        },
+    )
+
+    assert response.status_code == 202
+    interaction = response.json()["interaction"]
+    assert interaction["schema_version"] == 2
+    assert interaction["library_count"] == 3
+    assert interaction["option_count"] == 2
+    assert [option["document_id"] for option in interaction["options"]] == [
+        documents[0]["id"],
+        documents[1]["id"],
+    ]
+    assert interaction["options"][0]["match_confidence"] == "medium"
+    assert interaction["options"][0]["match_reason_code"] == "partial_filename"
+    assert interaction["refinement"] == {
+        "allowed": True,
+        "attempts_used": 0,
+        "attempts_max": 2,
+        "max_length": 120,
+    }
+    assert interaction["browse"] == {"allowed": False, "cursor": None}
+
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        deleted_target = db.get(DocumentModel, documents[0]["id"])
+        assert deleted_target is not None
+        db.delete(deleted_target)
+        db.commit()
+    finally:
+        session_generator.close()
+
+    refreshed = client.get(f"/conversations/{conversation_id}/runs/{response.json()['run_id']}")
+    assert refreshed.status_code == 200
+    refreshed_interaction = refreshed.json()["interaction"]
+    assert refreshed_interaction["library_count"] == 2
+    assert refreshed_interaction["option_count"] == 1
+    assert [option["document_id"] for option in refreshed_interaction["options"]] == [
+        documents[1]["id"]
+    ]
+
+
+def test_target_resolution_keeps_exact_lookup_past_500_documents(monkeypatch) -> None:  # noqa: ANN001
+    client = _client(monkeypatch)
+    user_id = _signup_login(client, "large-library-exact-filename@example.com")
+    kb_id = _create_knowledge_base(client, "Large filename KB")
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        db.add_all(
+            DocumentModel(
+                title=f"Unrelated document {index:03d}",
+                content="",
+                source_filename=f"unrelated-{index:03d}.md",
+                owner_user_id=user_id,
+                knowledge_base_id=kb_id,
+            )
+            for index in range(505)
+        )
+        target = DocumentModel(
+            title="Exact target beyond old scan cap",
+            content="",
+            source_filename="Pydantic Annotated Literal.md",
+            owner_user_id=user_id,
+            knowledge_base_id=kb_id,
+        )
+        db.add(target)
+        db.commit()
+
+        resolution = RetrievalService(db).resolve_full_document_target(
+            user_id=user_id,
+            query="Pydantic Annotated Literal.md 문서를 모두 읽고 내용을 요약해줘",
+            knowledge_base_ids=[kb_id],
+        )
+
+        assert resolution.library_count == 506
+        assert resolution.mode == "exact"
+        assert resolution.target is not None
+        assert resolution.target.document_id == target.id
+    finally:
+        session_generator.close()
+
+
+def test_duplicate_exact_filenames_exclude_weaker_candidates(monkeypatch) -> None:  # noqa: ANN001
+    client = _client(monkeypatch)
+    user_id = _signup_login(client, "duplicate-exact-filename@example.com")
+    kb_id = _create_knowledge_base(client, "Duplicate filename KB")
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        exact_documents = [
+            DocumentModel(
+                title=f"Exact copy {index}",
+                content="",
+                source_filename="Pydantic Annotated Literal.md",
+                owner_user_id=user_id,
+                knowledge_base_id=kb_id,
+            )
+            for index in range(2)
+        ]
+        db.add_all(
+            [
+                *exact_documents,
+                DocumentModel(
+                    title="Pydantic",
+                    content="",
+                    owner_user_id=user_id,
+                    knowledge_base_id=kb_id,
+                ),
+                DocumentModel(
+                    title="Annotated Literal notes",
+                    content="",
+                    owner_user_id=user_id,
+                    knowledge_base_id=kb_id,
+                ),
+            ]
+        )
+        db.commit()
+
+        resolution = RetrievalService(db).resolve_full_document_target(
+            user_id=user_id,
+            query="Pydantic Annotated Literal.md 문서를 모두 읽고 내용을 요약해줘",
+            knowledge_base_ids=[kb_id],
+        )
+
+        assert resolution.target is None
+        assert resolution.option_count == 2
+        assert {candidate.document_id for candidate in resolution.candidates} == {
+            document.id for document in exact_documents
+        }
+        assert all(
+            candidate.match_reason_code == "exact_filename" for candidate in resolution.candidates
+        )
+    finally:
+        session_generator.close()
+
+
+def test_subset_title_or_filename_matches_never_auto_select(monkeypatch) -> None:  # noqa: ANN001
+    client = _client(monkeypatch)
+    user_id = _signup_login(client, "subset-filename-match@example.com")
+    kb_id = _create_knowledge_base(client, "Subset filename KB")
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        intended = DocumentModel(
+            title="Long intended filename",
+            content="",
+            source_filename="Markdown Langgraph - Pydantic Annotated Literal.md",
+            owner_user_id=user_id,
+            knowledge_base_id=kb_id,
+        )
+        db.add_all(
+            [
+                intended,
+                DocumentModel(
+                    title="Literal suffix",
+                    content="",
+                    source_filename="Literal.md",
+                    owner_user_id=user_id,
+                    knowledge_base_id=kb_id,
+                ),
+                DocumentModel(
+                    title="Unknown suffix",
+                    content="",
+                    source_filename="Unknown.md",
+                    owner_user_id=user_id,
+                    knowledge_base_id=kb_id,
+                ),
+                DocumentModel(
+                    title="Pydantic",
+                    content="",
+                    owner_user_id=user_id,
+                    knowledge_base_id=kb_id,
+                ),
+                DocumentModel(
+                    title="Summary suffix",
+                    content="",
+                    source_filename="Summary.md",
+                    owner_user_id=user_id,
+                    knowledge_base_id=kb_id,
+                ),
+            ]
+        )
+        db.commit()
+        service = RetrievalService(db)
+
+        longer_reference = service.resolve_full_document_target(
+            user_id=user_id,
+            query="Pydantic Annotated Literal.md 문서를 모두 읽고 내용을 요약해줘",
+            knowledge_base_ids=[kb_id],
+        )
+        assert longer_reference.target is None
+        assert longer_reference.candidates[0].document_id == intended.id
+        assert all(not candidate.exact for candidate in longer_reference.candidates)
+
+        for query in (
+            "Pydantic Unknown.md 문서를 모두 읽고 내용을 요약해줘",
+            "Pydantic Missing Guide 문서를 모두 읽고 내용을 요약해줘",
+            "Project Summary.md 문서를 모두 읽고 내용을 요약해줘",
+        ):
+            resolution = service.resolve_full_document_target(
+                user_id=user_id,
+                query=query,
+                knowledge_base_ids=[kb_id],
+            )
+            assert resolution.target is None
+            assert resolution.candidates
+            assert all(not candidate.exact for candidate in resolution.candidates)
+            assert all(
+                candidate.match_reason_code not in {"exact_title", "exact_filename"}
+                for candidate in resolution.candidates
+            )
+    finally:
+        session_generator.close()
+
+
+def test_single_document_shortcut_only_applies_to_generic_references(monkeypatch) -> None:  # noqa: ANN001
+    client = _client(monkeypatch)
+    user_id = _signup_login(client, "single-document-reference@example.com")
+    kb_id = _create_knowledge_base(client, "Single document KB")
+    session_generator = get_database_session()
+    db = next(session_generator)
+    try:
+        document = DocumentModel(
+            title="Completely unrelated",
+            content="",
+            source_filename="unrelated.md",
+            owner_user_id=user_id,
+            knowledge_base_id=kb_id,
+        )
+        db.add(document)
+        db.commit()
+        service = RetrievalService(db)
+
+        for generic_query in (
+            "Review this entire document from beginning to end.",
+            "문서 전체를 빠짐없이 검토해줘.",
+        ):
+            resolution = service.resolve_full_document_target(
+                user_id=user_id,
+                query=generic_query,
+                knowledge_base_ids=[kb_id],
+            )
+            assert resolution.target is not None
+            assert resolution.target.document_id == document.id
+
+        for missing_query in (
+            "Missing File.md 문서를 모두 읽고 내용을 요약해줘",
+            "Missing File 문서를 모두 읽고 내용을 요약해줘",
+        ):
+            resolution = service.resolve_full_document_target(
+                user_id=user_id,
+                query=missing_query,
+                knowledge_base_ids=[kb_id],
+            )
+            assert resolution.target is None
+            assert resolution.candidates == ()
+    finally:
+        session_generator.close()
+
+
 @pytest.mark.parametrize(
     ("overrides", "message"),
     [
@@ -630,7 +979,7 @@ def test_full_document_selection_interrupt_resumes_exact_document(monkeypatch) -
     pending_response = client.post(
         f"/conversations/{conversation_id}/runs",
         json={
-            "message": "Review this entire document from beginning to end.",
+            "message": "Review the entire document, either First Source or Second Source.",
             "knowledge_base_selection": {"mode": "selected", "knowledge_base_ids": [kb_id]},
         },
     )
@@ -640,9 +989,10 @@ def test_full_document_selection_interrupt_resumes_exact_document(monkeypatch) -
     resumed = client.post(
         f"/conversations/{conversation_id}/runs/{pending['run_id']}/resume",
         json={
-            "schema_version": 1,
+            "schema_version": 2,
             "interaction_id": pending["interaction"]["interaction_id"],
             "type": "document_selection",
+            "kind": "select",
             "document_id": documents[1]["id"],
         },
     )
@@ -684,7 +1034,9 @@ def test_full_document_resume_stream_preserves_coverage_event_and_refresh_parity
     pending_response = client.post(
         f"/conversations/{conversation_id}/runs",
         json={
-            "message": "Review this entire document from beginning to end.",
+            "message": (
+                "Review the entire document, either Resume First Source or Resume Second Source."
+            ),
             "knowledge_base_selection": {"mode": "selected", "knowledge_base_ids": [kb_id]},
         },
     )
@@ -695,9 +1047,10 @@ def test_full_document_resume_stream_preserves_coverage_event_and_refresh_parity
         "POST",
         f"/conversations/{conversation_id}/runs/{pending['run_id']}/resume/stream",
         json={
-            "schema_version": 1,
+            "schema_version": 2,
             "interaction_id": pending["interaction"]["interaction_id"],
             "type": "document_selection",
+            "kind": "select",
             "document_id": documents[1]["id"],
         },
     ) as response:
@@ -755,7 +1108,9 @@ def test_full_document_resume_stream_reread_downgrade_uses_final_graph_context(
     pending_response = client.post(
         f"/conversations/{conversation_id}/runs",
         json={
-            "message": "Review this entire document from beginning to end.",
+            "message": (
+                "Review the entire document, either TOCTOU First Source or TOCTOU Second Source."
+            ),
             "knowledge_base_selection": {"mode": "selected", "knowledge_base_ids": [kb_id]},
         },
     )
@@ -770,9 +1125,10 @@ def test_full_document_resume_stream_reread_downgrade_uses_final_graph_context(
         "POST",
         f"/conversations/{conversation_id}/runs/{pending['run_id']}/resume/stream",
         json={
-            "schema_version": 1,
+            "schema_version": 2,
             "interaction_id": pending["interaction"]["interaction_id"],
             "type": "document_selection",
+            "kind": "select",
             "document_id": documents[1]["id"],
         },
     ) as response:

@@ -15,7 +15,7 @@ from my_agents.conversations.models import AgentEventType, AgentRunModel, RunSta
 from my_agents.conversations.schemas import (
     ConversationRunInterruptedResponse,
 )
-from my_agents.interactions.schemas import PendingDocumentSelection
+from my_agents.interactions.schemas import pending_interaction_adapter
 from my_agents.observability.metrics import record_langgraph_persistence_operation
 
 logger = logging.getLogger(__name__)
@@ -42,12 +42,15 @@ def persist_waiting_document_selection(
     if payload is None:
         raise RuntimeError("interrupted graph did not expose a document-selection payload")
     now = datetime.now(UTC)
-    expires_at = now + timedelta(seconds=wait_seconds)
+    existing_expires_at = (
+        _as_utc(run.interaction_expires_at) if run.interaction_expires_at is not None else None
+    )
+    expires_at = existing_expires_at or (now + timedelta(seconds=wait_seconds))
     user = db.get(UserModel, run.user_id)
     if user is not None and user.guest_expires_at is not None:
         guest_expires_at = _as_utc(user.guest_expires_at)
         expires_at = min(expires_at, guest_expires_at)
-    interaction = PendingDocumentSelection.model_validate(
+    interaction = pending_interaction_adapter.validate_python(
         {
             **payload,
             "expires_at": expires_at,
@@ -92,7 +95,7 @@ def interrupted_run_response(run: AgentRunModel) -> ConversationRunInterruptedRe
     return ConversationRunInterruptedResponse(
         run_id=run.id,
         conversation_id=run.conversation_id,
-        interaction=PendingDocumentSelection.model_validate(payload),
+        interaction=pending_interaction_adapter.validate_python(payload),
     )
 
 

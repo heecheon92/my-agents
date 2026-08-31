@@ -407,7 +407,7 @@ def complete_resumed_conversation_run(
     run: AgentRunModel,
     messages: list[BaseMessage],
     selection_context: KnowledgeBaseSelectionContext,
-    selected_document_id: str,
+    resume_value: dict[str, object],
     graph_runner: GraphRunner,
     hitl_wait_seconds: int,
 ) -> ConversationRunResult:
@@ -423,7 +423,7 @@ def complete_resumed_conversation_run(
         result = invoke_graph_runner_resume_collecting_updates(
             graph_runner=graph_runner,
             run_id=run.id,
-            resume_value={"document_id": selected_document_id},
+            resume_value=resume_value,
             graph_context=graph_context,
         )
     except GraphRunnerExecutionError as exc:

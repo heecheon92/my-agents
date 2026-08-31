@@ -606,26 +606,106 @@ def test_checkpointed_document_selection_interrupts_and_resumes_same_run(monkeyp
     assert interrupted.status_code == 202
     pending = interrupted.json()
     assert pending["status"] == "waiting_for_input"
-    assert pending["interaction"]["schema_version"] == 1
+    assert pending["interaction"]["schema_version"] == 2
     assert pending["interaction"]["type"] == "document_selection"
-    assert pending["interaction"]["option_count"] == 2
+    assert pending["interaction"]["option_count"] == 0
+    assert pending["interaction"]["library_count"] == 2
+    assert pending["interaction"]["refinement"]["attempts_used"] == 0
 
-    encoded_interaction_id = pending["interaction"]["interaction_id"].replace(":", "%3A")
     options = client.get(
         f"/conversations/{conversation_id}/runs/{pending['run_id']}"
-        f"/interactions/{encoded_interaction_id}/options"
+        f"/interactions/{pending['interaction']['interaction_id']}/options"
+    )
+    assert options.status_code == 409
+    off_shortlist = client.post(
+        f"/conversations/{conversation_id}/runs/{pending['run_id']}/resume",
+        json={
+            "schema_version": 2,
+            "interaction_id": pending["interaction"]["interaction_id"],
+            "type": "document_selection",
+            "kind": "select",
+            "document_id": documents[0]["id"],
+        },
+    )
+    assert off_shortlist.status_code == 409
+    assert off_shortlist.json()["code"] == "run_interaction_selection_unavailable"
+
+    first_refinement = client.post(
+        f"/conversations/{conversation_id}/runs/{pending['run_id']}/resume",
+        json={
+            "schema_version": 2,
+            "interaction_id": pending["interaction"]["interaction_id"],
+            "type": "document_selection",
+            "kind": "refine",
+            "text": "unknown filename one",
+        },
+    )
+    assert first_refinement.status_code == 202
+    refined_once = first_refinement.json()
+    assert refined_once["run_id"] == pending["run_id"]
+    assert refined_once["interaction"]["interaction_id"] != pending["interaction"]["interaction_id"]
+    assert refined_once["interaction"]["expires_at"] == pending["interaction"]["expires_at"]
+    assert refined_once["interaction"]["refinement"]["attempts_used"] == 1
+    stale_refinement = client.post(
+        f"/conversations/{conversation_id}/runs/{pending['run_id']}/resume",
+        json={
+            "schema_version": 2,
+            "interaction_id": pending["interaction"]["interaction_id"],
+            "type": "document_selection",
+            "kind": "refine",
+            "text": "stale clue",
+        },
+    )
+    assert stale_refinement.status_code == 409
+    assert stale_refinement.json()["code"] == "run_interaction_mismatch"
+
+    second_refinement = client.post(
+        f"/conversations/{conversation_id}/runs/{pending['run_id']}/resume",
+        json={
+            "schema_version": 2,
+            "interaction_id": refined_once["interaction"]["interaction_id"],
+            "type": "document_selection",
+            "kind": "refine",
+            "text": "unknown filename two",
+        },
+    )
+    assert second_refinement.status_code == 202
+    broadened = second_refinement.json()
+    assert broadened["run_id"] == pending["run_id"]
+    assert broadened["interaction"]["expires_at"] == pending["interaction"]["expires_at"]
+    assert broadened["interaction"]["refinement"]["attempts_used"] == 2
+    assert broadened["interaction"]["refinement"]["allowed"] is False
+    assert broadened["interaction"]["browse"] == {"allowed": True, "cursor": "0"}
+    exhausted_refinement = client.post(
+        f"/conversations/{conversation_id}/runs/{pending['run_id']}/resume",
+        json={
+            "schema_version": 2,
+            "interaction_id": broadened["interaction"]["interaction_id"],
+            "type": "document_selection",
+            "kind": "refine",
+            "text": "third clue",
+        },
+    )
+    assert exhausted_refinement.status_code == 409
+    assert exhausted_refinement.json()["code"] == "run_interaction_refinement_exhausted"
+    assert _row_count(MessageModel) == 1
+
+    options = client.get(
+        f"/conversations/{conversation_id}/runs/{pending['run_id']}"
+        f"/interactions/{broadened['interaction']['interaction_id']}/options"
     )
     assert options.status_code == 200
-    assert options.json()["schema_version"] == 1
-    assert options.json()["type"] == "document_selection"
+    assert options.json()["schema_version"] == 2
+    assert options.json()["mode"] == "broad"
     assert options.json()["option_count"] == 2
 
     resumed = client.post(
         f"/conversations/{conversation_id}/runs/{pending['run_id']}/resume",
         json={
-            "schema_version": 1,
-            "interaction_id": pending["interaction"]["interaction_id"],
+            "schema_version": 2,
+            "interaction_id": broadened["interaction"]["interaction_id"],
             "type": "document_selection",
+            "kind": "select",
             "document_id": documents[0]["id"],
         },
     )
@@ -642,9 +722,10 @@ def test_checkpointed_document_selection_interrupts_and_resumes_same_run(monkeyp
     assert detail.status_code == 200
     assert detail.json()["status"] == "completed"
     events = client.get(f"/conversations/{conversation_id}/runs/{pending['run_id']}/events").json()
+    assert "unknown filename" not in json.dumps(events)
     for event_type in ("run_interrupted", "run_resumed"):
         payload = next(event["payload"] for event in events if event["event_type"] == event_type)
-        assert payload["interaction_schema_version"] == 1
+        assert payload["interaction_schema_version"] == 2
 
     stream_conversation_id = client.post(
         "/conversations", json={"title": "Checkpointed selection stream"}
@@ -668,10 +749,11 @@ def test_checkpointed_document_selection_interrupts_and_resumes_same_run(monkeyp
         "POST",
         (f"/conversations/{stream_conversation_id}/runs/{stream_pending['run_id']}/resume/stream"),
         json={
-            "schema_version": 1,
+            "schema_version": 2,
             "interaction_id": stream_pending["interaction"]["interaction_id"],
             "type": "document_selection",
-            "document_id": documents[1]["id"],
+            "kind": "refine",
+            "text": "Beta Source",
         },
     ) as response:
         assert response.status_code == 200
@@ -744,10 +826,11 @@ def test_resume_stream_finalization_failure_marks_run_failed_and_cleans_checkpoi
         "POST",
         f"/conversations/{conversation_id}/runs/{pending['run_id']}/resume/stream",
         json={
-            "schema_version": 1,
+            "schema_version": 2,
             "interaction_id": pending["interaction"]["interaction_id"],
             "type": "document_selection",
-            "document_id": documents[0]["id"],
+            "kind": "refine",
+            "text": "Failure Source A",
         },
     ) as response:
         assert response.status_code == 200

@@ -85,7 +85,7 @@ from my_agents.document_workspace.service import (
     assert_document_workspace_access,
     prepare_document_workspace_runtime,
 )
-from my_agents.interactions.schemas import ConversationRunResumeRequest
+from my_agents.interactions.schemas import ConversationRunResumeRequestType
 from my_agents.knowledge.auth import (
     KnowledgeBaseSelectionContext,
     resolve_conversation_knowledge_context,
@@ -103,7 +103,7 @@ logger = logging.getLogger(__name__)
 def stream_resumed_conversation_run(
     conversation_id: str,
     run_id: str,
-    request: ConversationRunResumeRequest,
+    request: ConversationRunResumeRequestType,
     principal: Annotated[Principal, Depends(get_current_principal)],
     db: Annotated[Session, Depends(get_database_session)],
     graph_runner: Annotated[GraphRunner, Depends(get_graph_runner)],
@@ -165,7 +165,7 @@ def resumed_conversation_run_events(
         for item in stream_resumed_graph_items(
             graph_runner=graph_runner,
             run_id=run.id,
-            resume_value={"document_id": prepared.selected_document_id},
+            resume_value=prepared.resume_value,
             graph_context=graph_context,
         ):
             if item.result:

@@ -11,6 +11,7 @@ topics:
 related_code:
   - my_agents/api/conversations/endpoints/runs.py
   - my_agents/api/conversations/endpoints/stream.py
+  - my_agents/api/conversations/graph_invocation.py
   - my_agents/api/conversations/graph_streaming.py
   - tests/test_conversations_api.py
 ---
@@ -81,6 +82,19 @@ The frontend companion clears the answered interaction immediately, ignores stal
 cache recovery while resume is in flight, and restores the card only if server truth remains
 waiting after failure.
 
+### Repeated interrupts must survive state reconstruction
+
+Human refinement adds a valid third terminal shape: a resumed graph may interrupt again instead
+of completing or failing. LangGraph's checkpoint snapshot contains graph values but not the
+stream-only `__interrupt__` update. The resume collector formerly returned the snapshot alone,
+silently discarded that second interrupt, and finalized the run as insufficient evidence.
+
+The collector now overlays streamed node updates, including `__interrupt__`, onto the complete
+checkpoint values. Product DB can therefore persist a fresh V2 attempt UUID while keeping the
+same run, KB scope, transcript, and original deadline. Regression coverage drives two unresolved
+refinements, verifies broad browsing is unlocked only after the second, and confirms that raw
+human clues appear in neither messages nor activity events.
+
 ## Verification
 
 - The backend regression requires `run_resumed` to be the first resume SSE event and requires
@@ -102,5 +116,6 @@ waiting after failure.
 
 ## Revision history
 
+- 2026-08-31: Preserved repeated LangGraph interrupts during resume state reconstruction and documented the bounded V2 refinement loop.
 - 2026-08-31: Added the post-loop terminal-finalization failure boundary so a claimed resume cannot remain stranded in `running` after reconciliation or persistence errors.
 - 2026-08-26: Created after replacing buffered resume replay with true checkpoint streaming.

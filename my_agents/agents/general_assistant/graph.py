@@ -28,6 +28,7 @@ from my_agents.agents.general_assistant.rag_retrieval import (
     retrieve_rag_context,
     retrieve_selected_rag_context,
     select_after_document_selection,
+    select_after_document_selection_preparation,
     select_after_full_document_read,
     select_after_full_document_target,
     select_after_rag_context,
@@ -79,6 +80,17 @@ class AssistantState(TypedDict, total=False):
     document_workspace_expires_at: str
     document_selection_options: list[dict[str, object]]
     document_selection_option_count: int
+    document_selection_library_count: int
+    document_selection_schema_version: int
+    document_selection_interaction_id: str
+    document_selection_reason_code: str
+    document_selection_refinement_attempts: int
+    document_selection_refinement_allowed: bool
+    document_selection_browse_allowed: bool
+    document_selection_needs_resolution: bool
+    document_selection_answer_kind: str
+    document_selection_preparation_status: str
+    document_reference_query: str
     selected_document_id: str
     document_selection_hitl_allowed: bool
     full_document_requested: bool
@@ -447,13 +459,22 @@ def _build_graph(
                 ),
             )
         if document_selection_hitl_enabled:
-            graph.add_edge("prepare_document_selection", "request_document_selection")
+            graph.add_conditional_edges(
+                "prepare_document_selection",
+                select_after_document_selection_preparation,
+                {
+                    "request_document_selection": "request_document_selection",
+                    "resolve_full_document_target": "resolve_full_document_target",
+                    "retrieve_selected_rag_context": "retrieve_selected_rag_context",
+                },
+            )
             graph.add_conditional_edges(
                 "request_document_selection",
                 select_after_document_selection,
                 {
                     "resolve_full_document_target": "resolve_full_document_target",
                     "retrieve_selected_rag_context": "retrieve_selected_rag_context",
+                    "prepare_document_selection": "prepare_document_selection",
                 },
             )
             graph.add_conditional_edges(

@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from time import perf_counter
 from typing import Any
+from uuid import uuid4
 
 from langchain_core.messages import BaseMessage
 from langgraph.runtime import Runtime
@@ -21,7 +22,12 @@ from my_agents.agents.rag_agent import (
     rag_result_snapshot_for_graph,
     retrieved_context_for_graph,
 )
-from my_agents.interactions.schemas import INTERACTION_SCHEMA_VERSION
+from my_agents.interactions.schemas import (
+    DOCUMENT_SELECTION_REFINEMENT_MAX_ATTEMPTS,
+    DOCUMENT_SELECTION_REFINEMENT_MAX_LENGTH,
+    INTERACTION_SCHEMA_VERSION,
+    LEGACY_INTERACTION_SCHEMA_VERSION,
+)
 from my_agents.knowledge.routing import RetrievalRoutingDecision
 
 
@@ -134,24 +140,61 @@ def prepare_document_selection(
     user_id = context.get("user_id") or state.get("principal_id")
     if rag_runtime is None or selection_context is None or not isinstance(user_id, str):
         raise RuntimeError("document selection requires authorized RAG runtime context")
-    options, option_count = rag_runtime.document_options(
-        user_id=user_id,
-        selection_context=selection_context,
-        limit=50,
-        offset=0,
-    )
-    return {
-        "document_selection_options": [
-            {
-                "document_id": option.document_id,
-                "title": option.title,
-                "source_filename": option.source_filename,
-                "knowledge_base_id": option.knowledge_base_id,
-                "knowledge_base_name": option.knowledge_base_name,
+    existing_options = state.get("document_selection_options")
+    existing_library_count = state.get("document_selection_library_count")
+    if (
+        state.get("document_selection_needs_resolution") is not True
+        and isinstance(existing_options, list)
+        and isinstance(existing_library_count, int)
+    ):
+        options_payload = [item for item in existing_options if isinstance(item, dict)]
+        option_count = len(options_payload)
+        library_count = existing_library_count
+        reason_code = str(
+            state.get("document_selection_reason_code")
+            or (
+                "ambiguous_document_reference"
+                if options_payload
+                else "unresolved_document_reference"
+            )
+        )
+    else:
+        resolution = rag_runtime.resolve_full_document_target(
+            user_id=user_id,
+            query=str(
+                state.get("document_reference_query") or latest_human_text(_state_messages(state))
+            ),
+            selection_context=selection_context,
+        )
+        ranked_options = list(resolution.candidates)
+        if resolution.target is not None:
+            return {
+                "selected_document_id": resolution.target.document_id,
+                "document_selection_preparation_status": "resolved",
+                "document_selection_needs_resolution": False,
+                "document_selection_answer_kind": "select",
             }
-            for option in options
-        ],
+        options_payload = [_document_option_payload(option) for option in ranked_options]
+        option_count = len(options_payload)
+        library_count = resolution.library_count
+        reason_code = (
+            "ambiguous_document_reference" if options_payload else "unresolved_document_reference"
+        )
+    attempts_used = int(state.get("document_selection_refinement_attempts") or 0)
+    refinement_allowed = attempts_used < DOCUMENT_SELECTION_REFINEMENT_MAX_ATTEMPTS
+    return {
+        "document_selection_schema_version": INTERACTION_SCHEMA_VERSION,
+        "document_selection_interaction_id": str(uuid4()),
+        "document_selection_options": options_payload,
         "document_selection_option_count": option_count,
+        "document_selection_library_count": library_count,
+        "document_selection_reason_code": reason_code,
+        "document_selection_refinement_attempts": attempts_used,
+        "document_selection_refinement_allowed": refinement_allowed,
+        "document_selection_browse_allowed": not refinement_allowed,
+        "document_selection_needs_resolution": False,
+        "document_selection_answer_kind": "",
+        "document_selection_preparation_status": "pending",
     }
 
 
@@ -160,9 +203,12 @@ def request_document_selection(state: Mapping[str, Any]) -> dict[str, object]:
     run_id = state.get("run_id")
     if not isinstance(run_id, str):
         raise RuntimeError("document selection requires a run_id")
-    response = interrupt(
-        {
-            "schema_version": INTERACTION_SCHEMA_VERSION,
+    schema_version = int(
+        state.get("document_selection_schema_version") or LEGACY_INTERACTION_SCHEMA_VERSION
+    )
+    if schema_version == LEGACY_INTERACTION_SCHEMA_VERSION:
+        payload: dict[str, object] = {
+            "schema_version": LEGACY_INTERACTION_SCHEMA_VERSION,
             "interaction_id": f"{run_id}:document_selection",
             "type": "document_selection",
             "reason_code": "ambiguous_document_reference",
@@ -173,10 +219,65 @@ def request_document_selection(state: Mapping[str, Any]) -> dict[str, object]:
                 "50" if int(state.get("document_selection_option_count", 0)) > 50 else None
             ),
         }
-    )
-    if not isinstance(response, Mapping) or not isinstance(response.get("document_id"), str):
-        raise ValueError("document selection resume payload requires document_id")
-    return {"selected_document_id": response["document_id"]}
+    else:
+        attempts_used = int(state.get("document_selection_refinement_attempts") or 0)
+        refinement_allowed = bool(state.get("document_selection_refinement_allowed"))
+        browse_allowed = bool(state.get("document_selection_browse_allowed"))
+        payload = {
+            "schema_version": INTERACTION_SCHEMA_VERSION,
+            "interaction_id": state.get("document_selection_interaction_id"),
+            "type": "document_selection",
+            "reason_code": state.get(
+                "document_selection_reason_code",
+                "ambiguous_document_reference",
+            ),
+            "message_key": "clarification.document_scope.select_source",
+            "option_count": state.get("document_selection_option_count", 0),
+            "library_count": state.get("document_selection_library_count", 0),
+            "options": state.get("document_selection_options", []),
+            "next_cursor": None,
+            "refinement": {
+                "allowed": refinement_allowed,
+                "attempts_used": attempts_used,
+                "attempts_max": DOCUMENT_SELECTION_REFINEMENT_MAX_ATTEMPTS,
+                "max_length": DOCUMENT_SELECTION_REFINEMENT_MAX_LENGTH,
+            },
+            "browse": {
+                "allowed": browse_allowed,
+                "cursor": "0" if browse_allowed else None,
+            },
+        }
+    response = interrupt(payload)
+    if not isinstance(response, Mapping):
+        raise ValueError("document selection resume payload must be an object")
+    document_id = response.get("document_id")
+    if isinstance(document_id, str):
+        return {
+            "selected_document_id": document_id,
+            "document_selection_answer_kind": "select",
+        }
+    kind = response.get("kind")
+    if kind == "select" and isinstance(response.get("document_id"), str):
+        return {
+            "selected_document_id": response["document_id"],
+            "document_selection_answer_kind": "select",
+        }
+    if kind == "refine" and isinstance(response.get("text"), str):
+        if not bool(state.get("document_selection_refinement_allowed")):
+            raise ValueError("document selection refinement is exhausted")
+        return {
+            "document_reference_query": response["text"],
+            "document_selection_refinement_attempts": int(
+                state.get("document_selection_refinement_attempts") or 0
+            )
+            + 1,
+            "document_selection_options": [],
+            "document_selection_option_count": 0,
+            "document_selection_library_count": 0,
+            "document_selection_answer_kind": "refine",
+            "document_selection_needs_resolution": True,
+        }
+    raise ValueError("document selection resume payload is invalid")
 
 
 def retrieve_selected_rag_context(
@@ -223,7 +324,9 @@ def resolve_full_document_target(
     selected_document_id = state.get("selected_document_id")
     resolution = rag_runtime.resolve_full_document_target(
         user_id=user_id,
-        query=latest_human_text(_state_messages(state)),
+        query=str(
+            state.get("document_reference_query") or latest_human_text(_state_messages(state))
+        ),
         selection_context=selection_context,
         selected_document_id=(
             selected_document_id if isinstance(selected_document_id, str) else None
@@ -234,6 +337,10 @@ def resolve_full_document_target(
             "selected_document_id": resolution.target.document_id,
             "full_document_target_status": "resolved",
             "rag_halt_before_response": False,
+            "document_selection_options": [],
+            "document_selection_option_count": 0,
+            "document_selection_library_count": resolution.library_count,
+            "document_selection_needs_resolution": False,
         }
     if isinstance(selected_document_id, str):
         return {
@@ -256,6 +363,47 @@ def resolve_full_document_target(
                 insufficient_evidence=False,
             ),
             "full_document_target_status": "ambiguous",
+            "document_selection_options": [
+                _document_option_payload(option) for option in resolution.candidates
+            ],
+            "document_selection_option_count": resolution.option_count,
+            "document_selection_library_count": resolution.library_count,
+            "document_selection_reason_code": "ambiguous_document_reference",
+            "document_selection_needs_resolution": False,
+        }
+    if resolution.option_count == 1:
+        return {
+            **_full_document_empty_state(
+                selection_context=selection_context,
+                message=latest_human_text(_state_messages(state)),
+                route="clarification_required",
+                reason="comprehensive document request has one approximate candidate",
+                insufficient_evidence=False,
+            ),
+            "full_document_target_status": "ambiguous",
+            "document_selection_options": [
+                _document_option_payload(option) for option in resolution.candidates
+            ],
+            "document_selection_option_count": 1,
+            "document_selection_library_count": resolution.library_count,
+            "document_selection_reason_code": "ambiguous_document_reference",
+            "document_selection_needs_resolution": False,
+        }
+    if resolution.library_count > 1:
+        return {
+            **_full_document_empty_state(
+                selection_context=selection_context,
+                message=latest_human_text(_state_messages(state)),
+                route="clarification_required",
+                reason="comprehensive document reference is unresolved",
+                insufficient_evidence=False,
+            ),
+            "full_document_target_status": "ambiguous",
+            "document_selection_options": [],
+            "document_selection_option_count": 0,
+            "document_selection_library_count": resolution.library_count,
+            "document_selection_reason_code": "unresolved_document_reference",
+            "document_selection_needs_resolution": False,
         }
     return {
         **_full_document_empty_state(
@@ -366,6 +514,17 @@ def select_after_document_selection(state: Mapping[str, Any]) -> str:
     """Resume comprehensive requests at target resolution; keep normal selected RAG."""
     if state.get("full_document_requested") is True:
         return "resolve_full_document_target"
+    if state.get("document_selection_answer_kind") == "refine":
+        return "prepare_document_selection"
+    return "retrieve_selected_rag_context"
+
+
+def select_after_document_selection_preparation(state: Mapping[str, Any]) -> str:
+    """Skip a second interrupt when a human clue uniquely resolves the target."""
+    if state.get("document_selection_preparation_status") != "resolved":
+        return "request_document_selection"
+    if state.get("full_document_requested") is True:
+        return "resolve_full_document_target"
     return "retrieve_selected_rag_context"
 
 
@@ -452,6 +611,23 @@ def _full_document_evidence(*, chunk_count: int, complete: bool) -> RetrievalEvi
         reranker="none",
         budget_truncated=not complete,
     )
+
+
+def _document_option_payload(option: Any) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "document_id": option.document_id,
+        "title": option.title,
+        "source_filename": getattr(option, "source_filename", None),
+        "knowledge_base_id": getattr(option, "knowledge_base_id", None),
+        "knowledge_base_name": getattr(option, "knowledge_base_name", None),
+    }
+    match_confidence = getattr(option, "match_confidence", None)
+    match_reason_code = getattr(option, "match_reason_code", None)
+    if match_confidence is not None:
+        payload["match_confidence"] = match_confidence
+    if match_reason_code is not None:
+        payload["match_reason_code"] = match_reason_code
+    return payload
 
 
 def _halts_before_response(result: RagAgentRetrievalResult) -> bool:

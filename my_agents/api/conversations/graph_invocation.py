@@ -153,7 +153,7 @@ def invoke_graph_runner_resume_collecting_updates(
         snapshot = get_state(config)
         values = getattr(snapshot, "values", None)
         if isinstance(values, dict):
-            return values
+            return {**values, **partial_state}
     return partial_state
 
 

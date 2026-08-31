@@ -6,11 +6,16 @@ import pytest
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 
+from my_agents.agents.general_assistant import rag_retrieval as rag_retrieval_module
 from my_agents.agents.general_assistant.graph import build_graph
 from my_agents.agents.general_assistant.retrieval_gate import RetrievalSourceDecision
 from my_agents.agents.rag_agent import RagAgentRetrievalResult
 from my_agents.agents.rag_agent.tool_selection import RagRetrievalToolDecision
-from my_agents.knowledge.retrieval import AuthorizedDocumentOption
+from my_agents.knowledge.retrieval import (
+    AuthorizedDocumentOption,
+    FullDocumentTargetResolution,
+    RankedAuthorizedDocumentOption,
+)
 from my_agents.knowledge.routing import RetrievalRoutingDecision
 from my_agents.memory.runtime import MemoryRuntimeItem
 from my_agents.persistence.langgraph import checkpoint_serializer
@@ -192,13 +197,13 @@ def test_checkpointed_graph_interrupts_and_resumes_document_selection() -> None:
 
     interrupted = graph.invoke(state, config=config, context=context)
 
-    assert interrupted["__interrupt__"][0].value["schema_version"] == 1
+    assert interrupted["__interrupt__"][0].value["schema_version"] == 2
     assert interrupted["__interrupt__"][0].value["type"] == "document_selection"
     assert interrupted["__interrupt__"][0].value["options"][0]["document_id"] == "doc-1"
     assert "rag_retrieval_result" not in graph.get_state(config).values
 
     resumed = graph.invoke(
-        Command(resume={"document_id": "doc-1"}),
+        Command(resume={"kind": "select", "document_id": "doc-1"}),
         config=config,
         context=context,
     )
@@ -206,6 +211,36 @@ def test_checkpointed_graph_interrupts_and_resumes_document_selection() -> None:
     assert resumed["selected_document_id"] == "doc-1"
     assert rag_runtime.selected_document_ids == ["doc-1"]
     assert resumed["rag_retrieval_snapshot"]["insufficient_evidence"] is True
+
+
+def test_legacy_waiting_checkpoint_keeps_v1_resume_contract(monkeypatch) -> None:  # noqa: ANN001
+    captured: dict[str, object] = {}
+
+    def resume_legacy(payload):  # noqa: ANN001, ANN202
+        captured.update(payload)
+        return {"document_id": "legacy-document"}
+
+    monkeypatch.setattr(rag_retrieval_module, "interrupt", resume_legacy)
+
+    result = rag_retrieval_module.request_document_selection(
+        {
+            "run_id": "legacy-run",
+            "document_selection_option_count": 1,
+            "document_selection_options": [
+                {
+                    "document_id": "legacy-document",
+                    "title": "Legacy source",
+                    "source_filename": None,
+                    "knowledge_base_id": "kb-1",
+                    "knowledge_base_name": "Legacy KB",
+                }
+            ],
+        }
+    )
+
+    assert captured["schema_version"] == 1
+    assert captured["interaction_id"] == "legacy-run:document_selection"
+    assert result["selected_document_id"] == "legacy-document"
 
 
 class FakeMemoryRuntime:
@@ -299,6 +334,39 @@ class ClarifyingRagRuntime:
                 )
             ],
             1,
+        )
+
+    def resolve_full_document_target(self, **kwargs):  # noqa: ANN003, ANN201
+        option = RankedAuthorizedDocumentOption(
+            document_id="doc-1",
+            title="Test document",
+            source_filename="test.pdf",
+            knowledge_base_id="kb-1",
+            knowledge_base_name="Test KB",
+            score=0.7,
+            matched_tokens=1,
+            match_confidence="medium",
+            match_reason_code="metadata_overlap",
+        )
+        if kwargs["query"] == "Test document":
+            return FullDocumentTargetResolution(
+                target=AuthorizedDocumentOption(
+                    document_id=option.document_id,
+                    title=option.title,
+                    source_filename=option.source_filename,
+                    knowledge_base_id=option.knowledge_base_id,
+                    knowledge_base_name=option.knowledge_base_name,
+                ),
+                option_count=1,
+                library_count=1,
+                mode="exact",
+            )
+        return FullDocumentTargetResolution(
+            target=None,
+            option_count=1,
+            library_count=1,
+            candidates=(option,),
+            mode="relevant",
         )
 
 
