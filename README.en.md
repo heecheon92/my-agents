@@ -44,37 +44,32 @@ Ingestion now overlaps time spent waiting for an external API with local indexin
 ## Architecture
 
 ```mermaid
-flowchart TD
+flowchart LR
     Client["Browser or API client"] --> Frontend["Separate Next.js frontend"]
     Frontend --> API["FastAPI product API"]
-
-    API --> Auth["Auth, session, CSRF, groups"]
+    API --> Auth["Auth, sessions, and groups"]
     API --> Knowledge["Knowledge bases and documents"]
-    API --> Runs["Conversations, runs, SSE"]
-
-    Knowledge --> Ingestion["Parse, chunk, enrich, embed"]
-    Ingestion --> DB[("Postgres / Neon + pgvector")]
-    Auth --> DB
-    Knowledge --> DB
+    API --> Runs["Conversations, runs, and SSE"]
+    Knowledge --> Ingestion["Parse, chunk, enrich, and embed"]
+    Auth --> DB[("Postgres / Neon with pgvector")]
+    Ingestion --> DB
     Runs --> DB
+```
 
-    Runs --> Orchestration["LangGraph request orchestration"]
-    Orchestration --> SourceGate{"Use authorized knowledge?"}
-    SourceGate -->|No| Memory["Opt-in governed memory"]
-    SourceGate -->|Yes| RAGChoice{"Luna RAG tool selection"}
-    RAGChoice -->|Focused question| Retrieval["Permission-aware retrieval pipeline"]
-    RAGChoice -->|Comprehensive document task| FullResolve["Resolve one authorized document"]
-    Retrieval --> Permission["Permission-filtered candidates"]
-    Permission --> Hybrid["Vector + BM25 -> RRF -> rerank"]
-    Hybrid --> Context["Packed context + evidence"]
-    FullResolve --> FullRead["Complete <=24k chars or first 12k range"]
-    FullRead --> Context
+Chat request orchestration is easier to read as a separate flow.
+
+```mermaid
+flowchart TD
+    Run["Conversation run"] --> Gate{"Use authorized knowledge?"}
+    Gate -->|No| Memory["Governed opt-in memory"]
+    Gate -->|Yes| Choice{"Luna chooses a retrieval tool"}
+    Choice -->|Focused| Focused["Permission-first hybrid retrieval"]
+    Choice -->|Comprehensive| Full["Resolve and read one authorized document"]
+    Focused --> Context["Packed context and evidence"]
+    Full --> Context
     Context --> Memory
-
-    Memory --> DB
-    Memory --> Provider["OpenAI or deterministic response"]
-    Provider --> Audit["Messages, citations, redacted events"]
-    Audit --> DB
+    Memory --> Answer["OpenAI or deterministic response"]
+    Answer --> Audit["Persist answer, citations, and redacted events"]
 ```
 
 ### Boundaries enforced during a request
