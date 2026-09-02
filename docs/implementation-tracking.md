@@ -439,6 +439,12 @@ Earlier hosted smoke status on 2026-06-03:
   persisted summary events. They remain separate from final answer text, verified trace, and
   evidence. See
   [`28-dynamic-reasoning-summary-contract.md`](./product-chat-service/en/28-dynamic-reasoning-summary-contract.md).
+- The temporary document-workspace backend is implemented, but the frontend currently exposes no
+  conversation attachment, consent, `attachment_ids`, or generated-artifact workflow. This is the
+  immediate cross-repository product gap; durable knowledge-base upload is a different feature.
+- Assistant responses persist Markdown and the frontend renders ordinary Markdown, but fenced
+  Mermaid remains code rather than a diagram. Safe Mermaid is the first rich-renderer milestone;
+  AG-UI and A2UI remain future edge adapters and do not replace Product DB domain contracts.
 - Known near-future gap: streamed run execution is still coupled to the client HTTP/SSE request. If the client disconnects before `run_completed`, the assistant response may never be persisted; durable server-owned/background run execution is required.
 - Completed conversation runs can be refetched with persisted reply, route, and citations.
 - `uv run python -m scripts.local_demo_seed` seeds a verified local demo user, text document, and extraction run for file-backed SQLite demos.
@@ -478,26 +484,31 @@ Earlier hosted smoke status on 2026-06-03:
 
 ## Recommended next workflow
 
-### Completed: dynamic model-authored reasoning summaries
+### Immediate: expose temporary conversation files in the frontend
 
-1. Verify current GPT-5.6 / `langchain-openai` final and streaming reasoning-summary shapes through
-   mocked compatibility tests plus one bounded credentialed spike.
-2. Add a closed, nullable, length-bounded `reasoning_summaries` response contract with
-   `retrieval_planning` and `answer_synthesis` stages.
-3. Keep Luna's user-displayable retrieval rationale strictly separate from its trusted tool choice,
-   and keep Sol provider summary blocks separate from `reply` / `answer_delta`.
-4. Add typed SSE delta and persisted refresh/replay behavior without weakening the current control-
-   token and chain-of-thought filters.
-5. Prove redaction, prompt-injection resistance, system-knowledge/authorization boundaries, empty
-   summary fallback, deterministic-mode behavior, ordering, and output-budget/cost accounting.
-6. Serve live OpenAPI before the sibling frontend renders the summary prose beneath, but never as
-   a replacement for, the verified execution trace. The implemented UI uses familiar placement and
-   neutral styling rather than adding a visible summary label or disclaimer.
+The backend document workspace is implemented but product-inaccessible. The frontend needs served
+capability models, exact BFF routes, composer-local attachment state, provider-transfer consent,
+`attachment_ids` on runs, refresh-safe metadata, and certified artifact downloads. Keep temporary
+conversation files visibly distinct from durable knowledge-base ingestion and preserve guest,
+expiry, ownership, output-certification, billing, and no-empty-conversation boundaries.
 
-The rationale and definition of done are authoritative in
-[`28-dynamic-reasoning-summary-contract.md`](./product-chat-service/en/28-dynamic-reasoning-summary-contract.md).
+The rollout sequence and definition of done are authoritative in
+[`29-frontend-document-workspace-rollout.md`](./product-chat-service/en/29-frontend-document-workspace-rollout.md).
 
-### Next retrieval move: tokenizer-aware retrieval and embedding-index safety
+### Next: rich response rendering, starting with Mermaid
+
+Add secure, lazy, accessible Mermaid rendering at the existing `react-markdown` code-block boundary.
+Render only completed fences, isolate parse/render failures, preserve Markdown as the durable
+copy/replay fallback, verify theme/mobile/accessibility behavior, and measure bundle cost before
+accepting a dependency. AG-UI remains a future REST/SSE transport adapter; A2UI remains a future
+declarative component boundary under a closed application-owned catalog. Neither is required for
+the Mermaid slice.
+
+The architecture, security constraints, protocol boundaries, and definition of done are
+authoritative in
+[`30-rich-response-rendering-and-agent-ui-boundaries.md`](./product-chat-service/en/30-rich-response-rendering-and-agent-ui-boundaries.md).
+
+### Following retrieval move: tokenizer-aware retrieval and embedding-index safety
 
 The next RAG correctness milestone is not to force one tokenizer across every model. It is to keep
 each model paired with its own tokenizer while preventing silent reranker truncation and incompatible
