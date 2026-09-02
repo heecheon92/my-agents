@@ -117,16 +117,29 @@ normal bounded 240-character citation-chunk previews. A synthesized assistant re
 normal product content, but the source document body is never copied wholesale into an
 event, checkpoint, log payload, or provider trace.
 
-## Immediate next task: add a model-authored channel beside the trace
+## Implemented model-authored channel beside the trace
 
-The verified trace cannot express why the model chose a request-specific approach. The next
-backend task therefore adds bounded dynamic reasoning summaries without weakening this redaction
-boundary. `reasoning_summaries` will contain model-authored approach descriptions; `agent_trace`
-will remain the application-verified execution record. The two must be visibly and structurally
+The verified trace cannot express why the model chose a request-specific approach. Bounded dynamic
+reasoning summaries now add that explanation without weakening this redaction boundary.
+`reasoning_summaries` contains model-authored approach descriptions; `agent_trace` remains the
+application-verified execution record. The two stay visibly and structurally
 distinct, and a summary must never count as evidence or override a conflicting trace.
 
-See the proposed [dynamic reasoning summary contract](./28-dynamic-reasoning-summary-contract.md)
+See the implemented [dynamic reasoning summary contract](./28-dynamic-reasoning-summary-contract.md)
 for the rationale, safety rules, tests, and definition of done.
+
+## Implemented backend-owned operational summaries
+
+Every non-skipped `AgentTraceStep` may also carry `operational_summary`, a versioned
+application-verified contract. Version 1 is a discriminated union keyed by a closed semantic
+message key; each key owns a separate allowlisted parameter model. The frontend localizes the key
+and parameters. Unknown versions or keys degrade to no operational summary without discarding the
+verified step.
+
+This is not the model reasoning-summary channel. Operational summaries describe deterministic
+application facts such as resolved-source counts, candidates, context packing, graph handoff,
+citations, or a requested clarification. They do not contain prompts, retrieved passages, provider
+traces, credentials, private identifiers, arbitrary model prose, or the active reranker enum.
 
 ## Internal Prometheus timing metrics
 

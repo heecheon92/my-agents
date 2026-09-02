@@ -37,6 +37,8 @@ from my_agents.conversations.schemas import (
     FullDocumentReadEventPayload,
     GraphInvokedAgentEventResponse,
     GraphInvokedEventPayload,
+    ReasoningSummaryGeneratedAgentEventResponse,
+    ReasoningSummaryGeneratedEventPayload,
     RetrievalCompletedAgentEventResponse,
     RetrievalCompletedEventPayload,
     RunCancelledAgentEventResponse,
@@ -346,6 +348,12 @@ def event_response(event: AgentEventModel) -> AgentEventResponse:
                 **common,
                 event_type=event_type.value,
                 payload=_safe_event_payload(ArtifactCreatedEventPayload, raw_payload),
+            )
+        case AgentEventType.REASONING_SUMMARY_GENERATED:
+            return ReasoningSummaryGeneratedAgentEventResponse(
+                **common,
+                event_type=event_type.value,
+                payload=_safe_event_payload(ReasoningSummaryGeneratedEventPayload, raw_payload),
             )
         case AgentEventType.ANSWER_COMPOSED:
             return AnswerComposedAgentEventResponse(

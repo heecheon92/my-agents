@@ -253,7 +253,7 @@ This is the product-facing equivalent of repo-local `AGENTS.md`: durable Markdow
 - [x] Redacted event payloads for frontend-safe activity display.
 - [x] Deterministic eval helper module for grounding, leakage, redaction, and latency budgets.
 - [x] Tests for event ordering and redaction behavior.
-- [ ] **Immediate next task — dynamic model-authored reasoning summaries.** Add bounded nullable
+- [x] **Dynamic model-authored reasoning summaries.** Added bounded nullable
   `retrieval_planning` and `answer_synthesis` summaries, typed summary SSE/persistence, and
   refresh/replay reconstruction while keeping final answer text, verified `agent_trace`, and
   evidence separate. Raw chain-of-thought, prompts, provider traces, hidden provenance,
@@ -324,7 +324,7 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
 
 ## 13. Near-term recommended sequence
 
-0. **Immediate next task — dynamic model-authored reasoning summaries**
+0. **Completed — dynamic model-authored reasoning summaries**
    - Preserve three distinct trust channels: model-authored approach summaries, verified
      `agent_trace`, and evidence/citations.
    - Add nullable bounded summaries for Luna retrieval planning and Sol answer synthesis.
@@ -332,7 +332,7 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
      `answer_delta`.
    - Add typed summary SSE/persistence, refresh/replay recovery, redaction, authorization,
      prompt-injection, ordering, empty-summary, deterministic-mode, and cost-accounting tests.
-   - Publish hosted OpenAPI before frontend work. Use
+   - Served live local OpenAPI before frontend model work. Use
      [`28-dynamic-reasoning-summary-contract.md`](./docs/product-chat-service/en/28-dynamic-reasoning-summary-contract.md)
      as the rationale and definition of done.
 

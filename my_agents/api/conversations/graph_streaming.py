@@ -16,7 +16,7 @@ from my_agents.api.conversations.graph_invocation import (
     stream_graph_runner,
 )
 
-GraphStreamItemKind = Literal["delta", "update", "result"]
+GraphStreamItemKind = Literal["delta", "reasoning_delta", "update", "result"]
 # Full-document replies are intentionally buffered so the deterministic partial-coverage
 # disclosure is included before any user-visible answer delta is emitted.
 _ASSISTANT_RESPONSE_STREAM_NODES = frozenset({"respond_general", "respond_research"})
@@ -28,6 +28,7 @@ class GraphStreamItem:
 
     kind: GraphStreamItemKind
     delta: str = ""
+    stage: Literal["retrieval_planning", "answer_synthesis"] | None = None
     result: dict[str, Any] | None = None
 
 
@@ -58,6 +59,7 @@ def stream_graph_items(
     streamed_parts: list[str] = []
     final_result: dict[str, Any] = {}
     emitted_stream_event = False
+    reasoning_stages_emitted: set[str] = set()
     for event in stream_graph_runner(
         stream=stream,
         graph_input=graph_input,
@@ -71,6 +73,14 @@ def stream_graph_items(
             message_chunk, metadata = event_data
             if not should_emit_message_chunk(metadata):
                 continue
+            summary_delta = message_chunk_reasoning_summary_delta(message_chunk)
+            if summary_delta:
+                reasoning_stages_emitted.add("answer_synthesis")
+                yield GraphStreamItem(
+                    kind="reasoning_delta",
+                    stage="answer_synthesis",
+                    delta=summary_delta,
+                )
             text = message_chunk_text(message_chunk)
             if text:
                 streamed_parts.append(text)
@@ -80,6 +90,18 @@ def stream_graph_items(
             fields = result_fields_from_update(event_data)
             if fields:
                 final_result.update(fields)
+                for stage, field_name in (
+                    ("retrieval_planning", "retrieval_planning_summary"),
+                    ("answer_synthesis", "answer_synthesis_summary"),
+                ):
+                    summary = fields.get(field_name)
+                    if isinstance(summary, str) and stage not in reasoning_stages_emitted:
+                        reasoning_stages_emitted.add(stage)
+                        yield GraphStreamItem(
+                            kind="reasoning_delta",
+                            stage=stage,  # type: ignore[arg-type]
+                            delta=summary,
+                        )
                 yield GraphStreamItem(kind="update", result=fields)
 
     if "reply" not in final_result and streamed_parts:
@@ -131,6 +153,7 @@ def stream_resumed_graph_items(
     config = {"configurable": {"thread_id": run_id}}
     streamed_parts: list[str] = []
     final_result: dict[str, Any] = {}
+    reasoning_stages_emitted: set[str] = set()
     for event in stream(
         command,
         config=config,
@@ -143,6 +166,14 @@ def stream_resumed_graph_items(
             message_chunk, metadata = event_data
             if not should_emit_message_chunk(metadata):
                 continue
+            summary_delta = message_chunk_reasoning_summary_delta(message_chunk)
+            if summary_delta:
+                reasoning_stages_emitted.add("answer_synthesis")
+                yield GraphStreamItem(
+                    kind="reasoning_delta",
+                    stage="answer_synthesis",
+                    delta=summary_delta,
+                )
             text = message_chunk_text(message_chunk)
             if text:
                 streamed_parts.append(text)
@@ -152,6 +183,18 @@ def stream_resumed_graph_items(
             fields = result_fields_from_update(event_data)
             if fields:
                 final_result.update(fields)
+                for stage, field_name in (
+                    ("retrieval_planning", "retrieval_planning_summary"),
+                    ("answer_synthesis", "answer_synthesis_summary"),
+                ):
+                    summary = fields.get(field_name)
+                    if isinstance(summary, str) and stage not in reasoning_stages_emitted:
+                        reasoning_stages_emitted.add(stage)
+                        yield GraphStreamItem(
+                            kind="reasoning_delta",
+                            stage=stage,  # type: ignore[arg-type]
+                            delta=summary,
+                        )
                 yield GraphStreamItem(kind="update", result=fields)
 
     get_state = getattr(graph_runner, "get_state", None)
@@ -241,6 +284,8 @@ def result_fields_from_update(update: dict[str, Any]) -> dict[str, Any]:
             "full_document_requested",
             "rag_retrieval_tool",
             "rag_retrieval_tool_reason",
+            "retrieval_planning_summary",
+            "answer_synthesis_summary",
             "full_document_target_status",
             "full_document_next_cursor",
         ):
@@ -268,6 +313,28 @@ def message_chunk_text(message_chunk: Any) -> str:
         ]
         return "".join(parts)
     return ""
+
+
+def message_chunk_reasoning_summary_delta(message_chunk: Any) -> str:
+    """Extract only Responses API summary deltas from an answer-model chunk."""
+    content = getattr(message_chunk, "content", None)
+    if not isinstance(content, list):
+        return ""
+    parts: list[str] = []
+    for block in content:
+        if not isinstance(block, dict) or block.get("type") != "reasoning":
+            continue
+        summary = block.get("summary")
+        if not isinstance(summary, list):
+            continue
+        parts.extend(
+            item["text"]
+            for item in summary
+            if isinstance(item, dict)
+            and item.get("type") == "summary_text"
+            and isinstance(item.get("text"), str)
+        )
+    return "".join(parts)
 
 
 def fallback_answer_deltas(reply: str) -> list[str]:

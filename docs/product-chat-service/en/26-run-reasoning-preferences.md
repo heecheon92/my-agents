@@ -55,15 +55,15 @@ The effective pair applies to the final answer generation call:
 
 Raw chain-of-thought is never requested, stored, or returned. These settings control provider computation only. OpenAI documents that `pro` performs more model work and can increase latency and token usage; product credit enforcement remains a separate usage-ledger concern.
 
-## Immediate next task: dynamic reasoning summaries
+## Dynamic reasoning summaries
 
-Static reasoning preferences are not enough for the desired product UX. The next backend task is
-to add request-specific, model-authored summaries describing the approach selected by Luna during
+Static reasoning preferences are not enough for the desired product UX. The backend now adds
+request-specific, model-authored summaries describing the approach selected by Luna during
 retrieval planning and by Sol during answer synthesis. These summaries remain distinct from raw
 chain-of-thought and from the verified `agent_trace`. They are nullable, bounded, explicitly
 model-generated, and must never be merged into final answer text.
 
-The rationale, proposed schema/SSE events, safety boundary, implementation sequence, and definition
+The rationale, schema/SSE events, safety boundary, implementation sequence, and definition
 of done live in the [dynamic reasoning summary contract](./28-dynamic-reasoning-summary-contract.md).
 
 Reasoning tokens count toward the existing output ceilings (`MY_AGENTS_OPENAI_MAX_OUTPUT_TOKENS` and `MY_AGENTS_DOCUMENT_WORKSPACE_MAX_OUTPUT_TOKENS`). Selecting a high effort does not raise those ceilings automatically, so an operator should tune them from observed latency, incomplete-response, and cost data rather than assuming `max` always produces a longer visible answer.

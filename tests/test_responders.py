@@ -3,7 +3,13 @@
 from __future__ import annotations
 
 import pytest
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langchain_core.messages import (
+    AIMessage,
+    AIMessageChunk,
+    BaseMessage,
+    HumanMessage,
+    SystemMessage,
+)
 from langchain_openai import ChatOpenAI
 
 from my_agents.agents.general_assistant.responders import (
@@ -20,15 +26,22 @@ class FakeChatModel:
         self.calls: list[list[BaseMessage]] = []
         self.bound_tools: list[list[dict[str, str]]] = []
         self.invoke_kwargs: list[dict] = []
+        self.invoke_count = 0
 
     def bind_tools(self, tools: list[dict[str, str]]) -> FakeChatModel:
         self.bound_tools.append(tools)
         return self
 
     def invoke(self, messages: list[BaseMessage], **kwargs) -> AIMessage:  # noqa: ANN003
+        self.invoke_count += 1
+        raise AssertionError("OpenAI response composition must use stream(), not invoke()")
+
+    def stream(self, messages: list[BaseMessage], **kwargs):  # noqa: ANN003, ANN201
         self.calls.append(messages)
         self.invoke_kwargs.append(kwargs)
-        return AIMessage(content="LangChain OpenAI drafted reply.")
+        yield AIMessageChunk(content="LangChain ")
+        yield AIMessageChunk(content="OpenAI drafted ")
+        yield AIMessageChunk(content="reply.")
 
 
 def test_deterministic_provider_is_credential_free() -> None:
@@ -68,7 +81,8 @@ def test_openai_provider_passes_gpt_variant_and_optional_tuning(
     assert reply == "LangChain OpenAI drafted reply."
     assert chat_model.bound_tools == [[{"type": "web_search"}]]
     assert len(chat_model.calls) == 1
-    assert chat_model.invoke_kwargs == [{"reasoning": {"effort": "low"}}]
+    assert chat_model.invoke_count == 0
+    assert chat_model.invoke_kwargs == [{"reasoning": {"effort": "low", "summary": "auto"}}]
     messages = chat_model.calls[0]
     assert isinstance(messages[0], SystemMessage)
     assert isinstance(messages[-1], HumanMessage)
@@ -118,7 +132,75 @@ def test_openai_provider_passes_per_run_pro_reasoning_to_responses_payload() -> 
         reasoning_effort="max",
     )
 
-    assert chat_model.invoke_kwargs == [{"reasoning": {"mode": "pro", "effort": "max"}}]
+    assert chat_model.invoke_kwargs == [
+        {"reasoning": {"mode": "pro", "effort": "max", "summary": "auto"}}
+    ]
+
+
+def test_openai_provider_keeps_reasoning_summary_separate_from_reply() -> None:
+    class SummaryChatModel(FakeChatModel):
+        def stream(self, messages, **kwargs):  # noqa: ANN001, ANN003, ANN201
+            self.calls.append(messages)
+            self.invoke_kwargs.append(kwargs)
+            yield AIMessageChunk(
+                content=[
+                    {
+                        "type": "reasoning",
+                        "summary": [
+                            {
+                                "type": "summary_text",
+                                "text": "I compared the available evi",
+                                "index": 0,
+                            }
+                        ],
+                    },
+                ]
+            )
+            yield AIMessageChunk(
+                content=[
+                    {
+                        "type": "reasoning",
+                        "summary": [
+                            {
+                                "type": "summary_text",
+                                "text": "dence first.",
+                                "index": 0,
+                            }
+                        ],
+                    }
+                ]
+            )
+            yield AIMessageChunk(content="Final ")
+            yield AIMessageChunk(content="answer only.")
+
+    provider = OpenAIResponseProvider(
+        settings=Settings(_env_file=None, OPENAI_API_KEY="test-key"),
+        chat_model=SummaryChatModel(),
+    )
+
+    result = provider.compose_result(
+        messages=[HumanMessage(content="Compare the options")],
+        route=RouteDecision(label="general_assistant", explanation="comparison"),
+        guidance="Compare directly.",
+    )
+
+    assert result.reply == "Final answer only."
+    assert result.reasoning_summary == "I compared the available evidence first."
+
+
+def test_openai_provider_omits_summary_request_when_reasoning_is_off() -> None:
+    settings = Settings(_env_file=None, OPENAI_API_KEY="test-key")
+    chat_model = FakeChatModel()
+    provider = OpenAIResponseProvider(settings=settings, chat_model=chat_model)
+
+    provider.compose_reply(
+        messages=[HumanMessage(content="Answer directly")],
+        route=RouteDecision(label="general_assistant", explanation="direct request"),
+        guidance="Answer directly.",
+        reasoning_effort="none",
+    )
+
+    assert chat_model.invoke_kwargs == [{"reasoning": {"effort": "none", "mode": "standard"}}]
 
 
 def test_installed_chat_openai_preserves_reasoning_object_in_request_payload() -> None:

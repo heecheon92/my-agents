@@ -104,8 +104,10 @@ def openai_reasoning_payload(
     mode: ReasoningMode,
     effort: ReasoningEffort,
 ) -> dict[str, str]:
-    """Build the Responses API field, omitting mode for pre-GPT-5.6 models."""
+    """Build the Responses API field and request a provider summary when applicable."""
     payload = {"effort": effort}
     if model_supports_reasoning_mode(model):
         payload["mode"] = mode
+    if effort != "none":
+        payload["summary"] = "auto"
     return payload

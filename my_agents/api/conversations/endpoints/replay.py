@@ -47,6 +47,7 @@ from my_agents.api.conversations.run_lifecycle import (
     is_run_active,
     persist_completed_run,
     persist_failed_run,
+    reasoning_summary_items_from_graph_state,
     record_retrieval_completed_event,
     start_run,
 )
@@ -55,6 +56,7 @@ from my_agents.api.conversations.serializers import (
     knowledge_base_selection_payload,
     run_knowledge_base_selection,
 )
+from my_agents.api.conversations.sse_contract import conversation_sse_responses
 from my_agents.api.conversations.transcripts import (
     base_messages_from_persisted,
     persisted_messages_for_conversation,
@@ -170,24 +172,9 @@ def replay_assistant_message(
 
 @router.post(
     "/{conversation_id}/messages/{message_id}/replay/stream",
-    responses={
-        200: {
-            "description": (
-                "Server-Sent Events stream for assistant-message replay with progress, "
-                "answer_delta, and run_completed events."
-            ),
-            "content": {
-                "text/event-stream": {
-                    "example": (
-                        "event: answer_delta\n"
-                        'data: {"delta":"Hello","sequence":1}\n\n'
-                        "event: run_completed\n"
-                        'data: {"run_id":"...","reply":"Hello"}\n\n'
-                    )
-                }
-            },
-        }
-    },
+    responses=conversation_sse_responses(
+        "Server-Sent Events stream for replaying one assistant message."
+    ),
 )
 def stream_replay_assistant_message(
     conversation_id: str,
@@ -380,6 +367,7 @@ def replay_conversation_run_events(
         graph_invoked = False
         graph_event = None
         delta_sequence = 0
+        reasoning_delta_sequences: dict[str, int] = {}
         streamed_base_reply_parts: list[str] = []
         result: dict[str, Any] | None = None
         try:
@@ -417,6 +405,14 @@ def replay_conversation_run_events(
                         )
                         yield sse_event(AgentEventType.GRAPH_INVOKED.value, graph_payload)
                         graph_invoked = True
+                    continue
+                if item.kind == "reasoning_delta" and item.stage:
+                    sequence = reasoning_delta_sequences.get(item.stage, 0) + 1
+                    reasoning_delta_sequences[item.stage] = sequence
+                    yield sse_event(
+                        "reasoning_summary_delta",
+                        {"stage": item.stage, "delta": item.delta, "sequence": sequence},
+                    )
                     continue
                 if (
                     retrieval_context is None
@@ -510,6 +506,7 @@ def replay_conversation_run_events(
                 warnings=replay_context.replay_warnings,
                 clarification=clarification,
                 retrieval_evidence=retrieval_context.retrieval_evidence,
+                reasoning_summaries=reasoning_summary_items_from_graph_state(result),
             )
             yield sse_event(
                 AgentEventType.ANSWER_COMPOSED.value,
@@ -540,6 +537,7 @@ def replay_conversation_run_events(
                 warnings=replay_context.replay_warnings,
                 insufficient_evidence=True,
                 retrieval_evidence=retrieval_context.retrieval_evidence,
+                reasoning_summaries=reasoning_summary_items_from_graph_state(result),
             )
             yield sse_event(
                 AgentEventType.ANSWER_COMPOSED.value,
@@ -609,6 +607,7 @@ def replay_conversation_run_events(
             memory_source_snapshot=memory_snapshot,
             document_coverage=document_coverage,
             retrieval_latency_ms=retrieval_context.retrieval_latency_ms,
+            reasoning_summaries=reasoning_summary_items_from_graph_state(result),
         )
         if document_coverage is not None:
             yield sse_event(

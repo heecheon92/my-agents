@@ -10,6 +10,7 @@ from typing import Any, BinaryIO, Protocol
 from openai import OpenAI
 
 from my_agents.reasoning import openai_reasoning_payload
+from my_agents.reasoning_summaries import provider_reasoning_summary
 from my_agents.settings import ReasoningEffort, ReasoningMode, Settings
 
 
@@ -52,6 +53,7 @@ class ProviderExecutionResult:
     output_text: str
     usage: dict[str, object]
     shell_used: bool
+    reasoning_summary: str | None = None
 
 
 class DocumentWorkspaceProvider(Protocol):
@@ -248,6 +250,7 @@ class OpenAIDocumentWorkspaceProvider:
             output_text=str(response.output_text or "").strip(),
             usage=usage,
             shell_used=any(getattr(item, "type", None) == "shell_call" for item in output),
+            reasoning_summary=provider_reasoning_summary(response),
         )
 
     def download_container_file(

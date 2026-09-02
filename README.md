@@ -188,7 +188,11 @@ OpenAPI 문서는 서버를 띄운 뒤 `http://127.0.0.1:8000/openapi.json`에�
 - 완료된 comprehensive-document run은 sync/stream/replay/새로고침 응답에 nullable `document_coverage`를 추가합니다. `mode`, 문서 metadata, `[start_offset, end_offset)`, `total_chars`를 제공하지만 원문이나 내부 continuation cursor는 노출하지 않습니다. 부분 답변은 전체 문서 검토가 아니라는 현지화된 안내로 시작합니다.
 - `GET /capabilities/document-workspace`는 현재 enable/eligibility, 허용 형식, 제한, retention을 반환합니다. 첨부는 `POST/GET/DELETE /conversations/{conversation_id}/attachments`, 결과물은 `GET /conversations/{conversation_id}/artifacts`와 해당 download URL을 사용합니다. Run 요청의 `attachment_ids`가 실제 실행 대상을 고릅니다.
 - `GET /capabilities/reasoning`은 surface별 Pro 지원 여부, server default effort, 허용 enum, guest customization 가능 여부를 반환하며 raw provider model identifier는 의도적으로 제외합니다. Run/replay 요청의 선택적 `reasoning_mode`와 `reasoning_effort`는 effective 값으로 run에 저장되고 응답 및 `run_started` event에 다시 제공됩니다.
+- 완료된 run은 retrieval planning과 answer synthesis의 bounded `reasoning_summaries`도 반환할 수 있습니다. 이 model-authored 설명은 nullable이며 `reasoning_summary_delta`로 답변과 분리해 stream하고, refresh/replay를 위해 전용 event로 저장합니다. Verified `agent_trace`, citation, answer text를 대체하지 않습니다.
+- 일반 OpenAI-backed answer는 `ChatOpenAI.stream()`을 사용하므로 LangGraph가 실제 provider chunk를 여러 `answer_delta` event로 전달합니다. Provider는 같은 chunk를 final persistence용으로 aggregate하며 reasoning-summary block은 reply text에 섞지 않습니다. Deterministic fallback과 comprehensive-document disclosure path는 설계상 계속 buffer할 수 있습니다.
 - 저장된 이벤트의 payload와 `agent_trace`는 이벤트·단계별 허용 목록을 통과한 필드만 내보냅니다. `answer_delta`, `run_completed`, `run_error`는 스트리밍 전용이라 저장되는 이벤트 union에는 들어가지 않습니다.
+- Skip되지 않은 각 `agent_trace` step은 optional versioned `operational_summary`도 제공합니다. Closed semantic message key와 event-specific safe parameter로 구성한 application-verified channel이며 model-authored `reasoning_summaries`와 분리합니다. 미래 version을 이해하지 못하면 verified step은 유지하고 summary만 무시합니다.
+- Normal/resume/replay conversation stream의 OpenAPI는 `text/event-stream.x-sse-events`에 SSE 전용 `reasoning_summary_delta` payload를 게시합니다. 개별 delta에는 500자 상한을 강제하지 않고, persist되는 authoritative completed summary item을 bounded 처리합니다.
 - 비동기 수집 진행률은 `queued=0`, `claimed=1`, `chunking=15`, `embedding=45`, 선택적으로 `indexing=70`, `entities=85`, `metadata=95`, `completed=100`으로 저장되며 폴링 엔드포인트에서 읽을 수 있습니다. 시간이 아니라 단계 도달을 나타내는 값입니다.
 
 ## 검증

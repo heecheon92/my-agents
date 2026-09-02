@@ -30,6 +30,11 @@ step 사이에 cancellation을 확인합니다. 사용자가 option을 고른 �
 card를 내리고 일반 streaming answer처럼 progress, stop, follow-up queue를 제공해야 합니다.
 이전처럼 sync resume을 끝까지 실행한 뒤 완성된 text를 가짜 delta로 재생하지 않습니다.
 
+일반 OpenAI-backed answer composition은 `ChatOpenAI.stream()`을 호출합니다. 각 provider
+`AIMessageChunk`는 graph 실행 중 전달되며 final persistence와 reasoning-summary extraction에
+사용할 하나의 message로도 aggregate됩니다. Reasoning-summary block은 `answer_delta` 또는
+persisted reply text에 들어가지 않습니다.
+
 완료 응답은 `consulted_sources`와 `citations`를 구분합니다. 전자는 모델에 제공된
 user-visible source 전체 superset이고 후자는 최종 답변에서 근거가 확인된 보수적 subset입니다.
 두 배열에 같은 source가 있으면 동일한 persisted `id`와 `chunk_id`를 사용합니다.
@@ -38,17 +43,22 @@ legacy run이면 `consulted_sources: null`입니다. 이 필드는 sync 완료, 
 `run_completed`, replay 완료, `GET /conversations/{conversation_id}/runs/{run_id}`에서 동일하게
 직렬화되어 새로고침 뒤에도 구분이 유지됩니다.
 
-## 다음 즉시 제안하는 stream: 동적 reasoning summary
+## 동적 reasoning summary stream
 
-다음 backend task는 SSE 전용 `reasoning_summary_delta`와 bounded persisted
-`reasoning_summary_generated` event를 추가합니다. 이는 현재 event type이 아니라 proposed
-contract입니다. Closed `stage`, text delta/final text, stage별 sequence를 제공하고
-`answer_delta`에는 final answer text만 남겨야 합니다. 구현 뒤 `run_completed`와 run detail은
-refresh-safe `reasoning_summaries` list를 반환합니다.
+SSE 전용 `reasoning_summary_delta`와 bounded persisted `reasoning_summary_generated` event를
+제공합니다. Closed `stage`, text delta/final text, stage별 sequence를 전달하고
+`answer_delta`에는 final answer text만 남깁니다. `run_completed`와 run detail은 refresh-safe
+`reasoning_summaries` list를 반환합니다.
 
 Frontend는 이를 model-generated 접근 요약으로 표시하고 verified `agent_trace`와 분리해야
 합니다. 자세한 내용은 [동적 reasoning summary 계약](./28-dynamic-reasoning-summary-contract.md)을
 봅니다.
+
+Normal run, resume, replay OpenAPI operation은 `text/event-stream` media object의
+`x-sse-events.reasoning_summary_delta` extension에 정확한 delta payload를 게시합니다. Payload는
+`stage`, nonblank `delta`, positive per-stage `sequence`를 요구합니다. 개별 delta에는 500자
+maximum이 없고 completed persisted item이 final bound를 소유합니다. Optional summary event
+parse failure는 answer stream을 실패시키면 안 됩니다.
 
 Backend attribution/audit 배열은 chunk 단위를 유지하지만 frontend citation presentation은
 document 단위입니다. `document_id`로 grouping하고 `source_filename`이 있으면 우선 표시하며,

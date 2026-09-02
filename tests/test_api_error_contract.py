@@ -72,6 +72,7 @@ def test_openapi_documents_error_and_discriminated_event_contracts() -> None:
         "attachments_ready",
         "document_workspace_started",
         "artifact_created",
+        "reasoning_summary_generated",
         "answer_composed",
         "run_cancel_requested",
         "run_interrupted",

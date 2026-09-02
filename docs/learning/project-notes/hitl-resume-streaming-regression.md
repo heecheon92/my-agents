@@ -1,6 +1,6 @@
 ---
 created: 2026-08-26
-updated: 2026-08-31
+updated: 2026-09-02
 status: active
 topics:
   - langgraph
@@ -13,6 +13,9 @@ related_code:
   - my_agents/api/conversations/endpoints/stream.py
   - my_agents/api/conversations/graph_invocation.py
   - my_agents/api/conversations/graph_streaming.py
+  - my_agents/agents/general_assistant/responders.py
+  - tests/test_responders.py
+  - tests/test_graph_streaming.py
   - tests/test_conversations_api.py
 ---
 
@@ -95,6 +98,29 @@ same run, KB scope, transcript, and original deadline. Regression coverage drive
 refinements, verifies broad browsing is unlocked only after the second, and confirms that raw
 human clues appear in neither messages nor activity events.
 
+### The final model boundary must stream too
+
+The transport and graph adapters can be correct while answers still appear in one jump. The
+ordinary OpenAI responder called `ChatOpenAI.invoke()`, which returned one completed `AIMessage`.
+LangGraph `stream_mode="messages"` therefore had only one message chunk to forward, and the SSE
+endpoint emitted one `answer_delta` containing the entire reply. Retrieval-planning summaries still
+appeared early because they came from graph updates, creating a misleading asymmetry.
+
+Rejected fixes:
+
+- Splitting the completed reply into artificial word chunks changes presentation but does not
+  expose provider progress, improve time-to-first-token, or permit cancellation between real tokens.
+- Changing the frontend or BFF cannot create chunk boundaries that the backend never emits.
+- Calling `stream()` only for SSE endpoints would create two response-composition paths and risk
+  parity drift in persisted replies and reasoning summaries.
+
+The responder now calls `ChatOpenAI.stream()` for ordinary answers. Each `AIMessageChunk` flows
+through LangGraph callbacks and is added into the same final message used by
+`_extract_message_content` and `provider_reasoning_summary`. This preserves one provider call and
+one source of truth: summary blocks remain outside reply text, while the aggregated answer is
+byte-equivalent to the concatenated visible deltas. The deterministic and comprehensive-document
+paths retain their intentional fallback or buffering behavior.
+
 ## Verification
 
 - The backend regression requires `run_resumed` to be the first resume SSE event and requires
@@ -113,9 +139,14 @@ human clues appear in neither messages nor activity events.
 - Full-document response nodes intentionally buffer provider text so partial-coverage disclosure
   can precede visible answer text.
 - A repeated graph interrupt must replace the cleared card with the new interaction.
+- Chunk aggregation depends on LangChain preserving structured Responses API blocks when
+  `AIMessageChunk` values are added; compatibility tests must move with adapter upgrades.
+- A provider may still emit a large first chunk or delay its first token, so streaming improves the
+  transport boundary but does not guarantee a specific cadence.
 
 ## Revision history
 
+- 2026-09-02: Replaced the final responder's blocking model invocation with real provider chunk streaming and documented aggregation/reasoning-summary parity.
 - 2026-08-31: Preserved repeated LangGraph interrupts during resume state reconstruction and documented the bounded V2 refinement loop.
 - 2026-08-31: Added the post-loop terminal-finalization failure boundary so a claimed resume cannot remain stranded in `running` after reconciliation or persistence errors.
 - 2026-08-26: Created after replacing buffered resume replay with true checkpoint streaming.

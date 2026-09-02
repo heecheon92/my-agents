@@ -7,7 +7,7 @@
 ## Current role
 
 - Provides the runtime-only `RagAgentRuntime` contract invoked by the `retrieve_rag_context` node inside the `general_assistant` graph.
-- After the General Assistant delegates to private knowledge, uses a fixed `gpt-5.6-luna` standard/low planner to choose exactly one typed retrieval operation: `search_authorized_chunks` or `read_authorized_document_comprehensively`.
+- After the General Assistant delegates to private knowledge, uses a fixed `gpt-5.6-luna` standard/low planner to choose exactly one typed retrieval operation: `search_authorized_chunks` or `read_authorized_document_comprehensively`. The same strict tool call returns an optional bounded user-facing approach summary, kept separate from the trusted tool choice.
 - Keeps deterministic mode, invalid-output handling, and provider failures on a credential-free semantic fallback with the same two-tool contract.
 - Returns `RagAgentRetrievalResult` with route, answer mode, authorized chunks, redacted retrieval evidence, and retry/sufficiency state.
 - Provides typed `resolve_full_document_target` and `read_full_document_range` runtime methods for explicit comprehensive-document tasks without making raw text part of the checkpointed RAG result.
@@ -62,7 +62,7 @@ sequenceDiagram
 
 - The public retrieval-agent name is `RAG Agent`.
 - The internal delegated implementation name is `ContextForge`.
-- `gpt-5.6-luna` in standard mode with low reasoning effort owns only semantic tool choice. It cannot select trusted document IDs, authorize access, change server budgets, or compose the final answer. User-selected reasoning controls apply to the final response model, not this internal planner.
+- `gpt-5.6-luna` in standard mode with low reasoning effort owns semantic tool choice plus a bounded display explanation. The explanation is model-authored, not a verified execution record. Luna cannot select trusted document IDs, authorize access, change server budgets, or compose the final answer. User-selected reasoning controls apply to the final response model, not this internal planner.
 - `search_authorized_chunks` means focused ContextForge retrieval. `read_authorized_document_comprehensively` means bounded target resolution/range reading for explicit or clearly implied exhaustive intent. Weak focused evidence alone must not escalate to the comprehensive tool.
 - `rag_retrieval_result` is a graph runtime object; do not expose it directly to frontend clients or checkpoints.
 - `retrieved_context` is already-authorized, prompt-safe compact context. Ambient system
@@ -77,6 +77,8 @@ sequenceDiagram
 - `clarification_required` and required retrieval with insufficient evidence stop the `general_assistant` graph before answer nodes.
 - `completed`, `skipped`, and `waiting` are frontend trace states, not hidden chain-of-thought.
 - The `agent_trace` stage IDs, event types, statuses, bilingual copy, and evidence fields are a stable typed API contract.
+- Trace descriptions use semantic display copy; deployment-specific values such as the active reranker remain in structured evidence instead of being interpolated into user-facing prose.
+- Every non-skipped stage also emits a version-1 `operational_summary` discriminated by a closed semantic message key. Each key has its own allowlisted parameter schema; skipped stages emit none, and a waiting answer uses `agent_trace.clarification_requested`. Frontends localize these keys rather than trusting arbitrary backend prose.
 - Evidence is limited to allowlisted routes/modes, counts, bounded labels, and booleans; raw prompts, snippets, provider errors, and message content are rejected by both the verifier and API response serializer.
 
 ## Capability or boundary metadata

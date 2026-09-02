@@ -2,7 +2,9 @@
 
 [한국어](../ko/28-dynamic-reasoning-summary-contract.md)
 
-Status: **Proposed — immediate next backend task.** Nothing in this document is implemented yet.
+Status: **Implemented on the reasoning-summary feature branch.** Backend, persisted recovery,
+typed SSE, and sibling-frontend rendering are covered by offline tests; hosted deployment and the
+owner's manual E2E review remain separate rollout evidence.
 
 ## Why this is needed
 
@@ -37,7 +39,7 @@ The reasoning summary must never replace the trace, citations, coverage disclosu
 final answer. A mismatch between a model summary and verified trace is a product signal to preserve,
 not something the serializer should conceal by rewriting history.
 
-## Proposed producer stages
+## Producer stages
 
 ### `retrieval_planning`
 
@@ -48,10 +50,9 @@ claim authorization, reveal system knowledge, or include document body text.
 
 ### `answer_synthesis`
 
-The final Sol response call should request the OpenAI Responses API reasoning summary and extract
-only the provider's summary blocks. OpenAI currently exposes `reasoning.generate_summary` and
-reasoning-summary streaming events. The implementation must verify the effective
-`langchain-openai` block/event shapes before freezing the adapter.
+The final Sol response call requests the OpenAI Responses API reasoning summary with
+`reasoning.summary="auto"`. The adapter extracts only provider `summary_text` blocks and matching
+reasoning-summary streaming deltas; raw reasoning content is not accepted by the public contract.
 
 Provider reference: [OpenAI Responses API](https://developers.openai.com/api/reference/cli/resources/responses/methods/create).
 
@@ -59,7 +60,7 @@ Both stages are nullable. Unsupported models, `reasoning_effort=none`, empty pro
 deterministic mode, or safe filtering may produce no summary. The backend must not fabricate a
 model-authored summary when none exists.
 
-## Proposed API shape
+## API shape
 
 ```json
 {
@@ -78,7 +79,7 @@ model-authored summary when none exists.
 }
 ```
 
-Proposed closed fields:
+Closed fields:
 
 - `stage`: `retrieval_planning | answer_synthesis`;
 - `text`: nonblank display text, maximum 500 characters per item;
@@ -87,7 +88,7 @@ Proposed closed fields:
 The completed run response, run detail, replay response, and refresh recovery must return the same
 ordered list. Absence is represented by an empty list, not placeholder prose.
 
-## Proposed SSE and persistence contract
+## SSE and persistence contract
 
 - `reasoning_summary_delta` is SSE-only and carries `stage`, `delta`, and a per-stage `sequence`.
 - `reasoning_summary_generated` is the proposed persisted, refresh-safe event containing the final
@@ -116,12 +117,13 @@ than weakening that filter.
 - Bound item count and length before persistence and serialization.
 - Summary generation consumes provider output budget and must enter the future platform usage
   ledger; it is not free merely because it is UI metadata.
-- Recommended UI label: “AI 작업 과정 요약” / “AI approach summary,” with copy explaining that it
-  is a model-generated summary rather than private chain-of-thought.
+- The UI renders this as quiet quoted prose beneath the verified steps, without another visible
+  label or explanatory disclaimer. Placement and neutral styling distinguish it from
+  `agent_trace`; it still never inherits verified status treatment.
 
-## Immediate implementation sequence
+## Implemented sequence and evidence
 
-1. Add mocked provider compatibility tests proving that `reasoning.generate_summary` reaches the
+1. Mocked provider compatibility tests prove that `reasoning.summary="auto"` reaches the
    Responses request and that summary blocks cannot leak into `reply`.
 2. Run one bounded credentialed provider spike to record the current final and streaming block/event
    shapes without storing sensitive prompts or output in the repository.
@@ -131,7 +133,8 @@ than weakening that filter.
 6. Persist completed items, rebuild them on refresh/replay, and stream typed deltas.
 7. Add redaction, prompt-injection, system-knowledge, authorization, length, ordering, nullable, and
    deterministic-mode tests.
-8. Publish hosted OpenAPI for the sibling frontend before frontend implementation begins.
+8. A live local OpenAPI document was served at `http://127.0.0.1:8017/openapi.json` before the
+   sibling frontend models were updated.
 
 ## Definition of done
 

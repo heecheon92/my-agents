@@ -163,7 +163,11 @@ Document-selection option에는 사용자가 통제하는 personal/group documen
 
 OpenAI Responses API의 `web_search` 같은 일반 답변 built-in tool은 **그래프 노드가 아니라 `responders.py`의 OpenAI provider 경계**에 둡니다. Full-document retrieval은 hosted provider tool이 아니라 application이 실행하는 typed graph path입니다. 단, 임시 파일이 선택된 run은 `document_workspace_runtime`을 LangGraph runtime context로 받아 마지막 응답 node에서 격리된 document workspace adapter를 호출합니다. 이 adapter는 `ChatOpenAI`가 아직 노출하지 않는 Files, Containers, Hosted Shell, Skills API 때문에 필요한 의도적인 예외입니다.
 
-같은 runtime context는 run에 저장된 effective `reasoning_mode`와 `reasoning_effort`도 마지막 response node로 전달합니다. 일반 답변은 `ChatOpenAI.invoke(..., reasoning={...})`, attachment 답변은 document-workspace Responses API adapter에 같은 값을 전달합니다. Source-selection gate는 비용과 routing 안정성을 위해 client override를 받지 않고 server default effort와 `standard` mode를 사용합니다. Guest override 차단과 GPT-5.6 `pro` 검증은 graph 진입 전 API boundary에서 수행합니다.
+같은 runtime context는 run에 저장된 effective `reasoning_mode`와 `reasoning_effort`도 마지막 response node로 전달합니다. 일반 답변은 `ChatOpenAI.stream(..., reasoning={...})`으로 전달하고 provider는 같은 chunk를 final graph result로 aggregate하며 LangGraph는 이를 live message event로 전달합니다. Attachment 답변은 document-workspace Responses API adapter에 같은 값을 전달하며 buffered 상태를 유지합니다. Source-selection gate는 비용과 routing 안정성을 위해 client override를 받지 않고 server default effort와 `standard` mode를 사용합니다. Guest override 차단과 GPT-5.6 `pro` 검증은 graph 진입 전 API boundary에서 수행합니다.
+
+Reasoning이 켜져 있으면 두 final-response path 모두 provider `summary="auto"` output을 요청하고 bounded `summary_text`를 별도 `answer_synthesis_summary`로 유지합니다. Graph는 이를 `reply`에 합치지 않으며 conversation boundary가 전용 reasoning-summary 계약으로 저장하고 제공합니다.
+
+일반 model streaming은 하나의 source of truth를 사용합니다. 각 `AIMessageChunk`는 LangGraph `messages` stream mode에 보이는 동시에 하나의 final message로 더해져 reply와 reasoning summary 추출에 사용됩니다. Provider는 두 번째 completion call을 만들지 않습니다. Deterministic path와 full-document path는 문서화된 fallback/buffering behavior를 유지합니다.
 
 이유:
 

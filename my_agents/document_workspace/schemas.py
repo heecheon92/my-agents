@@ -80,3 +80,4 @@ class DocumentWorkspaceExecutionResult(BaseModel):
     reply: str
     artifacts: list[ConversationArtifactResponse] = Field(default_factory=list)
     workspace_expires_at: datetime
+    reasoning_summary: str | None = Field(default=None, max_length=500)

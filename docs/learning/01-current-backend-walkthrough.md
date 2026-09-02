@@ -343,13 +343,16 @@ SystemMessage: stable instruction
 HumanMessage: route label + guidance + current user message
 ```
 
-Then it calls:
+Then it streams:
 
 ```python
-self._chat_model.invoke(messages)
+self._chat_model.stream(messages)
 ```
 
-That is the LLM call. The CLI asks LangGraph to stream `messages` and `updates`, so LangGraph can surface LLM token chunks while the node is running and still provide the final node update.
+That is the LLM call. Every chunk is visible to LangGraph's `messages` stream mode and is also
+added into one final message for reply persistence and reasoning-summary extraction. This lets the
+CLI and conversation SSE surface real model tokens while the node is running and still receive the
+final node update.
 
 ## 8. Settings layer: `settings.py`
 

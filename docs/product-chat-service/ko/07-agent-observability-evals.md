@@ -28,16 +28,28 @@ source 전체이고, `citations`는 최종 답변에서 보수적인 lexical 근
 authorized-context count는 consulted evidence를 설명합니다. Production persistence와
 `evaluate_grounded_citations`는 같은 deterministic selector를 사용합니다.
 
-## 다음 즉시 수행할 task: verified trace 옆의 model-authored channel
+## 구현된 verified trace 옆의 model-authored channel
 
-현재 verified trace는 model이 요청별로 왜 다른 접근을 골랐는지 표현할 수 없습니다. 다음
-backend task는 redaction boundary를 약화하지 않고 bounded dynamic reasoning summary를
+현재 verified trace는 model이 요청별로 왜 다른 접근을 골랐는지 표현할 수 없습니다.
+Bounded dynamic reasoning summary가 이 redaction boundary를 약화하지 않고 설명을
 추가합니다. `reasoning_summaries`는 model-authored 접근 설명이고 `agent_trace`는 application이
 검증한 실행 기록입니다. 두 contract는 구조와 UI에서 분리하며 summary를 evidence로 세거나
 trace와 충돌할 때 trace를 덮어쓰면 안 됩니다.
 
 필요성, safety rule, test, 완료 정의는
 [동적 reasoning summary 계약](./28-dynamic-reasoning-summary-contract.md)을 봅니다.
+
+## 구현된 backend-owned operational summary
+
+Skip되지 않은 각 `AgentTraceStep`은 optional versioned `operational_summary`를 제공합니다.
+Version 1은 closed semantic message key로 discriminate하며 key마다 별도 allowlisted parameter
+model을 가집니다. Frontend는 key와 parameter를 localize합니다. 이해하지 못하는 version이나
+key는 verified step을 버리지 않고 operational summary만 생략합니다.
+
+이는 model reasoning-summary channel이 아닙니다. Operational summary는 resolved source count,
+candidate, context packing, graph handoff, citation, clarification request 같은 deterministic
+application fact만 설명합니다. Prompt, retrieved passage, provider trace, credential, private
+identifier, arbitrary model prose, active reranker enum은 포함하지 않습니다.
 
 ## 문서 상태
 
