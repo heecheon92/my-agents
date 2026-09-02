@@ -66,10 +66,12 @@ product-inaccessible.
 - Show safe `attachments_ready`, `document_workspace_started`, and `artifact_created` activity.
 - List generated artifacts on the answer/run that created them and provide authenticated download
   actions while available.
-- Clearly distinguish analysis support from certified editable output. The current stable output
-  contract certifies only `.xlsx`, `.csv`, and `.tsv` files written under `/mnt/data/output/`.
-- For PDF, DOCX, PPTX, text, code, and other accepted inputs, promise analysis only unless the
-  capability explicitly upgrades their artifact status. Do not claim fidelity-preserving editing.
+- Clearly distinguish analysis support from certified downloadable output. The current output
+  contract accepts `.xlsx`, `.csv`, `.tsv`, `.docx`, `.pptx`, `.pdf`, `.md`, `.markdown`, `.html`,
+  and `.htm` files written under `/mnt/data/output/`.
+- For text, code, and other accepted inputs, promise analysis only unless the capability explicitly
+  upgrades their artifact status. Certified download does not claim pixel-perfect, cross-application
+  editing fidelity.
 
 ## Conversation creation decision
 
@@ -120,7 +122,8 @@ replacement during the first run previously caused streaming state loss.
 - A registered eligible user can attach, remove, select, and reuse an available temporary file.
 - The same user can ask for analysis and receive the answer without adding the file to a knowledge
   base.
-- A certified spreadsheet transformation produces a downloadable artifact with honest expiry.
+- A certified spreadsheet or document transformation produces a downloadable artifact with honest
+  expiry.
 - Unsupported, oversized, expired, deleted, partially uploaded, and provider-failure paths preserve
   the prompt and never start a misleading run.
 - Refresh and replay keep attachment/artifact metadata tied to the correct run.

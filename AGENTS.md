@@ -132,6 +132,16 @@ Prefer this sequence:
 7. Add durable storage only when the behavior requires it.
 8. Keep frontend separate.
 
+## Documentation lifecycle
+
+- `docs/implementation-tracking.md` is the sole mutable authority for status, priority, sequence,
+  gaps, verification, and completion tracking; `ROADMAP.md` is its detailed companion mirror.
+- Use `docs/README.md` as the documentation router and read only task-relevant current sources.
+- Before compacting terminal work, update current behavior docs and preserve substantive scope,
+  decisions, evidence, and limitations under `docs/completed/` when a concise index row is not enough.
+- Follow the maintenance policy and definition of done in `docs/README.md` and `ROADMAP.md`; do not
+  preload or treat completion records, ideas, or historical plans as current authority.
+
 ## Documentation expectations
 
 This repository maintains two README files:

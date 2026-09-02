@@ -212,9 +212,34 @@ _CATEGORY_MIME_TYPES: dict[str, tuple[str, ...]] = {
     ),
 }
 
-CERTIFIED_ARTIFACT_EXTENSIONS = frozenset({".xlsx", ".csv", ".tsv"})
+CERTIFIED_ARTIFACT_EXTENSIONS = frozenset(
+    {
+        ".xlsx",
+        ".csv",
+        ".tsv",
+        ".docx",
+        ".pptx",
+        ".pdf",
+        ".md",
+        ".markdown",
+        ".html",
+        ".htm",
+    }
+)
 ARTIFACT_CANDIDATE_EXTENSIONS = frozenset(
-    {".xlsx", ".csv", ".tsv", ".docx", ".pptx", ".pdf", ".md", ".txt"}
+    {
+        ".xlsx",
+        ".csv",
+        ".tsv",
+        ".docx",
+        ".pptx",
+        ".pdf",
+        ".md",
+        ".markdown",
+        ".html",
+        ".htm",
+        ".txt",
+    }
 )
 GENERIC_UPLOAD_MIME_TYPES = frozenset({"", "application/octet-stream"})
 

@@ -45,13 +45,14 @@ def _restore_rich_debug_handlers():
 class FakeDocumentWorkspaceProvider:
     provider_name = "openai"
 
-    def __init__(self) -> None:
+    def __init__(self, *, artifact_filename: str = "analysis.xlsx") -> None:
         self.uploaded: dict[str, bytes] = {}
         self.container_files: list[ProviderContainerFile] = []
         self.deleted_files: list[str] = []
         self.deleted_containers: list[str] = []
         self.spreadsheet_skill_enabled = False
         self.reasoning: tuple[str, str] | None = None
+        self.artifact_filename = artifact_filename
 
     def upload_file(
         self,
@@ -120,7 +121,7 @@ class FakeDocumentWorkspaceProvider:
         self.container_files.append(
             ProviderContainerFile(
                 id="artifact-1",
-                path="/mnt/data/output/analysis.xlsx",
+                path=f"/mnt/data/output/{self.artifact_filename}",
                 bytes=14,
                 source="assistant",
             )
@@ -145,13 +146,17 @@ class FakeDocumentWorkspaceProvider:
         self.deleted_containers.append(provider_container_id)
 
 
-def _client(monkeypatch) -> tuple[TestClient, FakeDocumentWorkspaceProvider]:  # noqa: ANN001
+def _client(
+    monkeypatch,  # noqa: ANN001
+    *,
+    artifact_filename: str = "analysis.xlsx",
+) -> tuple[TestClient, FakeDocumentWorkspaceProvider]:
     monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
     monkeypatch.setenv("MY_AGENTS_SESSION_COOKIE_SECURE", "false")
     monkeypatch.setenv("MY_AGENTS_DOCUMENT_WORKSPACE_ENABLED", "true")
     monkeypatch.setenv("OPENAI_API_KEY", "test-only-key")
     get_settings.cache_clear()
-    provider = FakeDocumentWorkspaceProvider()
+    provider = FakeDocumentWorkspaceProvider(artifact_filename=artifact_filename)
     app = create_app()
     app.dependency_overrides[get_document_workspace_provider] = lambda: provider
     return TestClient(app), provider
@@ -199,11 +204,23 @@ def test_document_workspace_capability_is_honest_for_disabled_and_guest() -> Non
 
 
 def test_format_registry_covers_openai_document_families() -> None:
-    assert document_format_for_filename("report.pdf").category == "pdf"
-    assert document_format_for_filename("analysis.xlsx").artifact_status == "certified"
-    assert document_format_for_filename("memo.docx").category == "rich_document"
-    assert document_format_for_filename("slides.pptx").category == "presentation"
-    assert document_format_for_filename("notes.md").category == "text_or_code"
+    for filename, category in (
+        ("report.pdf", "pdf"),
+        ("analysis.xlsx", "spreadsheet"),
+        ("analysis.csv", "spreadsheet"),
+        ("analysis.tsv", "spreadsheet"),
+        ("memo.docx", "rich_document"),
+        ("slides.pptx", "presentation"),
+        ("notes.md", "text_or_code"),
+        ("notes.markdown", "text_or_code"),
+        ("report.html", "text_or_code"),
+        ("report.htm", "text_or_code"),
+    ):
+        document_format = document_format_for_filename(filename)
+        assert document_format is not None
+        assert document_format.category == category
+        assert document_format.artifact_status == "certified"
+    assert document_format_for_filename("notes.txt").artifact_status == "unavailable"
     assert document_format_for_filename("video.mp4") is None
 
 
@@ -223,6 +240,54 @@ def test_document_usage_normalizes_reasoning_tokens_for_cost_ledger() -> None:
         "model_reasoning_tokens": 60,
         "hosted_shell_calls": 1,
     }
+
+
+@pytest.mark.parametrize(
+    ("artifact_filename", "content_type"),
+    (
+        (
+            "generated.docx",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ),
+        (
+            "generated.pptx",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        ),
+        ("generated.pdf", "application/pdf"),
+        ("generated.md", "text/markdown"),
+        ("generated.markdown", "text/markdown"),
+        ("generated.html", "text/html"),
+        ("generated.htm", "text/html"),
+    ),
+)
+def test_document_outputs_are_registered_as_downloadable_artifacts(
+    monkeypatch,  # noqa: ANN001
+    artifact_filename: str,
+    content_type: str,
+) -> None:
+    client, _provider = _client(monkeypatch, artifact_filename=artifact_filename)
+    _signup_login(client)
+    conversation_id = client.post("/conversations", json={"title": "Document generation"}).json()[
+        "id"
+    ]
+    attachment = client.post(
+        f"/conversations/{conversation_id}/attachments",
+        files={"file": ("notes.txt", BytesIO(b"source material"), "text/plain")},
+        data={"provider_consent": "true"},
+    ).json()
+
+    response = client.post(
+        f"/conversations/{conversation_id}/runs",
+        json={
+            "message": "Create a downloadable document",
+            "attachment_ids": [attachment["id"]],
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    artifact = response.json()["artifacts"][0]
+    assert artifact["filename"] == artifact_filename
+    assert artifact["content_type"] == content_type
 
 
 def test_openai_adapter_uses_network_disabled_container_and_hosted_shell() -> None:

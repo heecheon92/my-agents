@@ -51,7 +51,7 @@ Run responses add `attachments` and `artifacts`. The display-safe persisted even
 
 The analysis allowlist is versioned in `my_agents/document_workspace/formats.py` and mirrors the OpenAI File Inputs extension families verified on 2026-08-09: PDF, spreadsheet, rich-document, presentation, and text/code files. Video and arbitrary binary uploads are out of scope. The effective registry is served by the capability endpoint so the frontend does not hardcode it.
 
-Analysis support is broader than editing certification. Only `.xlsx`, `.csv`, and `.tsv` outputs under `/mnt/data/output/` become downloadable artifacts in this milestone. Other accepted inputs can be analyzed, but the assistant must not claim a downloadable edited document was produced. This avoids presenting unverified DOCX/PPTX/PDF fidelity as a stable product contract.
+Analysis support is broader than output certification. `.xlsx`, `.csv`, `.tsv`, `.docx`, `.pptx`, `.pdf`, `.md`, `.markdown`, `.html`, and `.htm` outputs under `/mnt/data/output/` become downloadable artifacts. Other accepted inputs can be analyzed, but the assistant must not claim a downloadable edited document was produced. Certification means that the hosted-shell result is recognized, retained as expiring artifact metadata, and available through the authenticated download path; it does not promise pixel-perfect fidelity across every office application, so users should review generated files before relying on them.
 
 ## Security and economic boundaries
 
@@ -62,6 +62,22 @@ Analysis support is broader than editing certification. Only `.xlsx`, `.csv`, an
 - Uploaded files, retrieved KB snippets, and memory snippets are marked as untrusted data in provider instructions.
 - Provider traces, shell commands, stdout, prompts, credentials, and hidden reasoning never enter public events.
 - Usage events record provider-neutral units such as input/output/cached tokens, file-input bytes, container starts, and hosted-shell calls. Unique idempotency keys prevent double recording and leave later credit settlement independent of Langfuse or one model vendor.
+
+## Deferred extension: artifact generation without attachments
+
+The current implementation constructs `document_workspace_runtime` only when a run includes at least one `attachment_id`. A request such as “explain this concept as an HTML file” therefore remains an ordinary chat response today; expanding the downloadable extension allowlist does not activate Hosted Shell by itself.
+
+A future milestone may add a typed `create_artifact` capability owned by the General Assistant. The RAG Agent should continue to own retrieval decisions, not output-file generation. When the user explicitly requests a downloadable result, the General Assistant could select a server-approved output format and invoke the existing document-workspace adapter with zero or more attachments. With no attachments, the adapter would create an empty expiring, network-disabled hosted container; generated files would reuse the existing artifact metadata, event, expiry, authorization, usage-accounting, and authenticated-download paths.
+
+This extension is intentionally deferred and is not the immediate next task. Before implementation, decide:
+
+- whether natural-language intent alone is sufficient or the frontend should also provide an explicit file-format control;
+- how explicit a request must be to distinguish downloadable HTML or Markdown from an in-chat code block;
+- whether the model selects from a closed output-format enum or the client may request a format directly;
+- which account-credit and Hosted Shell limits apply when no user file is transferred; and
+- whether artifact-producing requests should require Hosted Shell rather than leaving tool choice optional.
+
+No provider-transfer consent is needed when no user bytes leave the browser, but feature eligibility, guest restrictions, cost accounting, output allowlisting, and safe event disclosure still apply. This path must not expose arbitrary shell access, provider traces, or unrestricted filenames to clients.
 
 ## Deployment
 

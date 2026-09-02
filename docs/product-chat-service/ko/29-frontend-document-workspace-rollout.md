@@ -63,10 +63,12 @@ artifact presentation이 없습니다. 따라서 API는 준비됐지만 product�
 
 - Safe `attachments_ready`, `document_workspace_started`, `artifact_created` activity를 표시합니다.
 - 생성한 answer/run에 artifact를 연결하고 available 상태에서 authenticated download를 제공합니다.
-- Analysis 지원과 certified editable output을 구분합니다. 현재 stable contract는
-  `/mnt/data/output/`의 `.xlsx`, `.csv`, `.tsv`만 인증합니다.
-- PDF, DOCX, PPTX, text, code 등 accepted input은 capability가 artifact status를 명시적으로
-  확장하기 전까지 analysis만 약속합니다. Fidelity-preserving editing을 주장하지 않습니다.
+- Analysis 지원과 certified downloadable output을 구분합니다. 현재 output contract는
+  `/mnt/data/output/`의 `.xlsx`, `.csv`, `.tsv`, `.docx`, `.pptx`, `.pdf`, `.md`, `.markdown`,
+  `.html`, `.htm`을 인증합니다.
+- Text, code 등 나머지 accepted input은 capability가 artifact status를 명시적으로 확장하기
+  전까지 analysis만 약속합니다. Certified download는 application 간 pixel-perfect editing
+  fidelity를 뜻하지 않습니다.
 
 ## Conversation 생성 결정
 
@@ -113,7 +115,8 @@ conversation을 만들지 않습니다. No-empty-conversation invariant를 유�
 
 - Eligible registered user가 temporary file을 attach/remove/select하고 available 동안 재사용합니다.
 - Knowledge base에 넣지 않고 같은 file의 분석 answer를 받습니다.
-- Certified spreadsheet transformation이 honest expiry를 가진 downloadable artifact를 만듭니다.
+- Certified spreadsheet 또는 document transformation이 honest expiry를 가진 downloadable
+  artifact를 만듭니다.
 - Unsupported, oversized, expired, deleted, partial upload, provider failure가 prompt를 보존하고
   misleading run을 시작하지 않습니다.
 - Refresh/replay에서 attachment/artifact metadata가 올바른 run에 연결됩니다.

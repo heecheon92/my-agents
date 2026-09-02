@@ -1,6 +1,6 @@
 # Implementation tracking
 
-Last updated: 2026-08-30
+Last updated: 2026-09-02
 Status owner: repo-tracked source of truth for cross-machine agent handoff
 
 This file exists because `.omx/` is local runtime state and is not shared across machines. When working with an agent on any machine, start here before re-discovering project status from the codebase.
@@ -9,9 +9,10 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 
 ## Source-of-truth contract
 
-- `docs/implementation-tracking.md` is the canonical cross-machine handoff summary: current status, latest verification, known gaps, recommended next workflow, and completed milestone log.
+- `docs/implementation-tracking.md` is the sole mutable status authority: current status, latest verification, known gaps, recommended sequence, and the shipped/completed milestone index.
 - `ROADMAP.md` is the detailed roadmap/checklist backlog: broader v1 scope, deferred items, and definition of done.
 - If both files mention the same item, this file decides current priority and freshness; update `ROADMAP.md` afterward so the checklist does not drift.
+- `docs/README.md` is the documentation router and full lifecycle policy. Substantive terminal initiative detail moves to `docs/completed/<initiative-slug>.md`; those records preserve history but never own current status.
 - If `.omx/` and this file disagree, treat this file as the portable baseline and `.omx/` as machine-local context only.
 
 ## How to use this file
@@ -20,6 +21,9 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 - Update this file when a workflow meaningfully changes project completion, next priorities, or known gaps.
 - Keep it factual: record implemented behavior, verification evidence, and remaining risk separately.
 - Prefer short entries with links to code/docs/tests instead of long narrative.
+- Treat uncommitted work as active, feature-branch work as implemented but not integrated, merged and verified product behavior as shipped, and hosted behavior as production-verified only after a deployment smoke.
+- When work becomes terminal, update current behavior docs, compact substantive history under `docs/completed/`, replace active detail with a concise checked index row, remove stale gap/priority language, and update `ROADMAP.md` in the same change.
+- Existing historical material is grandfathered and may be compacted incrementally; do not perform a large archive migration while handling an unrelated task.
 - Do not use this file for secrets, local `.env` values, or machine-specific runtime state.
 
 ## Current overall status
@@ -508,6 +512,18 @@ The architecture, security constraints, protocol boundaries, and definition of d
 authoritative in
 [`30-rich-response-rendering-and-agent-ui-boundaries.md`](./product-chat-service/en/30-rich-response-rendering-and-agent-ui-boundaries.md).
 
+### Deferred: attachment-free artifact generation
+
+Do not schedule this as the immediate next task. The current document workspace requires selected
+attachments even though its Hosted Shell and artifact pipeline could technically create files from
+the user's prompt alone. A future General Assistant-owned typed `create_artifact` capability may
+activate an empty hosted container for explicit requests such as creating an HTML or Markdown file,
+while reusing the existing artifact, expiry, authorization, usage, and download contracts. The RAG
+Agent remains responsible for retrieval, not output generation. Natural-language activation versus
+an explicit frontend format control, ambiguity handling, account-credit limits, and required tool
+choice remain owner decisions. See the deferred extension in
+[`25-openai-document-workspace.md`](./product-chat-service/en/25-openai-document-workspace.md).
+
 ### Following retrieval move: tokenizer-aware retrieval and embedding-index safety
 
 The next RAG correctness milestone is not to force one tokenizer across every model. It is to keep
@@ -633,7 +649,12 @@ single-session limits in backend state. It is not a durable anonymous quota
 system, a multi-device guest account model, or a replacement for shared rate
 limits.
 
-## Completed milestone log
+## Shipped and completed index
+
+This is concise navigation, not a second history document. New terminal milestones with substantial
+scope, decisions, evidence, or limitations link to `docs/completed/<initiative-slug>.md`; small
+milestones may remain as one self-contained row. Existing rows are preserved and will be compacted
+incrementally when related work next touches them.
 
 | Date | Milestone | Evidence |
 | --- | --- | --- |
@@ -693,11 +714,13 @@ limits.
 
 Before starting a new workflow on any machine:
 
-1. Read this file.
+1. Read the task-relevant sections of this file, then use `docs/README.md` to route deeper reading.
 2. Check `git status --short`.
 3. Run or inspect the latest relevant tests.
 4. Update this file if your workflow changes completion, priorities, or known gaps.
-5. Keep `.omx/` notes as local-only; do not rely on them for cross-machine continuity.
+5. Compact newly terminal work according to `docs/README.md`; do not preload completion records
+   unless the task needs history or regression context.
+6. Keep `.omx/` notes as local-only; do not rely on them for cross-machine continuity.
 ### 2026-06-07 — Group upload hidden staging boundary
 
 - Added `KnowledgeBasePurpose` and a `team_upload_staging` purpose for private upload buffers.

@@ -11,6 +11,29 @@ For cross-machine handoff and the shortest answer to **"what should we do next?"
 - `[ ]` Not implemented yet.
 - `[later]` Intentionally deferred beyond the near-term backend roadmap.
 
+New or actively revised initiatives use the named lifecycle states `Proposed`, `Active`, `Deferred`,
+`Shipped`, `Completed`, `Canceled`, and `Superseded`. Legacy `[~]` and `[later]` markers are
+grandfathered until their initiative is next touched rather than being rewritten mechanically.
+
+## Roadmap maintenance policy
+
+- [`docs/implementation-tracking.md`](./docs/implementation-tracking.md) is the sole mutable authority
+  for current status, priority, sequence, gaps, and completion. This roadmap owns detailed scope and
+  mirrors canonical status; resolve any disagreement in implementation tracking first.
+- Use [`docs/README.md`](./docs/README.md) to route task-specific reading. Do not preload all ideas,
+  plans, completion records, or historical evidence.
+- Before marking work terminal, verify repository behavior and applicable tests, then update current
+  behavior documentation. An uncommitted patch or feature branch is not shipped.
+- Compact substantive completed detail into `docs/completed/<initiative-slug>.md`, leave one concise
+  checked index link in implementation tracking, remove stale priority/gap language, and update this
+  mirror in the same change.
+- Preserve rationale, decisions, evidence, limitations, and inbound links before pruning detail.
+  Completion archives never become current status authority and must not contain sensitive or
+  machine-local runtime material.
+- Run a maintenance pass whenever an initiative closes, the hot tracker becomes hard to scan,
+  statuses disagree, routing becomes stale, or links break. Existing history is migrated
+  incrementally rather than through unrelated bulk cleanup.
+
 ## Product milestone summary
 
 ```mermaid
@@ -310,6 +333,13 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
   safe failure fallback. Treat AG-UI as a future transport adapter and A2UI as a future declarative
   renderer boundary; neither is a dependency for the Mermaid milestone. See
   [`30-rich-response-rendering-and-agent-ui-boundaries.md`](./docs/product-chat-service/en/30-rich-response-rendering-and-agent-ui-boundaries.md).
+- [ ] **Deferred, not immediate — create downloadable artifacts without attachments.** Consider a
+  General Assistant-owned typed `create_artifact` capability that activates the existing Hosted
+  Shell workspace with zero or more attachments. Keep output formats closed and server-owned, reuse
+  artifact authorization/expiry/usage/download contracts, and leave retrieval ownership with the
+  RAG Agent. Natural-language activation, an optional frontend format control, ambiguity handling,
+  and credit limits remain open decisions. See the deferred extension in
+  [`25-openai-document-workspace.md`](./docs/product-chat-service/en/25-openai-document-workspace.md).
 - [ ] Add OpenAPI/client generation workflow if useful.
 - [x] Hosted frontend/backend auth verification path works after adding `/verify-email` and `/password-reset` frontend landing pages.
 
@@ -342,8 +372,8 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
      exact BFF routes and authenticated download handling.
    - Add composer-local staging, explicit OpenAI transfer consent, upload/delete/retry state,
      refresh recovery, and selected `attachment_ids` on streamed runs.
-   - Present certified spreadsheet artifacts with expiry-aware downloads, while promising analysis
-     only for formats without certified editing fidelity.
+   - Present server-certified artifacts with expiry-aware downloads, while promising analysis only
+     for formats without certified output support.
    - Preserve the bare `/chat` no-empty-conversation invariant and test first-file/first-message
      creation as one flow.
    - Stop when eligible registered users can complete attach -> ask/analyze or transform -> download,

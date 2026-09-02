@@ -163,7 +163,7 @@ curl -X POST http://127.0.0.1:8000/assistant/chat \
 
 일반 계정의 run 요청은 선택적으로 `reasoning_mode`(`standard` 또는 `pro`)와 `reasoning_effort`(`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`)를 받을 수 있습니다. 생략하면 mode는 `standard`, effort는 `MY_AGENTS_OPENAI_REASONING_EFFORT`를 사용합니다. Guest가 값을 보내더라도 서버는 `standard`와 환경변수 기본 effort로 고정합니다. 실제 기본값과 model 지원 여부는 `GET /capabilities/reasoning`에서 확인할 수 있습니다. `pro`는 GPT-5.6 model에서만 허용됩니다. 세부 계약은 [run reasoning 설정 계약](./docs/product-chat-service/ko/26-run-reasoning-preferences.md)에 있습니다.
 
-`MY_AGENTS_DOCUMENT_WORKSPACE_ENABLED=true`로 켜면 승인된 일반 계정은 대화에 임시 파일을 첨부해 GPT-5.6 Sol로 분석하고, 인증된 spreadsheet 결과(`.xlsx`, `.csv`, `.tsv`)를 내려받을 수 있습니다. Guest에는 열리지 않으며, 업로드마다 OpenAI 전송 동의가 필요합니다. 파일 본문은 Product DB에 저장하지 않고 OpenAI `user_data` file과 network-disabled hosted container에만 제한 시간 동안 둡니다. 세부 계약은 [OpenAI document workspace 설계](./docs/product-chat-service/ko/25-openai-document-workspace.md)를 봅니다.
+`MY_AGENTS_DOCUMENT_WORKSPACE_ENABLED=true`로 켜면 승인된 일반 계정은 대화에 임시 파일을 첨부해 GPT-5.6 Sol로 분석하고, 인증된 spreadsheet·document·Markdown·HTML 결과(`.xlsx`, `.csv`, `.tsv`, `.docx`, `.pptx`, `.pdf`, `.md`, `.markdown`, `.html`, `.htm`)를 내려받을 수 있습니다. Guest에는 열리지 않으며, 업로드마다 OpenAI 전송 동의가 필요합니다. 파일 본문은 Product DB에 저장하지 않고 OpenAI `user_data` file과 network-disabled hosted container에만 제한 시간 동안 둡니다. 세부 계약은 [OpenAI document workspace 설계](./docs/product-chat-service/ko/25-openai-document-workspace.md)를 봅니다.
 
 PostgreSQL deployment는 baseline LangGraph infrastructure로 PostgresStore와 PostgresSaver를 자동 provision합니다. Store는 Product DB가 governance하는 memory의 semantic projection이며 per-user experimental setting이 consent와 eligibility를 제어합니다. Status/sensitivity/provenance/source staleness는 계속 Product DB row가 강제합니다. PostgresSaver는 모호한 document-grounded run을 `202 waiting_for_input`으로 멈추고 process restart 뒤에도 같은 run을 재개하게 합니다. SQLite는 Product DB recall과 non-durable graph execution fallback을 유지합니다. PostgreSQL traffic을 받기 전에 `uv run python -m scripts.langgraph_persistence setup`을 실행하고, 사용자에게 experimental memory를 열기 전에 zero-drift reconciliation을 확인합니다.
 
@@ -225,6 +225,7 @@ git diff --check
 ## 핵심 문서
 
 - [구현과 검증 현황](./docs/implementation-tracking.md)
+- [문서 지도와 lifecycle 규칙](./docs/README.md)
 - [권한 기반 RAG 설계](./docs/product-chat-service/ko/06-permission-aware-rag.md)
 - [어시스턴트 오케스트레이션 흐름](./my_agents/agents/general_assistant/README.md)
 - [검색 서브워크플로와 컨텍스트 구성](./my_agents/agents/rag_agent/README.md)
