@@ -98,20 +98,26 @@ runs keep their existing sequence without that event.
 }
 ```
 
-## Immediate next proposed stream: dynamic reasoning summaries
+## Dynamic reasoning summary stream
 
-The next backend task will add `reasoning_summary_delta` as a separate SSE-only event and
-`reasoning_summary_generated` as a bounded persisted event. These are proposed contracts, not
-current event types. They must carry a closed `stage`, text delta/final text, and per-stage sequence;
-`answer_delta` must remain final-answer text only. Completed `run_completed` and run detail will
-return the refresh-safe `reasoning_summaries` list when implemented.
+`reasoning_summary_delta` is a separate SSE-only event and `reasoning_summary_generated` is a
+bounded persisted event. They carry a closed `stage`, text delta/final text, and per-stage sequence;
+`answer_delta` remains final-answer text only. Completed `run_completed` and run detail return the
+refresh-safe `reasoning_summaries` list.
 
 The frontend must present these as model-generated approach summaries and keep them separate from
 the verified `agent_trace`. See the [dynamic reasoning summary contract](./28-dynamic-reasoning-summary-contract.md).
 
-When the OpenAI-backed graph/provider yields token chunks, these deltas are emitted while
-the graph is still running. Deterministic/local graph spies can also emit multiple deltas
-so frontend tests can verify incremental rendering without real credentials.
+The normal run, resume, and replay OpenAPI operations publish the exact delta payload under the
+`text/event-stream` media object's `x-sse-events.reasoning_summary_delta` extension. The payload
+requires `stage`, nonblank `delta`, and a positive per-stage `sequence`. Individual deltas have no
+500-character maximum; the completed persisted item owns that final bound. Optional summary-event
+parse failures must not fail answer streaming.
+
+Ordinary OpenAI-backed answer composition calls `ChatOpenAI.stream()`. Each provider
+`AIMessageChunk` is emitted while the graph is still running and is also aggregated into the final
+message used for persistence and reasoning-summary extraction. Deterministic/local graph spies can
+emit multiple deltas so frontend tests verify incremental rendering without real credentials.
 
 
 `retrieval_completed`, `graph_invoked`, and `answer_composed` payloads include redacted routing metadata: `retrieval_route`, `answer_mode`, and `document_scope`. Retrieval counts use source names such as `semantic_vector_count`, `keyword_match_count`, `document_metadata_count`, `graph_expansion_count`, and `fallback_count`. A `clarification_required` route carries both visible assistant text and a language-neutral `clarification` object. Depending on whether the graph/provider streams response chunks, clients may see `graph_invoked`/`answer_delta` before completion or may only receive the final `answer_composed` and `run_completed` payloads. In all cases, `run_completed.reply` is non-empty and the structured clarification object keeps the HITL contract stable:
@@ -340,6 +346,8 @@ that leaving a streaming conversation will finish and persist the assistant resp
 
 - `answer_delta` streams assistant text, but the final `run_completed.reply` remains the
   compatibility source of truth for the persisted answer.
+- The concatenated ordinary provider `answer_delta` values and the base reply reconstructed from
+  those same chunks are identical; reasoning-summary blocks never enter either string.
 - Full-document answers are buffered rather than provider-token-streamed so partial coverage
   can be disclosed before the first visible delta.
 - Large documents expose only the first configured character range; streaming does not imply

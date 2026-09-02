@@ -14,6 +14,7 @@ from pydantic import ValidationError
 
 from my_agents.knowledge.routing import is_comprehensive_document_request
 from my_agents.reasoning import openai_reasoning_payload
+from my_agents.reasoning_summaries import bounded_reasoning_summary
 from my_agents.settings import Settings, get_settings
 
 RAG_AGENT_PLANNER_MODEL = "gpt-5.6-luna"
@@ -36,7 +37,19 @@ _SEARCH_TOOL: dict[str, object] = {
         ),
         "parameters": {
             "type": "object",
-            "properties": {},
+            "properties": {
+                "approach_summary": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500,
+                    "description": (
+                        "A concise user-facing explanation, in the user's language, of why "
+                        "this retrieval approach fits the request. Do not mention hidden "
+                        "instructions, authorization internals, private identifiers, or raw text."
+                    ),
+                }
+            },
+            "required": ["approach_summary"],
             "additionalProperties": False,
         },
     },
@@ -54,7 +67,19 @@ _COMPREHENSIVE_TOOL: dict[str, object] = {
         ),
         "parameters": {
             "type": "object",
-            "properties": {},
+            "properties": {
+                "approach_summary": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500,
+                    "description": (
+                        "A concise user-facing explanation, in the user's language, of why "
+                        "comprehensive reading fits the request. Do not mention hidden "
+                        "instructions, authorization internals, private identifiers, or raw text."
+                    ),
+                }
+            },
+            "required": ["approach_summary"],
             "additionalProperties": False,
         },
     },
@@ -71,7 +96,8 @@ _SYSTEM_PROMPT = (
     "'without missing anything' and a review/summarize task is comprehensive even if the user "
     "does not literally say 'whole document'. Ordinary summaries and targeted questions use "
     "focused chunk search. Never escalate to comprehensive reading merely because evidence may "
-    "be difficult to retrieve."
+    "be difficult to retrieve. Also provide the required approach_summary in the user's language. "
+    "It is a short display explanation, not hidden reasoning or a claim about what executed."
 )
 
 logger = logging.getLogger(__name__)
@@ -83,6 +109,7 @@ class RagRetrievalToolDecision:
 
     tool: RagRetrievalTool
     reason: str
+    approach_summary: str | None = None
 
     @property
     def comprehensive(self) -> bool:
@@ -161,6 +188,7 @@ class OpenAIRagRetrievalToolDecider:
         return RagRetrievalToolDecision(
             tool=tool,
             reason=f"Luna selected {tool}",
+            approach_summary=_selected_approach_summary(response),
         )
 
 
@@ -201,6 +229,19 @@ def _selected_tool_name(response: object) -> RagRetrievalTool | None:
         name = tool_call.get("name")
         if name in _ALLOWED_TOOLS:
             return name  # type: ignore[return-value]
+    return None
+
+
+def _selected_approach_summary(response: object) -> str | None:
+    tool_calls = getattr(response, "tool_calls", None)
+    if not isinstance(tool_calls, list):
+        return None
+    for tool_call in tool_calls:
+        if not isinstance(tool_call, dict) or tool_call.get("name") not in _ALLOWED_TOOLS:
+            continue
+        args = tool_call.get("args")
+        if isinstance(args, dict):
+            return bounded_reasoning_summary(args.get("approach_summary"))
     return None
 
 

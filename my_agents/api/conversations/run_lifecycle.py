@@ -74,12 +74,14 @@ from my_agents.conversations.schemas import (
     ConversationRunResult,
     ConversationRunWarning,
     DocumentCoverageResponse,
+    ReasoningSummaryItem,
 )
 from my_agents.knowledge.auth import KnowledgeBaseSelectionContext
 from my_agents.knowledge.models import CitationModel
 from my_agents.knowledge.retrieval import RetrievedChunk
 from my_agents.knowledge.routing import AnswerMode, RetrievalRoutingDecision
 from my_agents.observability.metrics import observe_conversation_run
+from my_agents.reasoning_summaries import summaries_from_graph_state
 from my_agents.schemas import RouteDecision
 from my_agents.settings import ReasoningEffort, ReasoningMode, get_settings
 
@@ -320,6 +322,7 @@ def _complete_sync_conversation_run(
             warnings=warnings,
             clarification=clarification,
             retrieval_evidence=retrieval_context.retrieval_evidence,
+            reasoning_summaries=reasoning_summary_items_from_graph_state(result),
         )
         record_run_metric("clarification")
         return response
@@ -338,6 +341,7 @@ def _complete_sync_conversation_run(
             warnings=warnings,
             insufficient_evidence=True,
             retrieval_evidence=retrieval_context.retrieval_evidence,
+            reasoning_summaries=reasoning_summary_items_from_graph_state(result),
         )
         record_run_metric("insufficient_evidence")
         return response
@@ -396,6 +400,7 @@ def _complete_sync_conversation_run(
         memory_source_snapshot=memory_source_snapshot,
         document_coverage=document_coverage,
         retrieval_latency_ms=retrieval_context.retrieval_latency_ms,
+        reasoning_summaries=reasoning_summary_items_from_graph_state(result),
     )
     record_run_metric("completed")
     return response
@@ -468,6 +473,7 @@ def complete_resumed_conversation_run(
             selection_context=selection_context,
             insufficient_evidence=True,
             retrieval_evidence=retrieval_context.retrieval_evidence,
+            reasoning_summaries=reasoning_summary_items_from_graph_state(result),
         )
         delete_checkpoint_thread(graph_runner, run.id)
         return response
@@ -513,6 +519,7 @@ def complete_resumed_conversation_run(
         memory_source_snapshot=memory_source_snapshot,
         document_coverage=document_coverage,
         retrieval_latency_ms=retrieval_context.retrieval_latency_ms,
+        reasoning_summaries=reasoning_summary_items_from_graph_state(result),
     )
     delete_checkpoint_thread(graph_runner, run.id)
     return response
@@ -550,6 +557,16 @@ def _verified_grounding_or_fallback(
     raise RuntimeError(f"RAG Agent grounding verification failed: {errors}")
 
 
+def reasoning_summary_items_from_graph_state(
+    state: dict[str, object] | None,
+) -> list[ReasoningSummaryItem]:
+    """Validate the compact graph fields at the public persistence boundary."""
+    return [
+        ReasoningSummaryItem.model_validate(item)
+        for item in summaries_from_graph_state(state)  # type: ignore[arg-type]
+    ]
+
+
 def persist_completed_run(
     *,
     db: Session,
@@ -568,6 +585,7 @@ def persist_completed_run(
     memory_source_snapshot: str | None = None,
     document_coverage: DocumentCoverageResponse | None = None,
     retrieval_latency_ms: float = 0.0,
+    reasoning_summaries: list[ReasoningSummaryItem] | None = None,
 ) -> ConversationRunResponse:
     from my_agents.document_workspace.service import artifacts_for_run, attachments_for_run
 
@@ -634,6 +652,14 @@ def persist_completed_run(
             },
             commit=False,
         )
+    for summary in reasoning_summaries or []:
+        append_run_event(
+            db,
+            run.id,
+            AgentEventType.REASONING_SUMMARY_GENERATED,
+            summary.model_dump(mode="json"),
+            commit=False,
+        )
     append_run_event(
         db,
         run.id,
@@ -679,6 +705,7 @@ def persist_completed_run(
         attachments=attachments_for_run(db, run.id),
         artifacts=artifacts_for_run(db, run.id),
         document_coverage=document_coverage,
+        reasoning_summaries=reasoning_summaries,
     )
 
 

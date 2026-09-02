@@ -2,7 +2,9 @@
 
 [English original](../en/28-dynamic-reasoning-summary-contract.md) | 한국어
 
-상태: **제안됨 — 다음 즉시 수행할 backend task.** 이 문서의 기능은 아직 구현되지 않았습니다.
+상태: **reasoning-summary feature branch에 구현됨.** Backend, 저장 후 복원, typed SSE,
+sibling frontend 표시는 offline test로 검증했습니다. Hosted 배포와 owner manual E2E 검토는
+별도의 rollout evidence로 남습니다.
 
 ## 왜 필요한가
 
@@ -36,7 +38,7 @@ Reasoning summary는 trace, citation, coverage disclosure, warning, final answer
 않습니다. Model summary와 verified trace가 다르면 serializer가 이를 숨기지 말고 product
 signal로 보존해야 합니다.
 
-## 제안하는 producer stage
+## Producer stage
 
 ### `retrieval_planning`
 
@@ -47,10 +49,9 @@ system knowledge 또는 document body를 노출하면 안 됩니다.
 
 ### `answer_synthesis`
 
-마지막 Sol response call은 OpenAI Responses API reasoning summary를 요청하고 provider summary
-block만 추출해야 합니다. OpenAI는 현재 `reasoning.generate_summary`와 reasoning-summary
-streaming event를 제공합니다. 구현 전 실제 `langchain-openai` block/event shape를 확인해
-adapter를 고정해야 합니다.
+마지막 Sol response call은 `reasoning.summary="auto"`로 OpenAI Responses API reasoning
+summary를 요청합니다. Adapter는 provider `summary_text` block과 해당 streaming delta만
+추출하며 raw reasoning content는 public contract로 전달하지 않습니다.
 
 Provider reference: [OpenAI Responses API](https://developers.openai.com/api/reference/cli/resources/responses/methods/create).
 
@@ -58,7 +59,7 @@ Provider reference: [OpenAI Responses API](https://developers.openai.com/api/ref
 deterministic mode, safe filtering에서는 summary가 없을 수 있습니다. Backend는 실제 summary가
 없을 때 model-authored text를 지어내면 안 됩니다.
 
-## 제안하는 API shape
+## API shape
 
 ```json
 {
@@ -77,7 +78,7 @@ deterministic mode, safe filtering에서는 summary가 없을 수 있습니다. 
 }
 ```
 
-제안하는 closed field는 다음과 같습니다.
+Closed field는 다음과 같습니다.
 
 - `stage`: `retrieval_planning | answer_synthesis`;
 - `text`: 비어 있지 않은 display text, item당 최대 500자;
@@ -86,7 +87,7 @@ deterministic mode, safe filtering에서는 summary가 없을 수 있습니다. 
 Completed run response, run detail, replay response, refresh recovery는 같은 ordered list를
 반환해야 합니다. Summary가 없으면 placeholder prose 대신 빈 list를 사용합니다.
 
-## 제안하는 SSE와 persistence 계약
+## SSE와 persistence 계약
 
 - `reasoning_summary_delta`는 SSE 전용이며 `stage`, `delta`, stage별 `sequence`를 전달합니다.
 - `reasoning_summary_generated`는 한 stage의 최종 bounded item을 담는 proposed persisted,
@@ -114,12 +115,13 @@ adapter를 추가해야 합니다.
 - Persist/serialize 전에 item count와 길이를 제한합니다.
 - Summary 생성 token은 향후 platform usage ledger에 포함해야 하며 UI metadata라고 무료가
   아닙니다.
-- 권장 UI label은 “AI 작업 과정 요약” / “AI approach summary”이며 private CoT가 아니라
-  model-generated summary임을 copy로 설명합니다.
+- UI는 verified step 아래에 별도 visible label이나 설명 문구 없이 조용한 인용문 형태로
+  표시합니다. 배치와 neutral styling으로 `agent_trace`와 구분하며 verified status 표현은
+  상속하지 않습니다.
 
-## 즉시 구현 순서
+## 구현 순서와 evidence
 
-1. `reasoning.generate_summary`가 Responses request에 전달되고 summary block이 `reply`로
+1. `reasoning.summary="auto"`가 Responses request에 전달되고 summary block이 `reply`로
    유출되지 않음을 증명하는 mocked provider compatibility test를 추가합니다.
 2. 민감한 prompt/output을 repository에 저장하지 않는 bounded credentialed provider spike로
    final/streaming block 및 event shape를 확인합니다.
@@ -129,7 +131,8 @@ adapter를 추가해야 합니다.
 6. Completed item을 persist하고 refresh/replay에서 복원하며 typed delta를 stream합니다.
 7. Redaction, prompt injection, system knowledge, authorization, length, ordering, nullable,
    deterministic-mode test를 추가합니다.
-8. Sibling frontend 구현 전에 hosted OpenAPI를 배포합니다.
+8. Sibling frontend model 변경 전에 `http://127.0.0.1:8017/openapi.json`에서 live local
+   OpenAPI를 제공했습니다.
 
 ## 완료 정의
 

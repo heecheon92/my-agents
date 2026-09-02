@@ -7,7 +7,7 @@
 ## 현재 역할
 
 - `general_assistant` graph 안의 `retrieve_rag_context` node가 호출하는 runtime-only `RagAgentRuntime` contract를 제공합니다.
-- General Assistant가 private knowledge로 위임한 뒤 고정된 `gpt-5.6-luna` standard/low planner가 `search_authorized_chunks`와 `read_authorized_document_comprehensively` 중 typed retrieval operation 하나를 선택합니다.
+- General Assistant가 private knowledge로 위임한 뒤 고정된 `gpt-5.6-luna` standard/low planner가 `search_authorized_chunks`와 `read_authorized_document_comprehensively` 중 typed retrieval operation 하나를 선택합니다. 같은 strict tool call은 trusted tool choice와 분리된 optional bounded user-facing approach summary도 반환합니다.
 - Deterministic mode, invalid output, provider failure는 같은 two-tool contract의 credential-free semantic fallback을 사용합니다.
 - `RagAgentRetrievalResult`로 route, answer mode, authorized chunks, redacted retrieval evidence, retry/sufficiency state를 반환합니다.
 - 명시적인 comprehensive-document task를 위해 typed `resolve_full_document_target`, `read_full_document_range` runtime method를 제공하되 raw text는 checkpoint되는 RAG result에 넣지 않습니다.
@@ -62,7 +62,7 @@ sequenceDiagram
 
 - Public retrieval-agent 이름은 `RAG Agent`입니다.
 - Internal delegated implementation 이름은 `ContextForge`입니다.
-- Standard mode / low reasoning effort의 `gpt-5.6-luna`는 semantic tool choice만 소유합니다. Trusted document ID, authorization, server budget, final answer를 결정하지 않으며 user reasoning control은 internal planner가 아니라 final response model에 적용됩니다.
+- Standard mode / low reasoning effort의 `gpt-5.6-luna`는 semantic tool choice와 bounded display explanation을 소유합니다. 이 설명은 model-authored이며 verified execution record가 아닙니다. Trusted document ID, authorization, server budget, final answer를 결정하지 않으며 user reasoning control은 internal planner가 아니라 final response model에 적용됩니다.
 - `search_authorized_chunks`는 focused ContextForge retrieval이고 `read_authorized_document_comprehensively`는 explicit 또는 의미상 분명한 exhaustive intent를 위한 bounded target/range read입니다. Focused evidence가 약하다는 이유만으로 comprehensive tool로 승격하지 않습니다.
 - `rag_retrieval_result`는 graph runtime object이며 그대로 frontend나 checkpoint에 노출하지 않습니다.
 - `retrieved_context`는 이미 권한 확인이 끝난 prompt-safe compact context입니다. Ambient
@@ -77,6 +77,8 @@ sequenceDiagram
 - `clarification_required` 또는 required retrieval의 insufficient evidence는 `general_assistant` graph를 answer node 전에 멈추게 합니다.
 - `completed`, `skipped`, `waiting`은 frontend trace state이며 hidden chain-of-thought가 아닙니다.
 - `agent_trace`의 stage ID, event type, status, 한/영 copy, evidence field는 stable typed API contract입니다.
+- Trace description은 semantic display copy만 사용합니다. Active reranker 같은 deployment-specific 값은 user-facing 문구에 보간하지 않고 structured evidence에만 유지합니다.
+- Skip되지 않은 모든 stage는 closed semantic message key로 discriminate하는 version 1 `operational_summary`도 제공합니다. 각 key는 별도 allowlisted parameter schema를 가지며 skipped stage에는 summary가 없습니다. Answer가 waiting이면 `agent_trace.clarification_requested`를 사용합니다. Frontend는 arbitrary backend prose를 신뢰하지 않고 이 key를 localize합니다.
 - Evidence는 allowlist된 route/mode, count, bounded label, boolean 중심입니다. Raw prompt, snippet, provider error, message content는 verifier와 API response serializer가 거부합니다.
 
 ## Capability / boundary metadata

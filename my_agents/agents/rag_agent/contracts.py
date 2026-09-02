@@ -18,6 +18,16 @@ RagAgentStageId = Literal[
 ]
 RagAgentStageStatus = Literal["completed", "skipped", "waiting", "failed"]
 RagAgentAgentRole = Literal["retrieval_agent", "assistant_agent"]
+RagAgentOperationalMessageKey = Literal[
+    "agent_trace.query_planned",
+    "agent_trace.sources_resolved",
+    "agent_trace.candidates_found",
+    "agent_trace.relevance_ordered",
+    "agent_trace.context_prepared",
+    "agent_trace.graph_invoked",
+    "agent_trace.answer_prepared",
+    "agent_trace.clarification_requested",
+]
 
 RETRIEVAL_AGENT_NAME = "RAG Agent"
 INTERNAL_RETRIEVAL_IMPLEMENTATION_NAME = "ContextForge"
@@ -42,6 +52,15 @@ class LocalizedRagAgentText:
 
 
 @dataclass(frozen=True)
+class RagAgentOperationalSummary:
+    """Versioned semantic summary of one verified application stage."""
+
+    schema_version: Literal[1]
+    message_key: RagAgentOperationalMessageKey
+    parameters: dict[str, object] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class RagAgentStage:
     """One redacted workflow stage exposed to API/SSE clients."""
 
@@ -52,6 +71,7 @@ class RagAgentStage:
     title: LocalizedRagAgentText
     description: LocalizedRagAgentText
     evidence: dict[str, object] = field(default_factory=dict)
+    operational_summary: RagAgentOperationalSummary | None = None
 
 
 @dataclass(frozen=True)

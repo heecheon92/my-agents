@@ -63,6 +63,7 @@ from my_agents.api.conversations.run_lifecycle import (
     is_run_cancelling,
     persist_completed_run,
     persist_failed_run,
+    reasoning_summary_items_from_graph_state,
     record_retrieval_completed_event,
     start_run,
 )
@@ -70,6 +71,7 @@ from my_agents.api.conversations.serializers import (
     coerce_route,
     knowledge_base_selection_payload,
 )
+from my_agents.api.conversations.sse_contract import conversation_sse_responses
 from my_agents.api.conversations.transcripts import messages_for_conversation, store_user_message
 from my_agents.api.document_workspace import get_document_workspace_provider
 from my_agents.api.reasoning import resolve_reasoning_preferences
@@ -99,7 +101,12 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-@router.post("/{conversation_id}/runs/{run_id}/resume/stream")
+@router.post(
+    "/{conversation_id}/runs/{run_id}/resume/stream",
+    responses=conversation_sse_responses(
+        "Server-Sent Events stream for resuming one paused conversation run."
+    ),
+)
 def stream_resumed_conversation_run(
     conversation_id: str,
     run_id: str,
@@ -158,6 +165,7 @@ def resumed_conversation_run_events(
     graph_invoked = False
     graph_event = None
     delta_sequence = 0
+    reasoning_delta_sequences: dict[str, int] = {}
     streamed_base_reply_parts: list[str] = []
     result: dict[str, Any] | None = None
 
@@ -201,7 +209,14 @@ def resumed_conversation_run_events(
                 yield cancelled_sse_event(db, run.id)
                 delete_checkpoint_thread(graph_runner, run.id)
                 return
-            if item.kind == "delta":
+            if item.kind == "reasoning_delta" and item.stage:
+                sequence = reasoning_delta_sequences.get(item.stage, 0) + 1
+                reasoning_delta_sequences[item.stage] = sequence
+                yield sse_event(
+                    "reasoning_summary_delta",
+                    {"stage": item.stage, "delta": item.delta, "sequence": sequence},
+                )
+            elif item.kind == "delta":
                 delta_sequence += 1
                 streamed_base_reply_parts.append(item.delta)
                 yield sse_event(
@@ -326,6 +341,7 @@ def _finalize_resumed_conversation_run_events(
             selection_context=selection_context,
             insufficient_evidence=True,
             retrieval_evidence=retrieval_context.retrieval_evidence,
+            reasoning_summaries=reasoning_summary_items_from_graph_state(result),
         )
         yield sse_event(
             AgentEventType.ANSWER_COMPOSED.value,
@@ -408,6 +424,7 @@ def _finalize_resumed_conversation_run_events(
         memory_source_snapshot=memory_snapshot,
         document_coverage=document_coverage,
         retrieval_latency_ms=retrieval_context.retrieval_latency_ms,
+        reasoning_summaries=reasoning_summary_items_from_graph_state(result),
     )
     if document_coverage is not None:
         yield sse_event(
@@ -465,23 +482,9 @@ def _failed_resumed_conversation_run_events(
 
 @router.post(
     "/{conversation_id}/runs/stream",
-    responses={
-        200: {
-            "description": (
-                "Server-Sent Events stream with progress, answer_delta, and run_completed events."
-            ),
-            "content": {
-                "text/event-stream": {
-                    "example": (
-                        "event: answer_delta\n"
-                        'data: {"delta":"Hello","sequence":1}\n\n'
-                        "event: run_completed\n"
-                        'data: {"run_id":"...","reply":"Hello"}\n\n'
-                    )
-                }
-            },
-        }
-    },
+    responses=conversation_sse_responses(
+        "Server-Sent Events stream with progress, answer deltas, and run completion."
+    ),
 )
 def stream_conversation_run(
     conversation_id: str,
@@ -645,6 +648,7 @@ def conversation_run_events(
         graph_invoked = False
         graph_event = None
         delta_sequence = 0
+        reasoning_delta_sequences: dict[str, int] = {}
         streamed_base_reply_parts: list[str] = []
         result: dict[str, Any] | None = None
         try:
@@ -691,6 +695,14 @@ def conversation_run_events(
                             graph_payload,
                         )
                         graph_invoked = True
+                    continue
+                if item.kind == "reasoning_delta" and item.stage:
+                    sequence = reasoning_delta_sequences.get(item.stage, 0) + 1
+                    reasoning_delta_sequences[item.stage] = sequence
+                    yield sse_event(
+                        "reasoning_summary_delta",
+                        {"stage": item.stage, "delta": item.delta, "sequence": sequence},
+                    )
                     continue
                 if (
                     retrieval_context is None
@@ -841,6 +853,7 @@ def conversation_run_events(
                 selection_context=retrieval_context.knowledge_base_selection,
                 clarification=clarification,
                 retrieval_evidence=retrieval_context.retrieval_evidence,
+                reasoning_summaries=reasoning_summary_items_from_graph_state(result),
             )
             yield sse_event(
                 AgentEventType.ANSWER_COMPOSED.value,
@@ -871,6 +884,7 @@ def conversation_run_events(
                 selection_context=retrieval_context.knowledge_base_selection,
                 insufficient_evidence=True,
                 retrieval_evidence=retrieval_context.retrieval_evidence,
+                reasoning_summaries=reasoning_summary_items_from_graph_state(result),
             )
             yield sse_event(
                 AgentEventType.ANSWER_COMPOSED.value,
@@ -960,6 +974,7 @@ def conversation_run_events(
             memory_source_snapshot=memory_snapshot,
             document_coverage=document_coverage,
             retrieval_latency_ms=retrieval_context.retrieval_latency_ms,
+            reasoning_summaries=reasoning_summary_items_from_graph_state(result),
         )
         if document_coverage is not None:
             yield sse_event(

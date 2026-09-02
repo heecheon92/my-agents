@@ -41,6 +41,7 @@ class AgentEventType(StrEnum):
     ATTACHMENTS_READY = "attachments_ready"
     DOCUMENT_WORKSPACE_STARTED = "document_workspace_started"
     ARTIFACT_CREATED = "artifact_created"
+    REASONING_SUMMARY_GENERATED = "reasoning_summary_generated"
     ANSWER_COMPOSED = "answer_composed"
     RUN_INTERRUPTED = "run_interrupted"
     RUN_RESUMED = "run_resumed"

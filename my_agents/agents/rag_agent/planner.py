@@ -6,6 +6,7 @@ from my_agents.agents.rag_agent.contracts import (
     ASSISTANT_AGENT_NAME,
     RETRIEVAL_AGENT_NAME,
     LocalizedRagAgentText,
+    RagAgentOperationalSummary,
     RagAgentStage,
     RagAgentWorkflowPlan,
 )
@@ -72,6 +73,14 @@ class DeterministicRagAgentPlanner:
                     "intent": intent,
                     "structured_entity_types": list(structured_entity_types),
                 },
+                operational_summary=RagAgentOperationalSummary(
+                    schema_version=1,
+                    message_key="agent_trace.query_planned",
+                    parameters={
+                        "retrieval_route": retrieval_route,
+                        "document_scope": document_scope,
+                    },
+                ),
             ),
             RagAgentStage(
                 id="source_warden",
@@ -86,6 +95,13 @@ class DeterministicRagAgentPlanner:
                 evidence={
                     "resolved_knowledge_base_count": resolved_knowledge_base_count,
                 },
+                operational_summary=RagAgentOperationalSummary(
+                    schema_version=1,
+                    message_key="agent_trace.sources_resolved",
+                    parameters={
+                        "resolved_knowledge_base_count": resolved_knowledge_base_count,
+                    },
+                ),
             ),
             RagAgentStage(
                 id="candidate_scouts",
@@ -101,6 +117,18 @@ class DeterministicRagAgentPlanner:
                     "candidate_count": candidate_count,
                     "authorized_context_count": authorized_context_count,
                 },
+                operational_summary=(
+                    RagAgentOperationalSummary(
+                        schema_version=1,
+                        message_key="agent_trace.candidates_found",
+                        parameters={
+                            "candidate_count": candidate_count,
+                            "authorized_context_count": authorized_context_count,
+                        },
+                    )
+                    if scout_status == "completed"
+                    else None
+                ),
             ),
             RagAgentStage(
                 id="evidence_judge",
@@ -109,10 +137,19 @@ class DeterministicRagAgentPlanner:
                 status=judge_status,
                 title=LocalizedRagAgentText(en="Evidence Judge", ko="근거 판정"),
                 description=LocalizedRagAgentText(
-                    en=f"Applied {reranker} relevance ordering.",
-                    ko=f"{reranker} 관련도 정렬을 적용했습니다.",
+                    en="Applied relevance ordering.",
+                    ko="관련도 정렬을 적용했습니다.",
                 ),
                 evidence={"reranker": reranker, "candidate_count": candidate_count},
+                operational_summary=(
+                    RagAgentOperationalSummary(
+                        schema_version=1,
+                        message_key="agent_trace.relevance_ordered",
+                        parameters={"candidate_count": candidate_count},
+                    )
+                    if judge_status == "completed"
+                    else None
+                ),
             ),
             RagAgentStage(
                 id="context_curator",
@@ -125,6 +162,19 @@ class DeterministicRagAgentPlanner:
                     ko=f"청크 {injected_count}개를 주입하고 {rejected_count}개를 제외했습니다.",
                 ),
                 evidence=context_curator_evidence,
+                operational_summary=(
+                    RagAgentOperationalSummary(
+                        schema_version=1,
+                        message_key="agent_trace.context_prepared",
+                        parameters={
+                            "injected_count": injected_count,
+                            "rejected_count": rejected_count,
+                            "budget_truncated": budget_truncated,
+                        },
+                    )
+                    if curator_status == "completed"
+                    else None
+                ),
             ),
             RagAgentStage(
                 id="assistant_graph",
@@ -142,6 +192,15 @@ class DeterministicRagAgentPlanner:
                     "answer_mode": answer_mode,
                     "retrieved_chunk_count": retrieved_chunk_count,
                 },
+                operational_summary=(
+                    RagAgentOperationalSummary(
+                        schema_version=1,
+                        message_key="agent_trace.graph_invoked",
+                        parameters={"retrieved_chunk_count": retrieved_chunk_count},
+                    )
+                    if graph_status == "completed"
+                    else None
+                ),
             ),
             RagAgentStage(
                 id="answer_composer",
@@ -160,6 +219,17 @@ class DeterministicRagAgentPlanner:
                     "answer_mode": answer_mode,
                     "clarification_required": clarification_required,
                 },
+                operational_summary=RagAgentOperationalSummary(
+                    schema_version=1,
+                    message_key=(
+                        "agent_trace.clarification_requested"
+                        if clarification_required
+                        else "agent_trace.answer_prepared"
+                    ),
+                    parameters=(
+                        {} if clarification_required else {"citation_count": citation_count}
+                    ),
+                ),
             ),
         )
         return RagAgentWorkflowPlan(

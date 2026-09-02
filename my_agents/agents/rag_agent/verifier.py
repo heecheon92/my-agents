@@ -30,6 +30,29 @@ _UNSAFE_EVIDENCE_KEYS = {
     "snippet",
 }
 _MAX_STRING_EVIDENCE_CHARS = 160
+_OPERATIONAL_MESSAGE_BY_STAGE = {
+    "query_cartographer": "agent_trace.query_planned",
+    "source_warden": "agent_trace.sources_resolved",
+    "candidate_scouts": "agent_trace.candidates_found",
+    "evidence_judge": "agent_trace.relevance_ordered",
+    "context_curator": "agent_trace.context_prepared",
+    "assistant_graph": "agent_trace.graph_invoked",
+    "answer_composer": "agent_trace.answer_prepared",
+}
+_OPERATIONAL_PARAMETER_KEYS = {
+    "agent_trace.query_planned": {"retrieval_route", "document_scope"},
+    "agent_trace.sources_resolved": {"resolved_knowledge_base_count"},
+    "agent_trace.candidates_found": {"candidate_count", "authorized_context_count"},
+    "agent_trace.relevance_ordered": {"candidate_count"},
+    "agent_trace.context_prepared": {
+        "injected_count",
+        "rejected_count",
+        "budget_truncated",
+    },
+    "agent_trace.graph_invoked": {"retrieved_chunk_count"},
+    "agent_trace.answer_prepared": {"citation_count"},
+    "agent_trace.clarification_requested": set(),
+}
 
 
 class DeterministicRagAgentVerifier:
@@ -120,6 +143,29 @@ def _stage_errors(stage: RagAgentStage) -> list[str]:
     if not stage.description.en or not stage.description.ko:
         errors.append(f"{stage.id}: missing localized description")
     errors.extend(_evidence_errors(stage.id, stage.evidence))
+    errors.extend(_operational_summary_errors(stage))
+    return errors
+
+
+def _operational_summary_errors(stage: RagAgentStage) -> list[str]:
+    summary = stage.operational_summary
+    if stage.status == "skipped":
+        return [] if summary is None else [f"{stage.id}: skipped stage has operational summary"]
+    if summary is None:
+        return [f"{stage.id}: missing operational summary"]
+    if summary.schema_version != 1:
+        return [f"{stage.id}: unsupported operational summary version"]
+    expected_message = _OPERATIONAL_MESSAGE_BY_STAGE[stage.id]
+    if stage.id == "answer_composer" and stage.status == "waiting":
+        expected_message = "agent_trace.clarification_requested"
+    errors: list[str] = []
+    if summary.message_key != expected_message:
+        errors.append(f"{stage.id}: unexpected operational summary key {summary.message_key!r}")
+    expected_parameters = _OPERATIONAL_PARAMETER_KEYS.get(summary.message_key)
+    if expected_parameters is None or set(summary.parameters) != expected_parameters:
+        errors.append(f"{stage.id}: invalid operational summary parameters")
+    if not all(isinstance(value, str | int | bool) for value in summary.parameters.values()):
+        errors.append(f"{stage.id}: operational summary parameters must be scalar")
     return errors
 
 

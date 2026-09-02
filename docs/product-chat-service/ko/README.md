@@ -33,6 +33,8 @@
 25. [Run reasoning 설정 계약](./26-run-reasoning-preferences.md)
 26. [Agent와 frontend 사이의 interaction 계약](./27-agent-frontend-interaction-contract.md)
 27. [동적 model-authored reasoning summary 계약](./28-dynamic-reasoning-summary-contract.md)
+28. [임시 conversation file frontend rollout](./29-frontend-document-workspace-rollout.md)
+29. [Rich response rendering과 future agent-UI boundary](./30-rich-response-rendering-and-agent-ui-boundaries.md)
 
 ## 관련 maintenance ledger
 

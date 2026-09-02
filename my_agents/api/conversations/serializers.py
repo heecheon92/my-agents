@@ -27,6 +27,7 @@ from my_agents.conversations.schemas import (
     ConversationRunWarning,
     DocumentCoverageResponse,
     MessageResponse,
+    ReasoningSummaryItem,
 )
 from my_agents.document_workspace.schemas import (
     ConversationArtifactResponse,
@@ -173,6 +174,7 @@ def run_detail_response(db: Session, run: AgentRunModel) -> ConversationRunRespo
             else [citation_response(db, citation) for citation in citations]
         ),
         document_coverage=document_coverage_from_events(events),
+        reasoning_summaries=reasoning_summaries_from_events(events),
         clarification=_run_clarification_request(run),
         agent_trace=agent_trace_steps_from_event_payloads(
             json.loads(event.payload_json) for event in events
@@ -199,6 +201,7 @@ def completed_run_response(
     attachments: list[ConversationAttachmentResponse] | None = None,
     artifacts: list[ConversationArtifactResponse] | None = None,
     document_coverage: DocumentCoverageResponse | None = None,
+    reasoning_summaries: list[ReasoningSummaryItem] | None = None,
 ) -> ConversationRunResponse:
     visible_consulted_pairs = user_visible_citation_pairs(
         citations, consulted_chunks, selection_context=selection_context
@@ -239,6 +242,7 @@ def completed_run_response(
             citation_response(db, citation) for citation, _ in visible_consulted_pairs
         ],
         document_coverage=document_coverage,
+        reasoning_summaries=reasoning_summaries or [],
         attachments=attachments or [],
         artifacts=artifacts or [],
     )
@@ -265,6 +269,23 @@ def document_coverage_from_events(
         except ValueError:
             return None
     return None
+
+
+def reasoning_summaries_from_events(
+    events: list[AgentEventModel],
+) -> list[ReasoningSummaryItem]:
+    """Recover ordered, validated summaries from their dedicated persisted events."""
+    summaries: list[ReasoningSummaryItem] = []
+    for event in events:
+        if event.event_type != "reasoning_summary_generated":
+            continue
+        try:
+            payload = json.loads(event.payload_json)
+            summaries.append(ReasoningSummaryItem.model_validate(payload))
+        except json.JSONDecodeError, ValueError:
+            continue
+    order = {"retrieval_planning": 0, "answer_synthesis": 1}
+    return sorted(summaries, key=lambda item: order[item.stage])
 
 
 def user_visible_citation_pairs(

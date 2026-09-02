@@ -102,6 +102,37 @@ class StreamingSpyGraph:
         }
 
 
+class ReasoningBeforeRetrievalStreamingGraph(StreamingSpyGraph):
+    """Emits the planning explanation before the retrieval-state update."""
+
+    def stream(self, input: dict, **kwargs: Any):  # noqa: A002 - matches LangGraph API
+        rag_update = rag_update_for_spy(input, kwargs)
+        self.calls.append({**input, **rag_update})
+        yield {
+            "type": "updates",
+            "data": {
+                "decide_retrieval_source": {
+                    "retrieval_planning_summary": "I selected focused retrieval."
+                }
+            },
+        }
+        yield {"type": "updates", "data": {"retrieve_rag_context": rag_update}}
+        yield {"type": "messages", "data": (_TextChunk("streamed answer"), {})}
+        yield {
+            "type": "updates",
+            "data": {
+                "classify_request": {
+                    "route": RouteDecision(label="general_assistant", explanation="spy route")
+                },
+                "respond_general": {
+                    "reply": "streamed answer",
+                    "answer_synthesis_summary": "I organized the final answer.",
+                    **rag_update,
+                },
+            },
+        }
+
+
 class CancellingStreamingGraph:
     """Graph spy that simulates a cancel request while the stream is active."""
 
@@ -770,6 +801,10 @@ def test_checkpointed_document_selection_interrupts_and_resumes_same_run(monkeyp
     streamed_completed = next(
         event["data"] for event in resume_events if event["event"] == "run_completed"
     )
+    resume_deltas = [event["data"] for event in resume_events if event["event"] == "answer_delta"]
+    assert len(resume_deltas) > 1
+    assert [event["sequence"] for event in resume_deltas] == list(range(1, len(resume_deltas) + 1))
+    assert "".join(event["delta"] for event in resume_deltas) == streamed_completed["reply"]
     assert streamed_completed["run_id"] == stream_pending["run_id"]
     assert streamed_completed["citations"] == []
     assert {source["document_id"] for source in streamed_completed["consulted_sources"]} == {
@@ -1672,6 +1707,40 @@ def test_streaming_conversation_run_emits_events_and_persists_result(monkeypatch
         "en": "Assistant Graph",
         "ko": "어시스턴트 그래프",
     }
+
+
+def test_streaming_planning_summary_before_retrieval_does_not_fail_run(monkeypatch) -> None:  # noqa: ANN001
+    graph = ReasoningBeforeRetrievalStreamingGraph()
+    client = _client(monkeypatch, graph)
+    _signup_login(client, "stream-planning-summary@example.com")
+    conversation_id = client.post("/conversations", json={"title": "Planning summary"}).json()["id"]
+
+    with client.stream(
+        "POST",
+        f"/conversations/{conversation_id}/runs/stream",
+        json={"message": "Explain this document"},
+    ) as response:
+        assert response.status_code == 200
+        events = _parse_sse(response.read().decode())
+
+    event_names = [event["event"] for event in events]
+    assert event_names[:4] == [
+        "run_started",
+        "user_message_stored",
+        "reasoning_summary_delta",
+        "retrieval_completed",
+    ]
+    assert "run_error" not in event_names
+    completed = events[-1]["data"]
+    assert events[2]["data"] == {
+        "stage": "retrieval_planning",
+        "delta": "I selected focused retrieval.",
+        "sequence": 1,
+    }
+    assert [item["stage"] for item in completed["reasoning_summaries"]] == [
+        "retrieval_planning",
+        "answer_synthesis",
+    ]
 
 
 def test_streaming_ambiguous_document_scope_emits_human_clarification_state(

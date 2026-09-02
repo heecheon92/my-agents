@@ -9,6 +9,8 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    TypeAdapter,
+    ValidationError,
     field_validator,
     model_serializer,
     model_validator,
@@ -91,6 +93,135 @@ class AgentTraceEvidence(BaseModel):
         return {name: value for name, value in serializer(self).items() if value is not None}
 
 
+class QueryPlannedOperationalParameters(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    retrieval_route: RetrievalRoute
+    document_scope: DocumentScope
+
+
+class SourcesResolvedOperationalParameters(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    resolved_knowledge_base_count: int = Field(ge=0)
+
+
+class CandidatesFoundOperationalParameters(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    candidate_count: int = Field(ge=0)
+    authorized_context_count: int = Field(ge=0)
+
+
+class RelevanceOrderedOperationalParameters(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    candidate_count: int = Field(ge=0)
+
+
+class ContextPreparedOperationalParameters(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    injected_count: int = Field(ge=0)
+    rejected_count: int = Field(ge=0)
+    budget_truncated: bool
+
+
+class GraphInvokedOperationalParameters(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    retrieved_chunk_count: int = Field(ge=0)
+
+
+class AnswerPreparedOperationalParameters(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    citation_count: int = Field(ge=0)
+
+
+class NoOperationalParameters(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class QueryPlannedOperationalSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1]
+    message_key: Literal["agent_trace.query_planned"]
+    parameters: QueryPlannedOperationalParameters
+
+
+class SourcesResolvedOperationalSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1]
+    message_key: Literal["agent_trace.sources_resolved"]
+    parameters: SourcesResolvedOperationalParameters
+
+
+class CandidatesFoundOperationalSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1]
+    message_key: Literal["agent_trace.candidates_found"]
+    parameters: CandidatesFoundOperationalParameters
+
+
+class RelevanceOrderedOperationalSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1]
+    message_key: Literal["agent_trace.relevance_ordered"]
+    parameters: RelevanceOrderedOperationalParameters
+
+
+class ContextPreparedOperationalSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1]
+    message_key: Literal["agent_trace.context_prepared"]
+    parameters: ContextPreparedOperationalParameters
+
+
+class GraphInvokedOperationalSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1]
+    message_key: Literal["agent_trace.graph_invoked"]
+    parameters: GraphInvokedOperationalParameters
+
+
+class AnswerPreparedOperationalSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1]
+    message_key: Literal["agent_trace.answer_prepared"]
+    parameters: AnswerPreparedOperationalParameters
+
+
+class ClarificationRequestedOperationalSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1]
+    message_key: Literal["agent_trace.clarification_requested"]
+    parameters: NoOperationalParameters
+
+
+type AgentTraceOperationalSummary = Annotated[
+    QueryPlannedOperationalSummary
+    | SourcesResolvedOperationalSummary
+    | CandidatesFoundOperationalSummary
+    | RelevanceOrderedOperationalSummary
+    | ContextPreparedOperationalSummary
+    | GraphInvokedOperationalSummary
+    | AnswerPreparedOperationalSummary
+    | ClarificationRequestedOperationalSummary,
+    Field(discriminator="message_key"),
+]
+
+_AGENT_TRACE_OPERATIONAL_SUMMARY_ADAPTER = TypeAdapter(AgentTraceOperationalSummary)
+
+
 class AgentTraceStep(BaseModel):
     """Frontend-safe localized trace step without hidden chain-of-thought."""
 
@@ -102,6 +233,18 @@ class AgentTraceStep(BaseModel):
     title: AgentTraceText
     description: AgentTraceText
     evidence: AgentTraceEvidence = Field(default_factory=AgentTraceEvidence)
+    operational_summary: AgentTraceOperationalSummary | None = None
+
+    @field_validator("operational_summary", mode="before")
+    @classmethod
+    def ignore_unknown_operational_summary(cls, value):  # noqa: ANN001, ANN206
+        """Ignore future/invalid optional summaries without dropping the verified step."""
+        if value is None:
+            return None
+        try:
+            return _AGENT_TRACE_OPERATIONAL_SUMMARY_ADAPTER.validate_python(value)
+        except ValidationError:
+            return None
 
 
 class ConversationRunWarning(BaseModel):
@@ -111,6 +254,26 @@ class ConversationRunWarning(BaseModel):
     message: str
     missing_document_ids: list[str] = Field(default_factory=list)
     missing_source_filenames: list[str] = Field(default_factory=list)
+
+
+class ReasoningSummaryItem(BaseModel):
+    """Bounded model-authored explanation kept separate from verified agent trace."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    stage: Literal["retrieval_planning", "answer_synthesis"]
+    text: str = Field(min_length=1, max_length=500)
+    source: Literal["model_generated", "provider_reasoning_summary"]
+
+
+class ReasoningSummaryDeltaEventData(BaseModel):
+    """Transient SSE payload for incremental display only."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    stage: Literal["retrieval_planning", "answer_synthesis"]
+    delta: str = Field(min_length=1)
+    sequence: int = Field(ge=1)
 
 
 class DocumentCoverageResponse(BaseModel):
@@ -209,6 +372,7 @@ class ConversationRunResponse(BaseModel):
     warnings: list[ConversationRunWarning] = Field(default_factory=list)
     clarification: ConversationClarificationRequest | None = None
     agent_trace: list[AgentTraceStep] = Field(default_factory=list)
+    reasoning_summaries: list[ReasoningSummaryItem] = Field(default_factory=list)
     attachments: list[ConversationAttachmentResponse] = Field(default_factory=list)
     artifacts: list[ConversationArtifactResponse] = Field(default_factory=list)
 
@@ -339,6 +503,12 @@ class AnswerComposedEventPayload(KnowledgeSelectionEventPayload):
     agent_trace: list[AgentTraceStep] = Field(default_factory=list)
 
 
+class ReasoningSummaryGeneratedEventPayload(AgentEventPayload):
+    stage: Literal["retrieval_planning", "answer_synthesis"]
+    text: str = Field(min_length=1, max_length=500)
+    source: Literal["model_generated", "provider_reasoning_summary"]
+
+
 class AttachmentsReadyEventPayload(AgentEventPayload):
     attachment_count: int = Field(ge=1)
     total_bytes: int = Field(ge=1)
@@ -432,6 +602,11 @@ class AnswerComposedAgentEventResponse(AgentEventResponseBase):
     payload: AnswerComposedEventPayload
 
 
+class ReasoningSummaryGeneratedAgentEventResponse(AgentEventResponseBase):
+    event_type: Literal["reasoning_summary_generated"]
+    payload: ReasoningSummaryGeneratedEventPayload
+
+
 class AttachmentsReadyAgentEventResponse(AgentEventResponseBase):
     event_type: Literal["attachments_ready"]
     payload: AttachmentsReadyEventPayload
@@ -481,6 +656,7 @@ type AgentEventResponse = Annotated[
     | AttachmentsReadyAgentEventResponse
     | DocumentWorkspaceStartedAgentEventResponse
     | ArtifactCreatedAgentEventResponse
+    | ReasoningSummaryGeneratedAgentEventResponse
     | AnswerComposedAgentEventResponse
     | RunInterruptedAgentEventResponse
     | RunResumedAgentEventResponse

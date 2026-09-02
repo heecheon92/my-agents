@@ -116,7 +116,7 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
 - Server-owned conversations, listed newest-first for frontend sidebar recency.
 - Persisted user and assistant messages.
 - Conversation run endpoint applies deterministic retrieval routing before invoking the current graph.
-- SSE conversation-run stream emits redacted progress events, retrieval-route/answer-mode metadata, compact localized ko/en `agent_trace` steps, `answer_delta` assistant text chunks, and a final run response.
+- SSE conversation-run stream emits redacted progress events, retrieval-route/answer-mode metadata, compact localized ko/en `agent_trace` steps, real ordinary-provider `answer_delta` chunks, and a final run response aggregated from those same chunks.
 - Assistant-message replay now also supports an SSE stream path, so regeneration can show live progress and answer deltas while preserving the old transcript unless the replay completes successfully.
 - Run summaries and run activity events are persisted and readable.
 - Persisted activity events use a closed, `event_type`-discriminated OpenAPI union;
@@ -432,13 +432,19 @@ Earlier hosted smoke status on 2026-06-03:
 
 ### Agent/product behavior
 
-- Product conversation runs support SSE progress streaming and incremental `answer_delta` assistant text events.
-- The immediate next backend task is a dynamic model-authored reasoning-summary channel. Current
-  `agent_trace` accurately reports verified execution but cannot explain why Luna or Sol selected a
-  request-specific approach; reasoning mode/effort expose computation settings only. The proposed
-  nullable `reasoning_summaries`, `reasoning_summary_delta`, and persisted summary event must stay
-  separate from final answer text, verified trace, and evidence. See
+- Product conversation runs support SSE progress streaming and incremental `answer_delta` assistant text events. Ordinary OpenAI-backed answers call `ChatOpenAI.stream()`; deterministic fallback and comprehensive-document disclosure paths may still buffer by design.
+- Dynamic model-authored reasoning summaries are implemented as a separate trust channel. Luna's
+  bounded retrieval-planning explanation and Sol's provider summary are returned through nullable
+  `reasoning_summaries`, streamed through `reasoning_summary_delta`, and reconstructed from
+  persisted summary events. They remain separate from final answer text, verified trace, and
+  evidence. See
   [`28-dynamic-reasoning-summary-contract.md`](./product-chat-service/en/28-dynamic-reasoning-summary-contract.md).
+- The temporary document-workspace backend is implemented, but the frontend currently exposes no
+  conversation attachment, consent, `attachment_ids`, or generated-artifact workflow. This is the
+  immediate cross-repository product gap; durable knowledge-base upload is a different feature.
+- Assistant responses persist Markdown and the frontend renders ordinary Markdown, but fenced
+  Mermaid remains code rather than a diagram. Safe Mermaid is the first rich-renderer milestone;
+  AG-UI and A2UI remain future edge adapters and do not replace Product DB domain contracts.
 - Known near-future gap: streamed run execution is still coupled to the client HTTP/SSE request. If the client disconnects before `run_completed`, the assistant response may never be persisted; durable server-owned/background run execution is required.
 - Completed conversation runs can be refetched with persisted reply, route, and citations.
 - `uv run python -m scripts.local_demo_seed` seeds a verified local demo user, text document, and extraction run for file-backed SQLite demos.
@@ -478,25 +484,31 @@ Earlier hosted smoke status on 2026-06-03:
 
 ## Recommended next workflow
 
-### Immediate next task: dynamic model-authored reasoning summaries
+### Immediate: expose temporary conversation files in the frontend
 
-1. Verify current GPT-5.6 / `langchain-openai` final and streaming reasoning-summary shapes through
-   mocked compatibility tests plus one bounded credentialed spike.
-2. Add a closed, nullable, length-bounded `reasoning_summaries` response contract with
-   `retrieval_planning` and `answer_synthesis` stages.
-3. Keep Luna's user-displayable retrieval rationale strictly separate from its trusted tool choice,
-   and keep Sol provider summary blocks separate from `reply` / `answer_delta`.
-4. Add typed SSE delta and persisted refresh/replay behavior without weakening the current control-
-   token and chain-of-thought filters.
-5. Prove redaction, prompt-injection resistance, system-knowledge/authorization boundaries, empty
-   summary fallback, deterministic-mode behavior, ordering, and output-budget/cost accounting.
-6. Publish hosted OpenAPI before asking the sibling frontend to render “AI 작업 과정 요약” beside,
-   but never as a replacement for, the verified execution trace.
+The backend document workspace is implemented but product-inaccessible. The frontend needs served
+capability models, exact BFF routes, composer-local attachment state, provider-transfer consent,
+`attachment_ids` on runs, refresh-safe metadata, and certified artifact downloads. Keep temporary
+conversation files visibly distinct from durable knowledge-base ingestion and preserve guest,
+expiry, ownership, output-certification, billing, and no-empty-conversation boundaries.
 
-The rationale and definition of done are authoritative in
-[`28-dynamic-reasoning-summary-contract.md`](./product-chat-service/en/28-dynamic-reasoning-summary-contract.md).
+The rollout sequence and definition of done are authoritative in
+[`29-frontend-document-workspace-rollout.md`](./product-chat-service/en/29-frontend-document-workspace-rollout.md).
 
-### Next retrieval move: tokenizer-aware retrieval and embedding-index safety
+### Next: rich response rendering, starting with Mermaid
+
+Add secure, lazy, accessible Mermaid rendering at the existing `react-markdown` code-block boundary.
+Render only completed fences, isolate parse/render failures, preserve Markdown as the durable
+copy/replay fallback, verify theme/mobile/accessibility behavior, and measure bundle cost before
+accepting a dependency. AG-UI remains a future REST/SSE transport adapter; A2UI remains a future
+declarative component boundary under a closed application-owned catalog. Neither is required for
+the Mermaid slice.
+
+The architecture, security constraints, protocol boundaries, and definition of done are
+authoritative in
+[`30-rich-response-rendering-and-agent-ui-boundaries.md`](./product-chat-service/en/30-rich-response-rendering-and-agent-ui-boundaries.md).
+
+### Following retrieval move: tokenizer-aware retrieval and embedding-index safety
 
 The next RAG correctness milestone is not to force one tokenizer across every model. It is to keep
 each model paired with its own tokenizer while preventing silent reranker truncation and incompatible
@@ -625,6 +637,7 @@ limits.
 
 | Date | Milestone | Evidence |
 | --- | --- | --- |
+| 2026-09-02 | Replaced the ordinary final responder's blocking `ChatOpenAI.invoke()` call with real provider chunk streaming, while aggregating the same chunks for final reply/reasoning-summary persistence and preserving normal/resume/replay transport parity. | `my_agents/agents/general_assistant/responders.py`; `my_agents/api/conversations/graph_streaming.py`; `tests/test_responders.py`; `tests/test_graph_streaming.py`; normal/resume/replay SSE tests; bounded live compatibility smoke; bilingual README and streaming docs; learning regression note. |
 | 2026-08-31 | Replaced broad default document HITL with authorization-first exact resolution, a bounded ranked shortlist, two private same-run filename refinements, and broad browsing only as the final fallback. Preserved V1 waiting checkpoints and fixed repeated-resume interrupt collection. | Interaction V2 schemas; retrieval resolver; general-assistant graph; conversation run/resume endpoints; `tests/test_interaction_contract.py`; `tests/test_graph.py`; `tests/test_full_document_retrieval.py`; `tests/test_conversations_api.py`; bilingual interaction contract and README pairs. |
 | 2026-08-25 | Fixed valid many-small-chunk full-document reads so the 100-citation ceiling no longer erases all provenance. The runtime validates up to 2,000 overlapping chunks and retains 100 evenly distributed citations; the reported 190-chunk Markdown document now completes from first through last chunk. | `my_agents/knowledge/retrieval.py`; `my_agents/knowledge/routing.py`; `tests/test_full_document_retrieval.py`; RAG Agent README/changelog pair; permission-aware RAG docs; learning note 16. |
 | 2026-08-24 | Completed the first semantic-intent full-document retrieval vertical slice and added fixed Luna standard/low RAG tool selection: one authorized user-selectable target, complete small-document reads, honest first-range coverage for large documents, typed coverage/event contracts, exact-target replay, checkpoint-safe response composition, and deterministic/provider-failure fallback. Automatic multi-range synthesis, adaptive surrounding-context expansion, and token-aware budgeting remain separate roadmap work. | `my_agents/agents/rag_agent/tool_selection.py`; `my_agents/agents/general_assistant/graph.py`; `my_agents/agents/general_assistant/rag_retrieval.py`; `my_agents/agents/rag_agent/retrieval.py`; `my_agents/knowledge/retrieval.py`; conversation schemas/events/serializers; `tests/test_rag_agent_tool_selection.py`; `tests/test_full_document_retrieval.py`; settings/env/docs. |

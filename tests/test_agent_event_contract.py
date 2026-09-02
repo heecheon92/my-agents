@@ -4,6 +4,7 @@ import json
 
 from my_agents.api.conversations.run_events import event_response
 from my_agents.conversations.models import AgentEventModel, AgentEventType
+from my_agents.conversations.schemas import AgentTraceStep
 
 
 def test_event_response_strips_uncontracted_and_nested_unsafe_fields() -> None:
@@ -75,3 +76,54 @@ def test_full_document_event_exposes_coverage_but_strips_body_and_cursor() -> No
     assert payload["end_offset"] == 12000
     assert "content" not in payload
     assert "next_cursor" not in payload
+
+
+def test_reasoning_summary_event_exposes_only_bounded_public_item() -> None:
+    event = AgentEventModel(
+        id="event-summary",
+        run_id="run-summary",
+        sequence=4,
+        event_type=AgentEventType.REASONING_SUMMARY_GENERATED.value,
+        payload_json=json.dumps(
+            {
+                "stage": "answer_synthesis",
+                "text": "I grouped the authorized evidence by topic.",
+                "source": "provider_reasoning_summary",
+                "raw_reasoning": "must not escape storage",
+                "provider_trace": {"secret": "must not escape storage"},
+            }
+        ),
+    )
+
+    response = event_response(event).model_dump(mode="json", exclude_none=True)
+
+    assert response["event_type"] == "reasoning_summary_generated"
+    assert response["payload"] == {
+        "stage": "answer_synthesis",
+        "text": "I grouped the authorized evidence by topic.",
+        "source": "provider_reasoning_summary",
+    }
+
+
+def test_unknown_operational_summary_is_ignored_without_dropping_verified_step() -> None:
+    step = AgentTraceStep.model_validate(
+        {
+            "id": "evidence_judge",
+            "event_type": "retrieval_completed",
+            "status": "completed",
+            "title": {"en": "Evidence Judge", "ko": "근거 판정"},
+            "description": {
+                "en": "Applied relevance ordering.",
+                "ko": "관련도 정렬을 적용했습니다.",
+            },
+            "evidence": {"candidate_count": 2},
+            "operational_summary": {
+                "schema_version": 2,
+                "message_key": "agent_trace.future_summary",
+                "parameters": {"future": True},
+            },
+        }
+    )
+
+    assert step.id == "evidence_judge"
+    assert step.operational_summary is None

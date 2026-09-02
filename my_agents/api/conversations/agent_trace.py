@@ -219,6 +219,7 @@ def _stage_by_id(stage_id: str, **kwargs: Any) -> RagAgentStage:
 
 
 def _stage_to_trace_step(stage: RagAgentStage, *, event_type: str) -> AgentTraceStep:
+    operational_summary = stage.operational_summary
     return AgentTraceStep(
         id=stage.id,
         event_type=event_type,
@@ -226,6 +227,15 @@ def _stage_to_trace_step(stage: RagAgentStage, *, event_type: str) -> AgentTrace
         title=AgentTraceText(en=stage.title.en, ko=stage.title.ko),
         description=AgentTraceText(en=stage.description.en, ko=stage.description.ko),
         evidence=stage.evidence,
+        operational_summary=(
+            {
+                "schema_version": operational_summary.schema_version,
+                "message_key": operational_summary.message_key,
+                "parameters": operational_summary.parameters,
+            }
+            if operational_summary is not None
+            else None
+        ),
     )
 
 

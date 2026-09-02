@@ -253,7 +253,7 @@ This is the product-facing equivalent of repo-local `AGENTS.md`: durable Markdow
 - [x] Redacted event payloads for frontend-safe activity display.
 - [x] Deterministic eval helper module for grounding, leakage, redaction, and latency budgets.
 - [x] Tests for event ordering and redaction behavior.
-- [ ] **Immediate next task — dynamic model-authored reasoning summaries.** Add bounded nullable
+- [x] **Dynamic model-authored reasoning summaries.** Added bounded nullable
   `retrieval_planning` and `answer_synthesis` summaries, typed summary SSE/persistence, and
   refresh/replay reconstruction while keeping final answer text, verified `agent_trace`, and
   evidence separate. Raw chain-of-thought, prompts, provider traces, hidden provenance,
@@ -299,6 +299,17 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
 - [x] Add backend-only V1 API smoke command for health, auth, ingest, SSE, citations, and events.
 - [x] Add refresh-safe completed run detail for persisted citations/reply.
 - [x] Add streaming contract for chat UX.
+- [ ] **Immediate cross-repository task — expose temporary conversation files in the frontend.**
+  Wire the implemented document-workspace capability into the BFF and chat composer with served
+  capability gating, per-upload provider consent, attachment lifecycle/recovery, `attachment_ids`,
+  certified spreadsheet artifacts, honest expiry, and clear separation from durable knowledge-base
+  uploads. See
+  [`29-frontend-document-workspace-rollout.md`](./docs/product-chat-service/en/29-frontend-document-workspace-rollout.md).
+- [ ] **Next cross-repository task — enrich assistant response rendering.** Add secure, lazy,
+  accessible Mermaid rendering for completed fenced blocks while preserving Markdown source and
+  safe failure fallback. Treat AG-UI as a future transport adapter and A2UI as a future declarative
+  renderer boundary; neither is a dependency for the Mermaid milestone. See
+  [`30-rich-response-rendering-and-agent-ui-boundaries.md`](./docs/product-chat-service/en/30-rich-response-rendering-and-agent-ui-boundaries.md).
 - [ ] Add OpenAPI/client generation workflow if useful.
 - [x] Hosted frontend/backend auth verification path works after adding `/verify-email` and `/password-reset` frontend landing pages.
 
@@ -324,19 +335,37 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
 
 ## 13. Near-term recommended sequence
 
-0. **Immediate next task — dynamic model-authored reasoning summaries**
-   - Preserve three distinct trust channels: model-authored approach summaries, verified
-     `agent_trace`, and evidence/citations.
-   - Add nullable bounded summaries for Luna retrieval planning and Sol answer synthesis.
-   - Request and parse provider summaries without allowing reasoning blocks into `reply` or
-     `answer_delta`.
-   - Add typed summary SSE/persistence, refresh/replay recovery, redaction, authorization,
-     prompt-injection, ordering, empty-summary, deterministic-mode, and cost-accounting tests.
-   - Publish hosted OpenAPI before frontend work. Use
-     [`28-dynamic-reasoning-summary-contract.md`](./docs/product-chat-service/en/28-dynamic-reasoning-summary-contract.md)
-     as the rationale and definition of done.
+0. **Frontend support for temporary conversation files**
+   - Keep the implemented backend document-workspace contract unchanged unless live integration
+     exposes a concrete gap.
+   - Generate frontend capability, attachment, artifact, and run models from served OpenAPI; add
+     exact BFF routes and authenticated download handling.
+   - Add composer-local staging, explicit OpenAI transfer consent, upload/delete/retry state,
+     refresh recovery, and selected `attachment_ids` on streamed runs.
+   - Present certified spreadsheet artifacts with expiry-aware downloads, while promising analysis
+     only for formats without certified editing fidelity.
+   - Preserve the bare `/chat` no-empty-conversation invariant and test first-file/first-message
+     creation as one flow.
+   - Stop when eligible registered users can complete attach -> ask/analyze or transform -> download,
+     with guest/disabled/error/expiry/mobile paths verified. Use
+     [`29-frontend-document-workspace-rollout.md`](./docs/product-chat-service/en/29-frontend-document-workspace-rollout.md).
 
-1. **Tokenizer-aware retrieval and embedding-index safety**
+1. **Rich assistant response rendering, starting with Mermaid**
+   - Audit the existing `react-markdown` code-block boundary, streaming fences, sanitization, theme,
+     copy, and mobile behavior.
+   - Measure full Mermaid versus Mermaid Tiny and dynamic loading before approving a dependency.
+   - Render only completed `mermaid` fences through a bounded client leaf using strict security,
+     accessible text/source fallback, error isolation, theme support, and responsive sizing.
+   - Keep persisted Markdown as the durable transcript and copy/export source; rendered SVG remains
+     derived frontend state.
+   - Define a maintained renderer-catalog seam. Do not adopt AG-UI or A2UI in this milestone.
+   - Evaluate AG-UI later only as a transport adapter, and A2UI later only for a concrete dynamic
+     declarative component use case under a closed application-owned catalog.
+   - Stop when valid diagrams render after the closing fence, malformed/oversized diagrams cannot
+     damage the answer, and streaming/theme/accessibility/mobile/bundle evidence passes. Use
+     [`30-rich-response-rendering-and-agent-ui-boundaries.md`](./docs/product-chat-service/en/30-rich-response-rendering-and-agent-ui-boundaries.md).
+
+2. **Tokenizer-aware retrieval and embedding-index safety**
    - Keep the committed `BAAI/bge-reranker-v2-m3` direction for Korean/multilingual reranking and remove the MS MARCO override from the intended runtime before evaluation.
    - Add Korean, English, and code retrieval fixtures, then record relevance, latency, memory, and reranker window/truncation evidence.
    - Add model-tokenizer-aware query/document windows so the reranker never silently discards relevant tail content from an over-limit pair.
@@ -346,7 +375,7 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
    - Stop when multilingual/code reranker fixtures preserve relevant evidence, the BAAI candidate has measured runtime evidence, incompatible embedding spaces cannot be compared, existing data has an explicit migration decision, and permission-first/offline tests remain green.
    - Use [`docs/learning/project-notes/tokenizer-consistency-audit-and-rag-index-safety.md`](./docs/learning/project-notes/tokenizer-consistency-audit-and-rag-index-safety.md) as the analysis and acceptance note.
 
-2. **Internal performance / quality analysis baseline**
+3. **Internal performance / quality analysis baseline**
    - Enable `MY_AGENTS_METRICS_ENABLED=true` only in local, staging, or trusted internal runs.
    - Use `/metrics` to compare request, conversation, ContextForge, retrieval-phase, embedding, reranker, and graph p95 before changing retrieval behavior.
    - Keep labels redacted and low-cardinality; do not turn metrics into a frontend product API.
@@ -355,7 +384,7 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
    - Evaluate Langfuse vs LangSmith for LLM-specific latency, token/cost, trace, eval, and prompt/version metrics.
    - Add OpenTelemetry traces only after aggregate latency shows where per-request waterfalls are needed.
 
-3. **Controlled alpha deploy smoke and tester handoff**
+4. **Controlled alpha deploy smoke and tester handoff**
    - Deploy backend and frontend together after the latest nickname, invite-only group, publish-review, and route-addressable Groups changes.
    - Run hosted smoke: signup with nickname -> email verification/approval as configured -> login -> group invitation/acceptance -> small document upload/ingest -> publish request review/approval -> cited group-knowledge chat.
    - Keep permanent redacted `DEPLOY_DIAG` logs available for hosted smoke/debug; tune noisy call sites only if needed.

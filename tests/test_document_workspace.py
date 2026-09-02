@@ -290,7 +290,11 @@ def test_openai_adapter_uses_network_disabled_container_and_hosted_shell() -> No
     assert calls["container"]["memory_limit"] == "1g"
     assert calls["container"]["skills"][0]["skill_id"] == "openai-spreadsheets"
     assert calls["response"]["model"] == "gpt-5.6-sol"
-    assert calls["response"]["reasoning"] == {"mode": "pro", "effort": "max"}
+    assert calls["response"]["reasoning"] == {
+        "mode": "pro",
+        "effort": "max",
+        "summary": "auto",
+    }
     assert calls["response"]["tools"] == [
         {
             "type": "shell",

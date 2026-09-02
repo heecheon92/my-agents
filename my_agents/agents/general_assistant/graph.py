@@ -71,6 +71,8 @@ class AssistantState(TypedDict, total=False):
     retrieval_source_decision: RetrievalSourceDecision
     rag_retrieval_tool: str
     rag_retrieval_tool_reason: str
+    retrieval_planning_summary: str
+    answer_synthesis_summary: str
     rag_halt_before_response: bool
     retrieval_route: RetrievalRoute
     answer_mode: AnswerMode
@@ -167,6 +169,11 @@ def decide_retrieval_source(
         "retrieval_source_decision": decision,
         "rag_retrieval_tool": tool_decision.tool,
         "rag_retrieval_tool_reason": tool_decision.reason,
+        **(
+            {"retrieval_planning_summary": tool_decision.approach_summary}
+            if tool_decision.approach_summary
+            else {}
+        ),
         "full_document_requested": tool_decision.comprehensive,
     }
 
@@ -341,8 +348,37 @@ def _compose_reply(
                 artifact.model_dump(mode="json") for artifact in result.artifacts
             ],
             "document_workspace_expires_at": result.workspace_expires_at.isoformat(),
+            **(
+                {"answer_synthesis_summary": result.reasoning_summary}
+                if result.reasoning_summary
+                else {}
+            ),
         }
-    reply = get_response_provider().compose_reply(
+    provider = get_response_provider()
+    compose_result = getattr(provider, "compose_result", None)
+    if callable(compose_result):
+        result = compose_result(
+            messages=state.get("messages", []),
+            route=route,
+            capability=state["capability"],
+            guidance=guidance,
+            retrieved_context=retrieved_context,
+            memory_context=state.get("memory_context", []),
+            source_conflicts=state.get("source_conflicts", []),
+            answer_mode=state.get("answer_mode", "general_knowledge"),
+            debug_empty_response=state.get("debug_empty_openai_response", False),
+            reasoning_mode=reasoning_mode,
+            reasoning_effort=reasoning_effort,
+        )
+        return {
+            "reply": result.reply,
+            **(
+                {"answer_synthesis_summary": result.reasoning_summary}
+                if result.reasoning_summary
+                else {}
+            ),
+        }
+    reply = provider.compose_reply(
         messages=state.get("messages", []),
         route=route,
         capability=state["capability"],

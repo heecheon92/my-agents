@@ -472,6 +472,7 @@ class SqlAlchemyDocumentWorkspaceRuntime:
             reply=execution.output_text,
             artifacts=artifacts,
             workspace_expires_at=workspace.expires_at,
+            reasoning_summary=execution.reasoning_summary,
         )
 
     def _ensure_workspace(self) -> DocumentWorkspaceModel:

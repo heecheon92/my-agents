@@ -13,6 +13,8 @@ from my_agents.agents.rag_agent import (
     DeterministicRagAgentVerifier,
     invoke_rag_agent_graph,
 )
+from my_agents.agents.rag_agent.contracts import RagAgentOperationalSummary
+from my_agents.api.conversations.agent_trace import _stage_to_trace_step
 from my_agents.api.conversations.run_lifecycle import _verified_grounding_or_fallback
 from my_agents.knowledge.retrieval import RetrievedChunk
 from my_agents.knowledge.routing import RetrievalRoutingDecision
@@ -41,7 +43,45 @@ def test_rag_agent_planner_uses_rag_agent_as_public_retrieval_agent() -> None:
     assert plan.stages[2].status == "completed"
     assert plan.stages[4].evidence == {"injected_count": 3, "rejected_count": 5}
     assert plan.stages[0].title.ko == "질문 지도화"
+    evidence_judge = plan.stages[3]
+    assert evidence_judge.id == "evidence_judge"
+    assert evidence_judge.description.en == "Applied relevance ordering."
+    assert evidence_judge.description.ko == "관련도 정렬을 적용했습니다."
+    assert evidence_judge.evidence["reranker"] == "deterministic"
+    assert "deterministic" not in evidence_judge.description.en
+    assert "deterministic" not in evidence_judge.description.ko
+    assert evidence_judge.operational_summary == RagAgentOperationalSummary(
+        schema_version=1,
+        message_key="agent_trace.relevance_ordered",
+        parameters={"candidate_count": 8},
+    )
+    assert plan.stages[0].operational_summary == RagAgentOperationalSummary(
+        schema_version=1,
+        message_key="agent_trace.query_planned",
+        parameters={
+            "retrieval_route": "retrieval_required",
+            "document_scope": "user_documents",
+        },
+    )
     assert DeterministicRagAgentVerifier().verify(plan).passed is True
+
+
+def test_rag_agent_planner_keeps_cross_encoder_mode_out_of_display_copy() -> None:
+    plan = DeterministicRagAgentPlanner().plan(
+        retrieval_route="retrieval_required",
+        answer_mode="document_grounded",
+        document_scope="user_documents",
+        resolved_knowledge_base_count=1,
+        candidate_count=3,
+        reranker="cross_encoder",
+    )
+
+    evidence_judge = plan.stages[3]
+    assert evidence_judge.evidence["reranker"] == "cross_encoder"
+    assert evidence_judge.description.en == "Applied relevance ordering."
+    assert evidence_judge.description.ko == "관련도 정렬을 적용했습니다."
+    assert "cross_encoder" not in evidence_judge.description.en
+    assert "cross_encoder" not in evidence_judge.description.ko
 
 
 def test_rag_agent_graph_returns_verified_plan() -> None:
@@ -61,6 +101,23 @@ def test_rag_agent_graph_returns_verified_plan() -> None:
     assert DeterministicRagAgentVerifier().verify(plan).passed is True
 
 
+def test_operational_summary_reaches_the_public_trace_step() -> None:
+    plan = DeterministicRagAgentPlanner().plan(
+        retrieval_route="retrieval_required",
+        answer_mode="document_grounded",
+        document_scope="user_documents",
+        resolved_knowledge_base_count=2,
+    )
+
+    step = _stage_to_trace_step(plan.stages[1], event_type="retrieval_completed")
+
+    assert step.model_dump(mode="json")["operational_summary"] == {
+        "schema_version": 1,
+        "message_key": "agent_trace.sources_resolved",
+        "parameters": {"resolved_knowledge_base_count": 2},
+    }
+
+
 def test_rag_agent_planner_marks_retrieval_stages_skipped_for_general_answer() -> None:
     plan = DeterministicRagAgentPlanner().plan(
         retrieval_route="no_retrieval",
@@ -76,6 +133,9 @@ def test_rag_agent_planner_marks_retrieval_stages_skipped_for_general_answer() -
     assert statuses["context_curator"] == "skipped"
     assert statuses["assistant_graph"] == "completed"
     assert statuses["answer_composer"] == "completed"
+    assert plan.stages[2].operational_summary is None
+    assert plan.stages[3].operational_summary is None
+    assert plan.stages[4].operational_summary is None
     assert DeterministicRagAgentVerifier().verify(plan).errors == ()
 
 
@@ -95,6 +155,31 @@ def test_rag_agent_verifier_rejects_unsafe_trace_evidence() -> None:
 
     assert result.passed is False
     assert "query_cartographer: unsafe evidence key 'prompt'" in result.errors
+
+
+def test_rag_agent_verifier_rejects_invalid_operational_summary_contract() -> None:
+    plan = DeterministicRagAgentPlanner().plan(
+        retrieval_route="retrieval_required",
+        answer_mode="document_grounded",
+        document_scope="user_documents",
+        resolved_knowledge_base_count=1,
+        candidate_count=2,
+        injected_count=1,
+    )
+    invalid_stage = replace(
+        plan.stages[3],
+        operational_summary=RagAgentOperationalSummary(
+            schema_version=1,
+            message_key="agent_trace.relevance_ordered",
+            parameters={"candidate_count": 2, "reranker": "cross_encoder"},
+        ),
+    )
+    invalid_plan = replace(plan, stages=(*plan.stages[:3], invalid_stage, *plan.stages[4:]))
+
+    result = DeterministicRagAgentVerifier().verify(invalid_plan)
+
+    assert result.passed is False
+    assert "evidence_judge: invalid operational summary parameters" in result.errors
 
 
 def test_grounding_verifier_accepts_required_rag_with_relevant_consulted_source() -> None:
