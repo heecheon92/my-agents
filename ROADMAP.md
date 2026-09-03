@@ -340,6 +340,12 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
   RAG Agent. Natural-language activation, an optional frontend format control, ambiguity handling,
   and credit limits remain open decisions. See the deferred extension in
   [`25-openai-document-workspace.md`](./docs/product-chat-service/en/25-openai-document-workspace.md).
+- [ ] **Deferred:** Preserve OpenAI Responses API assistant phases as provider-boundary
+  compatibility work rather than a frontend feature: user messages omit phase, intermediate
+  `commentary` stays separate from the completed `final_answer`, and manual assistant-history replay
+  preserves phase unless a separately approved `previous_response_id` design owns continuation.
+  Current intent, integration options, triggers, and acceptance requirements are recorded in
+  [`openai-responses-assistant-phase.md`](./docs/idea/openai-responses-assistant-phase.md).
 - [ ] Add OpenAPI/client generation workflow if useful.
 - [x] Hosted frontend/backend auth verification path works after adding `/verify-email` and `/password-reset` frontend landing pages.
 

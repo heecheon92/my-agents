@@ -524,6 +524,18 @@ an explicit frontend format control, ambiguity handling, account-credit limits, 
 choice remain owner decisions. See the deferred extension in
 [`25-openai-document-workspace.md`](./product-chat-service/en/25-openai-document-workspace.md).
 
+### Deferred: Responses API assistant phase round-tripping
+
+Keep the current answer, reasoning-summary, trace, citation, and SSE user experience unchanged.
+Before expanding provider-managed or tool-heavy answer flows, revisit OpenAI Responses API
+assistant-message `phase`: user messages must not receive it; `commentary` must not be mistaken for
+the completed answer; `final_answer` is the only phase that should enter normal answer streaming and
+transcript persistence; and manually replayed assistant history must preserve phase values. The
+ordinary provider currently replays plain assistant text without `phase`, does not use
+`previous_response_id`, and does not filter output text by phase. This is acknowledged but not
+scheduled. Intent, current behavior, adoption triggers, and acceptance requirements are recorded in
+[`openai-responses-assistant-phase.md`](./idea/openai-responses-assistant-phase.md).
+
 ### Following retrieval move: tokenizer-aware retrieval and embedding-index safety
 
 The next RAG correctness milestone is not to force one tokenizer across every model. It is to keep
