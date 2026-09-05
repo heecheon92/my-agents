@@ -15,7 +15,7 @@ from my_agents.agents.rag_agent import (
 )
 from my_agents.agents.rag_agent.contracts import RagAgentOperationalSummary
 from my_agents.api.conversations.agent_trace import _stage_to_trace_step
-from my_agents.api.conversations.run_lifecycle import _verified_grounding_or_fallback
+from my_agents.api.conversations.answer_finalization import _verified_grounding_or_fallback
 from my_agents.knowledge.retrieval import RetrievedChunk
 from my_agents.knowledge.routing import RetrievalRoutingDecision
 

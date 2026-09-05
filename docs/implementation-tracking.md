@@ -487,6 +487,7 @@ Earlier hosted smoke status on 2026-06-03:
 ## Maintenance cycle — active, not integrated
 
 Atomic run admission is implemented on `fix/atomic-run-admission`; migration `20260905_0034` and concurrent-connection validation are required before rollout.
+Shared answer preparation is implemented on `refactor/answer-finalization`; public behavior, event order and transaction ownership are preserved.
 Commit/merge and deployment evidence remain separate from local verification.
 
 ## Recommended next workflow
