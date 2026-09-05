@@ -1,8 +1,13 @@
-# Near-term implementation goal: Upstage-backed layout-aware ingestion
+# Proposed ingestion extension: Upstage-backed layout-aware parsing
 
-Status: proposed near implementation goal  
+Status: proposed ingestion extension; not the immediate implementation task
+
 Created: 2026-06-07  
 Owner intent: make document ingestion production-realistic without losing offline/local fallbacks
+
+Reviewed 2026-09-05: local Office/PDF parsers and some parse artifacts exist, but the provider
+integration and original-file retention described here are not complete. This remains a plan,
+not a completion record. Sequence follows [implementation tracking](../implementation-tracking.md#recommended-next-workflow).
 
 ## Goal
 

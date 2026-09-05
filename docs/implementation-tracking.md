@@ -3,7 +3,8 @@
 Last updated: 2026-09-05
 Status owner: repo-tracked source of truth for cross-machine agent handoff
 
-This file exists because `.omx/` is local runtime state and is not shared across machines. When working with an agent on any machine, start here before re-discovering project status from the codebase.
+This is the portable implementation/status record, independent of machine-local agent sessions.
+Start here before re-discovering project status from the codebase.
 
 Use this file to answer: **"What should we do next?"** without first re-reading the whole codebase. For detailed backlog coverage, use [`../ROADMAP.md`](../ROADMAP.md) as the companion checklist.
 
@@ -13,7 +14,7 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 - `ROADMAP.md` is the detailed roadmap/checklist backlog: broader v1 scope, deferred items, and definition of done.
 - If both files mention the same item, this file decides current priority and freshness; update `ROADMAP.md` afterward so the checklist does not drift.
 - `docs/README.md` is the documentation router and full lifecycle policy. Substantive terminal initiative detail moves to `docs/completed/<initiative-slug>.md`; those records preserve history but never own current status.
-- If `.omx/` and this file disagree, treat this file as the portable baseline and `.omx/` as machine-local context only.
+- Machine-local agent sessions and temporary handoffs do not override this portable baseline.
 
 ## How to use this file
 
@@ -27,6 +28,19 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 - Do not use this file for secrets, local `.env` values, or machine-specific runtime state.
 
 ## Current overall status
+
+As of 2026-09-05, the implemented baseline includes the General Assistant/RAG Agent split,
+permission-first hybrid and bounded full-document retrieval, selective citation attribution,
+reasoning summaries, PostgreSQL-backed HITL, and optional document-workspace APIs. The released
+frontend includes source-choice interactions, workspace controls, and Mermaid rendering.
+The owner confirmed immediate authenticated chat recovery after the pool hotfix; complete
+feature-level/longer-idle production verification and stronger automated release gates remain open.
+See the recommended workflow and completion index for current priorities and delivered scope.
+
+### Historical maturity estimates
+
+The estimates below are retained from the earlier product-review snapshot. They have not been
+recomputed for the September release and are not current completion metrics or release gates.
 
 | Scope | Status | Completion estimate | Notes |
 | --- | --- | ---: | --- |
@@ -150,14 +164,15 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
 - ContextForge remains the delegated permission-first retrieval engine behind that boundary, with a thin LangGraph RetrievalGraph wrapper over deterministic query planning, source-boundary handoff, independent vector and request-local `BM25Okapi` lexical rankings, `chunk_id`-keyed RRF fusion (`k=60`), deterministic default or optional lazily loaded cross-encoder reranking, high-recall context packing, redacted retrieval evidence, and opt-in Rich debug traces for role handoff messages.
 - Retrieval candidate gathering includes authorized document title/source-filename metadata matching, so filename-only user references can find the matching uploaded document even when the filename is absent from chunk content.
 - Ingestion stores structured knowledge entities for API endpoints, config keys, shell commands, error codes, and database table references with document/chunk/run/page/offset provenance.
-- Deterministic retrieval routing supports `no_retrieval`, `retrieval_required`, `retrieval_optional`, and `clarification_required`; clarification runs now keep the language-neutral `clarification` contract and also return visible assistant text so clients never see a successful empty reply.
+- Deterministic retrieval routing supports `no_retrieval`, `retrieval_required`, `retrieval_optional`, and `clarification_required`. Non-interrupted clarification replies retain visible text; checkpoint-backed HITL instead returns explicit `waiting_for_input` interaction state, not a completed assistant reply.
 - Permission-aware retrieval filters candidate chunks before ranking/expansion/composition.
 - Structured enumeration prompts such as “list API endpoints in this document” can retrieve by extracted entity type instead of relying only on vector/keyword wording overlap.
 - Broad personal-document fallback now retrieves recent authorized chunks for resume/profile/uploaded-document questions when exact term matching returns nothing.
 - Authorized retrieved context plus `answer_mode` is now produced by the RAG Agent call inside the general assistant graph; the `rag_agent` contract graph still verifies compact trace stages and grounding checks before citation-backed replies are persisted.
 - System knowledge bases (`scope=system`) are manager-only for CRUD/document
   operations but ambiently included in authenticated chat retrieval, including guest
-  sessions. Their chunks and provenance remain available to the model and internal audit,
+  sessions. Authorized answerable snippet text reaches the model; ambient system source
+  identifiers and provenance remain internal rather than being included in provider context,
   while public run/event/citation responses omit system KB counts, IDs, filenames, snippets,
   and citations.
 - ContextForge, retrieval phases, embedding provider calls, reranker calls, and
@@ -460,9 +475,11 @@ Earlier hosted smoke status on 2026-06-03:
   persisted summary events. They remain separate from final answer text, verified trace, and
   evidence. See
   [`28-dynamic-reasoning-summary-contract.md`](./product-chat-service/en/28-dynamic-reasoning-summary-contract.md).
-- Temporary conversation files are integrated on frontend `develop` at `af0176c`; remaining live verification and the artifact-refetch regression-test gap are recorded in [the completion record](./completed/document-workspace.md).
-- Assistant Mermaid rendering is implemented on frontend `feature/chat-mermaid-rendering`, with
-  owner-reported manual testing; integration and deployment remain pending. Safe Mermaid is the first rich-renderer milestone;
+- Temporary conversation files are included in the deployed frontend `9c8e365`; feature enablement
+  and end-to-end production verification remain separate. See [the completion record](./completed/document-workspace.md).
+- Assistant Mermaid rendering is integrated and shipped in frontend `9c8e365`, with owner-reported
+  implementation-time manual testing. Production feature-level and accessibility/stress evidence
+  remain limited; see [the completion record](./completed/mermaid-rendering.md).
   AG-UI and A2UI remain future edge adapters and do not replace Product DB domain contracts.
 - Known near-future gap: streamed run execution is still coupled to the client HTTP/SSE request. If the client disconnects before `run_completed`, the assistant response may never be persisted; durable server-owned/background run execution is required.
 - Completed conversation runs can be refetched with persisted reply, route, and citations.
@@ -477,7 +494,9 @@ Earlier hosted smoke status on 2026-06-03:
 - The current safety limits are character based, not provider-tokenizer based. Final answer-context token usage, provider-reported usage, and quality/latency comparisons against focused chunk retrieval remain open work.
 - The graph version is now `general-assistant-checkpoint-v2`. Waiting runs created under an older graph version cannot be resumed after this deployment; drain or cancel them before rollout, or allow the existing version-mismatch path to fail them safely with `run_graph_version_incompatible`.
 - Most route labels are capability metadata and response paths, not separate production specialist agents.
-- Tool workflows beyond hosted web search are not yet general production capabilities. The narrow exception is RAG-owned typed tool selection between focused chunk search and comprehensive document read; backend services, not the model, execute and authorize both operations.
+- Bounded tool paths exist for hosted web search, RAG-owned focused/comprehensive selection,
+  and the optional hosted document workspace. Arbitrary user-defined tool workflows remain future
+  work; authorization and execution limits stay in backend services.
 - Memory runtime migration is partially implemented. Recall orchestration runs inside `general_assistant`; PostgreSQL deployments provide PostgresStore semantic candidate search, and every candidate is revalidated through the SQLAlchemy/Product DB governance adapter before entering context. SQLite retains the Product DB relevance fallback. The separate `memory_graph` extraction/update workflow is still unimplemented.
 - PostgreSQL deployments now treat run-scoped PostgresSaver and PostgresStore as baseline process-owned infrastructure. The per-user experimental setting controls memory consent and eligibility; HITL availability derives from PostgresSaver presence. Framework setup is an explicit deployment prerequisite, and neither persistence primitive replaces Product DB transcripts or audit records. SQLite keeps non-durable graph execution and Product DB memory recall fallbacks.
 - Focused retrieval does not yet let a bounded sufficiency decision request same-document neighboring chunks around authorized anchors. This adaptive expansion is a separate milestone from explicit comprehensive-document review; backend authorization, ordinal/offset windows, round/token budgets, reranking/packing, and citation selectivity must remain deterministic and test-backed even when a model requests more context.
@@ -488,7 +507,9 @@ Earlier hosted smoke status on 2026-06-03:
 - Hosted signup -> email send -> frontend verification route has been proven after adding frontend `/verify-email` and `/password-reset` landing pages.
 - Ingestion now has a web/worker split option: the web process can queue extraction runs only, while a separate ingestion worker claims and processes queued runs.
 - Permanent redacted `DEPLOY_DIAG` logs are available for hosted smoke checks and deployment debugging.
-- Hosted preview/public DB migration execution is manually managed; the readiness runbook records the migration evidence requirement and production remains user-gated.
+- Render's owner-confirmed pre-deploy command runs Alembic automatically. Framework setup,
+  reconciliation, isolated regression gates, and authenticated smoke are separate responsibilities;
+  the stronger chain remains a documented proposal. See [the Render runbook](./product-chat-service/en/14-render-migration-and-rollback-notes.md#production-pre-deploy-guardrail).
 - Opt-in Prometheus text metrics now expose aggregate backend timing for internal
   review. Production dashboards, alerts, OpenTelemetry traces, token/cost metrics,
   and failure-rate metrics remain future work.
@@ -501,46 +522,22 @@ Earlier hosted smoke status on 2026-06-03:
   behavior as the benchmark.
 - Frontend integration lives in the separate frontend repository by design.
 
-## Maintenance cycle — active, combined local testing
+## Recent integrated work
 
-The three maintenance slices are combined on `refactor/backend-maintenance` for one owner test
-pass. This is a local integration branch; it has not been merged into develop or deployed.
-
-- Atomic run admission enforces one active run per conversation. Apply migration `20260905_0034`
-  before serving this branch; duplicate active conversations require explicit resolution.
-- Shared answer preparation preserves public behavior, event ordering and transaction ownership.
-- Pure document-resolution helpers preserve RetrievalService imports and ranking behavior.
-
-Individual baseline suites passed before integration: admission 583 tests (12 gated skips),
-finalization 574 (3 skips), and resolution 572 (3 skips).
-
-Combined verification on 2026-09-05: 585 tests passed, 12 gated skips, 11 dependency deprecation
-warnings; Ruff lint and format passed (258 files). A separate isolated PostgreSQL run passed all
-18 admission/migration cases, including their SQLite counterparts. OpenAPI matches the validated
-individual branches. Temporary test databases were removed. Owner testing of this combined branch
-is pending; publication, develop integration and production evidence remain separate.
+The maintenance slices were integrated into develop/main and released through `7a450cc`;
+the owner reported no problems during the combined test pass. The later pool hotfix `e62d45a`
+and immediate chat recovery are recorded above. Scope and historical test evidence are preserved
+in [the maintenance completion record](./completed/backend-maintenance.md).
 
 ## Recommended next workflow
 
-### Immediate: rich response rendering, starting with Mermaid
+### Next: tokenizer-aware retrieval and embedding-index safety
 
-**Active — integration pending.** Frontend implementation on `feature/chat-mermaid-rendering`
-has passed lint, typecheck, production build, 365 unit/component tests, and three focused browser
-scenarios. The broader browser run had 190 passes, two skips and one file-drop failure that passed
-twice in isolation. Heecheon reports manual testing completed. Claude owns the requested frontend
-commit/push handoff; no merge or deployment is established here. The following remains the scope
-and acceptance reference, not a request to rebuild the renderer.
-
-Add secure, lazy, accessible Mermaid rendering at the existing `react-markdown` code-block boundary.
-Render only completed fences, isolate parse/render failures, preserve Markdown as the durable
-copy/replay fallback, verify theme/mobile/accessibility behavior, and measure bundle cost before
-accepting a dependency. AG-UI remains a future REST/SSE transport adapter; A2UI remains a future
-declarative component boundary under a closed application-owned catalog. Neither is required for
-the Mermaid slice.
-
-The architecture, security constraints, protocol boundaries, and definition of done are
-authoritative in
-[`30-rich-response-rendering-and-agent-ui-boundaries.md`](./product-chat-service/en/30-rich-response-rendering-and-agent-ui-boundaries.md).
+Mermaid integration is complete; do not schedule its implementation again. The previously
+following retrieval-safety milestone is the next recommended engineering work, not an automatic
+implementation authorization. See [its scope and acceptance criteria](#following-retrieval-move-tokenizer-aware-retrieval-and-embedding-index-safety).
+Remaining production feature/idle-path smoke and the proposed pre-deploy/CI gates remain separate
+verification and operations work; they were not closed by the frontend release.
 
 ### Deferred: attachment-free artifact generation
 
@@ -560,8 +557,8 @@ Deferred by the owner's decision on 2026-09-05; reconsider only if explicitly re
 Missing human input must leave execution paused until answered, cancelled or expired. Silence is
 not approval, and mandatory human decisions must not be bypassed through a fallback answer.
 The frontend request was clarified with Claude on 2026-09-05: Cancel remains terminal and already
-persists cancelled status plus an event; only an assistant message is absent. Claude implemented a
-refresh-safe visible cancellation notice in the frontend worktree. Do not schedule a new model call
+persists cancelled status plus an event; only an assistant message is absent. Frontend `9c8e365`
+ships the refresh-safe visible cancellation notice. Do not schedule a new model call
 on Cancel or create a redundant stored acknowledgement to replace that notice.
 
 A future explicit “continue without choosing” answer could resume the graph and produce a normal
@@ -708,7 +705,10 @@ limits.
 
 ## Shipped and completed index
 
-- [x] **Shipped:** Temporary conversation files and expanded artifact downloads are integrated on develop. [Completion record](./completed/document-workspace.md). Production verification remains separate.
+- [x] **Shipped:** Dedicated RAG Agent controller/runtime boundary and bounded retrieval-tool selection. [Completion record](./completed/dedicated-rag-agent.md). Iterative/layout-aware extensions remain future work.
+- [x] **Completed:** Atomic admission, shared answer finalization, and document-resolution maintenance integration. [Completion record](./completed/backend-maintenance.md).
+- [x] **Shipped:** Mermaid rendering is included in frontend develop/main release `9c8e365`. [Completion record](./completed/mermaid-rendering.md). Feature-level production/accessibility/stress verification remains limited.
+- [x] **Shipped:** Temporary conversation files and expanded artifact downloads are included in the released code. [Completion record](./completed/document-workspace.md). Capability enablement and production workflow verification remain separate.
 
 This is concise navigation, not a second history document. New terminal milestones with substantial
 scope, decisions, evidence, or limitations link to `docs/completed/<initiative-slug>.md`; small

@@ -2,8 +2,11 @@
 
 [한국어](../ko/29-frontend-document-workspace-rollout.md) | English
 
-Status: **Proposed — immediate cross-repository task managed from the backend roadmap.** The
-backend capability exists; the frontend and BFF do not expose it to users yet.
+Status: **Historical rollout plan — implemented and included in frontend release `9c8e365`.**
+Current behavior is in [the workspace contract](./25-openai-document-workspace.md); delivered
+scope and verification limits are in [the completion record](../../completed/document-workspace.md).
+The checklist below preserves the original rollout/acceptance plan, not a request to rebuild it.
+Deployment of the code does not imply that the optional capability is enabled or fully smoke-tested.
 
 ## Product opportunity
 
@@ -34,9 +37,9 @@ The implemented backend already provides:
   `user_data` files, and a network-disabled hosted container;
 - GPT-5.6 Sol execution with Hosted Shell and the spreadsheet skill when applicable.
 
-The frontend currently has no attachment models, BFF routes, service client, composer action,
-selection state, or artifact presentation. Therefore the capability is API-complete but
-product-inaccessible.
+The frontend now includes attachment models, BFF routes, service/composer integration,
+selection state, and artifact presentation. Availability still depends on the served capability
+and user eligibility; the control stays absent when the workspace is disabled or ineligible.
 
 ## User-visible features to introduce
 

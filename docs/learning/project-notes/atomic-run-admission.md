@@ -1,12 +1,16 @@
 ---
 created: 2026-09-05
 updated: 2026-09-05
-status: implemented-unmerged
+status: implemented
 topics: [transactions, concurrency, sqlalchemy]
 related_code: [my_agents/api/conversations/run_lifecycle.py, tests/test_run_admission.py]
 ---
 
 # 대화 실행 시작의 경쟁 조건
+
+2026-09-05에 maintenance 통합을 거쳐 `7a450cc`로 develop/main에 반영했습니다.
+이 문서의 최초 작성 시점과 달리 통합 대기 상태가 아닙니다.
+[완료 기록](../../completed/backend-maintenance.md)에 검증 범위와 후속 한계를 보존합니다.
 
 두 요청이 모두 “진행 중인 답변 없음”을 읽은 뒤 각각 실행을 만들 수 있었습니다.
 기존 테스트는 이미 실행 중인 행을 넣고 두 번째 요청을 보냈기 때문에 이 순서를 놓쳤습니다.
@@ -23,4 +27,5 @@ schema_translate_map으로 모든 table을 명시적으로 격리하고 finally�
 
 ## Revision history
 
+- 2026-09-05: develop/main 통합 완료 상태와 완료 기록 링크 반영.
 - 2026-09-05: 경쟁 순서, 원자적 저장, 회귀 테스트와 PostgreSQL fixture 격리 교훈 기록.

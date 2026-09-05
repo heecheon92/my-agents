@@ -17,8 +17,9 @@ the task requires deeper architecture, operations, decisions, or history.
 | [`learning/`](./learning/) | Personal learning notes and debugging lessons | Educational context, not project status |
 | [`performance/`](./performance/) | Measurement methods and historical performance evidence | Evidence source for performance work |
 
-The `docs/completed/` directory is created when the first initiative is compacted; do not create an
-empty archive or placeholder record.
+Completed work is routed through the [shipped/completed index](./implementation-tracking.md#shipped-and-completed-index).
+Archive records preserve the original scope and distinguish delivered baselines from deferred
+extensions; moving a proposal does not mean every ambition in its historical text shipped.
 
 ## Status vocabulary
 

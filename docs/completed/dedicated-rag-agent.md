@@ -1,8 +1,39 @@
-# Dedicated RAG Agent idea
+# Dedicated RAG Agent — implemented baseline
+
+- Status: Shipped baseline; broader retrieval extensions remain deferred.
+- Archive reconciliation: 2026-09-05. The controller/delegation split was recorded as implemented on 2026-06-16.
+- Current behavior: [RAG Agent README](../../my_agents/agents/rag_agent/README.en.md) and
+  [controller/RAG architecture](../product-chat-service/en/22-general-assistant-rag-agent-architecture-change-report.md).
+- Canonical status: [implementation tracking](../implementation-tracking.md#shipped-and-completed-index).
+
+## Delivered scope and evidence
+
+`general_assistant` calls the production `rag_agent` runtime from its graph. RAG Agent owns
+the focused/comprehensive tool choice and delegates focused retrieval to ContextForge;
+RetrievalService retains authorization and bounded execution. The assistant composes the answer.
+The Luna selector added later is bounded, with a deterministic/provider-failure fallback; it is
+not an unrestricted autonomous retrieval loop.
+
+Source evidence: `my_agents/agents/rag_agent/retrieval.py`, `tool_selection.py`, the general
+assistant graph's `retrieve_rag_context` node, and ContextForge's retrieval graph.
+Behavior tests include `tests/test_rag_agent_contracts.py`, `tests/test_rag_agent_tool_selection.py`,
+and `tests/test_full_document_retrieval.py`. The September hotfix suite recorded 585 passed,
+14 gated skips; those are historical results, not tests rerun for this documentation move.
+
+## Remaining extensions are not marked complete
+
+Iterative evidence-driven retrieval, adaptive surrounding-chunk expansion, automatic multi-range
+synthesis, tokenizer/index-identity safety, original-file retention, and production layout-aware
+parsing remain follow-up work in [the roadmap](../../ROADMAP.md#6-retrieval-rag-and-citations)
+and [layout-aware ingestion idea](../idea/layout-aware-ingestion-rag-agent.md).
+The responsibility list and conceptual flow below preserve the original ambition, not a claim
+that every proposed capability shipped or every production quality target was verified.
+
+## Historical idea and rationale
 
 This note captures the product/architecture idea behind turning retrieval quality work into a dedicated RAG agent milestone.
 
-## Current implementation status
+## Historical implementation snapshot — 2026-06-16
 
 As of 2026-06-16, this idea is implemented as a controller/delegation split:
 

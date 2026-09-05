@@ -25,6 +25,10 @@ Legacy row는 근거를 사후 검증할 수 없으므로 backfill하지 않습�
 
 ## 문서 상태
 
+PostgreSQL에서는 framework setup 뒤 run-scoped LangGraph checkpointer가 baseline으로
+동작하며, bounded `waiting_for_input` / resume 상태만 저장합니다. 별도 enable flag는
+없고 SQLite는 non-durable fallback을 유지합니다. Conversation history의 원본은 Product DB입니다.
+
 - 영어 원문은 `docs/product-chat-service/en/04-server-owned-conversations.md`에 있습니다.
 - 2026-06-07 기준 deprecated group-conversation scope는 제거되었습니다.
 - 2026-08-24 기준 explicit-intent full-document coverage와 원본 target을 유지하는 replay가 구현되었습니다.

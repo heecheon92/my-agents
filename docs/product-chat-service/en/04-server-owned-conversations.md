@@ -77,8 +77,9 @@ Frontend work should use conversation/run endpoints for product chat.
 
 - streaming transport exists for run progress and answer deltas;
 - no run failure table details beyond the basic status field;
-- the run-scoped LangGraph checkpointer is opt-in and is used only for bounded
-  `waiting_for_input` / resume execution state;
+- the run-scoped LangGraph checkpointer is baseline on PostgreSQL after framework setup,
+  and is used only for bounded `waiting_for_input` / resume execution state; SQLite keeps
+  the non-durable fallback;
 - a large full-document request reads only its first configured character range; automatic
   multi-range traversal and synthesis are not implemented yet;
 - no background job queue for long-running ingestion or agent work yet.

@@ -2,18 +2,17 @@
 
 [한국어](../ko/30-rich-response-rendering-and-agent-ui-boundaries.md) | English
 
-Status: **Active — implemented on frontend feature/chat-mermaid-rendering; integration pending.**
-Heecheon reports manual testing completed. The implementation plan below records the original
-scope; the frontend's `docs/mermaid-rendering.md` records the actual implementation and checks.
-The first milestone is safe Mermaid rendering inside assistant Markdown. AG-UI and A2UI are future
-adapter decisions, not dependencies for that milestone.
+Status: **Mermaid baseline shipped in frontend release `9c8e365`; AG-UI/A2UI remain future adapters.**
+See [the completion record](../../completed/mermaid-rendering.md) for integration evidence and
+open production/accessibility/stress checks. Heecheon reported implementation-time manual testing.
+This document preserves the renderer contract and original planning reference; the sibling
+frontend's `docs/mermaid-rendering.md` records its actual implementation and checks.
 
 ## Why this is needed
 
-Assistant answers already use Markdown and the frontend renders common Markdown through
-`react-markdown`. A fenced `mermaid` block, however, remains source code rather than a diagram.
-This prevents architecture, request-flow, state, sequence, and data-relationship explanations from
-using the visual form the model intentionally produced.
+Assistant answers use Markdown through `react-markdown`. Before this milestone, fenced
+`mermaid` blocks remained source rather than diagrams. The implemented renderer now supports
+that visual surface while retaining source/error fallback for unsupported or invalid content.
 
 The immediate goal is not unrestricted generative UI. It is a reliable renderer catalog where
 known answer parts have maintained, secure, accessible components and every enhancement has a
@@ -157,10 +156,10 @@ References: [react-markdown component overrides](https://github.com/remarkjs/rea
 
 ## Scoped implementation plan — 2026-09-05
 
-Owner: Codex, on a separate frontend branch `feature/chat-mermaid-rendering` from refreshed
-frontend develop. This is a proposed implementation plan; this documentation change does not
-implement the renderer. Design impact is low: reuse existing message spacing, colors, borders,
-and disclosure controls. Involve Claude only if browser review shows a need to redesign interaction.
+Historical planning owner: Codex on frontend `feature/chat-mermaid-rendering`, followed by
+Claude's integration/release. The sequence below preserves the original implementation plan,
+not current pending work. The chosen design reused message spacing, colors, borders, and disclosure
+controls; any future interaction redesign still requires frontend coordination.
 
 ### Integration points and first-slice decisions
 

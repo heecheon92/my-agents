@@ -2,8 +2,11 @@
 
 [English](../en/29-frontend-document-workspace-rollout.md) | 한국어
 
-상태: **제안됨 — backend roadmap에서 관리하는 다음 cross-repository task.** Backend capability은
-구현됐지만 frontend와 BFF가 아직 사용자에게 제공하지 않습니다.
+상태: **구현을 마친 과거 rollout 계획 — frontend release `9c8e365`에 포함됨.**
+현재 동작은 [workspace 계약](./25-openai-document-workspace.md), 범위와 검증 한계는
+[완료 기록](../../completed/document-workspace.md)을 따릅니다. 아래 항목은 원래의 구현·검증
+계획을 보존한 것이며 재구현 요청이 아닙니다. 코드 배포가 선택 기능의 활성화나 모든 운영
+경로의 검증을 의미하지는 않습니다.
 
 ## Product opportunity
 
@@ -33,8 +36,9 @@ Upload 전에 이 차이를 보여야 합니다. Temporary attachment가 searcha
   file, network-disabled hosted container;
 - 필요할 때 Hosted Shell과 spreadsheet skill을 사용하는 GPT-5.6 Sol execution.
 
-현재 frontend에는 attachment model, BFF route, service client, composer action, selection state,
-artifact presentation이 없습니다. 따라서 API는 준비됐지만 product에서는 접근할 수 없습니다.
+현재 frontend에는 attachment model, BFF route, service/composer 연동, selection state와
+artifact presentation이 있습니다. 실제 노출은 capability와 사용자 자격을 따르며,
+기능이 꺼져 있거나 사용할 자격이 없으면 control을 표시하지 않습니다.
 
 ## 사용자에게 제공할 기능
 

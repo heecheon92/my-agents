@@ -219,7 +219,7 @@ On 2026-08-25, the full offline suite on this checkout reports **534 passed, 2 s
 - The external ingestion worker uses database polling; durable queueing, supervision, and stale-job recovery need further work.
 - Object storage for uploaded originals, document versioning/re-ingestion, and account deletion/export are not implemented yet.
 - Cross-encoder cold starts and PDF processing latency remain constraints on small hosted instances.
-- Full-document retrieval is semantic comprehensive-intent-only. Large documents currently stop after the first bounded range; automatic multi-range traversal/final synthesis, model-tokenizer-aware budgets, and provider usage measurements remain future work.
+- Full-document retrieval is baseline behavior for clear comprehensive intent, without a separate enable flag. Large documents currently stop after the first bounded range; automatic multi-range traversal/final synthesis, model-tokenizer-aware budgets, and provider usage measurements remain future work.
 - The full-document graph bumps waiting-run compatibility to `general-assistant-checkpoint-v2`. Drain or cancel older waiting runs before rollout; an older graph version cannot resume and is failed safely by the version-mismatch path.
 - Shared rate limiting, production security review, and automated migration/smoke gates remain necessary.
 - Non-RAG tools, a background execution scheduler, and production multi-agent orchestration remain roadmap work. LangGraph persistence is baseline for PostgreSQL deployments and requires setup before traffic; experimental memory consent remains per-user.

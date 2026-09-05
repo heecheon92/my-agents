@@ -1,8 +1,9 @@
 # Temporary conversation document workspace
 
-- Status: Shipped to develop; production verification is separate.
+- Status: Shipped in released backend/frontend code; enablement and production workflow verification are separate.
 - Recorded: 2026-09-05
 - Integration evidence: backend `92d7a50`; frontend `af0176c`.
+- Release evidence: backend release `7a450cc` / later hotfix `e62d45a`, frontend `9c8e365` on 2026-09-05.
 - Current behavior: [workspace contract](../product-chat-service/en/25-openai-document-workspace.md).
 - Canonical status: [implementation tracking](../implementation-tracking.md#shipped-and-completed-index).
 
@@ -30,7 +31,8 @@ The owner reported successful live XLSX generation in the 2026-09-02 session.
 
 ## Known limitations and deferred follow-ups
 
-- Production deployment and end-to-end verification are not established by this completion record.
+- The containing frontend/backend releases were deployed; that does not establish workspace
+  enablement or an authenticated production attachment/artifact workflow. Those remain unverified.
 - Live generation quality for every newly allowed format remains unverified.
 - Artifact query invalidation was fixed after live use revealed missing download controls.
   The frontend log explicitly records the missing regression test because the mock harness could

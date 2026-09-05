@@ -219,7 +219,7 @@ git diff --check
 - 외부 수집 워커가 데이터베이스 폴링으로 동작합니다. 안정적인 큐, 워커 감시, 멈춘 작업 복구가 더 필요합니다.
 - 업로드한 원본을 위한 오브젝트 스토리지, 문서 버전 관리와 재수집, 계정 삭제와 내보내기는 아직 없습니다.
 - cross-encoder를 처음 띄울 때의 지연과, 작은 인스턴스에서의 PDF 처리 시간이 남아 있습니다.
-- 전체 문서 검색은 명시적인 intent에만 반응하며 기본값은 꺼져 있습니다. 큰 문서는 현재 첫 범위에서 멈춥니다. 자동 multi-range traversal/final synthesis, model-tokenizer-aware budget, provider usage 측정은 후속 작업입니다.
+- 전체 문서 검색은 전체 검토 의도가 명확한 요청에 사용하는 baseline 기능이며 별도 enable flag가 없습니다. 큰 문서는 현재 첫 범위에서 멈춥니다. 자동 multi-range traversal/final synthesis, model-tokenizer-aware budget, provider usage 측정은 후속 작업입니다.
 - 전체 문서 graph는 대기 run 호환 버전을 `general-assistant-checkpoint-v2`로 올립니다. 배포 전에 이전 버전의 waiting run을 drain/cancel해야 하며, 구버전 run은 재개할 수 없어 version-mismatch 경로에서 안전하게 failed 처리됩니다.
 - 여러 인스턴스에서 공유하는 요청 제한, 운영 보안 점검, 마이그레이션·스모크 자동화가 필요합니다.
 - 검색 외 도구, background execution scheduler, 여러 에이전트를 운영에서 함께 돌리는 구성은 로드맵 단계입니다. LangGraph persistence는 PostgreSQL deployment의 baseline이며 traffic을 받기 전에 setup이 필요합니다. Experimental memory 동의는 사용자별로 유지합니다.

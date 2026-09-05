@@ -2,18 +2,16 @@
 
 [English](../en/30-rich-response-rendering-and-agent-ui-boundaries.md) | 한국어
 
-상태: **진행 중 — frontend feature/chat-mermaid-rendering에 구현했으며 통합을 기다리는 상태.**
-Heecheon이 수동 테스트를 완료했다고 확인했습니다. 아래 계획은 최초 범위를 기록하며,
-실제 구현과 검증은 frontend의 `docs/mermaid-rendering.md`에 있습니다. 첫
-milestone은 assistant Markdown 안의 safe Mermaid rendering입니다. AG-UI와 A2UI는 이 milestone의
-dependency가 아니라 future adapter decision입니다.
+상태: **Mermaid baseline은 frontend release `9c8e365`에 포함됨; AG-UI/A2UI는 후속 adapter입니다.**
+통합 근거와 남은 운영·접근성·stress 검증은 [완료 기록](../../completed/mermaid-rendering.md)을
+따릅니다. Heecheon은 구현 당시 수동 테스트 완료를 보고했습니다. 이 문서는 renderer 계약과
+최초 계획을 보존하며, 실제 frontend 구현과 검증은 해당 repo의 `docs/mermaid-rendering.md`에 있습니다.
 
 ## 필요한 이유
 
-Assistant answer는 이미 Markdown을 사용하고 frontend는 `react-markdown`으로 일반 Markdown을
-렌더합니다. 그러나 fenced `mermaid` block은 diagram이 아니라 source code로 남습니다. Model이
-architecture, request flow, state, sequence, data relationship을 시각적으로 설명해도 사용자는
-의도한 형태로 볼 수 없습니다.
+Assistant answer는 `react-markdown`으로 Markdown을 렌더합니다. 이 milestone 이전에는
+fenced `mermaid` block이 diagram이 아니라 source code로 남았습니다. 구현된 renderer는 이제
+diagram을 지원하면서, 지원하지 않거나 잘못된 입력에는 source/error fallback을 유지합니다.
 
 Immediate goal은 unrestricted generative UI가 아닙니다. 알려진 answer part를 maintained, secure,
 accessible component로 렌더하고 모든 enhancement가 durable text fallback을 가지는 renderer
@@ -154,10 +152,10 @@ Reference: [react-markdown component override](https://github.com/remarkjs/react
 
 ## 범위를 정한 구현 계획 — 2026-09-05
 
-담당은 Codex이며 최신 frontend develop에서 별도 `feature/chat-mermaid-rendering` branch를
-만듭니다. 현재는 계획만 기록하며 renderer는 구현하지 않습니다. 기존 메시지 간격, 색상,
-테두리와 disclosure를 재사용하므로 디자인 영향은 작습니다. 브라우저 검증에서 별도
-interaction 설계가 필요할 때 Claude와 협의합니다.
+최초 구현은 Codex가 frontend `feature/chat-mermaid-rendering`에서 맡았고, Claude가 통합과
+배포를 수행했습니다. 아래는 원래 계획을 보존한 것이며 현재 미완료 작업이 아닙니다.
+기존 메시지 간격, 색상, 테두리와 disclosure를 재사용했으며, 이후 별도 interaction 설계가
+필요하면 frontend와 협의합니다.
 
 1. `ChatTranscript → MessageBubble → AgentMessageRenderer → AgentMarkdown`에 streaming/settled
    상태를 전달합니다. 첫 구현은 streaming 동안 source를 보여 주고 답변이 끝난 후 렌더합니다.

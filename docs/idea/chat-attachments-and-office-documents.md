@@ -2,6 +2,22 @@
 
 This note captures the product and architecture discussion from 2026-06-09 about adding Excel/PowerPoint document support and allowing users to send files together with a chat message.
 
+## Status reconciliation — 2026-09-05
+
+This is a **partially superseded design**, not the current attachment API contract.
+Durable Office parsing and temporary conversation attachments are implemented; see the
+[workspace completion record](../completed/document-workspace.md) and
+[current workspace contract](../product-chat-service/en/25-openai-document-workspace.md).
+The shipped attachment flow uploads consented files first, then sends `attachment_ids` on the
+ordinary run request. It uses the provider-hosted workspace, not the multipart run endpoint,
+local temporary chunk table, or shared ContextForge attachment search proposed below.
+
+Generic `source_location_json` already exists on durable chunks; adding that field is not new work.
+Keep this note outside completed because original KB-file retention, uniform richer provenance,
+attachment-to-KB promotion, and combined KB/temporary-chunk retrieval are not all implemented.
+The remaining sections preserve the original options and open extensions; they are not
+instructions to replace the shipped API or promises of supported current behavior.
+
 ## User questions
 
 1. Should `my-agents` support Excel and PowerPoint documents?
@@ -24,7 +40,7 @@ message + files -> Send
 
 The backend should model that as a conversation run with temporary attachments, not as a hidden knowledge-base upload.
 
-## Current baseline
+## Historical baseline and design context
 
 The current durable document path is:
 
