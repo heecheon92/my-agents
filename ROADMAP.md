@@ -342,6 +342,12 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
   Current intent, integration options, triggers, and acceptance requirements are recorded in
   [`openai-responses-assistant-phase.md`](./docs/idea/openai-responses-assistant-phase.md).
 - [ ] Add OpenAPI/client generation workflow if useful.
+- [ ] **Deferred (status mirror):** Consider an explicit continue-without-document-selection
+  response, separately from terminal cancellation. The owner chose to keep current behavior on
+  2026-09-05: missing input leaves execution paused and Cancel remains terminal. Reconsider only
+  on explicit request; the existing cancellation notice does not require a new model call.
+  See [canonical status](./docs/implementation-tracking.md#deferred-continue-without-document-selection)
+  and [interaction boundary](./docs/product-chat-service/en/27-agent-frontend-interaction-contract.md#cancellation-and-declining-a-clarification).
 - [x] Hosted frontend/backend auth verification path works after adding `/verify-email` and `/password-reset` frontend landing pages.
 
 ## 12. Testing and quality gates

@@ -163,6 +163,34 @@ interactions. They disclose complete/partial character coverage after a run comp
 must not be rendered as another question for the user. Large-document continuation is an
 internal future workflow, not a V2 resume-answer field.
 
+## Cancellation and declining a clarification
+
+The owner confirmed on 2026-09-05 that the existing behavior remains the default: missing human
+input leaves execution paused until answered, cancelled or expired. Silence is not approval.
+The agent must not bypass a mandatory human decision or substitute an inferred answer for it.
+
+For a run still in `waiting_for_input`, `POST /conversations/{conversation_id}/runs/{run_id}/cancel`
+returns HTTP 200 with `status=cancelled`, persists a `run_cancelled` event, clears the interaction,
+and deletes its checkpoint. It does not resume the graph or create an assistant message. Thus the
+run/event history records what happened even when the visible transcript ends on a user message.
+Cancelling a running answer may initially return `status=cancelling`; a successful HTTP response
+alone does not mean the run is already terminal.
+
+The frontend can display a notice derived from the cancelled run and the absence of an assistant
+answer. This is presentation of persisted state, not a synthetic model answer. Keep that notice for
+actual cancellations even if a future continuation feature is added; an actual stored answer should
+not receive a duplicate notice.
+
+The proposed “continue without choosing a document” action is separate and currently unimplemented.
+If approved, it must use an explicit semantic resume answer and visibly communicate continuation,
+not reuse Cancel. It may produce a normal stored assistant reply from general knowledge or explain
+which evidence is missing, but must not claim to have reviewed an unselected document or silently
+widen the user's source scope. Model cost, eligibility and the versioned answer contract must be
+decided before implementation. A deterministic stored acknowledgement is not required to support
+the existing frontend notice. The owner deferred this feature; reconsider only on explicit request.
+See the
+[canonical deferred item](../../implementation-tracking.md#deferred-continue-without-document-selection).
+
 ## Versioning and compatibility
 
 - `schema_version=2` is the current document-selection contract; V1 is resume-only compatibility.

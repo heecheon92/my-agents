@@ -537,6 +537,21 @@ an explicit frontend format control, ambiguity handling, account-credit limits, 
 choice remain owner decisions. See the deferred extension in
 [`25-openai-document-workspace.md`](./product-chat-service/en/25-openai-document-workspace.md).
 
+### Deferred: continue without document selection
+
+Deferred by the owner's decision on 2026-09-05; reconsider only if explicitly requested.
+Missing human input must leave execution paused until answered, cancelled or expired. Silence is
+not approval, and mandatory human decisions must not be bypassed through a fallback answer.
+The frontend request was clarified with Claude on 2026-09-05: Cancel remains terminal and already
+persists cancelled status plus an event; only an assistant message is absent. Claude implemented a
+refresh-safe visible cancellation notice in the frontend worktree. Do not schedule a new model call
+on Cancel or create a redundant stored acknowledgement to replace that notice.
+
+A future explicit “continue without choosing” answer could resume the graph and produce a normal
+stored reply, with honest source limitations. Define the semantic answer, eligibility and cost
+policy before implementation. Actual cancellations must retain their notice even if continuation
+ships. See the [interaction contract](./product-chat-service/en/27-agent-frontend-interaction-contract.md#cancellation-and-declining-a-clarification).
+
 ### Deferred: Responses API assistant phase round-tripping
 
 Keep the current answer, reasoning-summary, trace, citation, and SSE user experience unchanged.

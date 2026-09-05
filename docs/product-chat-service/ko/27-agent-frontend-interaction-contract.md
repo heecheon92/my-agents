@@ -162,6 +162,32 @@ Ambient system knowledge는 visible provenance나 선택 control 없이 계속 �
 UI로 처리하면 안 됩니다. 큰 문서 continuation은 future internal workflow이며 V2 resume
 answer field가 아닙니다.
 
+## 취소와 문서 선택 없이 계속하기
+
+Owner는 2026-09-05에 현재 동작을 유지하기로 했습니다. 사용자가 응답하지 않으면 답변을
+받거나 취소되거나 만료될 때까지 실행을 멈춘 상태로 둡니다. 침묵을 승인으로 해석하거나
+필수적인 사람의 결정을 건너뛰거나 추정한 답으로 대신하면 안 됩니다.
+
+아직 `waiting_for_input`인 run에 `POST /conversations/{conversation_id}/runs/{run_id}/cancel`을
+호출하면 HTTP 200과 `status=cancelled`를 반환합니다. `run_cancelled` event를 저장하고
+interaction과 checkpoint를 정리하지만 graph를 재개하거나 assistant message를 만들지는
+않습니다. 따라서 transcript가 user message로 끝나더라도 run/event 기록에는 취소가 남습니다.
+실행 중인 답변의 취소는 먼저 `status=cancelling`을 반환할 수 있습니다. HTTP 성공만으로
+실행이 이미 종료되었다고 판단하면 안 됩니다.
+
+Frontend는 cancelled run과 assistant answer의 부재를 바탕으로 취소 안내를 표시할 수
+있습니다. 이는 저장된 상태를 보여 주는 것이며 model answer를 만들어 넣는 것이 아닙니다.
+나중에 계속하기 기능이 생겨도 실제 취소의 안내는 유지하고, 실제 답변과 중복 표시하지 않습니다.
+
+“문서를 선택하지 않고 계속하기”는 별도 제안이며 아직 구현하지 않았습니다. 채택한다면
+Cancel을 재사용하지 않고 명시적인 semantic resume answer와 계속 진행한다는 UI가 필요합니다.
+일반 지식으로 답하거나 부족한 근거를 설명하는 정상 assistant message를 저장할 수 있지만,
+선택하지 않은 문서를 검토했다고 주장하거나 사용자의 source scope를 조용히 넓히면 안 됩니다.
+구현 전에 model 비용, eligibility와 versioned answer 계약을 결정해야 합니다. 기존 frontend
+안내를 위해 정적인 확인 문구를 assistant message로 추가 저장할 필요는 없습니다.
+Owner가 이 기능을 보류했으므로 명시적으로 요청할 때만 다시 검토합니다.
+[canonical deferred 항목](../../implementation-tracking.md#deferred-continue-without-document-selection)을 따릅니다.
+
 ## Version과 호환성
 
 - `schema_version=2`가 현재 document-selection 계약이고 V1은 resume-only 호환성입니다.
