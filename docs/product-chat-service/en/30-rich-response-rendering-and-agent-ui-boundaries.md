@@ -2,7 +2,9 @@
 
 [한국어](../ko/30-rich-response-rendering-and-agent-ui-boundaries.md) | English
 
-Status: **Proposed — second immediate cross-repository task managed from the backend roadmap.**
+Status: **Active — implemented on frontend feature/chat-mermaid-rendering; integration pending.**
+Heecheon reports manual testing completed. The implementation plan below records the original
+scope; the frontend's `docs/mermaid-rendering.md` records the actual implementation and checks.
 The first milestone is safe Mermaid rendering inside assistant Markdown. AG-UI and A2UI are future
 adapter decisions, not dependencies for that milestone.
 
@@ -152,3 +154,59 @@ constrained generated surfaces. They can coexist later, but neither is necessary
 References: [react-markdown component overrides](https://github.com/remarkjs/react-markdown),
 [Mermaid usage and security](https://mermaid.js.org/config/usage),
 [AG-UI overview](https://docs.ag-ui.com/), and [A2UI concepts](https://a2ui.org/concepts/overview/).
+
+## Scoped implementation plan — 2026-09-05
+
+Owner: Codex, on a separate frontend branch `feature/chat-mermaid-rendering` from refreshed
+frontend develop. This is a proposed implementation plan; this documentation change does not
+implement the renderer. Design impact is low: reuse existing message spacing, colors, borders,
+and disclosure controls. Involve Claude only if browser review shows a need to redesign interaction.
+
+### Integration points and first-slice decisions
+
+1. Trace `ChatTranscript → MessageBubble → AgentMessageRenderer → AgentMarkdown` and carry a
+   settled/streaming signal to the renderer. Initially show Mermaid source during streaming and
+   render after the response settles. This avoids inferring fence closure from a parser that
+   accepts unfinished fences. Refresh and replay must follow the same rule.
+2. Make Mermaid opt-in for assistant answers. `AgentMarkdown` also serves source previews and
+   publication review; those consumers and user messages retain their current behavior.
+3. Route Mermaid at the block boundary, replacing its `pre` wrapper with a figure instead of
+   nesting a figure inside `pre/code`. Preserve inline code, ordinary fences, safe links,
+   copy-answer Markdown, and the existing unused structured-artifact boundary.
+4. Add a small browser-only leaf renderer and shared lazy loader. Compare full Mermaid dynamic
+   import with Tiny using production build/network measurements; choose full Mermaid if its
+   lazy diagram loading better fits flowchart, sequence, state, ER, and class diagrams.
+   Pin the selected dependency through the frontend package manager and lockfile.
+5. Keep application-owned strict configuration, disable HTML labels and click bindings, reject
+   source directives/frontmatter that attempt configuration changes, and verify the final SVG
+   cannot introduce script, foreignObject, external resource requests, or active links.
+   Do not enable raw HTML in the Markdown parser.
+6. Start with bounded source length (10,000 characters), supported diagram families, and
+   `maxEdges=200`. Serialize rendering to avoid global-config/theme races; discard stale
+   results on unmount, source, or theme changes and bound cached results.
+   A Promise timeout cannot interrupt synchronous browser layout: document that limitation,
+   use input/edge limits for the first slice, and measure responsiveness with stress fixtures.
+7. Use localized loading/error/source controls, an accessible figure name, and an always
+   available source disclosure. Match the existing theme mechanism. Keep diagrams within message
+   width with local overflow when necessary; add zoom only if browser evidence requires it.
+
+### Verification and handoff
+
+- Unit/component checks: dispatch, settled-state gating, unsupported/oversized source fallback,
+  stale render results, IDs, and unchanged ordinary Markdown.
+- Browser checks with the real Mermaid library: five supported diagram families; malformed input;
+  attempted directives, links, HTML and script injection; multiple diagrams; theme changes;
+  normal stream and replay; reload; keyboard/source access; reduced motion; copy and print.
+- Verify 390/768/1280 pixel layouts and that rendering does not force-scroll readers who scrolled up.
+- Record baseline and changed production bundles, diagram-free network requests, first-diagram
+  load/render latency, and large-input responsiveness. No Mermaid chunk should load on plain chat.
+- Run frontend lint, typecheck, relevant unit/browser suites, and production build. Document
+  existing failures separately. Update frontend docs and the canonical backend tracker on delivery.
+
+No backend schema, persistence, provider prompt, artifact-download, or AG-UI/A2UI change is required.
+The first release intentionally renders after the answer settles; earlier closed-fence rendering is
+a later enhancement if measured user experience warrants it.
+
+Official references checked for this plan:
+[Mermaid usage, strict security and Tiny limitations](https://mermaid.js.org/config/usage.html)
+and [configuration schema](https://mermaid.js.org/config/schema-docs/config.html).

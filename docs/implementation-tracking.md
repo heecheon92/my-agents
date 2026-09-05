@@ -1,6 +1,6 @@
 # Implementation tracking
 
-Last updated: 2026-09-02
+Last updated: 2026-09-05
 Status owner: repo-tracked source of truth for cross-machine agent handoff
 
 This file exists because `.omx/` is local runtime state and is not shared across machines. When working with an agent on any machine, start here before re-discovering project status from the codebase.
@@ -443,11 +443,9 @@ Earlier hosted smoke status on 2026-06-03:
   persisted summary events. They remain separate from final answer text, verified trace, and
   evidence. See
   [`28-dynamic-reasoning-summary-contract.md`](./product-chat-service/en/28-dynamic-reasoning-summary-contract.md).
-- The temporary document-workspace backend is implemented, but the frontend currently exposes no
-  conversation attachment, consent, `attachment_ids`, or generated-artifact workflow. This is the
-  immediate cross-repository product gap; durable knowledge-base upload is a different feature.
-- Assistant responses persist Markdown and the frontend renders ordinary Markdown, but fenced
-  Mermaid remains code rather than a diagram. Safe Mermaid is the first rich-renderer milestone;
+- Temporary conversation files are integrated on frontend `develop` at `af0176c`; remaining live verification and the artifact-refetch regression-test gap are recorded in [the completion record](./completed/document-workspace.md).
+- Assistant Mermaid rendering is implemented on frontend `feature/chat-mermaid-rendering`, with
+  owner-reported manual testing; integration and deployment remain pending. Safe Mermaid is the first rich-renderer milestone;
   AG-UI and A2UI remain future edge adapters and do not replace Product DB domain contracts.
 - Known near-future gap: streamed run execution is still coupled to the client HTTP/SSE request. If the client disconnects before `run_completed`, the assistant response may never be persisted; durable server-owned/background run execution is required.
 - Completed conversation runs can be refetched with persisted reply, route, and citations.
@@ -488,18 +486,14 @@ Earlier hosted smoke status on 2026-06-03:
 
 ## Recommended next workflow
 
-### Immediate: expose temporary conversation files in the frontend
+### Immediate: rich response rendering, starting with Mermaid
 
-The backend document workspace is implemented but product-inaccessible. The frontend needs served
-capability models, exact BFF routes, composer-local attachment state, provider-transfer consent,
-`attachment_ids` on runs, refresh-safe metadata, and certified artifact downloads. Keep temporary
-conversation files visibly distinct from durable knowledge-base ingestion and preserve guest,
-expiry, ownership, output-certification, billing, and no-empty-conversation boundaries.
-
-The rollout sequence and definition of done are authoritative in
-[`29-frontend-document-workspace-rollout.md`](./product-chat-service/en/29-frontend-document-workspace-rollout.md).
-
-### Next: rich response rendering, starting with Mermaid
+**Active — integration pending.** Frontend implementation on `feature/chat-mermaid-rendering`
+has passed lint, typecheck, production build, 365 unit/component tests, and three focused browser
+scenarios. The broader browser run had 190 passes, two skips and one file-drop failure that passed
+twice in isolation. Heecheon reports manual testing completed. Claude owns the requested frontend
+commit/push handoff; no merge or deployment is established here. The following remains the scope
+and acceptance reference, not a request to rebuild the renderer.
 
 Add secure, lazy, accessible Mermaid rendering at the existing `react-markdown` code-block boundary.
 Render only completed fences, isolate parse/render failures, preserve Markdown as the durable
@@ -662,6 +656,8 @@ system, a multi-device guest account model, or a replacement for shared rate
 limits.
 
 ## Shipped and completed index
+
+- [x] **Shipped:** Temporary conversation files and expanded artifact downloads are integrated on develop. [Completion record](./completed/document-workspace.md). Production verification remains separate.
 
 This is concise navigation, not a second history document. New terminal milestones with substantial
 scope, decisions, evidence, or limitations link to `docs/completed/<initiative-slug>.md`; small

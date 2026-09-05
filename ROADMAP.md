@@ -322,13 +322,8 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
 - [x] Add backend-only V1 API smoke command for health, auth, ingest, SSE, citations, and events.
 - [x] Add refresh-safe completed run detail for persisted citations/reply.
 - [x] Add streaming contract for chat UX.
-- [ ] **Immediate cross-repository task — expose temporary conversation files in the frontend.**
-  Wire the implemented document-workspace capability into the BFF and chat composer with served
-  capability gating, per-upload provider consent, attachment lifecycle/recovery, `attachment_ids`,
-  certified spreadsheet artifacts, honest expiry, and clear separation from durable knowledge-base
-  uploads. See
-  [`29-frontend-document-workspace-rollout.md`](./docs/product-chat-service/en/29-frontend-document-workspace-rollout.md).
-- [ ] **Next cross-repository task — enrich assistant response rendering.** Add secure, lazy,
+- [x] **Shipped (status mirror):** Temporary conversation files are integrated on frontend develop. See [canonical status](./docs/implementation-tracking.md#shipped-and-completed-index) and [completion record](./docs/completed/document-workspace.md).
+- [ ] **Active — immediate cross-repository task: integrate assistant Mermaid rendering.** Implementation and owner-reported manual testing are complete on frontend `feature/chat-mermaid-rendering`; merge/deployment verification remains pending. Preserve secure, lazy,
   accessible Mermaid rendering for completed fenced blocks while preserving Markdown source and
   safe failure fallback. Treat AG-UI as a future transport adapter and A2UI as a future declarative
   renderer boundary; neither is a dependency for the Mermaid milestone. See
@@ -370,21 +365,6 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
 - [ ] Security regression tests for rate limits, CSRF coverage, and auth hardening.
 
 ## 13. Near-term recommended sequence
-
-0. **Frontend support for temporary conversation files**
-   - Keep the implemented backend document-workspace contract unchanged unless live integration
-     exposes a concrete gap.
-   - Generate frontend capability, attachment, artifact, and run models from served OpenAPI; add
-     exact BFF routes and authenticated download handling.
-   - Add composer-local staging, explicit OpenAI transfer consent, upload/delete/retry state,
-     refresh recovery, and selected `attachment_ids` on streamed runs.
-   - Present server-certified artifacts with expiry-aware downloads, while promising analysis only
-     for formats without certified output support.
-   - Preserve the bare `/chat` no-empty-conversation invariant and test first-file/first-message
-     creation as one flow.
-   - Stop when eligible registered users can complete attach -> ask/analyze or transform -> download,
-     with guest/disabled/error/expiry/mobile paths verified. Use
-     [`29-frontend-document-workspace-rollout.md`](./docs/product-chat-service/en/29-frontend-document-workspace-rollout.md).
 
 1. **Rich assistant response rendering, starting with Mermaid**
    - Audit the existing `react-markdown` code-block boundary, streaming fences, sanitization, theme,

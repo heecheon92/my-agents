@@ -2,7 +2,9 @@
 
 [English](../en/30-rich-response-rendering-and-agent-ui-boundaries.md) | 한국어
 
-상태: **제안됨 — backend roadmap에서 관리하는 두 번째 immediate cross-repository task.** 첫
+상태: **진행 중 — frontend feature/chat-mermaid-rendering에 구현했으며 통합을 기다리는 상태.**
+Heecheon이 수동 테스트를 완료했다고 확인했습니다. 아래 계획은 최초 범위를 기록하며,
+실제 구현과 검증은 frontend의 `docs/mermaid-rendering.md`에 있습니다. 첫
 milestone은 assistant Markdown 안의 safe Mermaid rendering입니다. AG-UI와 A2UI는 이 milestone의
 dependency가 아니라 future adapter decision입니다.
 
@@ -149,3 +151,40 @@ constrained generated surface를 설명합니다. 나중에 함께 쓸 수 있�
 Reference: [react-markdown component override](https://github.com/remarkjs/react-markdown),
 [Mermaid usage와 security](https://mermaid.js.org/config/usage),
 [AG-UI overview](https://docs.ag-ui.com/), [A2UI concepts](https://a2ui.org/concepts/overview/).
+
+## 범위를 정한 구현 계획 — 2026-09-05
+
+담당은 Codex이며 최신 frontend develop에서 별도 `feature/chat-mermaid-rendering` branch를
+만듭니다. 현재는 계획만 기록하며 renderer는 구현하지 않습니다. 기존 메시지 간격, 색상,
+테두리와 disclosure를 재사용하므로 디자인 영향은 작습니다. 브라우저 검증에서 별도
+interaction 설계가 필요할 때 Claude와 협의합니다.
+
+1. `ChatTranscript → MessageBubble → AgentMessageRenderer → AgentMarkdown`에 streaming/settled
+   상태를 전달합니다. 첫 구현은 streaming 동안 source를 보여 주고 답변이 끝난 후 렌더합니다.
+   Refresh와 replay도 동일하게 처리하며 불완전한 fence를 허용하는 parser에서 닫힘을 추측하지 않습니다.
+2. Assistant answer에서만 Mermaid를 켭니다. 같은 `AgentMarkdown`을 쓰는 source preview,
+   publication review와 user message는 기존 동작을 유지합니다.
+3. Mermaid block의 `pre`를 figure로 교체합니다. figure를 `pre/code` 안에 넣지 않습니다.
+   일반 code, inline code, 안전한 link, Markdown 복사와 기존 artifact 경계는 유지합니다.
+4. Browser-only leaf와 shared lazy loader를 추가합니다. Full Mermaid dynamic import와 Tiny를
+   실제 build/network로 비교하고 flowchart, sequence, state, ER, class 지원과 loading 비용으로
+   선택합니다. Dependency와 lockfile은 frontend package manager로 관리합니다.
+5. Strict 설정은 application이 소유합니다. HTML label/click binding을 끄고 설정을 바꾸는
+   directive/frontmatter를 거부합니다. 최종 SVG의 script, foreignObject, 외부 요청과 active
+   link를 검증하며 Markdown raw HTML을 활성화하지 않습니다.
+6. 초기 제한은 source 10,000자와 `maxEdges=200`입니다. 렌더를 직렬화하고 stale 결과를 버리며
+   cache 크기를 제한합니다. Promise timeout은 synchronous layout을 중단하지 못하므로
+   입력 제한과 stress fixture로 대응하고 이 한계를 명시합니다.
+7. 기존 theme에 맞춘 localized loading/error/source control, accessible figure와 source
+   disclosure를 제공합니다. 좁은 화면은 block 내부 overflow로 처리하고 zoom은 필요성이
+   확인된 경우에만 추가합니다.
+
+검증은 실제 Mermaid로 다섯 diagram family, malformed/oversized 입력, config/link/HTML/script
+공격 입력, 여러 diagram, theme, stream/replay/refresh, keyboard, reduced motion, copy/print와
+390/768/1280 너비를 포함합니다. 사용자가 위로 스크롤한 상태를 강제로 바꾸지 않아야 합니다.
+Diagram 없는 chat의 Mermaid network 요청 부재, bundle 변화, 최초 렌더 지연과 큰 입력의
+반응성을 기록합니다. Frontend lint/typecheck/unit/browser/build를 실행하고 기존 실패는 분리합니다.
+
+Backend schema, persistence, provider prompt, artifact download나 AG-UI/A2UI 변경은 없습니다.
+완료 전에 fence를 렌더하는 최적화는 이후 UX 증거가 필요할 때 검토합니다.
+상세 파일 경계와 acceptance는 [영문 구현 계획](../en/30-rich-response-rendering-and-agent-ui-boundaries.md#scoped-implementation-plan--2026-09-05)을 따릅니다.
