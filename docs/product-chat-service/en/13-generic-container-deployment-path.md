@@ -1,6 +1,6 @@
 ---
 created: 2026-05-21
-updated: 2026-05-21
+updated: 2026-09-05
 status: active
 topics:
   - deployment
@@ -31,7 +31,8 @@ money. Use it together with the [public demo deployment readiness runbook](./12-
 flowchart TD
     Build["Build container image"] --> Env["Inject runtime env vars"]
     Env --> Migrate["Run Alembic migration command"]
-    Migrate --> Start["Start FastAPI with uvicorn"]
+    Migrate --> Persistence["Set up and verify LangGraph tables"]
+    Persistence --> Start["Start FastAPI with uvicorn"]
     Start --> Smoke["Smoke /health and /openapi.json"]
     Smoke --> Demo["Run reviewer-facing preview smoke"]
 ```
@@ -163,6 +164,27 @@ docker run --rm \
 
 Do not run hosted DB migrations from an agent session unless the owner has
 explicitly provided the target, credentials, and approval for that environment.
+
+PostgreSQL deployments also need the separate LangGraph framework tables. The image includes
+the operator scripts; after Alembic, run these using the deployment's actual embedding settings:
+
+```bash
+uv run --no-sync python -m scripts.langgraph_persistence setup
+uv run --no-sync python -m scripts.langgraph_persistence status
+uv run --no-sync python -m scripts.langgraph_persistence reconcile-memory
+```
+
+`setup` is idempotent. `reconcile-memory` is a dry run and exits nonzero when projection drift
+exists; do not add `--apply` without an explicit repair decision. Re-embedding eligible memories
+can incur provider cost. Keep the Store dimension aligned with the real embedding provider;
+do not initialize production with deterministic local defaults. Opening saver/store resources
+at app startup does not create their tables.
+
+Serve a frontend that handles waiting/resume/cancel interactions before the PostgreSQL backend
+cutover, because checkpointer-backed HITL is baseline behavior. Recheck active/waiting runs during
+the release window. Roll back the frontend/backend pair compatibly; drain waiting interactions
+before reverting to a backend that cannot resume them. Preserve database tables on an ordinary
+application rollback rather than automatically downgrading schema.
 
 Local SQLite recovery note: a developer-only `local-demo.db` that was originally
 created by SQLAlchemy `create_all` may have tables but no useful Alembic revision.

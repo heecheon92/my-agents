@@ -241,10 +241,10 @@ redaction, versioning, localization, and accessibility rules.
 
 Do not enable shared-environment checkpointer interactions until all of these are true:
 
-1. Alembic migration `20260817_0032` is applied.
+1. Alembic is at the release head (`20260905_0034`, including persistence metadata and citation migrations).
 2. `python -m scripts.langgraph_persistence setup` has initialized LangGraph Postgres
    schemas.
-3. Memory-store reconciliation reports zero drift when the store flag is enabled.
+3. Memory-store reconciliation reports zero drift before opening experimental memory to eligible users.
 4. The frontend version with V1/V2 parsing, ranked choices, bounded refinement, broad
    fallback, refresh recovery, resume routes, and held-queue behavior is deployed.
 

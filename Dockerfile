@@ -23,6 +23,8 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY alembic.ini main.py ./
 COPY alembic ./alembic
 COPY my_agents ./my_agents
+# Operator setup/status commands must be available in the deployed image.
+COPY scripts ./scripts
 
 EXPOSE 8000
 

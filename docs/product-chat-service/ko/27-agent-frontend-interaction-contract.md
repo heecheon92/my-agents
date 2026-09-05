@@ -238,9 +238,9 @@ accessibility 규칙을 그대로 지켜야 합니다.
 다음 조건이 모두 충족되기 전에는 shared environment에서 checkpointer interaction을
 켜지 않습니다.
 
-1. Alembic migration `20260817_0032` 적용
+1. Alembic release head `20260905_0034` 적용 (persistence metadata와 citation migration 포함)
 2. `python -m scripts.langgraph_persistence setup`으로 LangGraph Postgres schema 초기화
-3. Store flag를 켤 때 memory-store reconciliation zero drift 확인
+3. 대상 사용자에게 experimental memory를 열기 전에 memory-store reconciliation zero drift 확인
 4. V1/V2 parsing, ranked choice, bounded refinement, broad fallback, refresh recovery,
    resume route, held-queue behavior를 포함한 frontend 배포
 

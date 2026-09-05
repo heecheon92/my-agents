@@ -5,6 +5,11 @@ seeding, smoke verification, guest-demo operations, and learning-note creation.
 They are Python modules, not executable-bit shell files, so run them from the
 repository root with `uv run python -m scripts.<name>`.
 
+The production image also includes this directory. In the container, use
+`uv run --no-sync python -m scripts.langgraph_persistence setup` before PostgreSQL traffic,
+then `status` and `reconcile-memory` to check framework tables and projection drift.
+Alembic and LangGraph maintain separate migration histories; completing one does not set up the other.
+
 ## Quick reference
 
 | Command module | Purpose | Typical use |

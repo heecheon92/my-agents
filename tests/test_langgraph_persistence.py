@@ -13,7 +13,11 @@ from my_agents.agents.general_assistant.graph import build_graph
 from my_agents.agents.general_assistant.retrieval_gate import RetrievalSourceDecision
 from my_agents.agents.rag_agent import RagAgentRetrievalResult
 from my_agents.knowledge.auth import KnowledgeBaseSelectionContext
-from my_agents.knowledge.retrieval import AuthorizedDocumentOption
+from my_agents.knowledge.retrieval import (
+    AuthorizedDocumentOption,
+    FullDocumentTargetResolution,
+    RankedAuthorizedDocumentOption,
+)
 from my_agents.knowledge.routing import RetrievalRoutingDecision
 from my_agents.persistence.langgraph import open_langgraph_persistence
 from my_agents.settings import Settings
@@ -126,6 +130,31 @@ class _KnowledgeBaseDecider:
 
 
 class _ClarifyingRuntime:
+    def resolve_full_document_target(self, **kwargs):  # noqa: ANN003, ANN201
+        """Model an unresolved V2 shortlist without database or provider dependencies."""
+        return FullDocumentTargetResolution(
+            target=None,
+            option_count=2,
+            library_count=2,
+            candidates=tuple(
+                RankedAuthorizedDocumentOption(
+                    document_id=document_id,
+                    title=title,
+                    source_filename=f"{document_id}.txt",
+                    knowledge_base_id="kb-restart",
+                    knowledge_base_name="Restart KB",
+                    score=0.5,
+                    matched_tokens=1,
+                    match_confidence="low",
+                    match_reason_code="metadata_overlap",
+                )
+                for document_id, title in (
+                    ("doc-restart", "Restart source"),
+                    ("doc-alternative", "Alternative source"),
+                )
+            ),
+        )
+
     def retrieve_context(self, **kwargs):  # noqa: ANN003, ANN201
         selected = kwargs.get("selected_document_id")
         return RagAgentRetrievalResult(
