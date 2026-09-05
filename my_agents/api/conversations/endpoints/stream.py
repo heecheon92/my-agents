@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from my_agents.agents.general_assistant.classifier import classify_messages
 from my_agents.agents.general_assistant.responders import ResponseProviderConfigurationError
 from my_agents.api.assistant import GraphRunner, get_graph_runner
+from my_agents.api.conversations.answer_finalization import prepare_answer
 from my_agents.api.conversations.auth import get_authorized_conversation
 from my_agents.api.conversations.endpoints.runs import (
     PreparedConversationRunResume,
@@ -33,11 +34,8 @@ from my_agents.api.conversations.interactions import (
 )
 from my_agents.api.conversations.retrieval_context import (
     ConversationRetrievalContext,
-    chunks_consulted_for_answer,
     clarification_reply,
     clarification_request,
-    compose_rag_reply,
-    document_coverage_from_graph_state,
     graph_has_retrieval_context,
     graph_input_for_run,
     graph_memory_source_snapshot_json,
@@ -55,7 +53,6 @@ from my_agents.api.conversations.run_events import (
     user_message_stored_payload,
 )
 from my_agents.api.conversations.run_lifecycle import (
-    _verified_grounding_or_fallback,
     assert_no_active_run,
     cancelled_sse_event,
     fail_active_run,
@@ -384,16 +381,16 @@ def _finalize_resumed_conversation_run_events(
         yield sse_event(AgentEventType.GRAPH_INVOKED.value, graph_payload)
     update_graph_invoked_event_memory_snapshot(db, graph_event, memory_snapshot)
     base_reply = result.get("reply") or "".join(streamed_base_reply_parts).strip()
-    consulted_chunks = chunks_consulted_for_answer(retrieval_context)
-    document_coverage = document_coverage_from_graph_state(result)
-    reply = compose_rag_reply(base_reply, consulted_chunks, retrieval_context.answer_mode)
-    reply, consulted_chunks, insufficient = _verified_grounding_or_fallback(
-        reply=reply,
-        consulted_chunks=consulted_chunks,
-        retrieval_decision=retrieval_context.decision,
-        answer_mode=retrieval_context.answer_mode,
-        retrieval_attempt_count=retrieval_context.retrieval_attempt_count,
+    prepared_answer = prepare_answer(
+        base_reply=base_reply,
+        retrieval_context=retrieval_context,
+        graph_state=result,
+        memory_source_snapshot=memory_snapshot,
     )
+    reply = prepared_answer.reply
+    consulted_chunks = prepared_answer.consulted_chunks
+    document_coverage = prepared_answer.document_coverage
+    insufficient = prepared_answer.insufficient_evidence
     if not streamed_base_reply_parts:
         for delta in fallback_answer_deltas(reply):
             if is_run_cancelling(db, run.id):
@@ -421,10 +418,10 @@ def _finalize_resumed_conversation_run_events(
         selection_context=selection_context,
         insufficient_evidence=insufficient,
         retrieval_evidence=retrieval_context.retrieval_evidence,
-        memory_source_snapshot=memory_snapshot,
+        memory_source_snapshot=prepared_answer.memory_source_snapshot,
         document_coverage=document_coverage,
         retrieval_latency_ms=retrieval_context.retrieval_latency_ms,
-        reasoning_summaries=reasoning_summary_items_from_graph_state(result),
+        reasoning_summaries=prepared_answer.reasoning_summaries,
     )
     if document_coverage is not None:
         yield sse_event(
@@ -912,16 +909,16 @@ def conversation_run_events(
         memory_snapshot = graph_memory_source_snapshot_json(result) or memory_snapshot
         update_graph_invoked_event_memory_snapshot(db, graph_event, memory_snapshot)
         base_reply = result.get("reply") or "".join(streamed_base_reply_parts).strip()
-        consulted_chunks = chunks_consulted_for_answer(retrieval_context)
-        document_coverage = document_coverage_from_graph_state(result)
-        reply = compose_rag_reply(base_reply, consulted_chunks, retrieval_context.answer_mode)
-        reply, consulted_chunks, completion_insufficient_evidence = _verified_grounding_or_fallback(
-            reply=reply,
-            consulted_chunks=consulted_chunks,
-            retrieval_decision=retrieval_context.decision,
-            answer_mode=retrieval_context.answer_mode,
-            retrieval_attempt_count=retrieval_context.retrieval_attempt_count,
+        prepared_answer = prepare_answer(
+            base_reply=base_reply,
+            retrieval_context=retrieval_context,
+            graph_state=result,
+            memory_source_snapshot=memory_snapshot,
         )
+        reply = prepared_answer.reply
+        consulted_chunks = prepared_answer.consulted_chunks
+        document_coverage = prepared_answer.document_coverage
+        completion_insufficient_evidence = prepared_answer.insufficient_evidence
         if not graph_invoked:
             graph_payload = graph_invoked_payload(
                 route=route,
@@ -971,10 +968,10 @@ def conversation_run_events(
             selection_context=retrieval_context.knowledge_base_selection,
             insufficient_evidence=completion_insufficient_evidence,
             retrieval_evidence=retrieval_context.retrieval_evidence,
-            memory_source_snapshot=memory_snapshot,
+            memory_source_snapshot=prepared_answer.memory_source_snapshot,
             document_coverage=document_coverage,
             retrieval_latency_ms=retrieval_context.retrieval_latency_ms,
-            reasoning_summaries=reasoning_summary_items_from_graph_state(result),
+            reasoning_summaries=prepared_answer.reasoning_summaries,
         )
         if document_coverage is not None:
             yield sse_event(

@@ -14,9 +14,9 @@ from sqlalchemy import func, select
 from my_agents.agents.general_assistant.graph import build_graph
 from my_agents.api import create_app
 from my_agents.api.assistant import get_graph_runner
+from my_agents.api.conversations import answer_finalization
 from my_agents.api.conversations import retrieval_context as retrieval_context_module
 from my_agents.api.conversations.endpoints import replay as replay_endpoint
-from my_agents.api.conversations.endpoints import stream as stream_endpoint
 from my_agents.api.conversations.endpoints.stream import conversation_run_events
 from my_agents.conversations.models import (
     AgentEventModel,
@@ -852,7 +852,7 @@ def test_resume_stream_finalization_failure_marks_run_failed_and_cleans_checkpoi
         raise RuntimeError("post-loop finalization failure")
 
     monkeypatch.setattr(
-        stream_endpoint,
+        answer_finalization,
         "document_coverage_from_graph_state",
         fail_terminal_coverage_reconciliation,
     )

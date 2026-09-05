@@ -484,6 +484,11 @@ Earlier hosted smoke status on 2026-06-03:
   behavior as the benchmark.
 - Frontend integration lives in the separate frontend repository by design.
 
+## Maintenance cycle — active, not integrated
+
+Shared answer preparation is implemented on `refactor/answer-finalization`; public behavior, event order and transaction ownership are preserved.
+Commit/merge and deployment evidence remain separate from local verification.
+
 ## Recommended next workflow
 
 ### Immediate: rich response rendering, starting with Mermaid

@@ -17,9 +17,14 @@ from my_agents.agents.context_forge.contracts import RetrievalEvidence
 from my_agents.agents.general_assistant.classifier import classify_messages
 from my_agents.agents.general_assistant.graph import GRAPH_VERSION
 from my_agents.agents.general_assistant.responders import ResponseProviderConfigurationError
-from my_agents.agents.rag_agent import DeterministicRagAgentGroundingVerifier
 from my_agents.api.assistant import GraphRunner
 from my_agents.api.conversations.agent_trace import conversation_agent_trace_steps
+from my_agents.api.conversations.answer_finalization import (
+    prepare_answer,
+)
+from my_agents.api.conversations.answer_finalization import (
+    reasoning_summary_items_from_graph_state as reasoning_summary_items_from_graph_state,
+)
 from my_agents.api.conversations.graph_invocation import (
     GraphRunnerExecutionError,
     graph_context_for_run,
@@ -33,11 +38,8 @@ from my_agents.api.conversations.interactions import (
 )
 from my_agents.api.conversations.retrieval_context import (
     ConversationRetrievalContext,
-    chunks_consulted_for_answer,
     clarification_reply,
     clarification_request,
-    compose_rag_reply,
-    document_coverage_from_graph_state,
     graph_has_retrieval_context,
     graph_input_for_run,
     graph_memory_source_snapshot_json,
@@ -81,7 +83,6 @@ from my_agents.knowledge.models import CitationModel
 from my_agents.knowledge.retrieval import RetrievedChunk
 from my_agents.knowledge.routing import AnswerMode, RetrievalRoutingDecision
 from my_agents.observability.metrics import observe_conversation_run
-from my_agents.reasoning_summaries import summaries_from_graph_state
 from my_agents.schemas import RouteDecision
 from my_agents.settings import ReasoningEffort, ReasoningMode, get_settings
 
@@ -90,7 +91,6 @@ ACTIVE_RUN_STATUSES = (
     RunStatus.WAITING_FOR_INPUT.value,
     RunStatus.CANCELLING.value,
 )
-_GROUNDING_VERIFIER = DeterministicRagAgentGroundingVerifier()
 _CITATION_ATTRIBUTION_VERSION = 1
 logger = logging.getLogger(__name__)
 
@@ -370,16 +370,16 @@ def _complete_sync_conversation_run(
         ),
     )
     update_graph_invoked_event_memory_snapshot(db, graph_event, memory_source_snapshot)
-    consulted_chunks = chunks_consulted_for_answer(retrieval_context)
-    document_coverage = document_coverage_from_graph_state(result)
-    reply = compose_rag_reply(result["reply"], consulted_chunks, retrieval_context.answer_mode)
-    reply, consulted_chunks, completion_insufficient_evidence = _verified_grounding_or_fallback(
-        reply=reply,
-        consulted_chunks=consulted_chunks,
-        retrieval_decision=retrieval_context.decision,
-        answer_mode=retrieval_context.answer_mode,
-        retrieval_attempt_count=retrieval_context.retrieval_attempt_count,
+    prepared_answer = prepare_answer(
+        base_reply=result["reply"],
+        retrieval_context=retrieval_context,
+        graph_state=result,
+        memory_source_snapshot=memory_source_snapshot,
     )
+    reply = prepared_answer.reply
+    consulted_chunks = prepared_answer.consulted_chunks
+    document_coverage = prepared_answer.document_coverage
+    completion_insufficient_evidence = prepared_answer.insufficient_evidence
     if is_run_cancelling(db, run.id):
         mark_run_cancelled(db, run.id)
         record_run_metric("cancelled")
@@ -397,10 +397,10 @@ def _complete_sync_conversation_run(
         warnings=warnings,
         insufficient_evidence=completion_insufficient_evidence,
         retrieval_evidence=retrieval_context.retrieval_evidence,
-        memory_source_snapshot=memory_source_snapshot,
+        memory_source_snapshot=prepared_answer.memory_source_snapshot,
         document_coverage=document_coverage,
         retrieval_latency_ms=retrieval_context.retrieval_latency_ms,
-        reasoning_summaries=reasoning_summary_items_from_graph_state(result),
+        reasoning_summaries=prepared_answer.reasoning_summaries,
     )
     record_run_metric("completed")
     return response
@@ -494,16 +494,16 @@ def complete_resumed_conversation_run(
         ),
     )
     update_graph_invoked_event_memory_snapshot(db, graph_event, memory_source_snapshot)
-    consulted_chunks = chunks_consulted_for_answer(retrieval_context)
-    document_coverage = document_coverage_from_graph_state(result)
-    reply = compose_rag_reply(str(result["reply"]), consulted_chunks, retrieval_context.answer_mode)
-    reply, consulted_chunks, insufficient = _verified_grounding_or_fallback(
-        reply=reply,
-        consulted_chunks=consulted_chunks,
-        retrieval_decision=retrieval_context.decision,
-        answer_mode=retrieval_context.answer_mode,
-        retrieval_attempt_count=retrieval_context.retrieval_attempt_count,
+    prepared_answer = prepare_answer(
+        base_reply=str(result["reply"]),
+        retrieval_context=retrieval_context,
+        graph_state=result,
+        memory_source_snapshot=memory_source_snapshot,
     )
+    reply = prepared_answer.reply
+    consulted_chunks = prepared_answer.consulted_chunks
+    document_coverage = prepared_answer.document_coverage
+    insufficient = prepared_answer.insufficient_evidence
     response = persist_completed_run(
         db=db,
         run_id=run.id,
@@ -516,55 +516,13 @@ def complete_resumed_conversation_run(
         selection_context=selection_context,
         insufficient_evidence=insufficient,
         retrieval_evidence=retrieval_context.retrieval_evidence,
-        memory_source_snapshot=memory_source_snapshot,
+        memory_source_snapshot=prepared_answer.memory_source_snapshot,
         document_coverage=document_coverage,
         retrieval_latency_ms=retrieval_context.retrieval_latency_ms,
-        reasoning_summaries=reasoning_summary_items_from_graph_state(result),
+        reasoning_summaries=prepared_answer.reasoning_summaries,
     )
     delete_checkpoint_thread(graph_runner, run.id)
     return response
-
-
-def _verified_grounding_or_fallback(
-    *,
-    reply: str,
-    consulted_chunks: list[RetrievedChunk],
-    retrieval_decision: RetrievalRoutingDecision,
-    answer_mode: AnswerMode,
-    retrieval_attempt_count: int,
-) -> tuple[str, list[RetrievedChunk], bool]:
-    verification = _GROUNDING_VERIFIER.verify(
-        retrieval_decision=retrieval_decision,
-        answer_mode=answer_mode,
-        consulted_chunks=consulted_chunks,
-        consulted_count=len(consulted_chunks),
-        retrieval_attempt_count=retrieval_attempt_count,
-    )
-    if verification.passed:
-        return reply, consulted_chunks, False
-    if retrieval_decision.route == "retrieval_required" and retrieval_attempt_count >= 2:
-        fallback_verification = _GROUNDING_VERIFIER.verify(
-            retrieval_decision=retrieval_decision,
-            answer_mode=answer_mode,
-            consulted_chunks=[],
-            consulted_count=0,
-            insufficient_evidence=True,
-            retrieval_attempt_count=retrieval_attempt_count,
-        )
-        if fallback_verification.passed:
-            return insufficient_evidence_reply(), [], True
-    errors = "; ".join(verification.errors)
-    raise RuntimeError(f"RAG Agent grounding verification failed: {errors}")
-
-
-def reasoning_summary_items_from_graph_state(
-    state: dict[str, object] | None,
-) -> list[ReasoningSummaryItem]:
-    """Validate the compact graph fields at the public persistence boundary."""
-    return [
-        ReasoningSummaryItem.model_validate(item)
-        for item in summaries_from_graph_state(state)  # type: ignore[arg-type]
-    ]
 
 
 def persist_completed_run(
