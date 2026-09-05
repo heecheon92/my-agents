@@ -14,4 +14,10 @@
 
 ## 관련 위치
 
+- [Render pre-deploy 명령과 배포 검증](../en/14-render-migration-and-rollback-notes.md#production-pre-deploy-guardrail):
+  현재 확인된 명령은 `uv run --no-sync alembic upgrade head`입니다. LangGraph setup/status와
+  memory reconciliation을 연결하는 강화안은 문서화된 제안이며, Render 설정에 적용한 것은
+  아닙니다. Connection 종료 회귀 테스트는 배포 전에 별도 임시 DB에서 실행하고, 운영
+  pre-deploy에서는 실행하지 않습니다. 배포 전 검증이 운영 중의 연결 단절을 막지는 못하므로
+  runtime checkout check와 실제 인증 chat 확인도 필요합니다.
 - 영어 원문: [product-chat-service/13-generic-container-deployment-path.md](../en/13-generic-container-deployment-path.md)

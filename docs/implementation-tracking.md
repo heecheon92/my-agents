@@ -192,8 +192,15 @@ LangGraph stale-connection hotfix on 2026-09-05:
 - Before the fix, local server-side disconnection failed both checkpoint and Store reads.
   After the fix, all **4 PostgreSQL persistence tests passed**, including restart/resume.
 - Full offline suite: **585 passed, 14 gated skips, 11 warnings**; Ruff lint/format passed.
-  No schema, dependency, or environment changes. Production idle-then-chat smoke remains required.
+  No schema, dependency, or environment changes. Hotfix `e62d45a` was pushed to main and
+  fast-forwarded into develop; both remote branches were verified at that commit.
+- The owner reported successful authenticated chat after the hotfix. This confirms immediate
+  recovery, not the longer-idle production case; that remains unverified. Health/401 probes
+  do not exercise checkpoint reads and are not evidence that this failure path is fixed.
 - [Debugging note and recovery boundaries](./learning/project-notes/langgraph-stale-connections.md).
+- The owner confirmed Render's pre-deploy command is Alembic-only. The stronger framework
+  setup/status/reconciliation chain and isolated regression release gate are documented
+  recommendations, not configured automation. See [the Render runbook](./product-chat-service/en/14-render-migration-and-rollback-notes.md#production-pre-deploy-guardrail).
 
 True checkpoint-resume streaming on 2026-08-26:
 

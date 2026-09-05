@@ -7,6 +7,105 @@ Render. The goal is to keep the codebase portable: moving away from Render shoul
 mean changing environment variables and tuning deploy diagnostics, not rewriting auth,
 email, or database logic.
 
+## Production pre-deploy guardrail
+
+### Confirmed configuration — 2026-09-05
+
+The owner confirmed this Render log during the release:
+
+```text
+Starting pre-deploy: uv run --no-sync alembic upgrade head
+```
+
+The corresponding **Pre-Deploy Command** is:
+
+```sh
+uv run --no-sync alembic upgrade head
+```
+
+This is Render service configuration, not a repository startup script. The repository's
+Dockerfile CMD starts Uvicorn; it does not run Alembic. Record a later dashboard change here
+only after it is confirmed, rather than treating a proposed command as already configured.
+
+Render runs pre-deploy after the image build and before the new service starts, on a separate
+instance. A failed command prevents the new deployment from proceeding, but does **not** undo
+database changes that an earlier command already committed. See
+[Render deploy steps](https://render.com/docs/deploys#deploy-steps).
+
+### Proposed stronger command — not yet configured
+
+The current command covers Product DB migrations only. LangGraph owns a separate migration
+history, so the recommended replacement for **Pre-Deploy Command** is:
+
+```sh
+uv run --no-sync alembic upgrade head &&
+uv run --no-sync python -m scripts.langgraph_persistence setup &&
+uv run --no-sync python -m scripts.langgraph_persistence status &&
+uv run --no-sync python -m scripts.langgraph_persistence reconcile-memory
+```
+
+Use `&&`, not independent commands separated by `;`, so any nonzero exit stops the chain.
+Do not append Uvicorn to this command: Render starts the service afterward. The candidate image
+must include `scripts/`, as the current Dockerfile does. Configuring this recommendation in
+Render is a separate operational action; documenting it does not change the deployed setting.
+
+Before configuring or executing it:
+
+- Confirm the exact production branch/database, recovery point, and effective embedding settings.
+  Use a direct PostgreSQL connection for the migration/setup job; do not assume the application's
+  pooled connection is suitable for every framework migration. Keep credentials out of command
+  text and Git, and preserve the intended runtime connection configuration. The separate-instance
+  job's connection selection must be arranged securely by the operator.
+- `setup` applies framework migrations and is idempotent. It is not a memory extraction job.
+  Existing Store vector dimensions still need to match the effective embedding provider;
+  setup does not automatically resize an existing mismatched vector column.
+- `status` verifies the presence of seven required tables. It is **not** a complete schema,
+  vector-dimension, checkpoint-read/write, or application-readiness validator.
+- `reconcile-memory` reports Product DB/Store projection drift without repairing it. Drift exits
+  nonzero and deliberately blocks this strict gate, even if ordinary chat would otherwise work.
+  Investigate the drift; do not add `--apply`, delete memory rows, or prune checkpoints to make
+  deployment pass. Repair is an explicit decision and may incur embedding cost.
+
+On 2026-09-05, the separate LangGraph setup was performed during the approved DB migration.
+That one-time completion must not be mistaken for automatic coverage by the currently configured
+Alembic-only command. No new environment variable is introduced by the recommended sequence.
+
+### Before deploy: prove stale-connection recovery in an isolated database
+
+Run the existing regression tests against a **fresh disposable local PostgreSQL database**
+with pgvector. `MY_AGENTS_TEST_DATABASE_URL` is an existing test setting, not a new production
+variable. Never point it at production, shared application data, or a tunnel to a hosted DB.
+
+```sh
+: "${MY_AGENTS_TEST_DATABASE_URL:?Set a disposable local PostgreSQL test database}"
+uv run --no-sync pytest -q tests/test_langgraph_persistence.py
+```
+
+At the current test revision, acceptance is **4 passed, 0 skipped**: pool wiring, stale
+checkpoint read, stale Store read, and restart/resume. Inspect the summary, not just exit code:
+pytest can exit successfully while integration tests skip. The fault-injection cases reject
+non-loopback hosts, but a loopback address alone does not prove a database is disposable.
+
+These tests terminate a test-owned idle connection to exercise the recovery path. Never run
+them in Render's production pre-deploy job. Run them in isolated local/release CI verification
+before publishing the candidate; a failure or skip must fail that release gate. The tests exist,
+but no repository CI workflow currently enforces this gate automatically. Adding this prose
+does not make CI enforcement implemented, and the runtime image does not include dev test tools.
+
+### Runtime and post-deploy protection remain necessary
+
+Pre-deploy uses different connections from the running service and cannot keep those later
+connections alive. The shared LangGraph pool's checkout health check replaces dead idle
+connections within its existing acquisition timeout. It does not replay the graph or recover
+every disconnect that occurs during an operation; genuine database/network outages remain
+possible. Keep failures explicit rather than adding an unrestricted whole-run retry.
+
+After rollout, verify an authenticated streamed answer completes, then repeat after an idle
+period when practical. `/health` returning 200, an authenticated route returning 401 without a
+session, and SSE's initial HTTP 200 do not exercise or prove successful checkpoint work.
+The [incident note](../../learning/project-notes/langgraph-stale-connections.md) records the
+failure, fix, local red/green evidence, owner-confirmed recovery, and remaining verification gap.
+
 ## Current Render hardware snapshot
 
 Recorded on 2026-07-24 from the owner's active Render configuration:
@@ -161,6 +260,19 @@ When moving to Hostinger, Fly.io, Railway, ECS, a VPS, or another host:
    - Keep operational logs and deploy diagnostics free of secrets and raw emails.
 
 ## Rollback recipes
+
+### Database revision and image compatibility
+
+An image whose Alembic scripts do not contain the database's current revision cannot run its own
+`upgrade head` against that database. Check the chosen deployment/rollback method and which
+migration runner it actually executes; do not assume an old image plus the pre-deploy command
+is a viable rollback. A recovery branch preserves a data recovery option, not an automatic
+application rollback, and restoring it can discard newer writes.
+
+For the September 2026 release, `13607ae` predates revision0034. Both `7a450cc` and hotfix
+`e62d45a` know revision0034, but returning to `7a450cc` reintroduces the unchecked-pool bug.
+Distinguish migration compatibility from bug reintroduction; rollback is not universally
+"forward-only". Do not automatically downgrade schema when rolling back application code.
 
 ### Signup fails during email delivery
 

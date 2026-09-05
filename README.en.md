@@ -222,7 +222,7 @@ On 2026-08-25, the full offline suite on this checkout reports **534 passed, 2 s
 - Full-document retrieval is semantic comprehensive-intent-only. Large documents currently stop after the first bounded range; automatic multi-range traversal/final synthesis, model-tokenizer-aware budgets, and provider usage measurements remain future work.
 - The full-document graph bumps waiting-run compatibility to `general-assistant-checkpoint-v2`. Drain or cancel older waiting runs before rollout; an older graph version cannot resume and is failed safely by the version-mismatch path.
 - Shared rate limiting, production security review, and automated migration/smoke gates remain necessary.
-- Non-RAG tools, a background execution scheduler, and production multi-agent orchestration remain roadmap work. LangGraph persistence is implemented but remains opt-in until its Postgres setup and reconciliation checks are run.
+- Non-RAG tools, a background execution scheduler, and production multi-agent orchestration remain roadmap work. LangGraph persistence is baseline for PostgreSQL deployments and requires setup before traffic; experimental memory consent remains per-user.
 
 ## Selected documentation
 
@@ -230,6 +230,7 @@ On 2026-08-25, the full offline suite on this checkout reports **534 passed, 2 s
   run them with `uv run --no-sync python -m scripts.langgraph_persistence <command>`.
 - [Current implementation and verification status](./docs/implementation-tracking.md)
 - [Documentation map and lifecycle](./docs/README.md)
+- [Render pre-deploy command and release checks](./docs/product-chat-service/en/14-render-migration-and-rollback-notes.md#production-pre-deploy-guardrail)
 - [Permission-aware RAG design](./docs/product-chat-service/en/06-permission-aware-rag.md)
 - [Assistant orchestration flow](./my_agents/agents/general_assistant/README.en.md)
 - [Retrieval subworkflow and context assembly](./my_agents/agents/rag_agent/README.en.md)

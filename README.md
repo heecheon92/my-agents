@@ -222,7 +222,7 @@ git diff --check
 - 전체 문서 검색은 명시적인 intent에만 반응하며 기본값은 꺼져 있습니다. 큰 문서는 현재 첫 범위에서 멈춥니다. 자동 multi-range traversal/final synthesis, model-tokenizer-aware budget, provider usage 측정은 후속 작업입니다.
 - 전체 문서 graph는 대기 run 호환 버전을 `general-assistant-checkpoint-v2`로 올립니다. 배포 전에 이전 버전의 waiting run을 drain/cancel해야 하며, 구버전 run은 재개할 수 없어 version-mismatch 경로에서 안전하게 failed 처리됩니다.
 - 여러 인스턴스에서 공유하는 요청 제한, 운영 보안 점검, 마이그레이션·스모크 자동화가 필요합니다.
-- 검색 외 도구, background execution scheduler, 여러 에이전트를 운영에서 함께 돌리는 구성은 로드맵 단계입니다. LangGraph persistence는 구현되어 있지만 PostgreSQL setup/reconciliation 확인 전까지 opt-in으로 유지합니다.
+- 검색 외 도구, background execution scheduler, 여러 에이전트를 운영에서 함께 돌리는 구성은 로드맵 단계입니다. LangGraph persistence는 PostgreSQL deployment의 baseline이며 traffic을 받기 전에 setup이 필요합니다. Experimental memory 동의는 사용자별로 유지합니다.
 
 ## 핵심 문서
 
@@ -230,6 +230,7 @@ git diff --check
   `uv run --no-sync python -m scripts.langgraph_persistence <command>`로 실행합니다.
 - [구현과 검증 현황](./docs/implementation-tracking.md)
 - [문서 지도와 lifecycle 규칙](./docs/README.md)
+- [Render pre-deploy 명령과 배포 검증](./docs/product-chat-service/en/14-render-migration-and-rollback-notes.md#production-pre-deploy-guardrail)
 - [권한 기반 RAG 설계](./docs/product-chat-service/ko/06-permission-aware-rag.md)
 - [어시스턴트 오케스트레이션 흐름](./my_agents/agents/general_assistant/README.md)
 - [검색 서브워크플로와 컨텍스트 구성](./my_agents/agents/rag_agent/README.md)

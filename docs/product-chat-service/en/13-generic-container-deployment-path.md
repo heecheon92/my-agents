@@ -180,6 +180,12 @@ can incur provider cost. Keep the Store dimension aligned with the real embeddin
 do not initialize production with deterministic local defaults. Opening saver/store resources
 at app startup does not create their tables.
 
+For Render's confirmed Alembic-only Pre-Deploy Command and the proposed fail-fast sequence,
+see [the production pre-deploy guardrail](./14-render-migration-and-rollback-notes.md#production-pre-deploy-guardrail).
+Run connection-failure regression tests only against an isolated disposable database before
+release, never in a production migration job. Pre-deploy uses separate connections and cannot
+replace runtime checkout checks or an authenticated post-deploy chat test.
+
 Serve a frontend that handles waiting/resume/cancel interactions before the PostgreSQL backend
 cutover, because checkpointer-backed HITL is baseline behavior. Recheck active/waiting runs during
 the release window. Roll back the frontend/backend pair compatibly; drain waiting interactions
