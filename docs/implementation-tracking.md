@@ -495,8 +495,13 @@ pass. This is a local integration branch; it has not been merged into develop or
 - Pure document-resolution helpers preserve RetrievalService imports and ranking behavior.
 
 Individual baseline suites passed before integration: admission 583 tests (12 gated skips),
-finalization 574 (3 skips), and resolution 572 (3 skips). Combined verification is recorded below
-when complete. Publication, develop integration and production evidence remain separate.
+finalization 574 (3 skips), and resolution 572 (3 skips).
+
+Combined verification on 2026-09-05: 585 tests passed, 12 gated skips, 11 dependency deprecation
+warnings; Ruff lint and format passed (258 files). A separate isolated PostgreSQL run passed all
+18 admission/migration cases, including their SQLite counterparts. OpenAPI matches the validated
+individual branches. Temporary test databases were removed. Owner testing of this combined branch
+is pending; publication, develop integration and production evidence remain separate.
 
 ## Recommended next workflow
 
