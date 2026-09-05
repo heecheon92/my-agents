@@ -484,6 +484,11 @@ Earlier hosted smoke status on 2026-06-03:
   behavior as the benchmark.
 - Frontend integration lives in the separate frontend repository by design.
 
+## Maintenance cycle — active, not integrated
+
+Pure document selection helpers are extracted on `refactor/document-resolution`; RetrievalService remains the public facade and ranking is unchanged.
+Commit/merge and deployment evidence remain separate from local verification.
+
 ## Recommended next workflow
 
 ### Immediate: rich response rendering, starting with Mermaid
