@@ -484,11 +484,19 @@ Earlier hosted smoke status on 2026-06-03:
   behavior as the benchmark.
 - Frontend integration lives in the separate frontend repository by design.
 
-## Maintenance cycle — active, not integrated
+## Maintenance cycle — active, combined local testing
 
-Atomic run admission is implemented on `fix/atomic-run-admission`; migration `20260905_0034` and concurrent-connection validation are required before rollout.
-Shared answer preparation is implemented on `refactor/answer-finalization`; public behavior, event order and transaction ownership are preserved.
-Commit/merge and deployment evidence remain separate from local verification.
+The three maintenance slices are combined on `refactor/backend-maintenance` for one owner test
+pass. This is a local integration branch; it has not been merged into develop or deployed.
+
+- Atomic run admission enforces one active run per conversation. Apply migration `20260905_0034`
+  before serving this branch; duplicate active conversations require explicit resolution.
+- Shared answer preparation preserves public behavior, event ordering and transaction ownership.
+- Pure document-resolution helpers preserve RetrievalService imports and ranking behavior.
+
+Individual baseline suites passed before integration: admission 583 tests (12 gated skips),
+finalization 574 (3 skips), and resolution 572 (3 skips). Combined verification is recorded below
+when complete. Publication, develop integration and production evidence remain separate.
 
 ## Recommended next workflow
 
