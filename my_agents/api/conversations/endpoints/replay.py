@@ -41,6 +41,7 @@ from my_agents.api.conversations.run_events import (
 )
 from my_agents.api.conversations.run_lifecycle import (
     _verified_grounding_or_fallback,
+    admit_run,
     assert_no_active_run,
     complete_sync_conversation_run,
     fail_active_run,
@@ -49,7 +50,6 @@ from my_agents.api.conversations.run_lifecycle import (
     persist_failed_run,
     reasoning_summary_items_from_graph_state,
     record_retrieval_completed_event,
-    start_run,
 )
 from my_agents.api.conversations.serializers import (
     coerce_route,
@@ -135,16 +135,15 @@ def replay_assistant_message(
         settings=settings,
         request=request,
     )
-    run = start_run(
+    run = admit_run(
         db=db,
         conversation_id=conversation_id,
         user_id=principal.user_id,
-        user_message_id=replay_context.preceding_message.id,
-        message_content_length=len(replay_context.preceding_message.content.strip()),
+        existing_user_message=replay_context.preceding_message,
         selection_context=replay_context.selection_context,
         reasoning_mode=replay_context.reasoning_mode,
         reasoning_effort=replay_context.reasoning_effort,
-    )
+    ).run
     messages = base_messages_from_persisted(replay_context.prefix_messages)
     response = complete_sync_conversation_run(
         db=db,
@@ -199,9 +198,19 @@ def stream_replay_assistant_message(
         settings=settings,
         request=request,
     )
+    run = admit_run(
+        db=db,
+        conversation_id=conversation_id,
+        user_id=principal.user_id,
+        existing_user_message=replay_context.preceding_message,
+        selection_context=replay_context.selection_context,
+        reasoning_mode=replay_context.reasoning_mode,
+        reasoning_effort=replay_context.reasoning_effort,
+    ).run
     return StreamingResponse(
         replay_conversation_run_events(
             db=db,
+            run=run,
             conversation_id=conversation_id,
             user_id=principal.user_id,
             replay_context=replay_context,
@@ -315,17 +324,8 @@ def replay_conversation_run_events(
     user_id: str,
     replay_context: ReplayContext,
     graph_runner: GraphRunner,
+    run: AgentRunModel,
 ) -> Iterator[str]:
-    run = start_run(
-        db=db,
-        conversation_id=conversation_id,
-        user_id=user_id,
-        user_message_id=replay_context.preceding_message.id,
-        message_content_length=len(replay_context.preceding_message.content.strip()),
-        selection_context=replay_context.selection_context,
-        reasoning_mode=replay_context.reasoning_mode,
-        reasoning_effort=replay_context.reasoning_effort,
-    )
     try:
         yield sse_event(
             AgentEventType.RUN_STARTED.value,

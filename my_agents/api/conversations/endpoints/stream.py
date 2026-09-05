@@ -55,7 +55,9 @@ from my_agents.api.conversations.run_events import (
     user_message_stored_payload,
 )
 from my_agents.api.conversations.run_lifecycle import (
+    AdmittedRun,
     _verified_grounding_or_fallback,
+    admit_run,
     assert_no_active_run,
     cancelled_sse_event,
     fail_active_run,
@@ -65,14 +67,13 @@ from my_agents.api.conversations.run_lifecycle import (
     persist_failed_run,
     reasoning_summary_items_from_graph_state,
     record_retrieval_completed_event,
-    start_run,
 )
 from my_agents.api.conversations.serializers import (
     coerce_route,
     knowledge_base_selection_payload,
 )
 from my_agents.api.conversations.sse_contract import conversation_sse_responses
-from my_agents.api.conversations.transcripts import messages_for_conversation, store_user_message
+from my_agents.api.conversations.transcripts import messages_for_conversation
 from my_agents.api.document_workspace import get_document_workspace_provider
 from my_agents.api.reasoning import resolve_reasoning_preferences
 from my_agents.auth.contracts import Principal
@@ -526,9 +527,19 @@ def stream_conversation_run(
         requested_effort=request.reasoning_effort,
         uses_document_workspace=bool(request.attachment_ids),
     )
+    admitted = admit_run(
+        db=db,
+        conversation_id=conversation_id,
+        user_id=principal.user_id,
+        message=request.message,
+        selection_context=selection_context,
+        reasoning_mode=reasoning.mode,
+        reasoning_effort=reasoning.effort,
+    )
     return StreamingResponse(
         conversation_run_events(
             db=db,
+            admitted=admitted,
             conversation_id=conversation_id,
             request=request,
             user_id=principal.user_id,
@@ -555,6 +566,7 @@ def conversation_run_events(
     settings: Settings | None = None,
     document_workspace_provider: DocumentWorkspaceProvider | None = None,
     reasoning: EffectiveReasoningPreferences | None = None,
+    admitted: AdmittedRun | None = None,
 ) -> Iterator[str]:
     principal = principal or Principal(user_id=user_id, session_id="stream-runtime")
     settings = settings or get_settings()
@@ -565,18 +577,18 @@ def conversation_run_events(
         requested_effort=request.reasoning_effort,
         uses_document_workspace=bool(request.attachment_ids),
     )
-    user_message = store_user_message(db, conversation_id, request.message)
-    message_content_length = len(request.message.strip())
-    run = start_run(
+    admitted = admitted or admit_run(
         db=db,
         conversation_id=conversation_id,
         user_id=user_id,
-        user_message_id=user_message.id,
-        message_content_length=message_content_length,
+        message=request.message,
         selection_context=selection_context,
         reasoning_mode=reasoning.mode,
         reasoning_effort=reasoning.effort,
     )
+    run = admitted.run
+    user_message = admitted.user_message
+    message_content_length = len(request.message.strip())
     run_started = perf_counter()
     retrieval_route = "unknown"
     answer_mode = "unknown"

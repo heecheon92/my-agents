@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from time import perf_counter
 
 from fastapi import HTTPException, status
 from langchain_core.messages import BaseMessage
 from sqlalchemy import or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from my_agents.agent_runtime.citation_attribution import answer_supported_source_indices
@@ -858,7 +860,82 @@ def cleanup_stale_active_runs(db: Session, conversation_id: str) -> None:
         db.commit()
 
 
-def start_run(
+@dataclass(frozen=True)
+class AdmittedRun:
+    run: AgentRunModel
+    user_message: MessageModel
+
+
+def admit_run(
+    *,
+    db: Session,
+    conversation_id: str,
+    user_id: str,
+    selection_context: KnowledgeBaseSelectionContext,
+    reasoning_mode: ReasoningMode,
+    reasoning_effort: ReasoningEffort,
+    message: str | None = None,
+    existing_user_message: MessageModel | None = None,
+) -> AdmittedRun:
+    """Atomically persist an authorized prompt/run/events; the DB arbitrates competitors.
+
+    Callers authorize and resolve options before this boundary. Replay supplies its existing
+    user message. No provider execution is allowed inside this short transaction.
+    """
+    if (message is None) == (existing_user_message is None):
+        raise ValueError("Supply either a new message or an existing replay prompt")
+    try:
+        user_message = existing_user_message
+        if user_message is None:
+            assert message is not None
+            user_message = MessageModel(
+                conversation_id=conversation_id,
+                role=MessageRole.USER.value,
+                content=message.strip(),
+            )
+            db.add(user_message)
+            db.flush()
+        if (
+            user_message.conversation_id != conversation_id
+            or user_message.role != MessageRole.USER.value
+        ):
+            raise ValueError("Replay prompt must be a user message in the authorized conversation")
+        run = _insert_run(
+            db=db,
+            conversation_id=conversation_id,
+            user_id=user_id,
+            user_message_id=user_message.id,
+            message_content_length=len(user_message.content.strip()),
+            selection_context=selection_context,
+            reasoning_mode=reasoning_mode,
+            reasoning_effort=reasoning_effort,
+        )
+        db.commit()
+        return AdmittedRun(run=run, user_message=user_message)
+    except IntegrityError as exc:
+        db.rollback()
+        diagnostic = getattr(exc.orig, "diag", None)
+        postgres_conflict = (
+            getattr(exc.orig, "sqlstate", None) == "23505"
+            and getattr(diagnostic, "constraint_name", None) == "uq_agent_runs_active_conversation"
+        )
+        sqlite_conflict = (
+            db.get_bind().dialect.name == "sqlite"
+            and str(exc.orig) == "UNIQUE constraint failed: agent_runs.conversation_id"
+        )
+        if postgres_conflict or sqlite_conflict:
+            raise APIHTTPException(
+                status_code=409,
+                detail="conversation run already active",
+                code=APIErrorCode.CONVERSATION_RUN_ALREADY_ACTIVE,
+            ) from exc
+        raise
+    except Exception:
+        db.rollback()
+        raise
+
+
+def _insert_run(
     *,
     db: Session,
     conversation_id: str,
@@ -911,8 +988,6 @@ def start_run(
         ),
         commit=False,
     )
-    db.commit()
-    db.refresh(run)
     return run
 
 

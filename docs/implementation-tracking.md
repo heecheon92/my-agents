@@ -484,6 +484,11 @@ Earlier hosted smoke status on 2026-06-03:
   behavior as the benchmark.
 - Frontend integration lives in the separate frontend repository by design.
 
+## Maintenance cycle — active, not integrated
+
+Atomic run admission is implemented on `fix/atomic-run-admission`; migration `20260905_0034` and concurrent-connection validation are required before rollout.
+Commit/merge and deployment evidence remain separate from local verification.
+
 ## Recommended next workflow
 
 ### Immediate: rich response rendering, starting with Mermaid

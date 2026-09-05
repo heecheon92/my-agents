@@ -6,7 +6,7 @@ import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from my_agents.persistence.database import Base
@@ -83,6 +83,15 @@ class AgentRunModel(Base):
     """Persisted chat run boundary for frontend-visible service calls."""
 
     __tablename__ = "agent_runs"
+    __table_args__ = (
+        Index(
+            "uq_agent_runs_active_conversation",
+            "conversation_id",
+            unique=True,
+            postgresql_where=text("status IN ('running', 'waiting_for_input', 'cancelling')"),
+            sqlite_where=text("status IN ('running', 'waiting_for_input', 'cancelling')"),
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     conversation_id: Mapped[str] = mapped_column(

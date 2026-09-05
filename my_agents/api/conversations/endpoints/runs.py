@@ -19,6 +19,7 @@ from my_agents.api.conversations.interactions import (
 )
 from my_agents.api.conversations.run_events import append_run_event
 from my_agents.api.conversations.run_lifecycle import (
+    admit_run,
     assert_no_active_run,
     cleanup_stale_active_runs,
     complete_resumed_conversation_run,
@@ -26,14 +27,13 @@ from my_agents.api.conversations.run_lifecycle import (
     fail_active_run,
     mark_run_cancelled,
     persist_failed_run,
-    start_run,
 )
 from my_agents.api.conversations.serializers import (
     run_detail_response,
     run_knowledge_base_context,
     run_summary_response,
 )
-from my_agents.api.conversations.transcripts import messages_for_conversation, store_user_message
+from my_agents.api.conversations.transcripts import messages_for_conversation
 from my_agents.api.document_workspace import get_document_workspace_provider
 from my_agents.api.errors import APIErrorCode, APIHTTPException
 from my_agents.api.reasoning import resolve_reasoning_preferences
@@ -112,17 +112,16 @@ def run_conversation(
         requested_effort=request.reasoning_effort,
         uses_document_workspace=bool(request.attachment_ids),
     )
-    user_message = store_user_message(db, conversation_id, request.message)
-    run = start_run(
+    admitted = admit_run(
         db=db,
         conversation_id=conversation_id,
         user_id=principal.user_id,
-        user_message_id=user_message.id,
-        message_content_length=len(request.message.strip()),
+        message=request.message,
         selection_context=selection_context,
         reasoning_mode=reasoning.mode,
         reasoning_effort=reasoning.effort,
     )
+    run = admitted.run
     document_workspace_runtime = None
     if request.attachment_ids:
         assert document_workspace_provider is not None

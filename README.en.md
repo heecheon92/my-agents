@@ -233,3 +233,4 @@ On 2026-08-25, the full offline suite on this checkout reports **534 passed, 2 s
 - [Production smoke evidence](./docs/product-chat-service/en/16-production-smoke-evidence-2026-06-06.md)
 
 See [ROADMAP.md](./ROADMAP.md) for the larger direction and unfinished work, and [scripts/README.md](./scripts/README.md) for operational and migration commands.
+Run admission is database-atomic. Apply Alembic `20260905_0034` before deploying; see [migration and conflict handling](./docs/product-chat-service/en/31-atomic-run-admission.md).

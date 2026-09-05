@@ -233,3 +233,4 @@ git diff --check
 - [운영 환경 스모크 기록](./docs/product-chat-service/en/16-production-smoke-evidence-2026-06-06.md)
 
 더 큰 방향과 남은 일은 [ROADMAP.md](./ROADMAP.md)에, 운영과 마이그레이션 명령은 [scripts/README.md](./scripts/README.md)에 있습니다.
+대화 실행 시작은 데이터베이스에서 원자적으로 처리합니다. 배포 전에 Alembic `20260905_0034`를 적용하세요. [마이그레이션과 경쟁 요청 처리](./docs/product-chat-service/en/31-atomic-run-admission.md)를 참고하세요.
