@@ -5,9 +5,12 @@ from __future__ import annotations
 import os
 import uuid
 
+import psycopg
 import pytest
 from langchain_core.messages import HumanMessage
 from langgraph.types import Command
+from psycopg_pool import ConnectionPool
+from sqlalchemy.engine import make_url
 
 from my_agents.agents.general_assistant.graph import build_graph
 from my_agents.agents.general_assistant.retrieval_gate import RetrievalSourceDecision
@@ -19,7 +22,7 @@ from my_agents.knowledge.retrieval import (
     RankedAuthorizedDocumentOption,
 )
 from my_agents.knowledge.routing import RetrievalRoutingDecision
-from my_agents.persistence.langgraph import open_langgraph_persistence
+from my_agents.persistence.langgraph import open_langgraph_persistence, postgres_dsn
 from my_agents.settings import Settings
 
 
@@ -29,6 +32,8 @@ def test_postgres_persistence_is_automatic_and_uses_embedding_provider_dimension
     captured: dict[str, object] = {}
 
     class FakePool:
+        check_connection = staticmethod(ConnectionPool.check_connection)
+
         def __init__(self, *args, **kwargs) -> None:  # noqa: ANN002, ANN003
             captured["pool_kwargs"] = kwargs
 
@@ -63,8 +68,59 @@ def test_postgres_persistence_is_automatic_and_uses_embedding_provider_dimension
     assert resources.checkpointer is not None
     assert resources.store is not None
     assert captured["store_index"]["dims"] == 32  # type: ignore[index]
+    pool_kwargs = captured["pool_kwargs"]
+    assert isinstance(pool_kwargs, dict)
+    assert pool_kwargs.get("check") is ConnectionPool.check_connection
     resources.close()
     assert captured["pool_closed"] is True
+
+
+@pytest.mark.parametrize("operation", ["checkpoint", "store"])
+def test_local_postgres_pool_recovers_server_disconnected_idle_connection(operation: str) -> None:
+    database_url = os.getenv("MY_AGENTS_TEST_DATABASE_URL")
+    if not database_url:
+        pytest.skip("MY_AGENTS_TEST_DATABASE_URL is required for persistence integration smoke")
+    url = make_url(database_url)
+    if url.host not in {"127.0.0.1", "localhost", "::1"}:
+        pytest.skip("connection fault injection is restricted to loopback PostgreSQL")
+    settings = Settings(
+        _env_file=None,
+        MY_AGENTS_RESPONSE_MODE="deterministic",
+        MY_AGENTS_DATABASE_URL=database_url,
+    )
+    resources = open_langgraph_persistence(settings)
+    try:
+        assert resources.pool is not None
+        assert resources.checkpointer is not None
+        assert resources.store is not None
+        resources.checkpointer.setup()
+        resources.store.setup()
+        with resources.pool.connection() as idle_connection:
+            victim_pid = idle_connection.info.backend_pid
+
+        # Kill only this test-owned connection, after returning it to the pool.
+        # Server-side termination leaves the client's closed flag false until I/O.
+        with psycopg.connect(postgres_dsn(database_url), autocommit=True) as admin:
+            assert admin.info.backend_pid != victim_pid
+            assert admin.info.dbname == idle_connection.info.dbname
+            terminated = admin.execute(
+                "SELECT pg_terminate_backend(%s, 5000)", (victim_pid,)
+            ).fetchone()
+            assert terminated is not None and terminated[0]
+        assert not idle_connection.closed
+
+        if operation == "checkpoint":
+            assert (
+                resources.checkpointer.get_tuple(
+                    {"configurable": {"thread_id": f"test-stale-{uuid.uuid4()}"}}
+                )
+                is None
+            )
+        else:
+            assert resources.store.get(("test-stale", str(uuid.uuid4())), "missing") is None
+        assert resources.pool.get_stats()["connections_lost"] >= 1
+    finally:
+        resources.close()
 
 
 def test_postgres_checkpoint_resumes_document_selection_after_resource_restart() -> None:

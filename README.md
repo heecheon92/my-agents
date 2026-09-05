@@ -167,6 +167,8 @@ curl -X POST http://127.0.0.1:8000/assistant/chat \
 
 PostgreSQL deployment는 baseline LangGraph resource로 PostgresStore와 PostgresSaver를 구성합니다. 실제 데이터베이스 table은 아래 setup 명령으로 먼저 준비해야 합니다. Store는 Product DB가 governance하는 memory의 semantic projection이며 per-user experimental setting이 consent와 eligibility를 제어합니다. Status/sensitivity/provenance/source staleness는 계속 Product DB row가 강제합니다. PostgresSaver는 모호한 document-grounded run을 `202 waiting_for_input`으로 멈추고 process restart 뒤에도 같은 run을 재개하게 합니다. SQLite는 Product DB recall과 non-durable graph execution fallback을 유지합니다. PostgreSQL traffic을 받기 전에 `uv run python -m scripts.langgraph_persistence setup`을 실행하고, 사용자에게 experimental memory를 열기 전에 zero-drift reconciliation을 확인합니다.
 
+LangGraph의 공유 connection pool은 checkpoint·Store 작업 전에 연결 상태를 확인해 서버가 끊은 idle connection을 교체합니다. 이는 graph 전체 재실행이 아니며, 처리 중 연결이 끊기는 경우까지 자동 복구를 보장하지 않습니다. 추가 환경변수나 migration은 필요하지 않습니다.
+
 Experimental memory는 현재 explicit memory와 사용자가 직접 confirm한 suggestion을 recall합니다. 일반 chat이 memory를 자동 형성하지는 않으며, 별도 post-turn `memory_graph` extraction/update workflow는 계획 단계입니다.
 
 전체 문서 검색은 “문서 전체를 빠짐없이 검토해”뿐 아니라 “해당 문서에서 빠짐없이 검토해”처럼 의미상 분명한 comprehensive-document 요청에 동작합니다. OpenAI mode에서는 RAG Agent의 Luna planner가 typed retrieval tool을 선택하고, deterministic mode/provider failure에서는 같은 계약의 local fallback을 사용합니다. `MY_AGENTS_FULL_DOCUMENT_MAX_CHARS=24000`은 한 번에 완전히 검토할 수 있는 한도이고, 큰 문서는 현재 첫 범위만 읽어 `mode=partial`을 반환합니다. Exact filename은 자동 결정하고, 모호하면 현재 권한 범위에서 최대 5개 관련 후보만 보여 줍니다. 같은 run에서 filename 단서를 최대 두 번 더 받은 뒤에만 전체 목록 탐색을 엽니다.

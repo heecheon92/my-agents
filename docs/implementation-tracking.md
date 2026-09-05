@@ -185,6 +185,16 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
 
 ## Latest verification evidence
 
+LangGraph stale-connection hotfix on 2026-09-05:
+
+- Production chat exposed a failed initial checkpoint read after an SSL connection closed.
+  The shared Psycopg pool now checks connections at checkout; it does not replay graph work.
+- Before the fix, local server-side disconnection failed both checkpoint and Store reads.
+  After the fix, all **4 PostgreSQL persistence tests passed**, including restart/resume.
+- Full offline suite: **585 passed, 14 gated skips, 11 warnings**; Ruff lint/format passed.
+  No schema, dependency, or environment changes. Production idle-then-chat smoke remains required.
+- [Debugging note and recovery boundaries](./learning/project-notes/langgraph-stale-connections.md).
+
 True checkpoint-resume streaming on 2026-08-26:
 
 - Reproduced the UX regression in source: `/resume/stream` executed the synchronous checkpoint

@@ -52,6 +52,9 @@ def open_langgraph_persistence(settings: Settings) -> LangGraphPersistenceResour
         min_size=1,
         max_size=3,
         open=False,
+        # Replace server-disconnected idle connections before checkpoint/store I/O.
+        # Recovery is bounded by the pool timeout and never replays graph work.
+        check=ConnectionPool.check_connection,
         kwargs={
             "autocommit": True,
             "prepare_threshold": 0,
