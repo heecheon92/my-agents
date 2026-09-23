@@ -374,8 +374,16 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
 
 ## 13. Near-term recommended sequence
 
-- [ ] **Active:** Jev bounded decisions are implemented and offline-verified locally on `develop`
-  (source gate, RAG method, ContextForge intent); publication and live evaluation remain separate.
+- [ ] **Proposed:** User-configurable assistant style (friendliness and verbosity first;
+  explanation level, format, and examples later). No per-user implementation is scheduled.
+  [Proposal](./docs/idea/assistant-behavior-preferences.md); status follows implementation tracking.
+
+- [ ] **Active:** GPT-6 reasoning compatibility is implemented on develop and offline-verified:
+  Pro support and minimal-to-low normalization. Model-default migration and live verification
+  remain separate; see [verification](./docs/implementation-tracking.md#latest-verification-evidence).
+
+- [ ] **Active:** Jev bounded decisions are implemented and offline-verified on `develop`
+  (source gate, RAG method, ContextForge intent); deployment and live evaluation remain separate.
   See [current verification](./docs/implementation-tracking.md#latest-verification-evidence).
 
 

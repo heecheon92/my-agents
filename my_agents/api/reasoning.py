@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
@@ -14,6 +15,7 @@ from my_agents.reasoning import (
     ReasoningCapabilityResponse,
     effective_reasoning_preferences,
     model_supports_reasoning_mode,
+    normalize_reasoning_effort,
     reasoning_capability_response,
 )
 from my_agents.settings import ReasoningEffort, ReasoningMode, Settings, get_settings
@@ -56,7 +58,9 @@ def resolve_reasoning_preferences(
     if preferences.mode == "pro" and not model_supports_reasoning_mode(model):
         raise APIHTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="pro reasoning mode requires a GPT-5.6 model",
+            detail="pro reasoning mode requires a GPT-5.6 or GPT-6 model",
             code=APIErrorCode.REASONING_MODE_NOT_SUPPORTED,
         )
-    return preferences
+    return replace(
+        preferences, effort=normalize_reasoning_effort(model=model, effort=preferences.effort)
+    )

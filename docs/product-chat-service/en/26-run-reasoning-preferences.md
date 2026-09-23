@@ -12,10 +12,11 @@ flowchart LR
     Request --> Guest{"Guest account?"}
     Guest -->|Yes| Fixed["standard + server effort"]
     Guest -->|No| Resolve["request value or server default"]
-    Resolve --> Check{"pro on GPT-5.6?"}
+    Resolve --> Check{"Standard mode or Pro-supported model?"}
     Check -->|No| Error["400 reasoning_mode_not_supported"]
-    Check -->|Yes| Persist["Persist effective pair on agent_runs"]
-    Fixed --> Persist
+    Check -->|Yes| Normalize["GPT-6 minimal to low"]
+    Normalize --> Persist["Persist effective pair on agent_runs"]
+    Fixed --> Normalize
     Persist --> Provider["Final OpenAI response call"]
     Persist --> Contract["Response, run summary, run_started event"]
 ```
@@ -34,8 +35,9 @@ flowchart LR
 
 - `reasoning_mode`: `standard | pro`; omitted means `standard`.
 - `reasoning_effort`: `none | minimal | low | medium | high | xhigh | max`; omitted means `MY_AGENTS_OPENAI_REASONING_EFFORT`, whose repository default is `medium`.
+- For GPT-6 models, `minimal` is accepted as a compatibility alias and normalized to `low` before run persistence and provider calls. This applies to chat, document workspace, replay inheritance, and server defaults (including guests). Responses and events report the effective `low`; GPT-5.6 keeps its existing effort behavior. Model defaults are unchanged.
 - Mode and effort are independent.
-- `pro` requires the model selected for that run to belong to the GPT-5.6 family. Otherwise the request fails before a user message or run is stored with HTTP 400 and `code=reasoning_mode_not_supported`.
+- `pro` requires the model selected for that run to belong to the GPT-5.6 or GPT-6 family. Otherwise the request fails before a user message or run is stored with HTTP 400 and `code=reasoning_mode_not_supported`.
 
 The completed run response, run-detail response, run summaries, and display-safe `run_started` event return the effective `reasoning_mode` and `reasoning_effort`. Replay uses explicit replay fields when supplied; otherwise it inherits the original run's effective pair. Historical rows and events migrate to `standard` plus `medium`.
 

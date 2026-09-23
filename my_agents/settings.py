@@ -76,7 +76,7 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("MY_AGENTS_OPENAI_REASONING_EFFORT"),
     )
     openai_verbosity: TextVerbosity | None = Field(
-        default=None,
+        default="medium",
         validation_alias=AliasChoices("MY_AGENTS_OPENAI_VERBOSITY"),
     )
     document_workspace_enabled: bool = Field(

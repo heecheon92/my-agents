@@ -2578,3 +2578,29 @@ def test_conversation_run_excludes_disabled_user_memory(monkeypatch) -> None:  #
         assert "memory_source_snapshot" not in event_payload
     finally:
         session_generator.close()
+
+
+def test_gpt6_minimal_is_persisted_as_low_and_replayed(monkeypatch) -> None:  # noqa: ANN001
+    monkeypatch.setenv("MY_AGENTS_OPENAI_MODEL", "gpt-6-sol")
+    client = _client(monkeypatch, SpyGraph())
+    _signup_login(client, "gpt6-reasoning@example.com")
+    conversation_id = client.post("/conversations", json={"title": "GPT-6"}).json()["id"]
+    response = client.post(
+        f"/conversations/{conversation_id}/runs",
+        json={"message": "Hello", "reasoning_mode": "pro", "reasoning_effort": "minimal"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["reasoning_mode"] == "pro"
+    assert payload["reasoning_effort"] == "low"
+    events = client.get(f"/conversations/{conversation_id}/runs/{payload['run_id']}/events").json()
+    started = next(item for item in events if item["event_type"] == "run_started")
+    assert started["payload"]["reasoning_effort"] == "low"
+    message_id = _assistant_message_id(payload["run_id"])
+    replay = client.post(
+        f"/conversations/{conversation_id}/messages/{message_id}/replay",
+        json={"reasoning_effort": "minimal"},
+    )
+    assert replay.status_code == 200
+    assert replay.json()["reasoning_effort"] == "low"
+    assert replay.json()["reasoning_mode"] == "pro"

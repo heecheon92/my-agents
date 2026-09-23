@@ -97,23 +97,33 @@ def test_openai_provider_passes_gpt_variant_and_optional_tuning(
     assert model_args["verbosity"] == "low"
 
 
-def test_openai_provider_has_stable_my_agents_product_identity() -> None:
-    settings = Settings(_env_file=None, OPENAI_API_KEY="test-key")
+@pytest.mark.parametrize("model_name", ["gpt-5.6-sol", "gpt-6-sol", "gpt-6-luna"])
+def test_openai_provider_has_stable_my_agents_product_identity(model_name: str) -> None:
+    settings = Settings(
+        _env_file=None, OPENAI_API_KEY="test-key", MY_AGENTS_OPENAI_MODEL=model_name
+    )
     chat_model = FakeChatModel()
     provider = OpenAIResponseProvider(settings=settings, chat_model=chat_model)
 
     provider.compose_reply(
-        messages=[HumanMessage(content="너는 뭐야?")],
+        messages=[HumanMessage(content="지금 어떤 모델과 대화 중이야?")],
         route=RouteDecision(label="general_assistant", explanation="identity question"),
         guidance="Answer the user's question directly.",
     )
 
     system_prompt = str(chat_model.calls[0][0].content)
+    assert f"Your configured OpenAI model is {model_name}." in system_prompt
+    assert "tell them this configured model ID" in system_prompt
+    assert "public information you may share" in system_prompt
+    assert "{model_name}" not in system_prompt
     assert "You are the assistant inside my-agents" in system_prompt
     assert "https://my-agents.dev" in system_prompt
     assert 'when the user says "this service", "here", "this app"' in system_prompt
     assert "rely on the provided context rather than guessing" in system_prompt
     assert "Korean is the primary language; match the user's language" in system_prompt
+    assert "Be warm, approachable, and practical" in system_prompt
+    assert "Keep simple answers brief" in system_prompt
+    assert "Write one concise, actionable reply" not in str(chat_model.calls[0][-1].content)
     assert "do not claim that a separate specialized agent ran" in system_prompt
     assert "backend-only" not in system_prompt
     assert "vercel.app" not in system_prompt

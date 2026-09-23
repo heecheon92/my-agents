@@ -12,10 +12,11 @@ flowchart LR
     Request --> Guest{"Guest account인가?"}
     Guest -->|Yes| Fixed["standard + server effort"]
     Guest -->|No| Resolve["request 값 또는 server default"]
-    Resolve --> Check{"GPT-5.6에서 pro인가?"}
+    Resolve --> Check{"Standard 또는 Pro 지원 모델인가?"}
     Check -->|No| Error["400 reasoning_mode_not_supported"]
-    Check -->|Yes| Persist["agent_runs에 effective pair 저장"]
-    Fixed --> Persist
+    Check -->|Yes| Normalize["GPT-6 minimal을 low로 변환"]
+    Normalize --> Persist["agent_runs에 effective pair 저장"]
+    Fixed --> Normalize
     Persist --> Provider["마지막 OpenAI response call"]
     Persist --> Contract["Response, run summary, run_started event"]
 ```
@@ -34,8 +35,9 @@ flowchart LR
 
 - `reasoning_mode`: `standard | pro`; 생략하면 `standard`.
 - `reasoning_effort`: `none | minimal | low | medium | high | xhigh | max`; 생략하면 `MY_AGENTS_OPENAI_REASONING_EFFORT`이며 repository 기본값은 `medium`.
+- GPT-6 모델에서 `minimal`은 호환 alias로 받아 run 저장과 provider 호출 전에 `low`로 변환합니다. 일반 채팅, document workspace, replay 상속, guest를 포함한 서버 기본값에 적용하며 응답과 event에는 실제 적용값 `low`를 표시합니다. GPT-5.6의 기존 effort 동작과 모델 기본값은 유지합니다.
 - Mode와 effort는 서로 독립적입니다.
-- `pro`는 해당 run이 선택하는 model이 GPT-5.6 family일 때만 허용합니다. 그렇지 않으면 user message나 run을 저장하기 전에 HTTP 400, `code=reasoning_mode_not_supported`로 실패합니다.
+- `pro`는 해당 run이 선택하는 model이 GPT-5.6 또는 GPT-6 계열일 때만 허용합니다. 그렇지 않으면 user message나 run을 저장하기 전에 HTTP 400, `code=reasoning_mode_not_supported`로 실패합니다.
 
 Completed run response, run-detail response, run summary, display-safe `run_started` event는 실제 적용한 `reasoning_mode`와 `reasoning_effort`를 반환합니다. Replay에 값을 명시하면 그 값을 쓰고, 생략하면 original run의 effective pair를 이어받습니다. 기존 row와 event는 `standard`와 `medium`으로 호환됩니다.
 

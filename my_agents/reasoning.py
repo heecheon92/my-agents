@@ -80,7 +80,9 @@ def reasoning_capability_response(
     """Describe the stable UI enum plus support of the configured provider models."""
     return ReasoningCapabilityResponse(
         customizable=not is_guest,
-        default_effort=settings.openai_reasoning_effort,
+        default_effort=normalize_reasoning_effort(
+            model=settings.openai_model, effort=settings.openai_reasoning_effort
+        ),
         supported_modes=list(SUPPORTED_REASONING_MODES),
         supported_efforts=list(SUPPORTED_REASONING_EFFORTS),
         chat=ReasoningSurfaceCapability(
@@ -93,9 +95,20 @@ def reasoning_capability_response(
 
 
 def model_supports_reasoning_mode(model: str) -> bool:
-    """Return whether the configured model belongs to the GPT-5.6 family."""
+    """Return whether the configured model supports Responses reasoning modes."""
     normalized = model.strip().casefold()
-    return normalized == "gpt-5.6" or normalized.startswith("gpt-5.6-")
+    return any(
+        normalized == family or normalized.startswith(f"{family}-")
+        for family in ("gpt-5.6", "gpt-6")
+    )
+
+
+def normalize_reasoning_effort(*, model: str, effort: ReasoningEffort) -> ReasoningEffort:
+    """Keep minimal as a client compatibility alias for GPT-6 low effort."""
+    normalized = model.strip().casefold()
+    if effort == "minimal" and (normalized == "gpt-6" or normalized.startswith("gpt-6-")):
+        return "low"
+    return effort
 
 
 def openai_reasoning_payload(
@@ -105,6 +118,7 @@ def openai_reasoning_payload(
     effort: ReasoningEffort,
 ) -> dict[str, str]:
     """Build the Responses API field and request a provider summary when applicable."""
+    effort = normalize_reasoning_effort(model=model, effort=effort)
     payload = {"effort": effort}
     if model_supports_reasoning_mode(model):
         payload["mode"] = mode

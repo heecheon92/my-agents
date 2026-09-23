@@ -200,7 +200,37 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
 
 ## Latest verification evidence
 
-Jev decision integration — 2026-09-23 (local `develop` changes, not published):
+Warmer assistant defaults — 2026-09-23 (develop implementation; deployment not verified):
+
+- Replaced repeated brevity instructions with warm, adaptive explanation guidance and
+  set the default OpenAI verbosity to medium. Existing env overrides and token budgets remain.
+- Full offline suite: **624 passed, 14 skipped, 11 dependency deprecation warnings**.
+  Ruff lint/format and diff checks passed. Effective Responses `text.verbosity=medium` was
+  verified offline; live tone/detail quality still needs comparison with representative prompts.
+- User-configurable style is a separate [proposal](./idea/assistant-behavior-preferences.md),
+  not an implemented preference API or frontend control.
+
+
+Configured chat model identity — 2026-09-23 (develop implementation; deployment not verified):
+
+- The ordinary chat system prompt interpolates the configured model ID from the same settings
+  as API requests and explicitly permits disclosing that ID when the user asks.
+- Full offline suite: **624 passed, 14 skipped, 11 dependency deprecation warnings**.
+  Final disclosure wording additionally passed **26 responder tests**; Ruff lint/format passed.
+  Provider-resolved snapshots and live answer behavior were not verified.
+
+
+GPT-6 reasoning compatibility — 2026-09-23 (develop implementation; deployment not verified):
+
+- GPT-6 Pro is accepted; minimal becomes low before run persistence and provider calls.
+  Chat/workspace, replay, guest defaults, capability reporting, and GPT-5.6 compatibility
+  are covered. Active model defaults are unchanged.
+- Full offline suite: **622 passed, 14 skipped, 11 dependency deprecation warnings**.
+  Ruff lint/format and diff whitespace checks passed. No live GPT-6 request was made.
+- [Compatibility learning note](./learning/project-notes/gpt6-reasoning-compatibility.md).
+
+
+Jev decision integration — 2026-09-23 (develop implementation; deployment not verified):
 
 - Implemented source gate, RAG operation choice, and ContextForge intent via a shared
   `typesafe/jev-1.13` Decisions API adapter. OpenAI answer/metadata generation is unchanged.
@@ -479,6 +509,10 @@ Earlier hosted smoke status on 2026-06-03:
 - Entity extraction is deterministic regex/technical-term extraction, not production NLP/LLM extraction. Canonical entity creation is conflict-safe for concurrent async ingestion: names are pre-collected in stable order and inserted with dialect-aware `ON CONFLICT DO NOTHING` to avoid Postgres unique-index lock cycles.
 
 ### Agent/product behavior
+
+- [ ] **Proposed:** User-configurable friendliness, verbosity, and bounded explanation/format
+  preferences. Define typed resolution, user persistence, replay, and final-answer-only scope
+  before implementation. [Design proposal](./idea/assistant-behavior-preferences.md).
 
 - Product conversation runs support SSE progress streaming and incremental `answer_delta` assistant text events. Ordinary OpenAI-backed answers call `ChatOpenAI.stream()`; deterministic fallback and comprehensive-document disclosure paths may still buffer by design.
 - Dynamic model-authored reasoning summaries are implemented as a separate trust channel. Luna's

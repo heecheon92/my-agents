@@ -102,3 +102,17 @@ meaningful behavior, graph-state, provider, or documentation changes.
 ## 2026-09-23 — Jev bounded decisions
 
 Replaced default semantic decisions with a narrow OpenRouter Jev adapter to reduce generation overhead. Preserved deterministic offline/failure behavior and code-owned authorization. Added mocked HTTP and integration regressions in `tests/test_jev_decisions.py`; full-suite evidence is tracked in `docs/implementation-tracking.md`.
+
+## 2026-09-23 — GPT-6 reasoning compatibility
+
+Allowed GPT-6 Pro mode and normalized its minimal effort to low at the API persistence and provider boundaries. Existing GPT-5.6 behavior and model defaults remain unchanged. Added reasoning-policy and run/replay regressions.
+
+## 2026-09-23 — Configured model identity in system prompt
+
+The ordinary response system prompt now interpolates the model ID from the same Settings instance used for OpenAI requests. Model changes therefore update identity without editing prompt text. The product-identity test covers multiple model settings.
+
+## 2026-09-23 — Warmer, adaptive answer detail
+
+Replaced repeated brevity instructions with approachable, context-aware explanation guidance.
+Default verbosity is medium; short user requests remain respected. Output budgets and retrieval
+policies are unchanged. User-configurable style controls are documented as a future proposal.

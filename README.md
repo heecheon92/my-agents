@@ -161,7 +161,9 @@ curl -X POST http://127.0.0.1:8000/assistant/chat \
 
 실제 OpenAI 응답을 받으려면 `.env`에 `OPENAI_API_KEY`를 넣고 `MY_AGENTS_RESPONSE_MODE=openai`로 실행합니다. 일반 응답은 `langchain-openai`의 `ChatOpenAI` 경계를 거칩니다. 선택 기능인 임시 document workspace만 Files, Containers, Hosted Shell, Skills를 사용하기 위해 격리된 OpenAI SDK adapter를 사용합니다.
 
-일반 계정의 run 요청은 선택적으로 `reasoning_mode`(`standard` 또는 `pro`)와 `reasoning_effort`(`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`)를 받을 수 있습니다. 생략하면 mode는 `standard`, effort는 `MY_AGENTS_OPENAI_REASONING_EFFORT`를 사용합니다. Guest가 값을 보내더라도 서버는 `standard`와 환경변수 기본 effort로 고정합니다. 실제 기본값과 model 지원 여부는 `GET /capabilities/reasoning`에서 확인할 수 있습니다. `pro`는 GPT-5.6 model에서만 허용됩니다. 세부 계약은 [run reasoning 설정 계약](./docs/product-chat-service/ko/26-run-reasoning-preferences.md)에 있습니다.
+일반 계정의 run 요청은 선택적으로 `reasoning_mode`(`standard` 또는 `pro`)와 `reasoning_effort`(`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`)를 받을 수 있습니다. 생략하면 mode는 `standard`, effort는 `MY_AGENTS_OPENAI_REASONING_EFFORT`를 사용합니다. Guest가 값을 보내더라도 서버는 `standard`와 환경변수 기본 effort로 고정합니다. 실제 기본값과 model 지원 여부는 `GET /capabilities/reasoning`에서 확인할 수 있습니다. `pro`는 GPT-5.6 또는 GPT-6 model에서 허용됩니다. 세부 계약은 [run reasoning 설정 계약](./docs/product-chat-service/ko/26-run-reasoning-preferences.md)에 있습니다.
+
+GPT-6 모델에서 `minimal`은 호환 alias로 받아 run 저장과 provider 호출 전에 `low`로 변환합니다. 일반 채팅, document workspace, replay 상속, guest를 포함한 서버 기본값에 적용하며 응답과 event에는 실제 적용값 `low`를 표시합니다. GPT-5.6의 기존 effort 동작과 모델 기본값은 유지합니다.
 
 `MY_AGENTS_DOCUMENT_WORKSPACE_ENABLED=true`로 켜면 승인된 일반 계정은 대화에 임시 파일을 첨부해 GPT-5.6 Sol로 분석하고, 인증된 spreadsheet·document·Markdown·HTML 결과(`.xlsx`, `.csv`, `.tsv`, `.docx`, `.pptx`, `.pdf`, `.md`, `.markdown`, `.html`, `.htm`)를 내려받을 수 있습니다. Guest에는 열리지 않으며, 업로드마다 OpenAI 전송 동의가 필요합니다. 파일 본문은 Product DB에 저장하지 않고 OpenAI `user_data` file과 network-disabled hosted container에만 제한 시간 동안 둡니다. 세부 계약은 [OpenAI document workspace 설계](./docs/product-chat-service/ko/25-openai-document-workspace.md)를 봅니다.
 
@@ -243,3 +245,9 @@ git diff --check
 ## Jev 결정 설정
 
 Source 선택, focused/comprehensive 검색 선택, ContextForge intent 분류는 기본적으로 OpenRouter의 `typesafe/jev-1.13`을 사용합니다. 로컬에 `OPENROUTER_API_KEY`를 설정하세요. `MY_AGENTS_DECISION_PROVIDER=deterministic`은 로컬 규칙을, `openai`는 기존 source/tool 모델과 로컬 ContextForge intent를 사용합니다. `MY_AGENTS_RESPONSE_MODE=deterministic`에서는 항상 외부 결정 호출을 끕니다. 키 누락, 잘못된 응답, provider 오류는 로컬 규칙으로 fallback합니다. 재시도 없이 기본 10초 timeout(`MY_AGENTS_JEV_TIMEOUT_SECONDS`)을 사용합니다. 길이를 제한한 최근 대화와 source 선택의 개수/모드만 전송하며 credential과 provider 응답은 checkpoint에 저장하지 않습니다. 답변과 metadata 생성은 OpenAI를 유지합니다. Confidence는 권한 증명이 아니며 검증되지 않은 임계값은 적용하지 않습니다. 관련 테스트: `tests/test_jev_decisions.py`.
+
+사용자가 어떤 모델과 대화 중인지 물으면 설정된 모델 ID를 알려주도록 지시합니다. 일반 채팅 system prompt에는 API 요청과 동일한 설정의 `MY_AGENTS_OPENAI_MODEL` 값이 들어갑니다. 설정 변경 후 backend를 재시작하면 prompt에도 자동 반영됩니다. 이 값은 설정한 모델 ID이며 provider가 내부적으로 선택한 snapshot을 의미하지 않습니다.
+
+일반 assistant 답변은 친근하고 이해하기 쉬운 말투로 필요한 맥락을 설명합니다. 간단한 질문은 짧게, 학습·복잡한 질문은 필요한 깊이로 답합니다. 서버 기본값은 `MY_AGENTS_OPENAI_VERBOSITY=medium`이며 `low`/`high`도 설정할 수 있습니다. 기존 환경변수 override가 우선하며 출력 토큰 예산은 유지합니다. 사용자별 스타일 설정은 제안 단계이며 아직 구현되지 않았습니다.
+
+[사용자별 assistant 동작 설정 제안](./docs/idea/assistant-behavior-preferences.md)을 참고하세요.

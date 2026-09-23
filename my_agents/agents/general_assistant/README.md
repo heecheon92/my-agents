@@ -163,7 +163,7 @@ Document-selection option에는 사용자가 통제하는 personal/group documen
 
 OpenAI Responses API의 `web_search` 같은 일반 답변 built-in tool은 **그래프 노드가 아니라 `responders.py`의 OpenAI provider 경계**에 둡니다. Full-document retrieval은 hosted provider tool이 아니라 application이 실행하는 typed graph path입니다. 단, 임시 파일이 선택된 run은 `document_workspace_runtime`을 LangGraph runtime context로 받아 마지막 응답 node에서 격리된 document workspace adapter를 호출합니다. 이 adapter는 `ChatOpenAI`가 아직 노출하지 않는 Files, Containers, Hosted Shell, Skills API 때문에 필요한 의도적인 예외입니다.
 
-같은 runtime context는 run에 저장된 effective `reasoning_mode`와 `reasoning_effort`도 마지막 response node로 전달합니다. 일반 답변은 `ChatOpenAI.stream(..., reasoning={...})`으로 전달하고 provider는 같은 chunk를 final graph result로 aggregate하며 LangGraph는 이를 live message event로 전달합니다. Attachment 답변은 document-workspace Responses API adapter에 같은 값을 전달하며 buffered 상태를 유지합니다. Source-selection gate는 서버가 선택한 decision provider를 사용하며 사용자 reasoning 설정은 Jev 결정에 적용하지 않습니다. Guest override 차단과 GPT-5.6 `pro` 검증은 graph 진입 전 API boundary에서 수행합니다.
+같은 runtime context는 run에 저장된 effective `reasoning_mode`와 `reasoning_effort`도 마지막 response node로 전달합니다. 일반 답변은 `ChatOpenAI.stream(..., reasoning={...})`으로 전달하고 provider는 같은 chunk를 final graph result로 aggregate하며 LangGraph는 이를 live message event로 전달합니다. Attachment 답변은 document-workspace Responses API adapter에 같은 값을 전달하며 buffered 상태를 유지합니다. Source-selection gate는 서버가 선택한 decision provider를 사용하며 사용자 reasoning 설정은 Jev 결정에 적용하지 않습니다. Guest override 차단과 GPT-5.6/GPT-6 `pro` 검증은 graph 진입 전 API boundary에서 수행합니다.
 
 Reasoning이 켜져 있으면 두 final-response path 모두 provider `summary="auto"` output을 요청하고 bounded `summary_text`를 별도 `answer_synthesis_summary`로 유지합니다. Graph는 이를 `reply`에 합치지 않으며 conversation boundary가 전용 reasoning-summary 계약으로 저장하고 제공합니다.
 
@@ -201,3 +201,9 @@ OpenAI mode는 두 response route 모두에서 provider boundary에 hosted `web_
 ## Jev 결정 설정
 
 Source 선택, focused/comprehensive 검색 선택, ContextForge intent 분류는 기본적으로 OpenRouter의 `typesafe/jev-1.13`을 사용합니다. 로컬에 `OPENROUTER_API_KEY`를 설정하세요. `MY_AGENTS_DECISION_PROVIDER=deterministic`은 로컬 규칙을, `openai`는 기존 source/tool 모델과 로컬 ContextForge intent를 사용합니다. `MY_AGENTS_RESPONSE_MODE=deterministic`에서는 항상 외부 결정 호출을 끕니다. 키 누락, 잘못된 응답, provider 오류는 로컬 규칙으로 fallback합니다. 재시도 없이 기본 10초 timeout(`MY_AGENTS_JEV_TIMEOUT_SECONDS`)을 사용합니다. 길이를 제한한 최근 대화와 source 선택의 개수/모드만 전송하며 credential과 provider 응답은 checkpoint에 저장하지 않습니다. 답변과 metadata 생성은 OpenAI를 유지합니다. Confidence는 권한 증명이 아니며 검증되지 않은 임계값은 적용하지 않습니다. 관련 테스트: `tests/test_jev_decisions.py`.
+
+GPT-6 모델에서 `minimal`은 호환 alias로 받아 run 저장과 provider 호출 전에 `low`로 변환합니다. 일반 채팅, document workspace, replay 상속, guest를 포함한 서버 기본값에 적용하며 응답과 event에는 실제 적용값 `low`를 표시합니다. GPT-5.6의 기존 effort 동작과 모델 기본값은 유지합니다.
+
+사용자가 어떤 모델과 대화 중인지 물으면 설정된 모델 ID를 알려주도록 지시합니다. 일반 채팅 system prompt에는 API 요청과 동일한 설정의 `MY_AGENTS_OPENAI_MODEL` 값이 들어갑니다. 설정 변경 후 backend를 재시작하면 prompt에도 자동 반영됩니다. 이 값은 설정한 모델 ID이며 provider가 내부적으로 선택한 snapshot을 의미하지 않습니다.
+
+일반 assistant 답변은 친근하고 이해하기 쉬운 말투로 필요한 맥락을 설명합니다. 간단한 질문은 짧게, 학습·복잡한 질문은 필요한 깊이로 답합니다. 서버 기본값은 `MY_AGENTS_OPENAI_VERBOSITY=medium`이며 `low`/`high`도 설정할 수 있습니다. 기존 환경변수 override가 우선하며 출력 토큰 예산은 유지합니다. 사용자별 스타일 설정은 제안 단계이며 아직 구현되지 않았습니다.

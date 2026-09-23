@@ -15,12 +15,14 @@ def test_settings_default_to_openai_when_api_key_is_available(
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.delenv("MY_AGENTS_OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("MY_AGENTS_OPENAI_MODEL", raising=False)
+    monkeypatch.delenv("MY_AGENTS_OPENAI_VERBOSITY", raising=False)
 
     settings = Settings(_env_file=None)
 
     assert settings.response_mode == "openai"
     assert settings.openai_model == "gpt-5.6-sol"
     assert settings.openai_reasoning_effort == "medium"
+    assert settings.openai_verbosity == "medium"
     assert settings.openai_api_key_value() == "test-key"
 
 
