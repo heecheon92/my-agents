@@ -28,12 +28,12 @@ A product chat run can now answer with context from ingested personal or group d
 The important rule is simple: retrieval starts from the user's authorized documents, not
 from the entire knowledge corpus.
 
-The retrieval execution remains deterministic and permission-first, while OpenAI mode now
-adds one bounded RAG-owned model decision. After the General Assistant delegates to private
-knowledge, fixed `gpt-5.6-luna` in standard mode with low reasoning effort chooses exactly
-one typed operation: focused authorized chunk search or comprehensive document read.
-Deterministic mode, invalid tool output, and provider failure keep an offline fallback with
-the same two-tool contract:
+Retrieval execution remains permission-first. By default, OpenRouter Jev selects the source,
+then the RAG-owned focused/comprehensive operation, and ContextForge's retrieval intent.
+Scope, structured entities, permissions, and budgets remain code-owned. Deterministic mode,
+missing credentials, invalid decisions, and provider failures use local rules. The
+`MY_AGENTS_DECISION_PROVIDER=openai` rollback restores the previous OpenAI source/tool
+selectors and deterministic ContextForge intent. Jev produces no model-authored planning summary.
 
 - retrieval routing classifies each prompt as `no_retrieval`, `retrieval_required`, `retrieval_optional`, or `clarification_required`;
 - direct retrieval uses term matching over authorized chunks only when routing calls for retrieval;
@@ -130,7 +130,7 @@ an entity with an authorized chunk.
 ## Full-document retrieval path
 
 Full-document retrieval complements ranked chunk search for tasks where coverage matters
-more than finding a few relevant passages. After private-knowledge delegation, Luna chooses
+more than finding a few relevant passages. After private-knowledge delegation, Jev chooses
 the comprehensive tool for explicit or clearly implied exhaustive intent, including a named
 document plus “without missing anything” / “빠짐없이 검토.” An ordinary “summarize this
 document” request and a weak chunk-search result do not activate it. Deterministic mode and
@@ -139,7 +139,7 @@ and a task verb.
 
 ```mermaid
 flowchart TD
-    Intent["Private-knowledge task"] --> Planner{"Luna or deterministic RAG tool choice"}
+    Intent["Private-knowledge task"] --> Planner{"Jev or deterministic RAG tool choice"}
     Planner -->|search_authorized_chunks| Ranked["Normal permission-aware chunk retrieval"]
     Planner -->|read comprehensively| Resolve["Resolve one authorized user-controllable document"]
     Resolve -->|Ambiguous| HITL["Existing document_selection interrupt"]
@@ -203,7 +203,7 @@ happens to equal the current total.
 
 ## Current limitations
 
-- Broad source routing remains General Assistant-owned. Focused-versus-comprehensive tool choice is Luna-backed in OpenAI mode with deterministic fallback; Postgres ranking uses pgvector SQL vector search after permission filtering, with JSON-backed cosine similarity as the SQLite/test fallback.
+- Broad source routing remains General Assistant-owned. Focused-versus-comprehensive tool choice is Jev-backed in OpenAI mode with deterministic fallback; Postgres ranking uses pgvector SQL vector search after permission filtering, with JSON-backed cosine similarity as the SQLite/test fallback.
 - LLM query planning, full-text fusion, and ANN/vector index tuning are still future work.
 - The reply composition is a thin service-layer scaffold, not a polished answer synthesis prompt.
 - Citation objects still do not expose a per-citation character range; `document_coverage`

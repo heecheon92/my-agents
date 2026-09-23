@@ -374,6 +374,11 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
 
 ## 13. Near-term recommended sequence
 
+- [ ] **Active:** Jev bounded decisions are implemented and offline-verified locally on `develop`
+  (source gate, RAG method, ContextForge intent); publication and live evaluation remain separate.
+  See [current verification](./docs/implementation-tracking.md#latest-verification-evidence).
+
+
 Mermaid implementation/integration is complete; preserve its [completion evidence and open
 verification](./docs/completed/mermaid-rendering.md) rather than scheduling a rebuild.
 The next recommendation mirrors implementation tracking; it is not new implementation approval.

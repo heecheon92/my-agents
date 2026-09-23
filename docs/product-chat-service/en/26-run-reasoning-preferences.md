@@ -51,17 +51,16 @@ The effective pair applies to the final answer generation call:
 
 - ordinary chat uses `ChatOpenAI` with the Responses API request-level `reasoning` object;
 - attachment turns pass the same object to GPT-5.6 Sol through the isolated document-workspace adapter;
-- the internal source-selection gate remains fixed to `standard` and the server-default effort so browser preferences do not alter routing behavior or routing cost.
+- the internal source-selection gate uses a server-owned decision provider; Jev ignores browser reasoning preferences. The OpenAI rollback keeps standard/server-default effort.
 
 Raw chain-of-thought is never requested, stored, or returned. These settings control provider computation only. OpenAI documents that `pro` performs more model work and can increase latency and token usage; product credit enforcement remains a separate usage-ledger concern.
 
 ## Dynamic reasoning summaries
 
-Static reasoning preferences are not enough for the desired product UX. The backend now adds
-request-specific, model-authored summaries describing the approach selected by Luna during
-retrieval planning and by Sol during answer synthesis. These summaries remain distinct from raw
-chain-of-thought and from the verified `agent_trace`. They are nullable, bounded, explicitly
-model-generated, and must never be merged into final answer text.
+Answer synthesis can return bounded model-authored summaries from Sol, separate from raw
+chain-of-thought and verified `agent_trace`. Jev returns typed choices rather than prose, so
+its optional retrieval-planning summary is absent. The OpenAI rollback may still produce a
+model-authored planning summary. Templates must not be labeled model-generated.
 
 The rationale, schema/SSE events, safety boundary, implementation sequence, and definition
 of done live in the [dynamic reasoning summary contract](./28-dynamic-reasoning-summary-contract.md).

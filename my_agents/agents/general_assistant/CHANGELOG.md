@@ -98,3 +98,7 @@ meaningful behavior, graph-state, provider, or documentation changes.
 - **Verification:** `tests/test_classifier.py` covers a regression where prior project
   history must not change the latest Korean uploaded-document question away from
   `general_assistant`.
+
+## 2026-09-23 — Jev bounded decisions
+
+Replaced default semantic decisions with a narrow OpenRouter Jev adapter to reduce generation overhead. Preserved deterministic offline/failure behavior and code-owned authorization. Added mocked HTTP and integration regressions in `tests/test_jev_decisions.py`; full-suite evidence is tracked in `docs/implementation-tracking.md`.

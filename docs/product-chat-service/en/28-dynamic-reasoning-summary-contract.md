@@ -43,7 +43,10 @@ not something the serializer should conceal by rewriting history.
 
 ### `retrieval_planning`
 
-The Luna RAG Agent should return one bounded, user-displayable explanation alongside its typed
+The default Jev selector returns no prose: this stage is absent. Do not fabricate a template
+with `source=model_generated`. The existing typed execution trace remains available.
+
+The optional OpenAI rollback RAG planner can return one bounded explanation alongside its typed
 focused-versus-comprehensive tool choice. This is a strict output field, not arbitrary scratchpad
 text. It may explain the scope and chosen retrieval strategy, but it must not select trusted IDs,
 claim authorization, reveal system knowledge, or include document body text.

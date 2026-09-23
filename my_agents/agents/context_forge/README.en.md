@@ -39,7 +39,7 @@ flowchart TD
 | File | Responsibility |
 | --- | --- |
 | `contracts.py` | Dataclass contracts for requests, plans, candidates, evidence, and results |
-| `planner.py` | Query Cartographer deterministic intent and structured-entity planning |
+| `planner.py` | Query Cartographer Jev intent classification and deterministic structured-entity planning |
 | `source_policy.py` | Source Warden adapter around resolved KB boundaries |
 | `candidates.py` | Candidate Scouts for authorized vector/lexical chunks and structured-entity retrieval |
 | `debug.py` | Opt-in Rich print trace for role handoffs |
@@ -153,3 +153,7 @@ uv run pytest -q tests/test_permission_aware_rag.py tests/test_retrieval_routing
 ```
 
 When this package changes, also run the full offline suite plus Ruff checks before claiming completion.
+
+## Jev decision configuration
+
+Source selection, focused/comprehensive retrieval selection, and ContextForge intent use `typesafe/jev-1.13` through OpenRouter by default. Set `OPENROUTER_API_KEY` locally. `MY_AGENTS_DECISION_PROVIDER=deterministic` uses local rules; `openai` restores the previous source/tool models and local ContextForge intent. `MY_AGENTS_RESPONSE_MODE=deterministic` always disables provider decisions. Missing credentials, invalid output, and provider errors fall back to local rules. Requests use a 10-second timeout without retries (`MY_AGENTS_JEV_TIMEOUT_SECONDS`). Only bounded recent conversation text and source-selection counts/mode are sent; credentials and responses are not checkpointed. Answer generation and metadata enrichment remain OpenAI-backed. Confidence is not an authorization signal; no uncalibrated confidence threshold is imposed. See `tests/test_jev_decisions.py`.

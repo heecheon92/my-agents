@@ -51,17 +51,16 @@ Effective pair는 마지막 answer generation call에 적용합니다.
 
 - 일반 chat은 Responses API를 쓰는 `ChatOpenAI`의 request-level `reasoning` object로 전달합니다.
 - Attachment turn은 같은 object를 isolated document-workspace adapter를 통해 GPT-5.6 Sol에 전달합니다.
-- 내부 source-selection gate는 browser preference가 routing behavior나 routing cost를 바꾸지 못하도록 `standard`와 server-default effort로 고정합니다.
+- 내부 source-selection gate는 서버가 선택한 decision provider를 사용합니다. Jev는 사용자 reasoning 설정을 사용하지 않으며 OpenAI rollback만 standard/server-default effort를 유지합니다.
 
 Raw chain-of-thought는 요청하거나 저장하거나 반환하지 않습니다. 이 설정은 provider computation만 조절합니다. OpenAI 문서상 `pro`는 더 많은 model work를 수행하므로 latency와 token usage가 늘 수 있습니다. Product credit enforcement는 별도의 usage-ledger 책임입니다.
 
 ## 동적 reasoning summary
 
-정적인 reasoning preference만으로는 원하는 product UX를 제공할 수 없습니다. Backend는
-retrieval planning의 Luna와 answer synthesis의 Sol이 선택한 접근을 요청별로 설명하는
-model-authored summary를 제공합니다. 이 summary는 raw chain-of-thought 및 verified
-`agent_trace`와 구분하고, nullable/bounded/model-generated contract로 다루며 final answer text에
-합치지 않습니다.
+Sol의 answer synthesis는 raw chain-of-thought 및 verified `agent_trace`와 구분된
+bounded model-authored summary를 반환할 수 있습니다. Jev는 choice만 반환하므로 optional
+retrieval-planning summary는 생략합니다. OpenAI rollback에서는 기존 planning summary를
+사용할 수 있습니다. 고정 템플릿을 model-generated로 표시하지 않습니다.
 
 필요성, schema/SSE event, safety boundary, 구현 순서, 완료 정의는
 [동적 reasoning summary 계약](./28-dynamic-reasoning-summary-contract.md)을 기준으로 합니다.

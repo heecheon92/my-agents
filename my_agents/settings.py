@@ -45,6 +45,15 @@ class Settings(BaseSettings):
         default=None,
         validation_alias=AliasChoices("OPENAI_API_KEY", "MY_AGENTS_OPENAI_API_KEY"),
     )
+    openrouter_api_key: SecretStr | None = Field(
+        default=None, validation_alias="OPENROUTER_API_KEY"
+    )
+    decision_provider: Literal["jev", "openai", "deterministic"] = Field(
+        default="jev", validation_alias="MY_AGENTS_DECISION_PROVIDER"
+    )
+    jev_timeout_seconds: float = Field(
+        default=10.0, gt=0, le=30, validation_alias="MY_AGENTS_JEV_TIMEOUT_SECONDS"
+    )
     openai_model: str = Field(
         default="gpt-5.6-sol",
         min_length=1,

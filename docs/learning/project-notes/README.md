@@ -10,3 +10,5 @@ These notes are my-agents-specific learning and architecture notes that do not f
 4. [Agent capability model: route honesty and tool boundaries](./agent-capability-model-route-honesty-and-tool-boundaries.md)
 5. [Invitation-token signup and display-name boundary](./invitation-token-signup-display-name-boundary.md)
 6. [Tokenizer consistency audit and RAG index safety](./tokenizer-consistency-audit-and-rag-index-safety.md)
+
+- [Jev로 제한된 선택을 분리하기](./jev-bounded-decisions.md)

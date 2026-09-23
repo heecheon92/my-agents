@@ -62,7 +62,7 @@ flowchart LR
 flowchart TD
     Run["Conversation run"] --> Gate{"Use authorized knowledge?"}
     Gate -->|No| Memory["Governed opt-in memory"]
-    Gate -->|Yes| Choice{"Luna chooses a retrieval tool"}
+    Gate -->|Yes| Choice{"Jev chooses a retrieval tool"}
     Choice -->|Focused| Focused["Permission-first hybrid retrieval"]
     Choice -->|Comprehensive| Full["Resolve and read one authorized document"]
     Focused --> Context["Packed context and evidence"]
@@ -75,8 +75,8 @@ flowchart TD
 ### 요청 하나가 지나가면서 지키는 경계
 
 1. API 계층이 세션, CSRF, 그룹과 지식 베이스 접근 권한을 확인합니다.
-2. LangGraph 오케스트레이션이 이 질문에 문서 검색이 필요한지 판단합니다. Private knowledge로 위임된 요청은 고정된 `gpt-5.6-luna` standard/low RAG planner가 focused chunk search와 comprehensive document read 중 하나를 typed tool로 선택합니다.
-3. 범위가 좁은 질문은 권한 우선 청크 검색을 사용합니다. 명시적이거나 의미상 분명한 전체 검토 작업은 사용자가 통제할 수 있는 personal/group document 한 개만 고르며 system knowledge를 전체 문서 대상으로 노출하지 않습니다. Luna는 도구만 선택하고 document identity, permission, limit은 backend가 강제합니다.
+2. LangGraph 오케스트레이션이 이 질문에 문서 검색이 필요한지 판단합니다. Private knowledge로 위임된 요청은 Jev RAG planner가 focused chunk search와 comprehensive document read 중 하나를 typed tool로 선택합니다.
+3. 범위가 좁은 질문은 권한 우선 청크 검색을 사용합니다. 명시적이거나 의미상 분명한 전체 검토 작업은 사용자가 통제할 수 있는 personal/group document 한 개만 고르며 system knowledge를 전체 문서 대상으로 노출하지 않습니다. Jev는 도구만 선택하고 document identity, permission, limit은 backend가 강제합니다.
 4. 전체 문서 경로는 설정된 문자 수 이하의 정규화된 추출 텍스트만 완전히 전달합니다. 큰 파일은 한 개의 제한된 범위와 반드시 포함되는 부분 검토 안내를 반환합니다.
 5. 답변과 인용, compact coverage metadata, 요약된 실행 흐름, 가려진 시간·이벤트 기록이 같은 실행에 저장됩니다. 원문 전체는 graph checkpoint나 event에 저장하지 않습니다.
 
@@ -171,7 +171,7 @@ LangGraph의 공유 connection pool은 checkpoint·Store 작업 전에 연결 �
 
 Experimental memory는 현재 explicit memory와 사용자가 직접 confirm한 suggestion을 recall합니다. 일반 chat이 memory를 자동 형성하지는 않으며, 별도 post-turn `memory_graph` extraction/update workflow는 계획 단계입니다.
 
-전체 문서 검색은 “문서 전체를 빠짐없이 검토해”뿐 아니라 “해당 문서에서 빠짐없이 검토해”처럼 의미상 분명한 comprehensive-document 요청에 동작합니다. OpenAI mode에서는 RAG Agent의 Luna planner가 typed retrieval tool을 선택하고, deterministic mode/provider failure에서는 같은 계약의 local fallback을 사용합니다. `MY_AGENTS_FULL_DOCUMENT_MAX_CHARS=24000`은 한 번에 완전히 검토할 수 있는 한도이고, 큰 문서는 현재 첫 범위만 읽어 `mode=partial`을 반환합니다. Exact filename은 자동 결정하고, 모호하면 현재 권한 범위에서 최대 5개 관련 후보만 보여 줍니다. 같은 run에서 filename 단서를 최대 두 번 더 받은 뒤에만 전체 목록 탐색을 엽니다.
+전체 문서 검색은 “문서 전체를 빠짐없이 검토해”뿐 아니라 “해당 문서에서 빠짐없이 검토해”처럼 의미상 분명한 comprehensive-document 요청에 동작합니다. OpenAI mode에서는 RAG Agent의 Jev planner가 typed retrieval tool을 선택하고, deterministic mode/provider failure에서는 같은 계약의 local fallback을 사용합니다. `MY_AGENTS_FULL_DOCUMENT_MAX_CHARS=24000`은 한 번에 완전히 검토할 수 있는 한도이고, 큰 문서는 현재 첫 범위만 읽어 `mode=partial`을 반환합니다. Exact filename은 자동 결정하고, 모호하면 현재 권한 범위에서 최대 5개 관련 후보만 보여 줍니다. 같은 run에서 filename 단서를 최대 두 번 더 받은 뒤에만 전체 목록 탐색을 엽니다.
 
 VS Code의 `FastAPI: uvicorn main:app (local pgvector)` 프로필은 실행 전에 마이그레이션을 돌리는데, 이때 셸에서 `uv`를 찾는 대신 Python 확장이 선택한 인터프리터를 그대로 씁니다. GUI로 켠 VS Code의 `PATH`에 `uv`가 없어도 동작하도록 만든 구성이므로, 쓰기 전에 이 저장소의 `.venv` 인터프리터를 선택해 두세요.
 
@@ -239,3 +239,7 @@ git diff --check
 
 더 큰 방향과 남은 일은 [ROADMAP.md](./ROADMAP.md)에, 운영과 마이그레이션 명령은 [scripts/README.md](./scripts/README.md)에 있습니다.
 대화 실행 시작은 데이터베이스에서 원자적으로 처리합니다. 배포 전에 Alembic `20260905_0034`를 적용하세요. [마이그레이션과 경쟁 요청 처리](./docs/product-chat-service/en/31-atomic-run-admission.md)를 참고하세요.
+
+## Jev 결정 설정
+
+Source 선택, focused/comprehensive 검색 선택, ContextForge intent 분류는 기본적으로 OpenRouter의 `typesafe/jev-1.13`을 사용합니다. 로컬에 `OPENROUTER_API_KEY`를 설정하세요. `MY_AGENTS_DECISION_PROVIDER=deterministic`은 로컬 규칙을, `openai`는 기존 source/tool 모델과 로컬 ContextForge intent를 사용합니다. `MY_AGENTS_RESPONSE_MODE=deterministic`에서는 항상 외부 결정 호출을 끕니다. 키 누락, 잘못된 응답, provider 오류는 로컬 규칙으로 fallback합니다. 재시도 없이 기본 10초 timeout(`MY_AGENTS_JEV_TIMEOUT_SECONDS`)을 사용합니다. 길이를 제한한 최근 대화와 source 선택의 개수/모드만 전송하며 credential과 provider 응답은 checkpoint에 저장하지 않습니다. 답변과 metadata 생성은 OpenAI를 유지합니다. Confidence는 권한 증명이 아니며 검증되지 않은 임계값은 적용하지 않습니다. 관련 테스트: `tests/test_jev_decisions.py`.

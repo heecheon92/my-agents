@@ -85,3 +85,7 @@
 - **Behavior / contract impact:** Added `ContextForgeService` as the production-surface retrieval orchestration boundary under `my_agents/agents/context_forge/`. The package implements deterministic role classes for query planning, source-boundary handoff, candidate gathering, fusion, reranking seam, high-recall context packing, and redacted retrieval evidence. Hard authorization and SQL/database retrieval remain in `my_agents/knowledge/` service-layer code.
 - **Structured retrieval impact:** Ingestion now stores structured knowledge entities for API endpoints, config keys, shell commands, error codes, and database table references. Enumeration prompts such as “list API endpoints in this document” can retrieve by extracted entity type with chunk/page/offset provenance.
 - **Verification evidence:** Added `tests/test_context_forge_contracts.py` and `tests/test_context_forge_structured_retrieval.py`. Targeted verification passed with ContextForge tests, migration tests, RAG permission tests, conversation/streaming tests, and Ruff/format checks during the Ralph implementation session.
+
+## 2026-09-23 — Jev bounded decisions
+
+Replaced default semantic decisions with a narrow OpenRouter Jev adapter to reduce generation overhead. Preserved deterministic offline/failure behavior and code-owned authorization. Added mocked HTTP and integration regressions in `tests/test_jev_decisions.py`; full-suite evidence is tracked in `docs/implementation-tracking.md`.

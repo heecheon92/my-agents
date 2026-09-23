@@ -29,7 +29,9 @@ The graph currently has one production assistant/router path. Route labels and c
 ## Hard constraints
 
 - No frontend files, UI framework setup, or browser app scaffolding in this repo.
-- No provider sprawl. The only planned LLM provider is OpenAI.
+- OpenAI remains the generative provider. The approved narrow exception is OpenRouter
+  Jev for source selection, RAG retrieval-method selection, and ContextForge intent
+  classification through `my_agents/decisions.py`; no other provider scope is approved.
 - Use `langchain-openai` / `ChatOpenAI` for ordinary OpenAI model access. The one
   approved exception is `my_agents/document_workspace/provider.py`, whose narrow
   OpenAI SDK adapter is required for Files, Containers, Hosted Shell, and Skills

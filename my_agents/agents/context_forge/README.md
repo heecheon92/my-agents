@@ -39,7 +39,7 @@ flowchart TD
 | 파일 | 책임 |
 | --- | --- |
 | `contracts.py` | request, plan, candidate, evidence, result dataclass contract |
-| `planner.py` | Query Cartographer의 deterministic intent 및 structured-entity planning |
+| `planner.py` | Query Cartographer의 Jev intent 분류 및 deterministic structured-entity planning |
 | `source_policy.py` | resolved KB boundary를 다루는 Source Warden adapter |
 | `candidates.py` | authorized vector/lexical chunk와 structured entity retrieval 후보 수집 |
 | `debug.py` | opt-in Rich print 역할 handoff trace |
@@ -149,3 +149,7 @@ uv run pytest -q tests/test_permission_aware_rag.py tests/test_retrieval_routing
 ```
 
 이 패키지를 수정하면 완료를 주장하기 전에 전체 offline suite와 Ruff check도 실행해야 합니다.
+
+## Jev 결정 설정
+
+Source 선택, focused/comprehensive 검색 선택, ContextForge intent 분류는 기본적으로 OpenRouter의 `typesafe/jev-1.13`을 사용합니다. 로컬에 `OPENROUTER_API_KEY`를 설정하세요. `MY_AGENTS_DECISION_PROVIDER=deterministic`은 로컬 규칙을, `openai`는 기존 source/tool 모델과 로컬 ContextForge intent를 사용합니다. `MY_AGENTS_RESPONSE_MODE=deterministic`에서는 항상 외부 결정 호출을 끕니다. 키 누락, 잘못된 응답, provider 오류는 로컬 규칙으로 fallback합니다. 재시도 없이 기본 10초 timeout(`MY_AGENTS_JEV_TIMEOUT_SECONDS`)을 사용합니다. 길이를 제한한 최근 대화와 source 선택의 개수/모드만 전송하며 credential과 provider 응답은 checkpoint에 저장하지 않습니다. 답변과 metadata 생성은 OpenAI를 유지합니다. Confidence는 권한 증명이 아니며 검증되지 않은 임계값은 적용하지 않습니다. 관련 테스트: `tests/test_jev_decisions.py`.

@@ -7,10 +7,11 @@
 이 문서는 `product-chat-service/06-permission-aware-rag.md`의 한국어 문서 트랙 항목입니다. 현재는 핵심 목적과 영어 원문 위치를 안내하는 요약본입니다.
 2026-06-16 기준 영어 원문은 `general_assistant` graph가 RAG Agent runtime을 호출하고, RAG Agent가 내부적으로 ContextForge `RetrievalGraph`에 위임하는 현재 retrieval entrypoint를 설명합니다. 더 깊은 tool-using retrieval graph orchestration은 future-gated 상태입니다. 2026-06-17 업데이트는 현재 high-recall RAG 품질을 benchmark로 유지하면서, 향후 Fast / Balanced / Thorough retrieval profile로 product UX latency와 answer quality를 균형 있게 조정하는 방향을 기록합니다.
 
-2026-08-24에는 semantic `comprehensive_document` 경로가 추가되었습니다. OpenAI mode에서는
-General Assistant가 private knowledge로 위임한 뒤 고정된 `gpt-5.6-luna` standard/low RAG
-planner가 focused chunk search와 comprehensive document read 중 typed tool 하나를 고릅니다.
-Deterministic mode, invalid output, provider failure는 같은 two-tool local fallback을 사용합니다.
+2026-09-23 로컬 구현에서는 OpenRouter Jev가 source 선택, focused/comprehensive operation,
+ContextForge intent를 분류합니다. 권한, scope, structured entity와 budget은 기존 코드가 유지합니다.
+Deterministic mode, 키 누락, invalid output, provider failure는 로컬 규칙을 사용합니다.
+`MY_AGENTS_DECISION_PROVIDER=openai`는 기존 OpenAI gate/selector와 로컬 intent로 되돌립니다.
+Jev는 prose를 생성하지 않아 model-authored planning summary는 생략합니다.
 이 경로는
 “문서 전체를 빠짐없이 검토해줘”처럼 completeness 표현과 document task가 함께 있는
 명시적 요청에서만 동작합니다. 일반 문서 질문이나 chunk retrieval 결과가 약하다는

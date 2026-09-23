@@ -7,7 +7,7 @@
 ## 현재 역할
 
 - `general_assistant` graph 안의 `retrieve_rag_context` node가 호출하는 runtime-only `RagAgentRuntime` contract를 제공합니다.
-- General Assistant가 private knowledge로 위임한 뒤 고정된 `gpt-5.6-luna` standard/low planner가 `search_authorized_chunks`와 `read_authorized_document_comprehensively` 중 typed retrieval operation 하나를 선택합니다. 같은 strict tool call은 trusted tool choice와 분리된 optional bounded user-facing approach summary도 반환합니다.
+- General Assistant가 private knowledge로 위임한 뒤 Jev decision planner가 `search_authorized_chunks`와 `read_authorized_document_comprehensively` 중 typed retrieval operation 하나를 선택합니다. Jev는 prose를 반환하지 않으므로 optional model-authored approach summary는 비워 둡니다.
 - Deterministic mode, invalid output, provider failure는 같은 two-tool contract의 credential-free semantic fallback을 사용합니다.
 - `RagAgentRetrievalResult`로 route, answer mode, authorized chunks, redacted retrieval evidence, retry/sufficiency state를 반환합니다.
 - 명시적인 comprehensive-document task를 위해 typed `resolve_full_document_target`, `read_full_document_range` runtime method를 제공하되 raw text는 checkpoint되는 RAG result에 넣지 않습니다.
@@ -24,7 +24,7 @@
 | `retrieval.py` | `general_assistant`가 호출하는 public RAG Agent runtime; focused ContextForge retrieval과 permission-first full-document target/range read를 감쌉니다. |
 | `graph.py` | RAG Agent trace/grounding contract를 계획하고 검증하는 전용 LangGraph form. |
 | `planner.py` | compact run trace를 위한 deterministic stage planner. |
-| `tool_selection.py` | Luna 기반 focused/comprehensive retrieval-tool 선택과 deterministic fallback. Authorization을 실행하거나 raw document text를 반환하지 않습니다. |
+| `tool_selection.py` | Jev 기반 focused/comprehensive retrieval-tool 선택과 deterministic fallback. Authorization을 실행하거나 raw document text를 반환하지 않습니다. |
 | `verifier.py` | trace contract의 shape/safety와 grounding boundary를 검증하는 deterministic verifier. |
 | `README.md` / `README.en.md` | 한국어/영어 behavior 및 boundary 문서. |
 | `CHANGELOG.md` | agent folder 변경 이유 기록. |
@@ -34,7 +34,7 @@
 ```mermaid
 sequenceDiagram
     participant GA as general_assistant graph
-    participant Planner as Luna RAG tool planner
+    participant Planner as Jev RAG tool planner
     participant RAG as RAG Agent runtime
     participant CF as ContextForge retrieval graph
     participant Trace as RAG Agent contract graph
@@ -62,7 +62,7 @@ sequenceDiagram
 
 - Public retrieval-agent 이름은 `RAG Agent`입니다.
 - Internal delegated implementation 이름은 `ContextForge`입니다.
-- Standard mode / low reasoning effort의 `gpt-5.6-luna`는 semantic tool choice와 bounded display explanation을 소유합니다. 이 설명은 model-authored이며 verified execution record가 아닙니다. Trusted document ID, authorization, server budget, final answer를 결정하지 않으며 user reasoning control은 internal planner가 아니라 final response model에 적용됩니다.
+- Jev는 semantic operation만 선택합니다. Jev에서는 optional model-authored planning summary를 비워 둡니다. Document ID, 권한, 서버 예산, 최종 답변은 이 결정 밖에 유지합니다. 사용자 reasoning 설정은 최종 답변에만 적용합니다.
 - `search_authorized_chunks`는 focused ContextForge retrieval이고 `read_authorized_document_comprehensively`는 explicit 또는 의미상 분명한 exhaustive intent를 위한 bounded target/range read입니다. Focused evidence가 약하다는 이유만으로 comprehensive tool로 승격하지 않습니다.
 - `rag_retrieval_result`는 graph runtime object이며 그대로 frontend나 checkpoint에 노출하지 않습니다.
 - `retrieved_context`는 이미 권한 확인이 끝난 prompt-safe compact context입니다. Ambient
@@ -83,7 +83,7 @@ sequenceDiagram
 
 ## Capability / boundary metadata
 
-이 패키지는 production RAG Agent boundary입니다. Retrieval graph/tool seam을 제공하고 OpenAI mode에서 bounded Luna tool-choice call 한 번을 수행하지만, hard authorization과 low-level candidate SQL은 ContextForge/RetrievalService 안에 남습니다. Autonomous hosted agent service가 아니고 external side effect가 없으며 provider credential은 application setting에 머물고 agent state에 persist되지 않습니다.
+이 패키지는 production RAG Agent boundary입니다. Retrieval graph/tool seam을 제공하고 OpenAI mode에서 bounded Jev tool-choice call 한 번을 수행하지만, hard authorization과 low-level candidate SQL은 ContextForge/RetrievalService 안에 남습니다. Autonomous hosted agent service가 아니고 external side effect가 없으며 provider credential은 application setting에 머물고 agent state에 persist되지 않습니다.
 
 ## Service layer와의 관계
 
@@ -97,7 +97,11 @@ Conversation API는 user/conversation/knowledge-base selection과 DB-backed `Sql
 
 - Retrieval boundary 변경 시 `tests/test_conversations_api.py`와 `tests/test_permission_aware_rag.py`를 업데이트합니다.
 - Contract/trace 변경 시 `tests/test_rag_agent_contracts.py`를 업데이트합니다.
-- Luna model policy, tool description, multilingual intent, deterministic/provider-failure fallback 변경 시 `tests/test_rag_agent_tool_selection.py`를 업데이트합니다.
+- Jev model policy, tool description, multilingual intent, deterministic/provider-failure fallback 변경 시 `tests/test_rag_agent_tool_selection.py`를 업데이트합니다.
 - Full-document resolution, range, authorization, citation, replay, checkpoint safety 변경 시 `tests/test_full_document_retrieval.py`를 업데이트합니다.
 - ContextForge 위임 경로 변경 시 `tests/test_context_forge_contracts.py`, `tests/test_context_forge_reranking.py`, `tests/test_context_forge_structured_retrieval.py`를 실행합니다.
 - README pair와 `CHANGELOG.md`를 함께 유지합니다.
+
+## Jev 결정 설정
+
+Source 선택, focused/comprehensive 검색 선택, ContextForge intent 분류는 기본적으로 OpenRouter의 `typesafe/jev-1.13`을 사용합니다. 로컬에 `OPENROUTER_API_KEY`를 설정하세요. `MY_AGENTS_DECISION_PROVIDER=deterministic`은 로컬 규칙을, `openai`는 기존 source/tool 모델과 로컬 ContextForge intent를 사용합니다. `MY_AGENTS_RESPONSE_MODE=deterministic`에서는 항상 외부 결정 호출을 끕니다. 키 누락, 잘못된 응답, provider 오류는 로컬 규칙으로 fallback합니다. 재시도 없이 기본 10초 timeout(`MY_AGENTS_JEV_TIMEOUT_SECONDS`)을 사용합니다. 길이를 제한한 최근 대화와 source 선택의 개수/모드만 전송하며 credential과 provider 응답은 checkpoint에 저장하지 않습니다. 답변과 metadata 생성은 OpenAI를 유지합니다. Confidence는 권한 증명이 아니며 검증되지 않은 임계값은 적용하지 않습니다. 관련 테스트: `tests/test_jev_decisions.py`.

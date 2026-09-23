@@ -7,7 +7,7 @@
 ## Current role
 
 - Provides the runtime-only `RagAgentRuntime` contract invoked by the `retrieve_rag_context` node inside the `general_assistant` graph.
-- After the General Assistant delegates to private knowledge, uses a fixed `gpt-5.6-luna` standard/low planner to choose exactly one typed retrieval operation: `search_authorized_chunks` or `read_authorized_document_comprehensively`. The same strict tool call returns an optional bounded user-facing approach summary, kept separate from the trusted tool choice.
+- After the General Assistant delegates to private knowledge, uses a Jev decision planner to choose exactly one typed retrieval operation: `search_authorized_chunks` or `read_authorized_document_comprehensively`. Jev returns no prose, so the optional model-authored approach summary is absent.
 - Keeps deterministic mode, invalid-output handling, and provider failures on a credential-free semantic fallback with the same two-tool contract.
 - Returns `RagAgentRetrievalResult` with route, answer mode, authorized chunks, redacted retrieval evidence, and retry/sufficiency state.
 - Provides typed `resolve_full_document_target` and `read_full_document_range` runtime methods for explicit comprehensive-document tasks without making raw text part of the checkpointed RAG result.
@@ -24,7 +24,7 @@
 | `retrieval.py` | Public RAG Agent runtime called by `general_assistant`; wraps focused ContextForge retrieval and permission-first full-document target/range reads. |
 | `graph.py` | Dedicated LangGraph form that plans and verifies the RAG Agent trace/grounding contract. |
 | `planner.py` | Deterministic stage planner for compact run traces. |
-| `tool_selection.py` | Luna-backed focused/comprehensive retrieval-tool selection plus deterministic fallback; never executes authorization or returns raw document text. |
+| `tool_selection.py` | Jev-backed focused/comprehensive retrieval-tool selection plus deterministic fallback; never executes authorization or returns raw document text. |
 | `verifier.py` | Deterministic safety/shape and grounding-boundary verifier. |
 | `README.md` / `README.en.md` | Korean/English behavior and boundary docs. |
 | `CHANGELOG.md` | Why this agent folder changed. |
@@ -34,7 +34,7 @@
 ```mermaid
 sequenceDiagram
     participant GA as general_assistant graph
-    participant Planner as Luna RAG tool planner
+    participant Planner as Jev RAG tool planner
     participant RAG as RAG Agent runtime
     participant CF as ContextForge retrieval graph
     participant Trace as RAG Agent contract graph
@@ -62,7 +62,7 @@ sequenceDiagram
 
 - The public retrieval-agent name is `RAG Agent`.
 - The internal delegated implementation name is `ContextForge`.
-- `gpt-5.6-luna` in standard mode with low reasoning effort owns semantic tool choice plus a bounded display explanation. The explanation is model-authored, not a verified execution record. Luna cannot select trusted document IDs, authorize access, change server budgets, or compose the final answer. User-selected reasoning controls apply to the final response model, not this internal planner.
+- Jev selects only the semantic operation. Optional model-authored planning summaries remain absent for Jev. Document IDs, authorization, server budgets, and final answers remain outside this decision. User reasoning controls apply only to final answers.
 - `search_authorized_chunks` means focused ContextForge retrieval. `read_authorized_document_comprehensively` means bounded target resolution/range reading for explicit or clearly implied exhaustive intent. Weak focused evidence alone must not escalate to the comprehensive tool.
 - `rag_retrieval_result` is a graph runtime object; do not expose it directly to frontend clients or checkpoints.
 - `retrieved_context` is already-authorized, prompt-safe compact context. Ambient system
@@ -83,7 +83,7 @@ sequenceDiagram
 
 ## Capability or boundary metadata
 
-This package is the production RAG Agent boundary. It exposes a graph/tool seam for retrieval and now performs one bounded Luna tool-choice call in OpenAI mode, while hard authorization and low-level candidate SQL stay in ContextForge/RetrievalService. It is not an autonomous hosted agent service and has no external side effects; provider credentials remain application settings and are never persisted in agent state.
+This package is the production RAG Agent boundary. It exposes a graph/tool seam for retrieval and now performs one bounded Jev tool-choice call in OpenAI mode, while hard authorization and low-level candidate SQL stay in ContextForge/RetrievalService. It is not an autonomous hosted agent service and has no external side effects; provider credentials remain application settings and are never persisted in agent state.
 
 ## Relationship to service layers
 
@@ -97,7 +97,11 @@ If a new retrieval tool or deeper graph node is needed, add it first to the publ
 
 - Update `tests/test_conversations_api.py` and `tests/test_permission_aware_rag.py` for retrieval-boundary changes.
 - Update `tests/test_rag_agent_contracts.py` for contract/trace changes.
-- Update `tests/test_rag_agent_tool_selection.py` for Luna model policy, tool descriptions, multilingual intent, and deterministic/provider-failure fallback changes.
+- Update `tests/test_rag_agent_tool_selection.py` for Jev model policy, tool descriptions, multilingual intent, and deterministic/provider-failure fallback changes.
 - Update `tests/test_full_document_retrieval.py` for full-document resolution, range, authorization, citation, replay, and checkpoint-safety changes.
 - Run `tests/test_context_forge_contracts.py`, `tests/test_context_forge_reranking.py`, and `tests/test_context_forge_structured_retrieval.py` when the delegated ContextForge path changes.
 - Keep this README pair and `CHANGELOG.md` aligned.
+
+## Jev decision configuration
+
+Source selection, focused/comprehensive retrieval selection, and ContextForge intent use `typesafe/jev-1.13` through OpenRouter by default. Set `OPENROUTER_API_KEY` locally. `MY_AGENTS_DECISION_PROVIDER=deterministic` uses local rules; `openai` restores the previous source/tool models and local ContextForge intent. `MY_AGENTS_RESPONSE_MODE=deterministic` always disables provider decisions. Missing credentials, invalid output, and provider errors fall back to local rules. Requests use a 10-second timeout without retries (`MY_AGENTS_JEV_TIMEOUT_SECONDS`). Only bounded recent conversation text and source-selection counts/mode are sent; credentials and responses are not checkpointed. Answer generation and metadata enrichment remain OpenAI-backed. Confidence is not an authorization signal; no uncalibrated confidence threshold is imposed. See `tests/test_jev_decisions.py`.

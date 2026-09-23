@@ -9,7 +9,7 @@
 - `build_graph()`는 conversation run이 사용하는 retrieval-enabled product graph입니다.
 - `build_legacy_chat_graph()`는 FastAPI legacy `/assistant/chat`와 터미널 CLI가 사용하는 no-KB graph입니다.
 - Product conversation run에서는 top-level controller처럼 동작하며 `decide_retrieval_source`를 거친 뒤 필요할 때 `retrieve_rag_context` node로 `rag_agent` retrieval runtime을 호출합니다.
-- Private knowledge 위임 뒤 RAG Agent의 fixed Luna standard/low planner가 focused chunk search와 comprehensive document read를 고릅니다. Deterministic mode와 provider failure는 같은 local fallback을 유지하며 comprehensive choice는 `resolve_full_document_target -> prepare_full_document_read -> retrieve_memory -> respond_full_document` 경로로 갑니다.
+- Private knowledge 위임 뒤 RAG Agent의 Jev planner가 focused chunk search와 comprehensive document read를 고릅니다. Deterministic mode와 provider failure는 같은 local fallback을 유지하며 comprehensive choice는 `resolve_full_document_target -> prepare_full_document_read -> retrieve_memory -> respond_full_document` 경로로 갑니다.
 - 라우트 라벨은 응답 방식을 고르는 메타데이터입니다.
 - 라우트 라벨은 `AgentCapability` metadata와 연결되어 사용 가능한 tool, data source, side effect를 정직하게 전달합니다.
 - 현재 라우트별 response node는 별도의 hosted 전문 에이전트 실행을 의미하지 않습니다.
@@ -25,7 +25,7 @@
 | --- | --- |
 | `graph.py` | LangGraph `StateGraph`, RAG/memory/response 노드, 조건부 라우팅, graph state 정의 |
 | `classifier.py` | LangChain messages를 읽고 결정론적 `RouteDecision` 생성 |
-| `retrieval_gate.py` | Private KB retrieval을 실행할지, general/web 답변으로 bypass할지 결정하는 얇은 deterministic/OpenAI source-selection gate |
+| `retrieval_gate.py` | Private KB retrieval을 실행할지, general/web 답변으로 bypass할지 결정하는 얇은 deterministic/Jev source-selection gate |
 | `rag_retrieval.py` | graph-owned RAG Agent invocation과 전체 문서 target/read 준비 node; RAG 결과를 checkpoint-safe assistant state로 바꾸고 halt 여부를 결정 |
 | `memory_recall.py` | graph-owned memory recall node helper와 source-conflict 감지 |
 | `context.py` | Product DB conversation message, authorized document context, stored memory context, material source conflict를 명시적인 provider source context로 조립 |
@@ -38,7 +38,7 @@
 flowchart TD
     Start([START]) --> Classify["classify_request"]
     Classify --> SourceGate["decide_retrieval_source"]
-    SourceGate -->|knowledge_base| RAGChoice{"RAG Agent Luna tool choice"}
+    SourceGate -->|knowledge_base| RAGChoice{"RAG Agent Jev tool choice"}
     RAGChoice -->|search_authorized_chunks| RAG["retrieve_rag_context\ncall RAG Agent runtime"]
     RAGChoice -->|read comprehensively| FullTarget["resolve_full_document_target"]
     SourceGate -->|bypass| SkipRAG["skip_rag_context\nexplicit no_retrieval result"]
@@ -78,9 +78,9 @@ flowchart TD
 
 `general_assistant` 폴더는 graph/classifier/RAG invocation/memory recall/responder 경계를 소유합니다. Auth, group/document permission, server-owned conversation, knowledge ingestion, source selection, citation, agent event persistence는 `my_agents/api/`, `my_agents/knowledge/`, `my_agents/conversations/` 같은 service layer에서 소유합니다.
 
-제품 conversation run은 DB-backed `SqlAlchemyRagAgentRuntime`과 resolved `KnowledgeBaseSelectionContext`를 LangGraph runtime context로 전달합니다. `general_assistant`는 먼저 broad source-selection gate를 실행합니다. Gate가 `knowledge_base`로 위임하면 RAG-owned fixed Luna standard/low planner가 typed focused/comprehensive operation을 선택하고, `general_assistant`는 retrieval policy나 authorization을 소유하지 않은 채 compact choice를 routing합니다. RAG Agent는 public retrieval boundary이고 ContextForge는 focused retrieval engine입니다. Source gate가 `bypass`를 선택하면 explicit `no_retrieval` result를 남깁니다. RAG 결과가 `clarification_required`이면 visible clarification을 구성하고 structured contract를 persist합니다. Required evidence가 부족하면 answer node 전에 멈추며, 그 외에는 memory recall 뒤 shared Sol response provider가 final answer를 구성합니다.
+제품 conversation run은 DB-backed `SqlAlchemyRagAgentRuntime`과 resolved `KnowledgeBaseSelectionContext`를 LangGraph runtime context로 전달합니다. `general_assistant`는 먼저 broad source-selection gate를 실행합니다. Gate가 `knowledge_base`로 위임하면 RAG-owned Jev planner가 typed focused/comprehensive operation을 선택하고, `general_assistant`는 retrieval policy나 authorization을 소유하지 않은 채 compact choice를 routing합니다. RAG Agent는 public retrieval boundary이고 ContextForge는 focused retrieval engine입니다. Source gate가 `bypass`를 선택하면 explicit `no_retrieval` result를 남깁니다. RAG 결과가 `clarification_required`이면 visible clarification을 구성하고 structured contract를 persist합니다. Required evidence가 부족하면 answer node 전에 멈추며, 그 외에는 memory recall 뒤 shared Sol response provider가 final answer를 구성합니다.
 
-Comprehensive branch는 일반 검색보다 더 좁습니다. Luna는 explicit 또는 의미상 분명한 exhaustive document task를 선택하며, named document와 “빠짐없이”가 결합된 자연스러운 요청도 포함합니다. 일반적인 “이 문서를 요약해줘”는 focused path에 남습니다. Deterministic fallback도 document reference, exhaustive coverage 표현, task verb를 조합해 같은 결정을 내립니다. Resume selection, 유일한 eligible target, 고유한 title/filename match 순서로 현재 권한이 있는 user-controllable document 한 개를 결정합니다. 대상이 모호하면 typed document-selection interrupt를 재사용하고 ambient system document는 모든 target/read boundary에서 제외합니다.
+Comprehensive branch는 일반 검색보다 더 좁습니다. Jev는 explicit 또는 의미상 분명한 exhaustive document task를 선택하며, named document와 “빠짐없이”가 결합된 자연스러운 요청도 포함합니다. 일반적인 “이 문서를 요약해줘”는 focused path에 남습니다. Deterministic fallback도 document reference, exhaustive coverage 표현, task verb를 조합해 같은 결정을 내립니다. Resume selection, 유일한 eligible target, 고유한 title/filename match 순서로 현재 권한이 있는 user-controllable document 한 개를 결정합니다. 대상이 모호하면 typed document-selection interrupt를 재사용하고 ambient system document는 모든 target/read boundary에서 제외합니다.
 
 `prepare_full_document_read`는 coverage와 겹치는 citation chunk를 검증하지만 raw document body는 state에 쓰지 않습니다. 정규화된 추출 텍스트가 `MY_AGENTS_FULL_DOCUMENT_MAX_CHARS` 이하이면(기본 24,000자) `complete`입니다. 큰 문서는 현재 `[0, MY_AGENTS_FULL_DOCUMENT_RANGE_CHARS)`만 준비하며(기본 12,000자) `partial`로 표시하고, 응답 맨 앞에 피할 수 없는 현지화된 부분 검토 안내를 붙입니다. Memory recall 뒤 `respond_full_document`가 같은 범위의 권한과 내용을 node 안에서 다시 확인해 읽고, LangSmith tracing을 끈 채 provider를 호출한 뒤 reply만 반환합니다. 문서가 바뀌거나 삭제되거나 권한이 사라지면 다른 source를 대신 고르지 않고 안전한 insufficient-evidence 결과로 내려갑니다.
 
@@ -163,7 +163,7 @@ Document-selection option에는 사용자가 통제하는 personal/group documen
 
 OpenAI Responses API의 `web_search` 같은 일반 답변 built-in tool은 **그래프 노드가 아니라 `responders.py`의 OpenAI provider 경계**에 둡니다. Full-document retrieval은 hosted provider tool이 아니라 application이 실행하는 typed graph path입니다. 단, 임시 파일이 선택된 run은 `document_workspace_runtime`을 LangGraph runtime context로 받아 마지막 응답 node에서 격리된 document workspace adapter를 호출합니다. 이 adapter는 `ChatOpenAI`가 아직 노출하지 않는 Files, Containers, Hosted Shell, Skills API 때문에 필요한 의도적인 예외입니다.
 
-같은 runtime context는 run에 저장된 effective `reasoning_mode`와 `reasoning_effort`도 마지막 response node로 전달합니다. 일반 답변은 `ChatOpenAI.stream(..., reasoning={...})`으로 전달하고 provider는 같은 chunk를 final graph result로 aggregate하며 LangGraph는 이를 live message event로 전달합니다. Attachment 답변은 document-workspace Responses API adapter에 같은 값을 전달하며 buffered 상태를 유지합니다. Source-selection gate는 비용과 routing 안정성을 위해 client override를 받지 않고 server default effort와 `standard` mode를 사용합니다. Guest override 차단과 GPT-5.6 `pro` 검증은 graph 진입 전 API boundary에서 수행합니다.
+같은 runtime context는 run에 저장된 effective `reasoning_mode`와 `reasoning_effort`도 마지막 response node로 전달합니다. 일반 답변은 `ChatOpenAI.stream(..., reasoning={...})`으로 전달하고 provider는 같은 chunk를 final graph result로 aggregate하며 LangGraph는 이를 live message event로 전달합니다. Attachment 답변은 document-workspace Responses API adapter에 같은 값을 전달하며 buffered 상태를 유지합니다. Source-selection gate는 서버가 선택한 decision provider를 사용하며 사용자 reasoning 설정은 Jev 결정에 적용하지 않습니다. Guest override 차단과 GPT-5.6 `pro` 검증은 graph 진입 전 API boundary에서 수행합니다.
 
 Reasoning이 켜져 있으면 두 final-response path 모두 provider `summary="auto"` output을 요청하고 bounded `summary_text`를 별도 `answer_synthesis_summary`로 유지합니다. Graph는 이를 `reply`에 합치지 않으며 conversation boundary가 전용 reasoning-summary 계약으로 저장하고 제공합니다.
 
@@ -197,3 +197,7 @@ OpenAI mode는 두 response route 모두에서 provider boundary에 hosted `web_
 - response provider 동작을 바꾸면 `tests/test_responders.py`를 확인합니다.
 - OpenAI mode는 실제 API 키 없이 테스트 가능해야 합니다.
 - README 변경 시 이 파일과 [`README.en.md`](./README.en.md)를 함께 갱신합니다.
+
+## Jev 결정 설정
+
+Source 선택, focused/comprehensive 검색 선택, ContextForge intent 분류는 기본적으로 OpenRouter의 `typesafe/jev-1.13`을 사용합니다. 로컬에 `OPENROUTER_API_KEY`를 설정하세요. `MY_AGENTS_DECISION_PROVIDER=deterministic`은 로컬 규칙을, `openai`는 기존 source/tool 모델과 로컬 ContextForge intent를 사용합니다. `MY_AGENTS_RESPONSE_MODE=deterministic`에서는 항상 외부 결정 호출을 끕니다. 키 누락, 잘못된 응답, provider 오류는 로컬 규칙으로 fallback합니다. 재시도 없이 기본 10초 timeout(`MY_AGENTS_JEV_TIMEOUT_SECONDS`)을 사용합니다. 길이를 제한한 최근 대화와 source 선택의 개수/모드만 전송하며 credential과 provider 응답은 checkpoint에 저장하지 않습니다. 답변과 metadata 생성은 OpenAI를 유지합니다. Confidence는 권한 증명이 아니며 검증되지 않은 임계값은 적용하지 않습니다. 관련 테스트: `tests/test_jev_decisions.py`.

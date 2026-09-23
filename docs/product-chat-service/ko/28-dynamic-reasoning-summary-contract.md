@@ -42,8 +42,9 @@ signal로 보존해야 합니다.
 
 ### `retrieval_planning`
 
-Luna RAG Agent는 focused/comprehensive typed tool choice와 함께 bounded user-displayable 설명
-하나를 반환해야 합니다. 이는 임의 scratchpad가 아니라 strict output field입니다. Scope와
+기본 Jev selector는 prose를 반환하지 않으므로 이 stage는 생략합니다. 템플릿을
+`source=model_generated`로 표시하면 안 됩니다. 기존 typed execution trace는 유지합니다.
+OpenAI rollback planner는 focused/comprehensive choice와 함께 bounded 설명을 반환할 수 있습니다. 이는 임의 scratchpad가 아니라 strict output field입니다. Scope와
 retrieval strategy를 설명할 수 있지만 trusted ID를 선택하거나 authorization을 주장하거나
 system knowledge 또는 document body를 노출하면 안 됩니다.
 

@@ -60,3 +60,7 @@
 - Why: the V1 agentic RAG story needs a named concrete `rag_agent` surface while preserving ContextForge as the existing Retrieval Agent boundary.
 - Behavior/contract impact: added deterministic stage planning and verification for compact localized traces; no retrieval, authorization, or provider execution moved into this package.
 - Verification: covered by `tests/test_rag_agent_contracts.py` and conversation API trace tests.
+
+## 2026-09-23 — Jev bounded decisions
+
+Replaced default semantic decisions with a narrow OpenRouter Jev adapter to reduce generation overhead. Preserved deterministic offline/failure behavior and code-owned authorization. Added mocked HTTP and integration regressions in `tests/test_jev_decisions.py`; full-suite evidence is tracked in `docs/implementation-tracking.md`.

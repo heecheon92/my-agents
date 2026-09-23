@@ -200,6 +200,18 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
 
 ## Latest verification evidence
 
+Jev decision integration — 2026-09-23 (local `develop` changes, not published):
+
+- Implemented source gate, RAG operation choice, and ContextForge intent via a shared
+  `typesafe/jev-1.13` Decisions API adapter. OpenAI answer/metadata generation is unchanged.
+- Missing keys, invalid output, and provider failures use deterministic rules; offline mode
+  disables calls. `MY_AGENTS_DECISION_PROVIDER=openai` restores the prior decision providers.
+- Full offline suite: **602 passed, 14 skipped, 11 dependency deprecation warnings**.
+  After final text-block and nullable-summary changes: **33 focused tests passed**.
+  Ruff check and format passed; no dependencies added. Jev live accuracy/cost/latency unverified.
+- See [bounded decision learning note](./learning/project-notes/jev-bounded-decisions.md).
+
+
 LangGraph stale-connection hotfix on 2026-09-05:
 
 - Production chat exposed a failed initial checkpoint read after an SSL connection closed.

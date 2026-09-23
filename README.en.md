@@ -62,7 +62,7 @@ Chat request orchestration is easier to read as a separate flow.
 flowchart TD
     Run["Conversation run"] --> Gate{"Use authorized knowledge?"}
     Gate -->|No| Memory["Governed opt-in memory"]
-    Gate -->|Yes| Choice{"Luna chooses a retrieval tool"}
+    Gate -->|Yes| Choice{"Jev chooses a retrieval tool"}
     Choice -->|Focused| Focused["Permission-first hybrid retrieval"]
     Choice -->|Comprehensive| Full["Resolve and read one authorized document"]
     Focused --> Context["Packed context and evidence"]
@@ -75,8 +75,8 @@ flowchart TD
 ### Boundaries enforced during a request
 
 1. The API layer validates session, CSRF, and group/knowledge-base access.
-2. LangGraph orchestration decides whether the question requires authorized knowledge retrieval. After private-knowledge delegation, a fixed `gpt-5.6-luna` standard/low RAG planner chooses one typed tool: focused chunk search or comprehensive document read.
-3. Focused questions use permission-first chunk retrieval. Explicit or clearly implied comprehensive tasks instead resolve exactly one user-controllable personal/group document; system knowledge is never a selectable full-document target. Luna chooses the tool while backend code enforces document identity, permissions, and limits.
+2. LangGraph orchestration decides whether the question requires authorized knowledge retrieval. After private-knowledge delegation, a Jev RAG planner chooses one typed tool: focused chunk search or comprehensive document read.
+3. Focused questions use permission-first chunk retrieval. Explicit or clearly implied comprehensive tasks instead resolve exactly one user-controllable personal/group document; system knowledge is never a selectable full-document target. Jev chooses the tool while backend code enforces document identity, permissions, and limits.
 4. The full-document path returns normalized extracted text completely only at or below its configured character threshold; larger files expose one bounded range and a mandatory partial-review disclosure.
 5. The answer, citations, compact coverage metadata, agent trace, and redacted timing/events are persisted under the same run. Raw full-document text is not persisted in graph checkpoints or events.
 
@@ -171,7 +171,7 @@ The shared LangGraph connection pool checks connections before checkpoint/Store 
 
 Experimental memory currently recalls explicit memories and manually confirmed suggestions. Ordinary chat does not form memories automatically; the separate post-turn `memory_graph` extraction/update workflow remains planned.
 
-Full-document retrieval activates for explicit or clearly implied comprehensive requests such as “review the entire document” and “review this document without missing anything.” In OpenAI mode the RAG Agent's Luna planner chooses the typed retrieval tool; deterministic mode and provider failures use the same contract's local fallback. `MY_AGENTS_FULL_DOCUMENT_MAX_CHARS=24000` controls complete one-call coverage; larger documents currently provide only the first `MY_AGENTS_FULL_DOCUMENT_RANGE_CHARS=12000` characters and return `mode=partial`. Exact filenames resolve automatically. Ambiguous references return at most five ranked authorized candidates, accept up to two bounded filename refinements on the same run, and expose broad browsing only after those attempts are exhausted.
+Full-document retrieval activates for explicit or clearly implied comprehensive requests such as “review the entire document” and “review this document without missing anything.” In OpenAI mode the RAG Agent's Jev planner chooses the typed retrieval tool; deterministic mode and provider failures use the same contract's local fallback. `MY_AGENTS_FULL_DOCUMENT_MAX_CHARS=24000` controls complete one-call coverage; larger documents currently provide only the first `MY_AGENTS_FULL_DOCUMENT_RANGE_CHARS=12000` characters and return `mode=partial`. Exact filenames resolve automatically. Ambiguous references return at most five ranked authorized candidates, accept up to two bounded filename refinements on the same run, and expose broad browsing only after those attempts are exhausted.
 
 The VS Code `FastAPI: uvicorn main:app (local pgvector)` profile runs its pre-launch migration with the interpreter selected by the Python extension. It does not depend on a shell command finding `uv` in a GUI-launched VS Code process, so select this repository's `.venv` interpreter before using the profile.
 
@@ -239,3 +239,7 @@ On 2026-08-25, the full offline suite on this checkout reports **534 passed, 2 s
 
 See [ROADMAP.md](./ROADMAP.md) for the larger direction and unfinished work, and [scripts/README.md](./scripts/README.md) for operational and migration commands.
 Run admission is database-atomic. Apply Alembic `20260905_0034` before deploying; see [migration and conflict handling](./docs/product-chat-service/en/31-atomic-run-admission.md).
+
+## Jev decision configuration
+
+Source selection, focused/comprehensive retrieval selection, and ContextForge intent use `typesafe/jev-1.13` through OpenRouter by default. Set `OPENROUTER_API_KEY` locally. `MY_AGENTS_DECISION_PROVIDER=deterministic` uses local rules; `openai` restores the previous source/tool models and local ContextForge intent. `MY_AGENTS_RESPONSE_MODE=deterministic` always disables provider decisions. Missing credentials, invalid output, and provider errors fall back to local rules. Requests use a 10-second timeout without retries (`MY_AGENTS_JEV_TIMEOUT_SECONDS`). Only bounded recent conversation text and source-selection counts/mode are sent; credentials and responses are not checkpointed. Answer generation and metadata enrichment remain OpenAI-backed. Confidence is not an authorization signal; no uncalibrated confidence threshold is imposed. See `tests/test_jev_decisions.py`.
