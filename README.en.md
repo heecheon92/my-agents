@@ -2,44 +2,45 @@
 
 English | [한국어](./README.md)
 
-**Permission-aware Agentic RAG Backend** — the backend for an AI chat product that retrieves personal documents, group-shared documents, and administrator-provided reference knowledge inside explicit authorization boundaries, then preserves user-visible citations and internal execution evidence.
+**Permission-aware Agentic RAG Backend** — the backend for an AI chat product that searches personal documents, group-shared documents, and administrator-provided reference knowledge only within explicit authorization boundaries, and records both user-visible citations and internal execution evidence.
 
 [Live service](https://www.my-agents.dev) · [Frontend repository](https://github.com/heecheon92/my-agents-frontend) · [Implementation status](./docs/implementation-tracking.md) · [Roadmap](./ROADMAP.md)
 
-> The service is deployed and running, but signup is not instant: new accounts are approved manually. Guest access is available without waiting for approval.
+> [!NOTE]
+> The service is deployed and running, but new accounts are approved manually. Use guest access to look around without waiting for approval.
 
 ## Three-minute overview
 
-`my-agents` is more than a small RAG example. It connects the product flow required by a real application: **authentication → authorization → document ingestion → hybrid retrieval → LangGraph execution → SSE streaming → citation/audit persistence**.
+`my-agents` is more than a RAG example. It connects the whole flow a real product needs in one backend: **authentication → authorization → document ingestion → hybrid retrieval → LangGraph execution → SSE streaming → citation/audit persistence**.
 
-| Question | This project's answer |
+| Question | Answer |
 | --- | --- |
-| What did I build? | A FastAPI + LangGraph backend that answers from personal documents, group-shared documents, and ambient administrator-provided reference knowledge, with citations for user-visible sources |
-| What made it difficult? | Permission boundaries that precede ranking, server-owned conversation state, ingestion, streaming, and operable observability |
-| What did I verify? | An offline test suite, permission regressions, production smoke paths, and before/after ingestion and retrieval profiles |
-| Where is it now? | The core product loop is deployed and running; operational hardening and security review continue |
+| What did I build? | A FastAPI + LangGraph backend that answers from personal, group-shared, and administrator-provided documents, and cites only sources the user is allowed to see |
+| What made it hard? | Permission boundaries that come before retrieval quality, server-owned conversation state, ingestion, streaming, and observability that is useful in production |
+| What did I verify? | A key-free offline test suite, permission regressions, production smoke paths, and before/after ingestion and retrieval profiles |
+| Where is it now? | The core flow is deployed and running; load handling and security review continue |
 
 ## Engineering highlights
 
-- **Permission-first retrieval**: unauthorized chunks are excluded before ranking, graph expansion, and prompt construction.
-- **Hybrid retrieval**: pgvector vector search and BM25 lexical search gather candidates independently, fuse them by stable chunk identifiers with RRF (`k=60`), then rerank and pack the context.
-- **Bounded full-document coverage**: a typed graph path handles only explicit whole-document tasks, resolves one authorized document, and distinguishes complete coverage from an honest first-range partial review.
-- **Inspectable orchestration**: a LangGraph state machine connects the decision to use authorized knowledge, retrieval, opt-in memory, and response composition as explicit stages.
-- **Application-owned state**: the application database owns conversations, runs, messages, citations, and redacted events. Temporary LangGraph execution state is not treated as the source of truth for user-visible transcripts.
-- **Streaming product contract**: SSE carries progress events, agent traces, answer deltas, and terminal status while the server persists the same run.
-- **Offline-first verification**: deterministic test doubles can replace the LLM, embedding, and reranker boundaries, so the full test suite runs without API keys.
+- **Permission-first retrieval**: chunks the user cannot see are removed before ranking, graph expansion, and prompt construction.
+- **Hybrid retrieval**: pgvector vector search and BM25 keyword search gather candidates independently, merge them with RRF (`k=60`), then rerank and pack the context.
+- **Bounded full-document review**: only an explicit whole-document request reads one authorized document, and the answer says whether the review was complete or covered only the first range.
+- **Inspectable orchestration**: a LangGraph state machine connects the retrieval decision, retrieval, opt-in memory, and response composition as visible stages.
+- **Application-owned state**: the application database stores conversations, runs, messages, citations, and redacted events. Temporary LangGraph execution state is never the source of truth for what users see.
+- **Streaming as a contract**: SSE carries progress, execution traces, answer deltas, and terminal status while the server persists the same run.
+- **Key-free verification**: the LLM, embedding, and reranker boundaries accept deterministic test doubles, so the full suite runs without API keys.
 
 ## Measured performance improvements
 
-These are same-scenario **local profiles**, not public SLA claims. Each experiment started after profiling an unexpectedly slow path, and the search-result shape and document-processing quality checks remained the same before and after optimization.
+These are same-scenario **local measurements**, not public SLA claims. Each change followed profiling of a slow path, and search-result shape and document-processing quality checks stayed the same before and after.
 
-| Area | Primary method | Before | After | Result |
+| Area | Change | Before | After | Result |
 | --- | --- | ---: | ---: | ---: |
-| 195-page PDF ingestion, end to end | Run OpenAI metadata generation concurrently with embedding/indexing and skip an unnecessary parsing pass for native-text PDFs | 36.16s | 16.57s | about 54% faster |
-| Hybrid retrieval candidate gathering | Defer large columns that ranking does not need and fetch full records only for the final top-k candidates | 31.42s | 1.84s | 94.1% faster |
-| BM25 corpus/rank/hydration | Build the corpus from IDs and text instead of full ORM rows, then fetch only the BM25 top-k rows | 14.34s | 0.14s | 99.0% faster |
+| 195-page PDF ingestion, end to end | Run metadata generation concurrently with embedding/indexing, and skip a redundant parse for native-text PDFs | 36.16s | 16.57s | about 54% faster |
+| Hybrid retrieval candidate gathering | Defer large columns ranking does not need, and fetch full records only for the final top candidates | 31.42s | 1.84s | 94.1% faster |
+| BM25 corpus/rank/hydration | Build the corpus from IDs and text instead of full ORM rows, then fetch only the top results | 14.34s | 0.14s | 99.0% faster |
 
-Ingestion now overlaps time spent waiting for an external API with local indexing work and avoids duplicate parsing when a PDF already exposes native text. Retrieval first reads only the data required for ranking, fetches full records after the top candidates are known, and removes duplicated SQL and embedding work. The [performance logs](./docs/performance/README.md) record the exact scenarios and remaining bottlenecks.
+The [performance logs](./docs/performance/README.md) record exact scenarios and remaining bottlenecks.
 
 ## Architecture
 
@@ -56,13 +57,13 @@ flowchart LR
     Runs --> DB
 ```
 
-Chat request orchestration is easier to read as a separate flow.
+A single chat request follows this flow:
 
 ```mermaid
 flowchart TD
     Run["Conversation run"] --> Gate{"Use authorized knowledge?"}
     Gate -->|No| Memory["Governed opt-in memory"]
-    Gate -->|Yes| Choice{"Jev chooses a retrieval tool"}
+    Gate -->|Yes| Choice{"Choose a retrieval tool"}
     Choice -->|Focused| Focused["Permission-first hybrid retrieval"]
     Choice -->|Comprehensive| Full["Resolve and read one authorized document"]
     Focused --> Context["Packed context and evidence"]
@@ -74,33 +75,27 @@ flowchart TD
 
 ### Boundaries enforced during a request
 
-1. The API layer validates session, CSRF, and group/knowledge-base access.
-2. LangGraph orchestration decides whether the question requires authorized knowledge retrieval. After private-knowledge delegation, a Jev RAG planner chooses one typed tool: focused chunk search or comprehensive document read.
-3. Focused questions use permission-first chunk retrieval. Explicit or clearly implied comprehensive tasks instead resolve exactly one user-controllable personal/group document; system knowledge is never a selectable full-document target. Jev chooses the tool while backend code enforces document identity, permissions, and limits.
-4. The full-document path returns normalized extracted text completely only at or below its configured character threshold; larger files expose one bounded range and a mandatory partial-review disclosure.
-5. The answer, citations, compact coverage metadata, agent trace, and redacted timing/events are persisted under the same run. Raw full-document text is not persisted in graph checkpoints or events.
+1. The API layer validates the session, CSRF, and group/knowledge-base access.
+2. Orchestration decides whether the question needs authorized knowledge and, if so, chooses between focused chunk search and a full-document read.
+3. Backend code, not the model, decides which documents may be read and how much. A full-document read is limited to one user-selectable personal or group document.
+4. Large documents are read only up to a fixed range, and the answer always carries a partial-review disclosure.
+5. The answer, citations, coverage, summarized trace, and redacted events are stored under the same run. Raw full-document text is never kept in checkpoints or events.
 
-Administrator-provided system knowledge is ambient model context, not a user-visible source.
-Its provenance remains in internal audit records, while public run, event, and citation
-responses omit its KB/document/chunk identifiers, filenames, snippets, and citations.
+Administrator-provided reference knowledge is background context added to the model automatically, not a user-visible source. Its provenance stays in internal audit records, and public responses omit its identifiers, filenames, snippets, and citations.
 
-The production runtime consists of one assistant orchestration flow with a retrieval subworkflow. The words `agent` and `graph` describe control boundaries in the code; they do not imply that several autonomous specialists run as independent services.
+Production runs one assistant orchestration flow with a retrieval subworkflow. The words `agent` and `graph` name control boundaries in the code; they do not mean several agents run as independent services.
 
 ## Product capabilities
 
-- Email/password signup, verification, sessions, CSRF, password reset, and gated guest access
-- Public `GET /auth/guest/policy` data for the deployed guest TTLs, usage limits, and code-delivery mode
-- Invite-based group membership, manager roster, and personal-to-group publish approval/copy workflows
-- Personal, group, and administrator-provided reference knowledge bases with document-level authorization
-- PDF, Markdown, plain text, `.xlsx`, `.pptx`, and `.docx` upload and ingestion
-- A PyMuPDF fast path with pypdf, Docling, and Tesseract fallbacks
-- pgvector + BM25 + RRF + deterministic or optional cross-encoder reranking
-- Explicit full-document review with complete/partial coverage disclosure and range-backed citations
-- Server-owned conversation/run history, SSE streaming, conservative answer-supported `citations`, separately disclosed `consulted_sources`, human-readable document/knowledge-base citation metadata, and redacted agent events
-- A stable `my-agents` assistant identity anchored to the canonical
-  `https://my-agents.dev` domain, with changing product facts grounded in authorized context
-- User-enabled experimental long-term memory with a governance lifecycle
-- Prometheus timing metrics and local Rich retrieval/ingestion profilers
+- Email/password signup and verification, sessions, CSRF, password reset, and approval-gated guest access
+- Invite-only group membership and a personal-to-group sharing request and approval flow
+- Personal, group, and administrator-provided knowledge bases with document-level permissions
+- PDF, Markdown, plain text, `.xlsx`, `.pptx`, and `.docx` upload and ingestion (PyMuPDF first, with pypdf, Docling, and Tesseract fallbacks)
+- Hybrid retrieval that merges pgvector and BM25 with RRF, plus optional cross-encoder reranking
+- Full-document review with complete/partial coverage disclosure and range-backed citations
+- Server-owned conversation/run history, SSE streaming, answer-supporting citations, and redacted agent events
+- User-enabled experimental long-term memory
+- Prometheus metrics and local retrieval/ingestion profilers
 
 ## Technology stack
 
@@ -115,8 +110,6 @@ The production runtime consists of one assistant orchestration flow with a retri
 | Quality / delivery | pytest, Ruff, uv, Docker, Render |
 
 ## Repository map
-
-The top-level packages are described by responsibility first so a new visitor can understand the boundaries before learning internal implementation names. Those names appear only in the code-navigation table below.
 
 ```text
 my_agents/
@@ -136,63 +129,25 @@ scripts/                       # Smoke, benchmark, migration, operator utilities
 
 | Behavior to inspect | Code location |
 | --- | --- |
-| Decide whether a question needs knowledge retrieval and compose the response | `my_agents/agents/general_assistant/` |
-| Define the input/output contract between the assistant and permission-aware retrieval | `my_agents/agents/rag_agent/` |
-| Plan queries, fuse hybrid candidates, rerank, and pack context | `my_agents/agents/context_forge/` |
+| Decide whether a question needs retrieval and compose the response | `my_agents/agents/general_assistant/` |
+| Input/output contract between the assistant and permission-aware retrieval | `my_agents/agents/rag_agent/` |
+| Query planning, candidate fusion, reranking, and context packing | `my_agents/agents/context_forge/` |
 
 ## Run locally
 
-Prerequisites are [uv](https://docs.astral.sh/uv/) and Python 3.14.
+Requires [uv](https://docs.astral.sh/uv/) and Python 3.14. These commands need no API keys.
 
 ```bash
 uv sync
 cp .env.example .env
 MY_AGENTS_RESPONSE_MODE=deterministic uv run fastapi dev main.py
+curl http://127.0.0.1:8000/health   # in another terminal
 ```
 
-Run a credential-free smoke check in another terminal:
+For real OpenAI responses, set `OPENAI_API_KEY` in `.env` and use `MY_AGENTS_RESPONSE_MODE=openai`. OpenAPI is served at `http://127.0.0.1:8000/openapi.json`.
 
-```bash
-curl http://127.0.0.1:8000/health
-curl -X POST http://127.0.0.1:8000/assistant/chat \
-  -H 'Content-Type: application/json' \
-  -d '{"message":"Plan my next backend milestone","history":[]}'
-```
-
-For real OpenAI responses, set `OPENAI_API_KEY` in `.env` and use `MY_AGENTS_RESPONSE_MODE=openai`. Ordinary responses use the `langchain-openai` / `ChatOpenAI` boundary. The optional temporary document workspace is the isolated exception: it uses a narrow OpenAI SDK adapter for Files, Containers, Hosted Shell, and Skills.
-
-Registered-account run requests may optionally provide `reasoning_mode` (`standard` or `pro`) and `reasoning_effort` (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`). When omitted, mode is `standard` and effort comes from `MY_AGENTS_OPENAI_REASONING_EFFORT`. Even if a guest submits different values, the server fixes the run to `standard` and the environment default effort. `GET /capabilities/reasoning` reports the effective default and configured-model support. `pro` is accepted for GPT-5.6 and GPT-6 models. See the [run reasoning preference contract](./docs/product-chat-service/en/26-run-reasoning-preferences.md).
-
-For GPT-6 models, `minimal` is accepted as a compatibility alias and normalized to `low` before run persistence and provider calls. This applies to chat, document workspace, replay inheritance, and server defaults (including guests). Responses and events report the effective `low`; GPT-5.6 keeps its existing effort behavior. Model defaults are unchanged.
-
-With `MY_AGENTS_DOCUMENT_WORKSPACE_ENABLED=true`, approved registered accounts can attach temporary files to a conversation, analyze them with GPT-5.6 Sol, and download certified spreadsheet, document, Markdown, and HTML outputs (`.xlsx`, `.csv`, `.tsv`, `.docx`, `.pptx`, `.pdf`, `.md`, `.markdown`, `.html`, `.htm`). Guests are ineligible and every upload requires explicit consent to transfer the file to OpenAI. File bytes are never stored in the Product DB; they remain only in expiring OpenAI `user_data` files and a network-disabled hosted container. See the [OpenAI document workspace design](./docs/product-chat-service/en/25-openai-document-workspace.md) for the full contract.
-
-PostgreSQL deployments construct PostgresStore and PostgresSaver as baseline LangGraph resources; their database tables require the explicit setup command below. Store is a semantic projection of Product DB-governed memories; the per-user experimental setting controls consent and eligibility while Product DB rows continue to enforce status, sensitivity, provenance, and source staleness. PostgresSaver lets ambiguous document-grounded runs return `202 waiting_for_input`, survive a process restart, and resume after an authorized document selection. SQLite keeps Product DB recall and non-durable graph execution fallbacks. Run `uv run python -m scripts.langgraph_persistence setup` before serving PostgreSQL traffic and verify zero-drift memory reconciliation before enabling experimental memory for users.
-
-The shared LangGraph connection pool checks connections before checkpoint/Store work and replaces server-disconnected idle connections. This does not replay the graph or guarantee recovery from a connection lost during an operation. No additional environment variable or migration is required.
-
-Experimental memory currently recalls explicit memories and manually confirmed suggestions. Ordinary chat does not form memories automatically; the separate post-turn `memory_graph` extraction/update workflow remains planned.
-
-Full-document retrieval activates for explicit or clearly implied comprehensive requests such as “review the entire document” and “review this document without missing anything.” In OpenAI mode the RAG Agent's Jev planner chooses the typed retrieval tool; deterministic mode and provider failures use the same contract's local fallback. `MY_AGENTS_FULL_DOCUMENT_MAX_CHARS=24000` controls complete one-call coverage; larger documents currently provide only the first `MY_AGENTS_FULL_DOCUMENT_RANGE_CHARS=12000` characters and return `mode=partial`. Exact filenames resolve automatically. Ambiguous references return at most five ranked authorized candidates, accept up to two bounded filename refinements on the same run, and expose broad browsing only after those attempts are exhausted.
-
-The VS Code `FastAPI: uvicorn main:app (local pgvector)` profile runs its pre-launch migration with the interpreter selected by the Python extension. It does not depend on a shell command finding `uv` in a GUI-launched VS Code process, so select this repository's `.venv` interpreter before using the profile.
-
-OpenAPI is available from a running server at `http://127.0.0.1:8000/openapi.json`. See the [frontend demo runbook](./docs/product-chat-service/en/10-frontend-demo-runbook.md) for the full product flow and PostgreSQL setup.
-
-### Frontend API contracts
-
-- HTTP and validation errors return a stable machine-readable `code` alongside the existing `detail`. UIs should localize from `code` and treat `detail` as diagnostic copy.
-- `GET /conversations/{conversation_id}/runs/{run_id}/events` is a closed OpenAPI union discriminated by `event_type`. Persisted event types include `run_interrupted`, `run_resumed`, and redacted `full_document_read` metadata in addition to the existing run, retrieval, graph, workspace, answer, cancellation, and failure events.
-- With checkpointer support enabled, run creation returns either `200 completed` or `202 waiting_for_input`. A waiting document-selection interaction is refresh-safe through the run detail/options endpoints and resumes through `/runs/{run_id}/resume` or `/resume/stream` without consuming another guest prompt. Resume SSE emits `run_resumed`, then real progress and answer deltas, including another `run_interrupted` after an unresolved refinement. Options include only user-controllable personal/group documents; ambient system knowledge is never selectable. New interactions use semantic `schema_version=2`; already-waiting V1 checkpoints remain resumable. See the [agent-to-frontend interaction contract](./docs/product-chat-service/en/27-agent-frontend-interaction-contract.md).
-- Completed comprehensive-document runs add nullable `document_coverage` to sync, streamed, replay, and refreshed run responses. It reports `mode`, document metadata, `[start_offset, end_offset)`, and `total_chars`; it never exposes raw text or the internal continuation cursor. A partial answer also starts with a localized disclosure that it is not a complete-document review.
-- `GET /capabilities/document-workspace` reports effective enablement, eligibility, accepted formats, limits, and retention. Attachments use `POST/GET/DELETE /conversations/{conversation_id}/attachments`; artifacts use `GET /conversations/{conversation_id}/artifacts` and their download URLs. A run's `attachment_ids` selects the files used for that execution.
-- `GET /capabilities/reasoning` reports per-surface Pro support, the server-default effort, stable enums, and whether the current account may customize them. It intentionally omits raw provider model identifiers. Optional run/replay `reasoning_mode` and `reasoning_effort` values are persisted as effective run metadata and returned in responses and the `run_started` event.
-- Completed runs may also return bounded `reasoning_summaries` for retrieval planning and answer synthesis. These model-authored explanations are nullable, stream separately through `reasoning_summary_delta`, persist as dedicated events for refresh/replay, and never replace the verified `agent_trace`, citations, or answer text.
-- Ordinary OpenAI-backed answers use `ChatOpenAI.stream()` so LangGraph emits real provider chunks as multiple `answer_delta` events. The provider aggregates the same chunks for final persistence and keeps reasoning-summary blocks out of reply text. Deterministic fallback and comprehensive-document disclosure paths may still buffer by design.
-- Persisted event payloads and `agent_trace` expose only fields accepted by event- and stage-specific allowlist schemas. `answer_delta`, `run_completed`, and `run_error` are stream-only SSE events and are not members of the persisted-event union.
-- Each non-skipped `agent_trace` step now carries an optional versioned `operational_summary`: a closed semantic message key plus event-specific safe parameters. This application-verified channel is separate from model-authored `reasoning_summaries`. Unknown future summary versions are ignored without dropping the verified step.
-- Conversation stream OpenAPI publishes the SSE-only `reasoning_summary_delta` payload through `text/event-stream.x-sse-events` on normal, resume, and replay routes. Deltas are not individually capped at 500 characters; the authoritative completed summary item is bounded before persistence.
-- Async ingestion commits observable progress as `queued=0`, `claimed=1`, `chunking=15`, `embedding=45`, optional `indexing=70`, `entities=85`, `metadata=95`, and `completed=100`. These mark stages reached, not elapsed time.
+- Run with the frontend and PostgreSQL: [frontend demo runbook](./docs/product-chat-service/en/10-frontend-demo-runbook.md)
+- Environment variables, optional features, operator steps, and frontend contracts: [runtime and integration reference](./docs/product-chat-service/en/34-runtime-and-integration-reference.md)
 
 ## Verification
 
@@ -203,51 +158,37 @@ uv run ruff format --check .
 git diff --check
 ```
 
-On 2026-08-25, the full offline suite on this checkout reports **534 passed, 2 skipped** without requiring real credentials. The gated PostgreSQL checkpoint restart smoke was separately verified against the local pgvector profile on 2026-08-17.
+On 2026-09-26, the full offline suite reports **624 passed, 14 skipped** without real credentials.
 
 ## Security and privacy boundaries
 
-- Real secrets and local databases are not committed. `.env.example` contains placeholders only.
-- Public-release checks cover both the current tree and the full Git history; any exposed credential must be revoked and rotated even if its file was later deleted.
-- Retrieval permissions are enforced in application/service code, not through prompt instructions.
-- Metric labels and default agent events exclude raw prompts, document text, emails, credentials, and provider traces. The event response boundary allowlists nested `agent_trace.evidence` fields as well.
-- Full-document response composition revalidates and re-reads the authorized range inside the response node with tracing disabled. Checkpoints retain only IDs, offsets, compact retrieval snapshots, and coverage metadata.
-- System-knowledge management is limited to privileged administrative account types, with no public role-mutation API.
+- Real secrets and local databases are never committed. `.env.example` holds placeholders only.
+- Public-release checks cover the current tree and the full Git history. An exposed credential is revoked and rotated even if its file was later deleted.
+- Retrieval permissions are enforced in application code, not through prompt instructions.
+- Metrics and default events exclude raw prompts, document text, emails, credentials, and provider traces.
+- Reference-knowledge management is limited to privileged administrator account types, with no public role-change API.
 - The service is publicly reachable, so it assumes users will not upload sensitive, regulated, or irreplaceable documents.
 
 ## Current limitations and next steps
 
-- Signup is manually approved, so this is not a self-service product yet.
-- The external ingestion worker uses database polling; durable queueing, supervision, and stale-job recovery need further work.
+- Signup is manually approved, so this is not yet a self-service product.
+- The ingestion worker polls the database; durable queueing, supervision, and stale-job recovery still need work.
 - Object storage for uploaded originals, document versioning/re-ingestion, and account deletion/export are not implemented yet.
-- Cross-encoder cold starts and PDF processing latency remain constraints on small hosted instances.
-- Full-document retrieval is baseline behavior for clear comprehensive intent, without a separate enable flag. Large documents currently stop after the first bounded range; automatic multi-range traversal/final synthesis, model-tokenizer-aware budgets, and provider usage measurements remain future work.
-- The full-document graph bumps waiting-run compatibility to `general-assistant-checkpoint-v2`. Drain or cancel older waiting runs before rollout; an older graph version cannot resume and is failed safely by the version-mismatch path.
-- Shared rate limiting, production security review, and automated migration/smoke gates remain necessary.
-- Non-RAG tools, a background execution scheduler, and production multi-agent orchestration remain roadmap work. LangGraph persistence is baseline for PostgreSQL deployments and requires setup before traffic; experimental memory consent remains per-user.
+- Cross-encoder cold starts and PDF processing time remain constraints on small instances.
+- Full-document review of large documents currently stops after the first range; reading and synthesizing multiple ranges is future work.
+- Shared rate limiting across instances, a production security review, and automated migration/smoke gates are still needed.
+- Non-retrieval tools, a background execution scheduler, and production multi-agent orchestration remain roadmap work.
 
 ## Selected documentation
 
-- The container includes operator scripts for LangGraph setup, status, and memory reconciliation;
-  run them with `uv run --no-sync python -m scripts.langgraph_persistence <command>`.
-- [Current implementation and verification status](./docs/implementation-tracking.md)
+- [Implementation and verification status](./docs/implementation-tracking.md)
 - [Documentation map and lifecycle](./docs/README.md)
-- [Render pre-deploy command and release checks](./docs/product-chat-service/en/14-render-migration-and-rollback-notes.md#production-pre-deploy-guardrail)
+- [Runtime and integration reference](./docs/product-chat-service/en/34-runtime-and-integration-reference.md)
 - [Permission-aware RAG design](./docs/product-chat-service/en/06-permission-aware-rag.md)
 - [Assistant orchestration flow](./my_agents/agents/general_assistant/README.en.md)
 - [Retrieval subworkflow and context assembly](./my_agents/agents/rag_agent/README.en.md)
 - [Performance evidence](./docs/performance/README.md)
 - [Production smoke evidence](./docs/product-chat-service/en/16-production-smoke-evidence-2026-06-06.md)
+- [Operational and migration commands](./scripts/README.md)
 
-See [ROADMAP.md](./ROADMAP.md) for the larger direction and unfinished work, and [scripts/README.md](./scripts/README.md) for operational and migration commands.
-Run admission is database-atomic. Apply Alembic `20260905_0034` before deploying; see [migration and conflict handling](./docs/product-chat-service/en/31-atomic-run-admission.md).
-
-## Jev decision configuration
-
-Source selection, focused/comprehensive retrieval selection, and ContextForge intent use `typesafe/jev-1.13` through OpenRouter by default. Set `OPENROUTER_API_KEY` locally. `MY_AGENTS_DECISION_PROVIDER=deterministic` uses local rules; `openai` restores the previous source/tool models and local ContextForge intent. `MY_AGENTS_RESPONSE_MODE=deterministic` always disables provider decisions. Missing credentials, invalid output, and provider errors fall back to local rules. Requests use a 10-second timeout without retries (`MY_AGENTS_JEV_TIMEOUT_SECONDS`). Only bounded recent conversation text and source-selection counts/mode are sent; credentials and responses are not checkpointed. Answer generation and metadata enrichment remain OpenAI-backed. Confidence is not an authorization signal; no uncalibrated confidence threshold is imposed. See `tests/test_jev_decisions.py`.
-
-When asked which model they are interacting with, the assistant is instructed to disclose its configured model ID. The ordinary chat system prompt includes the configured `MY_AGENTS_OPENAI_MODEL` value from the same settings used for API requests. Changing that setting and restarting the backend updates the prompt automatically; the value describes the configured model ID, not a provider-resolved snapshot.
-
-Ordinary assistant answers use a warm, approachable tone and explain useful context. Simple questions stay brief; learning and complex questions receive appropriate detail. The server default is `MY_AGENTS_OPENAI_VERBOSITY=medium` (`low`/`high` remain configurable); existing environment overrides still win. The output-token budget is unchanged. Per-user style controls are proposed, not implemented.
-
-See the [user-configurable assistant behavior proposal](./docs/idea/assistant-behavior-preferences.md).
+See [ROADMAP.md](./ROADMAP.md) for the larger direction and unfinished work.

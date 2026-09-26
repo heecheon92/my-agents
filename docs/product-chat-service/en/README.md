@@ -35,6 +35,7 @@ They live outside `docs/learning/` because `docs/learning/` is reserved for the 
 28. [Dynamic model-authored reasoning summary contract](./28-dynamic-reasoning-summary-contract.md)
 29. [Frontend rollout for temporary conversation files](./29-frontend-document-workspace-rollout.md)
 30. [Rich response rendering and future agent-UI boundaries](./30-rich-response-rendering-and-agent-ui-boundaries.md)
+31. [Runtime configuration and frontend integration reference](./34-runtime-and-integration-reference.md)
 
 ## Related maintenance ledgers
 

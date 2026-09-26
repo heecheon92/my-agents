@@ -35,6 +35,7 @@
 27. [동적 model-authored reasoning summary 계약](./28-dynamic-reasoning-summary-contract.md)
 28. [임시 conversation file frontend rollout](./29-frontend-document-workspace-rollout.md)
 29. [Rich response rendering과 future agent-UI boundary](./30-rich-response-rendering-and-agent-ui-boundaries.md)
+30. [런타임 설정과 프론트엔드 연동 참고](./34-runtime-and-integration-reference.md)
 
 ## 관련 maintenance ledger
 
