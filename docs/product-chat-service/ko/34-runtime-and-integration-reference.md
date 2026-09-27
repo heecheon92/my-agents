@@ -17,7 +17,7 @@
 
 일반 계정의 run 요청은 선택적으로 `reasoning_mode`(`standard` 또는 `pro`)와 `reasoning_effort`(`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`)를 보낼 수 있습니다. 생략하면 mode는 `standard`, effort는 `MY_AGENTS_OPENAI_REASONING_EFFORT` 값을 씁니다. Guest는 어떤 값을 보내도 `standard`와 환경 변수 기본 effort로 고정됩니다. 실제 기본값과 모델 지원 여부는 `GET /capabilities/reasoning`에서 확인합니다. `pro`는 GPT-5.6과 GPT-6 모델에서 허용됩니다.
 
-GPT-6 모델에서 `minimal`은 호환용 alias로 받아서, run 저장과 provider 호출 전에 `low`로 바꿉니다. 일반 채팅, document workspace, replay 상속, guest를 포함한 서버 기본값에 모두 적용되며 응답과 event에는 실제 적용값 `low`가 표시됩니다. GPT-5.6의 기존 effort 동작은 그대로입니다.
+GPT-5.6과 GPT-6 모델에서 `minimal`은 호환용 alias로 받아서, run 저장과 provider 호출 전에 `low`로 바꿉니다. 일반 채팅, document workspace, replay 상속, guest를 포함한 서버 기본값에 모두 적용되며 응답과 event에는 실제 적용값 `low`가 표시됩니다. 다른 effort 값은 그대로입니다.
 
 전체 계약: [Run reasoning 설정 계약](./26-run-reasoning-preferences.md)
 

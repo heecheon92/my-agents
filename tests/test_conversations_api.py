@@ -7,6 +7,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 from langgraph.checkpoint.memory import InMemorySaver
 from sqlalchemy import func, select
@@ -2580,8 +2581,9 @@ def test_conversation_run_excludes_disabled_user_memory(monkeypatch) -> None:  #
         session_generator.close()
 
 
-def test_gpt6_minimal_is_persisted_as_low_and_replayed(monkeypatch) -> None:  # noqa: ANN001
-    monkeypatch.setenv("MY_AGENTS_OPENAI_MODEL", "gpt-6-sol")
+@pytest.mark.parametrize("model", ["gpt-5.6-sol", "gpt-6-sol"])
+def test_minimal_is_persisted_as_low_and_replayed(monkeypatch, model) -> None:  # noqa: ANN001
+    monkeypatch.setenv("MY_AGENTS_OPENAI_MODEL", model)
     client = _client(monkeypatch, SpyGraph())
     _signup_login(client, "gpt6-reasoning@example.com")
     conversation_id = client.post("/conversations", json={"title": "GPT-6"}).json()["id"]

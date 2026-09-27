@@ -75,6 +75,16 @@ For memory architecture, do not treat LangGraph checkpointers as conversation hi
 All agent-requested user input must use the versioned, semantic contract in `docs/product-chat-service/en/27-agent-frontend-interaction-contract.md`. Backend interactions describe required input, never frontend components or layout. Keep activity events separate from pending interaction state, require typed answers, and add future AG-UI/A2UI support only as a boundary adapter rather than a Product DB domain model.
 Ambient system knowledge is automatically injected internal context, not a user-controllable source axis: never expose system KBs/documents as interaction options or accept them as resume selections.
 
+## Reasoning compatibility policy
+
+The public reasoning effort vocabulary is frozen: `none`, `minimal`, `low`, `medium`,
+`high`, `xhigh`, `max`, in that order. Future model additions must not change the public
+Literal, capability list, or request enum. Update `normalize_reasoning_effort()` in
+`my_agents/reasoning.py` for model-specific compatibility and test all public options.
+Apply effective values before persistence and again at the provider boundary; preserve
+request/replay/guest policy. See `docs/product-chat-service/en/26-run-reasoning-preferences.md`
+for the mapping contract and known model-specific gaps.
+
 ## Dependency policy
 
 - Use `uv` for dependency management.

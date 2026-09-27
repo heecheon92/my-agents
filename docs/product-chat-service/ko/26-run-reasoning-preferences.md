@@ -14,7 +14,7 @@ flowchart LR
     Guest -->|No| Resolve["request 값 또는 server default"]
     Resolve --> Check{"Standard 또는 Pro 지원 모델인가?"}
     Check -->|No| Error["400 reasoning_mode_not_supported"]
-    Check -->|Yes| Normalize["GPT-6 minimal을 low로 변환"]
+    Check -->|Yes| Normalize["GPT-5.6/GPT-6 minimal을 low로 변환"]
     Normalize --> Persist["agent_runs에 effective pair 저장"]
     Fixed --> Normalize
     Persist --> Provider["마지막 OpenAI response call"]
@@ -35,11 +35,46 @@ flowchart LR
 
 - `reasoning_mode`: `standard | pro`; 생략하면 `standard`.
 - `reasoning_effort`: `none | minimal | low | medium | high | xhigh | max`; 생략하면 `MY_AGENTS_OPENAI_REASONING_EFFORT`이며 repository 기본값은 `medium`.
-- GPT-6 모델에서 `minimal`은 호환 alias로 받아 run 저장과 provider 호출 전에 `low`로 변환합니다. 일반 채팅, document workspace, replay 상속, guest를 포함한 서버 기본값에 적용하며 응답과 event에는 실제 적용값 `low`를 표시합니다. GPT-5.6의 기존 effort 동작과 모델 기본값은 유지합니다.
+- GPT-5.6과 GPT-6 모델에서 `minimal`은 호환 alias로 받아 run 저장과 provider 호출 전에 `low`로 변환합니다. 일반 채팅, document workspace, replay 상속, guest를 포함한 서버 기본값에 적용하며 응답과 event에는 실제 적용값 `low`를 표시합니다. 다른 effort 값과 모델 기본값은 유지합니다.
 - Mode와 effort는 서로 독립적입니다.
 - `pro`는 해당 run이 선택하는 model이 GPT-5.6 또는 GPT-6 계열일 때만 허용합니다. 그렇지 않으면 user message나 run을 저장하기 전에 HTTP 400, `code=reasoning_mode_not_supported`로 실패합니다.
 
 Completed run response, run-detail response, run summary, display-safe `run_started` event는 실제 적용한 `reasoning_mode`와 `reasoning_effort`를 반환합니다. Replay에 값을 명시하면 그 값을 쓰고, 생략하면 original run의 effective pair를 이어받습니다. 기존 row와 event는 `standard`와 `medium`으로 호환됩니다.
+
+## 고정된 사용자 effort 계약
+
+사용자에게 노출하는 effort 목록과 순서는 다음으로 고정합니다.
+
+`none → minimal → low → medium → high → xhigh → max`
+
+이 목록은 제품의 선택지이며 모든 provider 모델이 모든 값을 받는다는 뜻이 아닙니다.
+향후 모델을 추가할 때 `ReasoningEffort`, `SUPPORTED_REASONING_EFFORTS`, 요청 schema와
+capability의 `supported_efforts`를 유지해야 합니다. 모델의 API enum에 맞춰 선택지를 추가·삭제·변경·재정렬하거나
+필터링하지 않습니다. 이 제품 계약 변경은 일반 모델 교체와 별개의 명시적 제품 결정이 필요합니다.
+
+모델별 호환성은 `my_agents/reasoning.py`의 `normalize_reasoning_effort()`에서 처리합니다.
+새 모델의 지원값을 확인하고 필요한 매핑을 이 함수에 추가한 뒤 일곱 선택지를 모두 검증합니다.
+알 수 없는 모델이 기존 모델의 매핑을 자동으로 이어받는다고 가정하지 않습니다.
+적절한 매핑이 없다면 해당 모델을 활성화하기 전에 정책을 결정하며 공개 계약을 임의로 바꾸지 않습니다.
+
+| 모델 계열 | 요청 effort | 실제 적용 effort |
+| --- | --- | --- |
+| GPT-5.6 | `minimal` | `low` |
+| GPT-6 | `minimal` | `low` |
+| GPT-5.6 / GPT-6 | 나머지 값 | 현재 normalizer는 그대로 유지 |
+| 다른 모델 | 모든 값 | 그대로 유지하며 provider 지원을 보장하지 않음 |
+
+GPT-6 Astra의 `none`은 별도로 해결해야 할 호환성 항목입니다. 이번 변경에서는 none-to-low 매핑을
+추가하지 않습니다. 이후 모델 도입 시 고정 enum과 별도로 이런 호환성을 확인해야 합니다.
+
+요청/replay/기본값/guest 정책과 실행 surface의 모델을 결정한 뒤, run에 저장하기 전에 정규화합니다.
+Provider payload 생성 시에도 같은 멱등 함수를 적용해 직접 호출 경로를 보호합니다.
+Capability는 chat 모델의 기본값을 정규화하되 전체 선택지 목록을 그대로 반환합니다.
+과거 run은 수정하지 않으며 replay는 상속한 effort를 현재 모델 기준으로 정규화합니다.
+
+2026-09-27 직접 GPT-5.6 Sol Responses API smoke에서 `none`은 성공하고 `minimal`은
+HTTP 400 `unsupported_value`로 거부됐습니다. 기존 GPT-6 전용 매핑에는 실제 rollback 호환성 공백이 있었습니다.
+회귀 테스트는 두 모델 계열, chat/workspace 선택, 요청/기본값/guest/replay, 저장된 run/event 및 고정 목록을 검증합니다.
 
 ## Capability discovery와 guest 정책
 
