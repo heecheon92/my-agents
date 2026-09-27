@@ -14,7 +14,7 @@ flowchart LR
     Guest -->|No| Resolve["request value or server default"]
     Resolve --> Check{"Standard mode or Pro-supported model?"}
     Check -->|No| Error["400 reasoning_mode_not_supported"]
-    Check -->|Yes| Normalize["GPT-6 minimal to low"]
+    Check -->|Yes| Normalize["GPT-5.6/GPT-6 minimal to low"]
     Normalize --> Persist["Persist effective pair on agent_runs"]
     Fixed --> Normalize
     Persist --> Provider["Final OpenAI response call"]
@@ -35,11 +35,50 @@ flowchart LR
 
 - `reasoning_mode`: `standard | pro`; omitted means `standard`.
 - `reasoning_effort`: `none | minimal | low | medium | high | xhigh | max`; omitted means `MY_AGENTS_OPENAI_REASONING_EFFORT`, whose repository default is `medium`.
-- For GPT-6 models, `minimal` is accepted as a compatibility alias and normalized to `low` before run persistence and provider calls. This applies to chat, document workspace, replay inheritance, and server defaults (including guests). Responses and events report the effective `low`; GPT-5.6 keeps its existing effort behavior. Model defaults are unchanged.
+- For GPT-5.6 and GPT-6 models, `minimal` is accepted as a compatibility alias and normalized to `low` before run persistence and provider calls. This applies to chat, document workspace, replay inheritance, and server defaults (including guests). Responses and events report the effective `low`; Model defaults are unchanged.
 - Mode and effort are independent.
 - `pro` requires the model selected for that run to belong to the GPT-5.6 or GPT-6 family. Otherwise the request fails before a user message or run is stored with HTTP 400 and `code=reasoning_mode_not_supported`.
 
 The completed run response, run-detail response, run summaries, and display-safe `run_started` event return the effective `reasoning_mode` and `reasoning_effort`. Replay uses explicit replay fields when supplied; otherwise it inherits the original run's effective pair. Historical rows and events migrate to `standard` plus `medium`.
+
+## Frozen public effort contract
+
+The user-facing effort vocabulary and its order are frozen:
+
+`none → minimal → low → medium → high → xhigh → max`
+
+These are product-level choices, not a claim that every provider model accepts every value.
+Future model additions MUST preserve `ReasoningEffort`, `SUPPORTED_REASONING_EFFORTS`, request
+schemas, and the capability endpoint's `supported_efforts`. Do not add, remove, rename, reorder,
+or filter the user-facing choices to match a model's API enum. Changing this product contract
+requires a separate explicit product decision, not a routine model upgrade.
+
+Model compatibility belongs in `normalize_reasoning_effort()` in `my_agents/reasoning.py`.
+For each new model, verify provider-supported values, define any necessary mappings there,
+and test all seven public choices. Do not assume unsupported values are accepted or that
+an unknown future model inherits an existing family's mapping. If no faithful mapping exists,
+resolve that model's policy before enabling it; do not silently rewrite the public contract.
+
+| Configured model family | Requested effort | Effective effort |
+| --- | --- | --- |
+| GPT-5.6 | `minimal` | `low` |
+| GPT-6 | `minimal` | `low` |
+| GPT-5.6 / GPT-6 | Other values | Unchanged by the current normalizer |
+| Other models | Any value | Unchanged; this is not a provider-support guarantee |
+
+GPT-6 Astra's `none` remains an explicit compatibility gap; no none-to-low mapping is introduced
+by this change. A future model rollout must check such gaps independently of the frozen enum.
+
+Normalization runs after request/replay/default/guest policy and surface-model selection,
+before persisting the effective run values. The provider payload builder applies the same
+idempotent function to cover direct calls. Capabilities normalize the chat model's default
+while preserving the complete public choice list. Historical runs are not rewritten; replay
+normalizes their inherited effort against the currently selected model.
+
+On 2026-09-27, a direct GPT-5.6 Sol Responses API smoke accepted `none` and rejected `minimal`
+with HTTP 400 `unsupported_value`. The prior GPT-6-only mapping therefore left a real rollback
+compatibility gap. Regression coverage includes both families, selected chat/workspace models,
+request/default/guest/replay inputs, persisted run/events, and the frozen choice list.
 
 ## Capability discovery and guest policy
 

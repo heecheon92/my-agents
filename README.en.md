@@ -192,3 +192,5 @@ On 2026-09-26, the full offline suite reports **624 passed, 14 skipped** without
 - [Operational and migration commands](./scripts/README.md)
 
 See [ROADMAP.md](./ROADMAP.md) for the larger direction and unfinished work.
+
+Reasoning effort choices are a frozen product contract (`none` through `max`). GPT-5.6 and GPT-6 normalize `minimal` to `low`; future models adapt through the normalization layer. See the [reasoning contract](./docs/product-chat-service/en/26-run-reasoning-preferences.md#frozen-public-effort-contract).

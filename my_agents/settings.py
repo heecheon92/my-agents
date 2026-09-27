@@ -11,6 +11,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ResponseMode = Literal["deterministic", "openai"]
 ReasoningMode = Literal["standard", "pro"]
+# Frozen API vocabulary. Model compatibility belongs in reasoning.normalize_reasoning_effort.
 ReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"]
 TextVerbosity = Literal["low", "medium", "high"]
 SameSitePolicy = Literal["lax", "strict", "none"]

@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict
 from my_agents.settings import ReasoningEffort, ReasoningMode, Settings
 
 SUPPORTED_REASONING_MODES: tuple[ReasoningMode, ...] = ("standard", "pro")
+# Frozen public vocabulary; adapt new models in normalize_reasoning_effort instead.
 SUPPORTED_REASONING_EFFORTS: tuple[ReasoningEffort, ...] = (
     "none",
     "minimal",
@@ -104,9 +105,12 @@ def model_supports_reasoning_mode(model: str) -> bool:
 
 
 def normalize_reasoning_effort(*, model: str, effort: ReasoningEffort) -> ReasoningEffort:
-    """Keep minimal as a client compatibility alias for GPT-6 low effort."""
+    """Map the frozen public effort vocabulary to model-supported provider values."""
     normalized = model.strip().casefold()
-    if effort == "minimal" and (normalized == "gpt-6" or normalized.startswith("gpt-6-")):
+    if effort == "minimal" and any(
+        normalized == family or normalized.startswith(f"{family}-")
+        for family in ("gpt-5.6", "gpt-6")
+    ):
         return "low"
     return effort
 

@@ -200,6 +200,17 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
 
 ## Latest verification evidence
 
+GPT-5.6 normalization and frozen effort contract — 2026-09-27 (local branch implementation):
+
+- Direct GPT-5.6 Sol smoke accepted none and rejected minimal with HTTP 400. The shared
+  normalizer now maps minimal to low for GPT-5.6 as well as GPT-6 before persistence and
+  provider requests. Public effort choices and their order are frozen; future models must
+  adapt the normalization layer instead of changing client enums.
+- Full offline suite: **643 passed, 14 skipped, 11 dependency deprecation warnings**.
+  Ruff lint/format and diff checks passed. No new DB migration, dependency, or env setting.
+- Canonical policy: [frozen effort contract](./product-chat-service/en/26-run-reasoning-preferences.md#frozen-public-effort-contract).
+
+
 Warmer assistant defaults — 2026-09-23 (develop implementation; deployment not verified):
 
 - Replaced repeated brevity instructions with warm, adaptive explanation guidance and

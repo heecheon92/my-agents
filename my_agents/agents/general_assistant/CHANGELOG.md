@@ -116,3 +116,10 @@ The ordinary response system prompt now interpolates the model ID from the same 
 Replaced repeated brevity instructions with approachable, context-aware explanation guidance.
 Default verbosity is medium; short user requests remain respected. Output budgets and retrieval
 policies are unchanged. User-configurable style controls are documented as a future proposal.
+
+## 2026-09-27 — GPT-5.6 minimal normalization and frozen public efforts
+
+Direct provider smoke rejected minimal on GPT-5.6 Sol. Extended minimal-to-low mapping to
+GPT-5.6 before persistence and provider calls, while retaining all seven public choices.
+Future model additions must adapt the normalizer rather than changing client enums.
+Added family, surface, replay, and fixed-contract regression coverage.

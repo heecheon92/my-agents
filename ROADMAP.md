@@ -374,6 +374,10 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
 
 ## 13. Near-term recommended sequence
 
+- [ ] **Active:** GPT-5.6 minimal-to-low normalization and the frozen public effort contract are
+  locally implemented and offline-verified on `fix/gpt56-reasoning-normalization`; publication
+  remains pending. [Verification](./docs/implementation-tracking.md#latest-verification-evidence).
+
 - [ ] **Proposed:** User-configurable assistant style (friendliness and verbosity first;
   explanation level, format, and examples later). No per-user implementation is scheduled.
   [Proposal](./docs/idea/assistant-behavior-preferences.md); status follows implementation tracking.

@@ -192,3 +192,5 @@ git diff --check
 - [운영·마이그레이션 명령](./scripts/README.md)
 
 더 큰 방향과 남은 일은 [ROADMAP.md](./ROADMAP.md)에 있습니다.
+
+Reasoning effort 선택지(`none`부터 `max`)는 고정된 제품 계약입니다. GPT-5.6과 GPT-6는 `minimal`을 `low`로 정규화하며 향후 모델은 정규화 계층에서 대응합니다. [Reasoning 계약](./docs/product-chat-service/ko/26-run-reasoning-preferences.md)을 참고하세요.

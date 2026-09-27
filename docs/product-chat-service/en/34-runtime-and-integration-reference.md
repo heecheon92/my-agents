@@ -37,10 +37,9 @@ mode is `standard` and effort comes from `MY_AGENTS_OPENAI_REASONING_EFFORT`. Gu
 fixed to `standard` and the environment default effort. `GET /capabilities/reasoning` reports the
 effective default and configured-model support. `pro` is accepted for GPT-5.6 and GPT-6 models.
 
-For GPT-6 models, `minimal` is accepted as a compatibility alias and normalized to `low` before run
+For GPT-5.6 and GPT-6 models, `minimal` is accepted as a compatibility alias and normalized to `low` before run
 persistence and provider calls. This applies to chat, document workspace, replay inheritance, and
-server defaults (including guests). Responses and events report the effective `low`; GPT-5.6 keeps
-its existing effort behavior.
+server defaults (including guests). Responses and events report the effective `low`; All other effort values remain unchanged.
 
 Full contract: [run reasoning preferences](./26-run-reasoning-preferences.md).
 
