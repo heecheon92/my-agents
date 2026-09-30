@@ -219,3 +219,8 @@ metadata는 별도 설정을 유지합니다. [계약](../../../docs/product-cha
 
 Backend는 picker에 `gpt-6.1-sol`, `gpt-6-luna`, `gpt-6-astra`만 노출합니다.
 노출하지 않는 현재/기본 모델을 포함해 기존 여섯 모델의 API 설정은 그대로 유효합니다.
+
+임시 workspace turn은 정지 JPEG/PNG/WebP/GIF 이미지도 받습니다. Workspace adapter가 검증한
+image file ID는 `input_image`(`detail=high`), 문서는 `input_file`로 전달하며 원본은 expiring
+user_data file과 network-disabled container에 유지합니다. 분석 입력 지원이며 이미지 출력 인증은
+추가하지 않습니다. [Image 계약](../../../docs/product-chat-service/ko/25-openai-document-workspace.md)을 참고하세요.

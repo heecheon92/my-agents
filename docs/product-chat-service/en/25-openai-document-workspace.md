@@ -53,6 +53,41 @@ The analysis allowlist is versioned in `my_agents/document_workspace/formats.py`
 
 Analysis support is broader than output certification. `.xlsx`, `.csv`, `.tsv`, `.docx`, `.pptx`, `.pdf`, `.md`, `.markdown`, `.html`, and `.htm` outputs under `/mnt/data/output/` become downloadable artifacts. Other accepted inputs can be analyzed, but the assistant must not claim a downloadable edited document was produced. Certification means that the hosted-shell result is recognized, retained as expiring artifact metadata, and available through the authenticated download path; it does not promise pixel-perfect fidelity across every office application, so users should review generated files before relying on them.
 
+## Image attachments
+
+The workspace accepts static JPEG (`.jpg`, `.jpeg`), PNG (`.png`), WebP (`.webp`), and GIF
+(`.gif`) for visual analysis. The served registry reports category `image`, the canonical MIME
+for each extension, `analysis_supported=true`, and `artifact_status=unavailable`. These image
+inputs do not extend the certified output formats or introduce an image-generation feature.
+
+Before provider transfer, the backend checks consent/account/conversation ownership, extension,
+MIME, and the existing byte ceiling. It then validates the image's actual encoding, decodability,
+and static nature using Pillow already present in the Docling/office dependency tree. Malformed,
+renamed/mismatched, animated GIF/APNG/WebP, and Pillow decompression-bomb inputs return 415
+`unsupported_attachment_type`; explicit false consent returns the existing 400, and a missing
+required consent field remains 422. Original bytes are preserved, and generic binary MIME is
+canonicalized after validation. Local validation decodes a bounded image; analysis itself remains
+hosted. No new package or database migration is required.
+
+Files retain `purpose=user_data` and explicit expiration. Images remain mounted in the
+network-disabled container for optional shell work and are supplied to Responses as `input_image`
+file-ID parts, while documents keep `input_file`. Mixed inputs retain their order:
+
+```json
+[
+  {"type": "input_text", "text": "Compare this picture with the document"},
+  {"type": "input_image", "file_id": "file-image", "detail": "high"},
+  {"type": "input_file", "file_id": "file-document"}
+]
+```
+
+`detail=high` bounds provider image preprocessing rather than using original-resolution auto
+mode, which can reject large photos at the patch limit. Existing file-count/combined-byte,
+consent, ownership, guest exclusion, retention, model, and output-certification policies apply.
+The separate workspace model is still used for image attachment turns.
+Sources: [image input requirements](https://developers.openai.com/api/docs/guides/images-vision),
+[Files upload purpose and expiry](https://developers.openai.com/api/reference/typescript/resources/files/methods/create).
+
 ## Security and economic boundaries
 
 - The feature is disabled by default and rejects guest principals.

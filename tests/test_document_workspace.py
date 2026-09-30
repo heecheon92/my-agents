@@ -108,6 +108,7 @@ class FakeDocumentWorkspaceProvider:
         *,
         container_id: str,  # noqa: ARG002
         provider_file_ids: list[str],  # noqa: ARG002
+        image_file_ids: list[str] = (),
         instructions: str,  # noqa: ARG002
         prompt: str,  # noqa: ARG002
         safety_identifier: str,
@@ -118,6 +119,7 @@ class FakeDocumentWorkspaceProvider:
         assert reasoning_mode in {"standard", "pro"}
         assert reasoning_effort in {"none", "minimal", "low", "medium", "high", "xhigh", "max"}
         self.reasoning = (reasoning_mode, reasoning_effort)
+        self.image_file_ids = list(image_file_ids)
         self.container_files.append(
             ProviderContainerFile(
                 id="artifact-1",

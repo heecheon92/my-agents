@@ -14,3 +14,5 @@ These notes are my-agents-specific learning and architecture notes that do not f
 - [Jev로 제한된 선택을 분리하기](./jev-bounded-decisions.md)
 
 - [GPT-6 reasoning 호환성](./gpt6-reasoning-compatibility.md)
+
+- [Workspace 이미지 입력](./workspace-image-inputs.md)

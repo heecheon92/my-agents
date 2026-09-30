@@ -200,6 +200,16 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
 
 ## Latest verification evidence
 
+Static workspace image inputs — 2026-09-30 (`develop` implementation):
+
+- Backend **765 passed / 13 skipped / 12 dependency/API deprecation warnings**; Ruff lint/format
+  and diff checks passed. Frontend **399 unit / 18 workspace browser checks** passed, with the
+  pre-existing file-drop failure documented. OpenAPI/real-BFF refusal and guest checks passed.
+- The owner reported successful manual browser testing; agent live cloud image execution and
+  the complete format/model/provider matrix remain unverified.
+- [Durable completion evidence](./completed/workspace-image-inputs.md).
+
+
 Assistant model preferences and compatibility — 2026-09-30 (`develop` implementation;
 production rollout and live provider access pending):
 
@@ -773,6 +783,9 @@ system, a multi-device guest account model, or a replacement for shared rate
 limits.
 
 ## Shipped and completed index
+
+- [x] **Shipped:** Static workspace image inputs with vision/file routing and validation —
+  [completion evidence](./completed/workspace-image-inputs.md).
 
 - [x] **Shipped:** Registered assistant model preferences, GPT-6.1/Astra compatibility, editable
   application effort defaults, and exposed model subset — [completion evidence](./completed/assistant-model-preferences.md).

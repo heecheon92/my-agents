@@ -84,3 +84,36 @@ User byte가 browser 밖으로 나가지 않으면 provider-transfer consent는 
 Flag를 켜기 전에 Alembic revision `20260809_0030`을 적용합니다. `OPENAI_API_KEY`와 `MY_AGENTS_DOCUMENT_WORKSPACE_ENABLED=true`를 설정하고, 문서화된 `MY_AGENTS_DOCUMENT_WORKSPACE_*` 환경 변수로 제한을 조정합니다. 이 경로를 위해 Render process에 local office suite, code sandbox, high-memory parser를 추가하지 않습니다.
 
 Test suite는 provider boundary를 offline fake로 교체합니다. Credential을 쓰는 live smoke는 OpenAI file, container, model token, Hosted Shell 비용이 발생할 수 있으므로 operator가 명시적으로 실행하는 단계로 남깁니다.
+
+## 이미지 attachment
+
+Workspace는 정지 JPEG(`.jpg`, `.jpeg`), PNG(`.png`), WebP(`.webp`), GIF(`.gif`)를
+시각 분석 입력으로 받습니다. Registry에는 category `image`, 확장자별 canonical MIME,
+`analysis_supported=true`, `artifact_status=unavailable`을 제공합니다. 이미지 입력 지원은
+인증된 출력 형식이나 이미지 생성 기능을 추가하지 않습니다.
+
+Provider로 보내기 전에 consent/account/conversation 소유권, 확장자, MIME와 기존 byte 제한을
+검증합니다. 기존 Docling/office dependency tree에 포함된 Pillow로 실제 encoding, decode 가능 여부,
+정지 여부를 확인합니다. 손상되거나 확장자/MIME가 다른 이미지, animated GIF/APNG/WebP와
+Pillow decompression-bomb 입력은 415 `unsupported_attachment_type`입니다.
+Consent false는 기존 400, 필수 consent field 누락은 422를 유지합니다. 원본 bytes를 유지하며
+검증한 generic binary MIME은 canonical MIME으로 바꿉니다. 로컬 검증은 제한된 image decode이며
+분석은 hosted 환경에서 수행합니다. 새 package나 DB migration은 없습니다.
+
+Upload는 `purpose=user_data`와 명시적 expiry를 유지합니다. Image는 network-disabled container에
+그대로 mount하고 Responses에는 `input_image` file-ID로 전달합니다. 문서는 `input_file`입니다.
+혼합 입력의 순서도 유지합니다.
+
+```json
+[
+  {"type": "input_text", "text": "Compare this picture with the document"},
+  {"type": "input_image", "file_id": "file-image", "detail": "high"},
+  {"type": "input_file", "file_id": "file-document"}
+]
+```
+
+`detail=high`로 provider 전처리를 제한해 original-resolution auto 모드의 큰 사진 patch-limit
+거부를 피합니다. 기존 파일 개수/합계 byte, consent, 소유권, guest 차단, retention, 모델과
+출력 인증 정책을 유지합니다. Image attachment turn도 별도 workspace 모델을 사용합니다.
+근거: [image 입력 요구사항](https://developers.openai.com/api/docs/guides/images-vision),
+[Files purpose/expiry](https://developers.openai.com/api/reference/typescript/resources/files/methods/create).

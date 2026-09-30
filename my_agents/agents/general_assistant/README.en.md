@@ -220,3 +220,9 @@ See the [contract](../../../docs/product-chat-service/en/35-assistant-model-pref
 
 The backend advertises only `gpt-6.1-sol`, `gpt-6-luna`, and `gpt-6-astra` to model pickers.
 All six supported API preferences remain valid, including unadvertised current/default models.
+
+Temporary workspace turns also accept static JPEG/PNG/WebP/GIF images. The workspace adapter
+routes validated image file IDs as `input_image` (`detail=high`), documents as `input_file`,
+and keeps original bytes in expiring user_data files plus the network-disabled container.
+These inputs are for analysis; image output certification is not added. See the
+[image attachment contract](../../../docs/product-chat-service/en/25-openai-document-workspace.md#image-attachments).

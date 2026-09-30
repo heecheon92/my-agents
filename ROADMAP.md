@@ -374,6 +374,12 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
 
 ## 13. Near-term recommended sequence
 
+- [x] **Shipped:** Static workspace image inputs (JPEG/PNG/WebP/GIF), vision/file routing,
+  and pre-transfer validation are implemented on `develop`. Backend 765 passed / 13 skipped,
+  frontend 399 unit / 18 workspace browser checks, OpenAPI/real-BFF refusal/guest checks passed.
+  The owner reported a successful manual browser test; full provider matrix and the baseline
+  file-drop failure remain separate. [Completion evidence](./docs/completed/workspace-image-inputs.md).
+
 - [x] **Shipped:** Registered assistant model preferences, GPT-6.1/Astra reasoning compatibility,
   and a three-model exposed subset of the six-model API catalog are implemented on `develop`.
   Migration `20260930_0035` is required for existing databases. Backend 747 passed / 13 skipped;

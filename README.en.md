@@ -205,3 +205,10 @@ are seeds, not enforced policy. GPT-6.1 Sol and Astra resolve unsupported `none`
 Ordinary chat, streaming, and replay use the saved preference; resume uses the admitted run's pinned
 model. The document workspace uses its separate model setting. Apply migration `20260930_0035`
 before starting an existing database. See the [model preference contract](./docs/product-chat-service/en/35-assistant-model-preferences.md).
+
+Temporary document-workspace attachments also accept static `.jpg`, `.jpeg`, `.png`, `.webp`,
+and `.gif` images for analysis. The backend validates encoding/MIME and rejects animation before
+transfer, then sends image references as `input_image` alongside document `input_file` parts.
+Consent, guest exclusion, limits, expiry, and the separately configured workspace model apply.
+Image inputs are analysis-only; downloadable image outputs are not certified. See the
+[workspace contract](./docs/product-chat-service/en/25-openai-document-workspace.md#image-attachments).

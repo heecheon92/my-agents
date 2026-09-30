@@ -90,6 +90,7 @@ class DocumentWorkspaceProvider(Protocol):
         *,
         container_id: str,
         provider_file_ids: Sequence[str],
+        image_file_ids: Sequence[str] = (),
         instructions: str,
         prompt: str,
         safety_identifier: str,
@@ -206,6 +207,7 @@ class OpenAIDocumentWorkspaceProvider:
         *,
         container_id: str,
         provider_file_ids: Sequence[str],
+        image_file_ids: Sequence[str] = (),
         instructions: str,
         prompt: str,
         safety_identifier: str,
@@ -213,10 +215,15 @@ class OpenAIDocumentWorkspaceProvider:
         reasoning_effort: ReasoningEffort,
     ) -> ProviderExecutionResult:
         content: list[dict[str, str]] = [{"type": "input_text", "text": prompt}]
-        content.extend(
-            {"type": "input_file", "file_id": provider_file_id}
-            for provider_file_id in provider_file_ids
-        )
+        image_ids = set(image_file_ids)
+        for provider_file_id in provider_file_ids:
+            if provider_file_id in image_ids:
+                # Bound provider preprocessing instead of using original-resolution auto mode.
+                content.append(
+                    {"type": "input_image", "file_id": provider_file_id, "detail": "high"}
+                )
+            else:
+                content.append({"type": "input_file", "file_id": provider_file_id})
         try:
             response = self._client.responses.create(
                 model=self._settings.document_workspace_model,

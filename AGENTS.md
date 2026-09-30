@@ -36,7 +36,8 @@ The graph currently has one production assistant/router path. Route labels and c
 - Use `langchain-openai` / `ChatOpenAI` for ordinary OpenAI model access. The one
   approved exception is `my_agents/document_workspace/provider.py`, whose narrow
   OpenAI SDK adapter is required for Files, Containers, Hosted Shell, and Skills
-  surfaces not exposed through `ChatOpenAI`; keep that exception isolated and mocked
+  surfaces not exposed through `ChatOpenAI`, including typed image/file attachment input;
+  keep that exception isolated and mocked
   in offline tests.
 - Keep deterministic mode available for tests and offline smoke checks. The normal local response mode is OpenAI-backed and requires `OPENAI_API_KEY` before chat requests can succeed.
 - Never commit real secrets. Do not read or print `.env` contents unless the user explicitly asks and understands the risk.

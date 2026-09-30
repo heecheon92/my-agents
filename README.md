@@ -205,3 +205,9 @@ provider 권장값은 초기값입니다. GPT-6.1 Sol과 Astra는 지원하지 �
 일반 채팅/stream/replay는 저장된 선택을 사용하고 resume는 시작된 run의 고정 모델을 사용합니다.
 Document workspace는 별도 모델 설정을 사용합니다. 기존 DB는 실행 전에 migration
 `20260930_0035`를 적용하세요. [모델 선택 계약](./docs/product-chat-service/ko/35-assistant-model-preferences.md)을 참고하세요.
+
+임시 document-workspace attachment는 정지 `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif` 이미지도
+분석할 수 있습니다. Backend가 실제 encoding/MIME를 검증하고 animation을 거부한 다음
+이미지는 `input_image`, 문서는 `input_file`로 전달합니다. Consent, guest 차단, 용량/개수 제한,
+expiry와 별도 workspace 모델은 유지합니다. Image는 분석 입력이며 다운로드 이미지 출력은 인증하지
+않습니다. [Workspace 계약](./docs/product-chat-service/ko/25-openai-document-workspace.md)을 참고하세요.

@@ -5,9 +5,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-REGISTRY_VERIFIED_AT = "2026-08-09"
+REGISTRY_VERIFIED_AT = "2026-09-30"
+
+IMAGE_INPUT_FORMATS: dict[str, tuple[str, str]] = {
+    ".jpg": ("JPEG", "image/jpeg"),
+    ".jpeg": ("JPEG", "image/jpeg"),
+    ".png": ("PNG", "image/png"),
+    ".webp": ("WEBP", "image/webp"),
+    ".gif": ("GIF", "image/gif"),
+}
 
 _CATEGORY_EXTENSIONS: dict[str, tuple[str, ...]] = {
+    "image": tuple(IMAGE_INPUT_FORMATS),
     "pdf": (".pdf",),
     "spreadsheet": (
         ".xla",
@@ -70,6 +79,7 @@ _CATEGORY_EXTENSIONS: dict[str, tuple[str, ...]] = {
 }
 
 _CATEGORY_MIME_TYPES: dict[str, tuple[str, ...]] = {
+    "image": ("image/jpeg", "image/png", "image/webp", "image/gif"),
     "pdf": ("application/pdf",),
     "spreadsheet": (
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -260,7 +270,9 @@ def document_format_for_filename(filename: str) -> DocumentFormat | None:
             return DocumentFormat(
                 extension=extension,
                 category=category,
-                mime_types=_CATEGORY_MIME_TYPES[category],
+                mime_types=(IMAGE_INPUT_FORMATS[extension][1],)
+                if category == "image"
+                else _CATEGORY_MIME_TYPES[category],
                 artifact_status=(
                     "certified" if extension in CERTIFIED_ARTIFACT_EXTENSIONS else "unavailable"
                 ),
@@ -283,7 +295,9 @@ def list_document_formats() -> tuple[DocumentFormat, ...]:
                 DocumentFormat(
                     extension=extension,
                     category=category,
-                    mime_types=_CATEGORY_MIME_TYPES[category],
+                    mime_types=(IMAGE_INPUT_FORMATS[extension][1],)
+                    if category == "image"
+                    else _CATEGORY_MIME_TYPES[category],
                     artifact_status=(
                         "certified" if extension in CERTIFIED_ARTIFACT_EXTENSIONS else "unavailable"
                     ),

@@ -156,3 +156,12 @@ preference reset. Enforce exposed IDs as a subset of supported IDs at module loa
 unexposed preferences/default reset as well as all six model executions. Backend: 747 passed /
 13 skipped; Ruff lint/format passed. Claude reported frontend 390 unit and 21 targeted browser
 checks passing.
+
+
+## 2026-09-30 — Static image workspace inputs
+
+Allow validated JPEG/PNG/WebP/static GIF attachment inputs through the isolated workspace
+adapter. Images use input_image/high and documents retain input_file. Preserve original bytes,
+expiry, guest/consent/ownership/size guards and separate workspace model; reject animation and
+invalid images before transfer. Certified image outputs are outside this slice. Backend offline
+suite: 765 passed, 13 skipped; Ruff lint/format passed. Live OpenAI image requests are unverified.
