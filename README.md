@@ -193,4 +193,15 @@ git diff --check
 
 더 큰 방향과 남은 일은 [ROADMAP.md](./ROADMAP.md)에 있습니다.
 
-Reasoning effort 선택지(`none`부터 `max`)는 고정된 제품 계약입니다. GPT-5.6과 GPT-6는 `minimal`을 `low`로 정규화하며 향후 모델은 정규화 계층에서 대응합니다. [Reasoning 계약](./docs/product-chat-service/ko/26-run-reasoning-preferences.md)을 참고하세요.
+Reasoning effort 선택지(`none`부터 `max`)는 고정된 제품 계약입니다. 지원 모델은 `gpt-5.6-luna`, `gpt-6-luna`, `gpt-6-sol`, `gpt-5.6-sol`, `gpt-6.1-sol`, `gpt-6-astra`이며 모두 `my_agents/model_defaults.py`의 provider 권장값으로 시작한 application 기본값 `medium`을 사용합니다. `MY_AGENTS_OPENAI_MODEL`로 배포 fallback을 설정하고 backend를 재시작하세요. 기존 reasoning-effort 환경 변수 override는 무시합니다. 일반 계정은 run별 effort를 선택할 수 있고 guest는 standard mode와 선택된 모델 기본값을 사용합니다. `minimal`은 `low`로 변환하며 GPT-6.1 Sol과 Astra는 `none`도 run 저장과 provider 호출 전에 `low`로 변환합니다. [Reasoning 계약](./docs/product-chat-service/ko/26-run-reasoning-preferences.md)을 참고하세요.
+
+일반 계정은 채팅 입력 영역이나 설정에서 assistant 모델을 선택할 수 있습니다.
+`GET/PATCH /assistant/preferences`로 Product DB에 저장하며 `null`은
+`MY_AGENTS_OPENAI_MODEL` 기본값으로 되돌립니다. Guest는 배포 기본 모델로 고정됩니다.
+Picker에는 `gpt-6.1-sol`, `gpt-6-luna`, `gpt-6-astra`만 제공합니다.
+API는 `gpt-5.6-luna`, `gpt-5.6-sol`, `gpt-6-sol`도 받으며 노출하지 않는 지원 모델의 기존 선택과
+배포 기본값도 그대로 유효합니다. `my_agents/model_defaults.py`의 application 기본 effort는 수정할 수 있으며
+provider 권장값은 초기값입니다. GPT-6.1 Sol과 Astra는 지원하지 않는 `none`/`minimal`을 `low`로 바꿉니다.
+일반 채팅/stream/replay는 저장된 선택을 사용하고 resume는 시작된 run의 고정 모델을 사용합니다.
+Document workspace는 별도 모델 설정을 사용합니다. 기존 DB는 실행 전에 migration
+`20260930_0035`를 적용하세요. [모델 선택 계약](./docs/product-chat-service/ko/35-assistant-model-preferences.md)을 참고하세요.

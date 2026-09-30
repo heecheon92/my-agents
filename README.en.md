@@ -193,4 +193,15 @@ On 2026-09-26, the full offline suite reports **624 passed, 14 skipped** without
 
 See [ROADMAP.md](./ROADMAP.md) for the larger direction and unfinished work.
 
-Reasoning effort choices are a frozen product contract (`none` through `max`). GPT-5.6 and GPT-6 normalize `minimal` to `low`; future models adapt through the normalization layer. See the [reasoning contract](./docs/product-chat-service/en/26-run-reasoning-preferences.md#frozen-public-effort-contract).
+Reasoning effort choices remain a frozen product contract (`none` through `max`). The supported models are `gpt-5.6-luna`, `gpt-6-luna`, `gpt-6-sol`, `gpt-5.6-sol`, `gpt-6.1-sol`, and `gpt-6-astra`; all currently use `medium` from `my_agents/model_defaults.py`. These editable application defaults are initially seeded from provider guidance. Set the deployment fallback with `MY_AGENTS_OPENAI_MODEL` and restart the backend. The retired reasoning-effort environment override is ignored. Registered users retain per-run choices; guests use standard mode and the selected model default. `minimal` resolves to `low`; GPT-6.1 Sol and Astra also resolve `none` to `low` before persistence and provider calls. See the [reasoning contract](./docs/product-chat-service/en/26-run-reasoning-preferences.md#frozen-public-effort-contract).
+
+Registered users can select their assistant model in the chat composer or settings. The preference
+is stored in Product DB through `GET/PATCH /assistant/preferences`; `null` resets it to
+`MY_AGENTS_OPENAI_MODEL`. Guests are locked to the deployment default. The picker offers `gpt-6.1-sol`, `gpt-6-luna`, and `gpt-6-astra`.
+The API also accepts `gpt-5.6-luna`, `gpt-5.6-sol`, and `gpt-6-sol`; existing supported
+preferences and deployment defaults remain valid when not advertised.
+Application default efforts can be edited in `my_agents/model_defaults.py`; provider recommendations
+are seeds, not enforced policy. GPT-6.1 Sol and Astra resolve unsupported `none`/`minimal` to `low`.
+Ordinary chat, streaming, and replay use the saved preference; resume uses the admitted run's pinned
+model. The document workspace uses its separate model setting. Apply migration `20260930_0035`
+before starting an existing database. See the [model preference contract](./docs/product-chat-service/en/35-assistant-model-preferences.md).

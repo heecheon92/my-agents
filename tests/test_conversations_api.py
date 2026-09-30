@@ -305,7 +305,6 @@ def test_conversation_run_uses_server_owned_history(monkeypatch) -> None:  # noq
 
 
 def test_registered_run_persists_and_exposes_reasoning_preferences(monkeypatch) -> None:  # noqa: ANN001
-    monkeypatch.setenv("MY_AGENTS_OPENAI_REASONING_EFFORT", "low")
     client = _client(monkeypatch, SpyGraph())
     _signup_login(client, "reasoning@example.com")
 
@@ -314,7 +313,7 @@ def test_registered_run_persists_and_exposes_reasoning_preferences(monkeypatch) 
     assert capability.json() == {
         "customizable": True,
         "default_mode": "standard",
-        "default_effort": "low",
+        "default_effort": "medium",
         "supported_modes": ["standard", "pro"],
         "supported_efforts": ["none", "minimal", "low", "medium", "high", "xhigh", "max"],
         "chat": {"pro_supported": True},
@@ -604,12 +603,26 @@ def test_ambiguous_document_scope_returns_visible_clarification(monkeypatch) -> 
 
 
 def test_checkpointed_document_selection_interrupts_and_resumes_same_run(monkeypatch) -> None:  # noqa: ANN001
+    from my_agents.agents.general_assistant import graph as graph_module
+
+    provider_models = []
+    original_provider = graph_module.get_response_provider
+
+    def capture_provider(model=None):
+        provider_models.append(model)
+        return original_provider(model)
+
+    monkeypatch.setattr(graph_module, "get_response_provider", capture_provider)
     graph = build_graph(
         checkpointer=InMemorySaver(serde=checkpoint_serializer()),
         document_selection_hitl_enabled=True,
     )
     client = _client(monkeypatch, graph)  # type: ignore[arg-type]
     _signup_login(client, "checkpoint-document-selection@example.com")
+    assert (
+        client.patch("/assistant/preferences", json={"assistant_model": "gpt-6.1-sol"}).status_code
+        == 200
+    )
     kb_id = _create_knowledge_base(client, "Checkpointed selection KB")
     documents = []
     for title, content in (
@@ -637,6 +650,11 @@ def test_checkpointed_document_selection_interrupts_and_resumes_same_run(monkeyp
 
     assert interrupted.status_code == 202
     pending = interrupted.json()
+    assert pending["assistant_model"] == "gpt-6.1-sol"
+    assert (
+        client.patch("/assistant/preferences", json={"assistant_model": "gpt-6-astra"}).status_code
+        == 200
+    )
     assert pending["status"] == "waiting_for_input"
     assert pending["interaction"]["schema_version"] == 2
     assert pending["interaction"]["type"] == "document_selection"
@@ -744,6 +762,8 @@ def test_checkpointed_document_selection_interrupts_and_resumes_same_run(monkeyp
 
     assert resumed.status_code == 200
     completed = resumed.json()
+    assert completed["assistant_model"] == "gpt-6.1-sol"
+    assert provider_models[-1] == "gpt-6.1-sol"
     assert completed["status"] == "completed"
     assert completed["run_id"] == pending["run_id"]
     assert completed["citations"] == []
@@ -2581,15 +2601,25 @@ def test_conversation_run_excludes_disabled_user_memory(monkeypatch) -> None:  #
         session_generator.close()
 
 
-@pytest.mark.parametrize("model", ["gpt-5.6-sol", "gpt-6-sol"])
-def test_minimal_is_persisted_as_low_and_replayed(monkeypatch, model) -> None:  # noqa: ANN001
+@pytest.mark.parametrize(
+    "model,effort",
+    [
+        ("gpt-5.6-luna", "minimal"),
+        ("gpt-6-luna", "minimal"),
+        ("gpt-5.6-sol", "minimal"),
+        ("gpt-6-sol", "minimal"),
+        ("gpt-6.1-sol", "minimal"),
+        ("gpt-6.1-sol", "none"),
+    ],
+)
+def test_unsupported_effort_is_persisted_as_low_and_replayed(monkeypatch, model, effort) -> None:  # noqa: ANN001
     monkeypatch.setenv("MY_AGENTS_OPENAI_MODEL", model)
     client = _client(monkeypatch, SpyGraph())
     _signup_login(client, "gpt6-reasoning@example.com")
     conversation_id = client.post("/conversations", json={"title": "GPT-6"}).json()["id"]
     response = client.post(
         f"/conversations/{conversation_id}/runs",
-        json={"message": "Hello", "reasoning_mode": "pro", "reasoning_effort": "minimal"},
+        json={"message": "Hello", "reasoning_mode": "pro", "reasoning_effort": effort},
     )
     assert response.status_code == 200
     payload = response.json()
@@ -2601,7 +2631,7 @@ def test_minimal_is_persisted_as_low_and_replayed(monkeypatch, model) -> None:  
     message_id = _assistant_message_id(payload["run_id"])
     replay = client.post(
         f"/conversations/{conversation_id}/messages/{message_id}/replay",
-        json={"reasoning_effort": "minimal"},
+        json={"reasoning_effort": effort},
     )
     assert replay.status_code == 200
     assert replay.json()["reasoning_effort"] == "low"

@@ -354,7 +354,10 @@ def _compose_reply(
                 else {}
             ),
         }
-    provider = get_response_provider()
+    assistant_model = runtime_context.get("assistant_model")
+    provider = (
+        get_response_provider(assistant_model) if assistant_model else get_response_provider()
+    )
     compose_result = getattr(provider, "compose_result", None)
     if callable(compose_result):
         result = compose_result(

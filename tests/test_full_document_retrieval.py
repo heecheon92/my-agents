@@ -808,7 +808,9 @@ def test_full_document_body_never_enters_checkpoint_state(monkeypatch) -> None: 
 
         import my_agents.agents.general_assistant.graph as graph_module
 
-        monkeypatch.setattr(graph_module, "get_response_provider", lambda: CapturingProvider())
+        monkeypatch.setattr(
+            graph_module, "get_response_provider", lambda *args: CapturingProvider()
+        )
         checkpointer = InMemorySaver(serde=checkpoint_serializer())
         graph = build_graph(checkpointer=checkpointer)
         state = {

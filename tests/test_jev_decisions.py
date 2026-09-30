@@ -151,6 +151,7 @@ def test_cartographer_jev_changes_intent_without_changing_scope_or_limits():
 
 def test_production_factories_select_jev_and_offline_mode_wins(monkeypatch):
     monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setenv("MY_AGENTS_DECISION_PROVIDER", "jev")
     from my_agents.settings import get_settings
 

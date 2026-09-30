@@ -66,3 +66,5 @@
 - 배포 중 실제로 겪은 문제와 해결 기록은 영어 원문 문서
   [Deployment troubleshooting log](../en/15-deployment-troubleshooting-log.md)에
   기록합니다.
+
+- [35. Assistant model preferences](./35-assistant-model-preferences.md)

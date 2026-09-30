@@ -123,3 +123,36 @@ Direct provider smoke rejected minimal on GPT-5.6 Sol. Extended minimal-to-low m
 GPT-5.6 before persistence and provider calls, while retaining all seven public choices.
 Future model additions must adapt the normalizer rather than changing client enums.
 Added family, surface, replay, and fixed-contract regression coverage.
+
+
+## 2026-09-30 — GPT-6.1 Sol and model-recommended reasoning defaults
+
+Recognize GPT-6.1 Sol standard/pro and normalize none/minimal to low before run
+persistence and provider calls. Centralize provider-recommended effort defaults for
+five supported models in model_defaults.py; all currently recommend medium. Remove
+the environment effort override, retain registered per-run/replay choices, and derive
+guest/workspace defaults from the selected model. Offline coverage checks the frozen
+public choices, provider serialization, and persisted run/replay effort. Full offline
+suite: 713 passed, 13 skipped; Ruff lint/format passed. Live API behavior remains unverified.
+
+
+## 2026-09-30 — Registered assistant model preferences
+
+Add six-model discovery and Product DB-owned registered preferences with a deployment-default
+reset. Guest selections are denied. Pin each admitted answer model for sync/stream/replay and
+HITL resume; cache providers by model and keep request/model identity consistent. Astra now
+normalizes none/minimal to low. Keep temporary document workspace and internal models separate.
+Migration 20260930_0035 adds nullable user preference/run model columns; historical models are
+not guessed. Backend: 745 passed / 13 skipped; Ruff lint/format passed. Deterministic real-BFF
+selection/reset, guest enforcement, and OpenAPI verification passed; no live OpenAI call made.
+
+
+## 2026-09-30 — Curated frontend model choices
+
+Separate the six-model API allowlist from EXPOSED_ASSISTANT_MODELS. Discovery advertises
+GPT-6.1 Sol, GPT-6 Luna, and GPT-6 Astra; supported API preferences and deployment defaults
+remain effective even when unadvertised. No migration, provider-default change, or forced
+preference reset. Enforce exposed IDs as a subset of supported IDs at module load. Cover
+unexposed preferences/default reset as well as all six model executions. Backend: 747 passed /
+13 skipped; Ruff lint/format passed. Claude reported frontend 390 unit and 21 targeted browser
+checks passing.

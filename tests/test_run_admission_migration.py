@@ -44,12 +44,13 @@ def test_active_run_index_upgrade_and_downgrade(migration_url, monkeypatch, dupl
     with Session(engine) as db:
         db.add(ConversationModel(id="one", owner_user_id="user"))
         db.flush()
-        db.add_all(
-            [
-                AgentRunModel(id=str(i), conversation_id="one", user_id="user", status="running")
-                for i in range(2 if duplicates else 1)
-            ]
-        )
+        # Seed the legacy schema without emitting nullable columns added by later ORM versions.
+        for i in range(2 if duplicates else 1):
+            db.execute(
+                AgentRunModel.__table__.insert().values(
+                    id=str(i), conversation_id="one", user_id="user", status="running"
+                )
+            )
         db.commit()
     if duplicates:
         with pytest.raises(RuntimeError, match="duplicate active conversations"):

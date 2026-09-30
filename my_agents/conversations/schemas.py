@@ -352,6 +352,8 @@ class ConversationReplayRequest(BaseModel):
 class ConversationRunResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    assistant_model: str | None = None
+
     status: Literal["completed"] = "completed"
     run_id: str
     conversation_id: str
@@ -382,6 +384,8 @@ class ConversationRunInterruptedResponse(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    assistant_model: str | None = None
+
     status: Literal["waiting_for_input"] = "waiting_for_input"
     run_id: str
     conversation_id: str
@@ -403,6 +407,8 @@ class ConversationRunCancelResponse(BaseModel):
 
 class AgentRunSummaryResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+    assistant_model: str | None = None
 
     run_id: str
     conversation_id: str
@@ -429,6 +435,7 @@ class KnowledgeSelectionEventPayload(AgentEventPayload):
 
 
 class RunStartedEventPayload(KnowledgeSelectionEventPayload):
+    assistant_model: str | None = None
     run_id: str
     conversation_id: str
     status: Literal["running"] = "running"

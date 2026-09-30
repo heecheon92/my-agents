@@ -40,3 +40,5 @@ They live outside `docs/learning/` because `docs/learning/` is reserved for the 
 ## Related maintenance ledgers
 
 - [Performance optimization records](../../performance/README.md)
+
+- [35. Assistant model preferences](./35-assistant-model-preferences.md)

@@ -9,6 +9,8 @@ from typing import Literal
 from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from my_agents.model_defaults import default_reasoning_effort
+
 ResponseMode = Literal["deterministic", "openai"]
 ReasoningMode = Literal["standard", "pro"]
 # Frozen API vocabulary. Model compatibility belongs in reasoning.normalize_reasoning_effort.
@@ -72,10 +74,12 @@ class Settings(BaseSettings):
         le=4096,
         validation_alias=AliasChoices("MY_AGENTS_OPENAI_MAX_OUTPUT_TOKENS"),
     )
-    openai_reasoning_effort: ReasoningEffort = Field(
-        default="medium",
-        validation_alias=AliasChoices("MY_AGENTS_OPENAI_REASONING_EFFORT"),
-    )
+
+    @property
+    def openai_reasoning_effort(self) -> ReasoningEffort:
+        """Read the configured model's application default, without an env override."""
+        return default_reasoning_effort(self.openai_model)
+
     openai_verbosity: TextVerbosity | None = Field(
         default="medium",
         validation_alias=AliasChoices("MY_AGENTS_OPENAI_VERBOSITY"),

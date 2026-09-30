@@ -39,6 +39,7 @@ def graph_context_for_run(
     document_workspace_runtime: object | None = None,
     reasoning_mode: ReasoningMode = "standard",
     reasoning_effort: ReasoningEffort = "medium",
+    assistant_model: str | None = None,
 ) -> dict[str, object]:
     """Build LangGraph runtime context for one conversation run.
 
@@ -53,6 +54,7 @@ def graph_context_for_run(
         "knowledge_base_selection": selection_context,
         "reasoning_mode": reasoning_mode,
         "reasoning_effort": reasoning_effort,
+        "assistant_model": assistant_model,
         "full_document_max_chars": settings.full_document_max_chars,
         "full_document_range_chars": settings.full_document_range_chars,
     }

@@ -10,14 +10,14 @@
 - 실제 OpenAI 응답을 받으려면 `.env`에 `OPENAI_API_KEY`를 넣고 `MY_AGENTS_RESPONSE_MODE=openai`로 실행합니다. 일반 응답은 `langchain-openai`의 `ChatOpenAI` 경계를 거칩니다. 선택 기능인 임시 document workspace만 Files, Containers, Hosted Shell, Skills를 쓰기 위해 격리된 OpenAI SDK adapter를 사용합니다.
 - 출처 선택, 검색 도구 선택, ContextForge intent 분류는 별도의 제한된 결정 provider가 맡습니다. 설정 방법, fallback 규칙, 외부로 보내는 데이터의 범위는 [RAG Agent README](../../../my_agents/agents/rag_agent/README.md)에 있습니다.
 - 어시스턴트는 공식 도메인 `https://my-agents.dev`에 연결된 일관된 `my-agents` 정체성을 유지하고, 바뀔 수 있는 제품 정보는 권한이 확인된 context에 근거해 답합니다.
-- 사용자가 어떤 모델과 대화 중인지 물으면 설정된 모델 ID를 알려 주도록 지시합니다. 일반 채팅 system prompt에는 API 요청과 같은 설정의 `MY_AGENTS_OPENAI_MODEL` 값이 들어가므로, 값을 바꾸고 backend를 재시작하면 prompt에도 반영됩니다. 이 값은 설정한 모델 ID이며 provider가 내부적으로 고른 snapshot을 뜻하지 않습니다.
+- 사용자가 어떤 모델과 대화 중인지 물으면 설정된 모델 ID를 알려 주도록 지시합니다. 일반 채팅 system prompt에는 API 요청과 같은 설정에서 가져온 실제 run 모델이 들어갑니다. 일반 계정의 저장된 선택 또는 `MY_AGENTS_OPENAI_MODEL` 배포 fallback을 사용합니다. 이 값은 설정한 모델 ID이며 provider가 내부적으로 고른 snapshot을 뜻하지 않습니다.
 - 일반 답변은 친근하고 이해하기 쉬운 말투를 씁니다. 간단한 질문은 짧게, 학습용이거나 복잡한 질문은 필요한 깊이로 답합니다. 서버 기본값은 `MY_AGENTS_OPENAI_VERBOSITY=medium`이고 `low`/`high`도 설정할 수 있습니다. 기존 환경 변수 override가 우선하며 출력 토큰 예산은 그대로입니다. 사용자별 스타일 설정은 [제안](../../idea/assistant-behavior-preferences.md) 단계이며 아직 구현되지 않았습니다.
 
 ## Run reasoning 설정
 
-일반 계정의 run 요청은 선택적으로 `reasoning_mode`(`standard` 또는 `pro`)와 `reasoning_effort`(`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`)를 보낼 수 있습니다. 생략하면 mode는 `standard`, effort는 `MY_AGENTS_OPENAI_REASONING_EFFORT` 값을 씁니다. Guest는 어떤 값을 보내도 `standard`와 환경 변수 기본 effort로 고정됩니다. 실제 기본값과 모델 지원 여부는 `GET /capabilities/reasoning`에서 확인합니다. `pro`는 GPT-5.6과 GPT-6 모델에서 허용됩니다.
+일반 계정의 run 요청은 선택적으로 `reasoning_mode`(`standard` 또는 `pro`)와 `reasoning_effort`(`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`)를 보낼 수 있습니다. 생략하면 mode는 `standard`, effort는 실행 surface 모델의 `my_agents/model_defaults.py` application 기본값을 사용합니다(API가 지원하는 여섯 모델 모두 `medium`). Guest는 어떤 값을 보내도 `standard`와 해당 모델 기본 effort로 고정됩니다. 기존 `MY_AGENTS_OPENAI_REASONING_EFFORT` 환경 변수는 무시합니다. 실제 기본값과 모델 지원 여부는 `GET /capabilities/reasoning`에서 확인합니다. `pro`는 지원하는 GPT-5.6, GPT-6, GPT-6.1 Sol 모델에서 허용됩니다.
 
-GPT-5.6과 GPT-6 모델에서 `minimal`은 호환용 alias로 받아서, run 저장과 provider 호출 전에 `low`로 바꿉니다. 일반 채팅, document workspace, replay 상속, guest를 포함한 서버 기본값에 모두 적용되며 응답과 event에는 실제 적용값 `low`가 표시됩니다. 다른 effort 값은 그대로입니다.
+GPT-5.6과 GPT-6 모델에서 `minimal`은 호환용 alias로 받아서, run 저장과 provider 호출 전에 `low`로 바꿉니다. 일반 채팅, document workspace, replay 상속, guest를 포함한 서버 기본값에 모두 적용되며 응답과 event에는 실제 적용값 `low`가 표시됩니다. GPT-6.1 Sol과 Astra는 `none`도 `low`로 변환하며 다른 effort 값은 그대로입니다.
 
 전체 계약: [Run reasoning 설정 계약](./26-run-reasoning-preferences.md)
 
@@ -75,3 +75,12 @@ VS Code의 `FastAPI: uvicorn main:app (local pgvector)` 프로필은 실행 전 
 - 비동기 수집 진행률은 `queued=0`, `claimed=1`, `chunking=15`, `embedding=45`, 선택적으로 `indexing=70`, `entities=85`, `metadata=95`, `completed=100`으로 저장되며 폴링 엔드포인트에서 읽을 수 있습니다. 경과 시간이 아니라 어느 단계까지 왔는지를 나타내는 값입니다.
 
 더 넓은 스트리밍 계약은 [HTTP streaming and frontend contract](./09-http-streaming-frontend-contract.md)에 있습니다.
+
+## Assistant 모델 선택
+
+일반 계정은 `GET/PATCH /assistant/preferences`로 모델을 저장합니다. 배포 fallback은
+`MY_AGENTS_OPENAI_MODEL`이며 guest는 그 모델로 고정됩니다. 선택지는
+`GET /capabilities/assistant-models`로 조회하고 reasoning capability는 저장된 선택을 반영합니다.
+`{"assistant_model": null}`로 reset합니다. 일반 run/stream/replay는 선택 모델을 고정하고
+resume는 해당 모델을 유지합니다. 기존 DB 실행 전에 migration `20260930_0035`를 적용하세요.
+전체 계약: [assistant 모델 선택](./35-assistant-model-preferences.md).

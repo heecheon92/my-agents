@@ -1,6 +1,6 @@
 # Implementation tracking
 
-Last updated: 2026-09-05
+Last updated: 2026-09-30
 Status owner: repo-tracked source of truth for cross-machine agent handoff
 
 This is the portable implementation/status record, independent of machine-local agent sessions.
@@ -199,6 +199,18 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
 - Reusable LangGraph practice conventions, pattern docs, and runnable simulated-agent implementations now live in `~/Git/Playground/langgraph-playground`.
 
 ## Latest verification evidence
+
+Assistant model preferences and compatibility — 2026-09-30 (`develop` implementation;
+production rollout and live provider access pending):
+
+- Backend **747 passed / 13 skipped / 11 dependency deprecation warnings**; Ruff lint/format
+  and diff checks passed. Frontend **390 unit / 21 targeted browser tests** passed, plus
+  lint/typecheck/build; authenticated deterministic BFF and OpenAPI comparison passed.
+- Exposed choices are GPT-6.1 Sol, GPT-6 Luna, and GPT-6 Astra; all six API-supported
+  selections/defaults remain valid. Apply migration `20260930_0035` before existing-DB rollout.
+- Two frontend browser failures reproduce on clean develop; live provider/production checks
+  remain separate. [Durable completion evidence](./completed/assistant-model-preferences.md).
+
 
 GPT-5.6 normalization and frozen effort contract — 2026-09-27 (local branch implementation):
 
@@ -761,6 +773,9 @@ system, a multi-device guest account model, or a replacement for shared rate
 limits.
 
 ## Shipped and completed index
+
+- [x] **Shipped:** Registered assistant model preferences, GPT-6.1/Astra compatibility, editable
+  application effort defaults, and exposed model subset — [completion evidence](./completed/assistant-model-preferences.md).
 
 - [x] **Shipped:** Dedicated RAG Agent controller/runtime boundary and bounded retrieval-tool selection. [Completion record](./completed/dedicated-rag-agent.md). Iterative/layout-aware extensions remain future work.
 - [x] **Completed:** Atomic admission, shared answer finalization, and document-resolution maintenance integration. [Completion record](./completed/backend-maintenance.md).

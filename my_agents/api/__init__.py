@@ -16,6 +16,7 @@ from my_agents.agents.rag_agent.tool_selection import (
     RAG_AGENT_PLANNER_REASONING_EFFORT,
 )
 from my_agents.api.assistant import GraphRunner, assistant_router, get_graph_runner
+from my_agents.api.assistant_preferences import assistant_preferences_router
 from my_agents.api.auth import auth_router
 from my_agents.api.conversations import conversations_router
 from my_agents.api.document_workspace import document_workspace_router
@@ -77,6 +78,7 @@ def create_app() -> FastAPI:
     app.include_router(documents_router)
     app.include_router(document_workspace_router)
     app.include_router(reasoning_router)
+    app.include_router(assistant_preferences_router)
     app.include_router(memories_router)
     app.include_router(assistant_router)
     if settings.metrics_enabled:

@@ -230,8 +230,8 @@ def _stream_and_aggregate_response(
 
 
 @lru_cache
-def get_response_provider() -> ResponseProvider:
-    """Build the provider selected by environment settings."""
+def get_response_provider(assistant_model: str | None = None) -> ResponseProvider:
+    """Build a provider for the pinned run model or deployment default without global mutation."""
     try:
         settings = get_settings()
     except ValidationError as exc:
@@ -239,6 +239,8 @@ def get_response_provider() -> ResponseProvider:
 
     if settings.response_mode == "deterministic":
         return DeterministicResponseProvider()
+    if assistant_model is not None:
+        settings = settings.model_copy(update={"openai_model": assistant_model})
     return OpenAIResponseProvider(settings)
 
 

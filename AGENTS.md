@@ -21,6 +21,7 @@ The current product shape is a FastAPI + LangGraph assistant/router foundation t
 - `my_agents/agents/capabilities.py` describes route capability metadata without claiming separate agents executed.
 - Learning-only simulated-agent graph experiments live in the separate `~/Git/Playground/langgraph-playground` repository.
 - `my_agents/settings.py` owns environment-driven runtime configuration.
+- `my_agents/model_defaults.py` owns the selectable model catalog and editable application default reasoning effort.
 - `my_agents/schemas.py` owns Pydantic request/response contracts.
 - `tests/` defines the behavior contract and must stay offline by default.
 
@@ -62,7 +63,6 @@ Optional knobs:
 ```bash
 MY_AGENTS_OPENAI_TIMEOUT_SECONDS=30
 MY_AGENTS_OPENAI_MAX_OUTPUT_TOKENS=300
-MY_AGENTS_OPENAI_REASONING_EFFORT=low
 MY_AGENTS_OPENAI_VERBOSITY=low
 ```
 
@@ -81,6 +81,16 @@ The public reasoning effort vocabulary is frozen: `none`, `minimal`, `low`, `med
 `high`, `xhigh`, `max`, in that order. Future model additions must not change the public
 Literal, capability list, or request enum. Update `normalize_reasoning_effort()` in
 `my_agents/reasoning.py` for model-specific compatibility and test all public options.
+Maintain application-owned defaults, initially seeded from provider guidance, for the six API-supported model IDs in
+`my_agents/model_defaults.py`. Default effort is selected by the chat/workspace model,
+not an environment variable; registered users retain per-run overrides. GPT-6.1 Sol and Astra
+map `none` and `minimal` to `low`, and support standard/pro reasoning.
+Maintain exposed choices separately in `EXPOSED_ASSISTANT_MODELS` as a validated subset
+of `SUPPORTED_ASSISTANT_MODELS`; hiding a
+supported model must not reject or reset its API preference.
+Registered assistant model preferences belong to Product DB; guests stay on the environment
+default. Pin the answer model at run admission and use it on resume. Ordinary model selection
+must not change document workspace, decision, embedding, or metadata models.
 Apply effective values before persistence and again at the provider boundary; preserve
 request/replay/guest policy. See `docs/product-chat-service/en/26-run-reasoning-preferences.md`
 for the mapping contract and known model-specific gaps.

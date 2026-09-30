@@ -106,6 +106,7 @@ def run_conversation(
         if document_workspace_provider is None:
             raise RuntimeError("document workspace provider is unavailable")
     reasoning = resolve_reasoning_preferences(
+        db=db,
         settings=settings,
         principal=principal,
         requested_mode=request.reasoning_mode,
@@ -120,6 +121,7 @@ def run_conversation(
         selection_context=selection_context,
         reasoning_mode=reasoning.mode,
         reasoning_effort=reasoning.effort,
+        assistant_model=reasoning.model,
     )
     run = admitted.run
     document_workspace_runtime = None
@@ -535,6 +537,7 @@ def get_run(
                 }
             )
             return ConversationRunInterruptedResponse(
+                assistant_model=run.assistant_model,
                 run_id=response.run_id,
                 conversation_id=response.conversation_id,
                 interaction=refreshed_interaction,
@@ -571,6 +574,7 @@ def get_run(
             }
         )
         return ConversationRunInterruptedResponse(
+            assistant_model=run.assistant_model,
             run_id=response.run_id,
             conversation_id=response.conversation_id,
             interaction=refreshed_interaction,

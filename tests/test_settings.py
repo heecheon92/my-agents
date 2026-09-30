@@ -77,7 +77,7 @@ def test_openai_settings_accept_model_and_tuning_overrides(
     assert settings.openai_model == "gpt-5.5"
     assert settings.openai_timeout_seconds == 15
     assert settings.openai_max_output_tokens == 123
-    assert settings.openai_reasoning_effort == "low"
+    assert settings.openai_reasoning_effort == "medium"
     assert settings.openai_verbosity == "low"
 
 

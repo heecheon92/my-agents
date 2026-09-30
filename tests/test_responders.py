@@ -65,7 +65,6 @@ def test_openai_provider_passes_gpt_variant_and_optional_tuning(
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setenv("MY_AGENTS_OPENAI_MODEL", "gpt-5.5")
     monkeypatch.setenv("MY_AGENTS_OPENAI_MAX_OUTPUT_TOKENS", "123")
-    monkeypatch.setenv("MY_AGENTS_OPENAI_REASONING_EFFORT", "low")
     monkeypatch.setenv("MY_AGENTS_OPENAI_VERBOSITY", "low")
     settings = Settings(_env_file=None)
     chat_model = FakeChatModel()
@@ -82,7 +81,7 @@ def test_openai_provider_passes_gpt_variant_and_optional_tuning(
     assert chat_model.bound_tools == [[{"type": "web_search"}]]
     assert len(chat_model.calls) == 1
     assert chat_model.invoke_count == 0
-    assert chat_model.invoke_kwargs == [{"reasoning": {"effort": "low", "summary": "auto"}}]
+    assert chat_model.invoke_kwargs == [{"reasoning": {"effort": "medium", "summary": "auto"}}]
     messages = chat_model.calls[0]
     assert isinstance(messages[0], SystemMessage)
     assert isinstance(messages[-1], HumanMessage)
@@ -213,8 +212,12 @@ def test_openai_provider_omits_summary_request_when_reasoning_is_off() -> None:
     assert chat_model.invoke_kwargs == [{"reasoning": {"effort": "none", "mode": "standard"}}]
 
 
-def test_installed_chat_openai_preserves_reasoning_object_in_request_payload() -> None:
-    settings = Settings(_env_file=None, OPENAI_API_KEY="test-key")
+@pytest.mark.parametrize(
+    "model_id",
+    ["gpt-5.6-luna", "gpt-6-luna", "gpt-5.6-sol", "gpt-6-sol", "gpt-6.1-sol", "gpt-6-astra"],
+)
+def test_installed_chat_openai_preserves_reasoning_object_in_request_payload(model_id) -> None:
+    settings = Settings(_env_file=None, OPENAI_API_KEY="test-key", MY_AGENTS_OPENAI_MODEL=model_id)
     model = ChatOpenAI(**_build_chat_model_args(settings))
 
     payload = model._get_request_payload(  # noqa: SLF001 - boundary compatibility test
@@ -222,9 +225,55 @@ def test_installed_chat_openai_preserves_reasoning_object_in_request_payload() -
         reasoning={"mode": "pro", "effort": "max"},
     )
 
-    assert payload["model"] == "gpt-5.6-sol"
+    assert payload["model"] == model_id
     assert payload["reasoning"] == {"mode": "pro", "effort": "max"}
     assert "reasoning_effort" not in payload
+
+
+def test_selected_model_provider_cache_keeps_models_and_prompts_isolated(monkeypatch):
+    from my_agents.agents.general_assistant import responders
+
+    monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    models = {}
+
+    def build_chat_model(**kwargs):
+        model = FakeChatModel()
+        models[kwargs["model"]] = model
+        return model
+
+    monkeypatch.setattr(responders, "ChatOpenAI", build_chat_model)
+    first = responders.get_response_provider("gpt-6-luna")
+    second = responders.get_response_provider("gpt-6.1-sol")
+    assert first is responders.get_response_provider("gpt-6-luna")
+    assert first is not second
+    for provider, model_id in ((first, "gpt-6-luna"), (second, "gpt-6.1-sol")):
+        provider.compose_reply(
+            messages=[HumanMessage(content="Which model are you?")],
+            route=RouteDecision(label="general_assistant", explanation="identity"),
+            guidance="Answer directly.",
+        )
+        wire = _build_chat_model_args(provider._settings)  # noqa: SLF001
+        assert wire["model"] == model_id
+        assert f"configured OpenAI model is {model_id}" in models[model_id].calls[0][0].content
+
+
+@pytest.mark.parametrize("effort", [None, "none", "minimal", "high"])
+def test_gpt61_responder_uses_model_default_and_normalizes_explicit_effort(effort) -> None:
+    settings = Settings(_env_file=None, MY_AGENTS_OPENAI_MODEL="gpt-6.1-sol")
+    chat_model = FakeChatModel()
+    provider = OpenAIResponseProvider(settings=settings, chat_model=chat_model)
+    provider.compose_reply(
+        messages=[HumanMessage(content="Explain this plan")],
+        route=RouteDecision(label="general_assistant", explanation="study request"),
+        guidance="Answer directly.",
+        reasoning_mode="pro",
+        reasoning_effort=effort,
+    )
+    effective = "medium" if effort is None else "low" if effort in {"none", "minimal"} else effort
+    assert chat_model.invoke_kwargs == [
+        {"reasoning": {"effort": effective, "mode": "pro", "summary": "auto"}}
+    ]
 
 
 def test_deterministic_provider_discloses_capability_boundaries() -> None:

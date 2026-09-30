@@ -374,6 +374,14 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
 
 ## 13. Near-term recommended sequence
 
+- [x] **Shipped:** Registered assistant model preferences, GPT-6.1/Astra reasoning compatibility,
+  and a three-model exposed subset of the six-model API catalog are implemented on `develop`.
+  Migration `20260930_0035` is required for existing databases. Backend 747 passed / 13 skipped;
+  frontend 390 unit / 21 targeted browser tests and deterministic live-BFF checks passed.
+  Production rollout/provider access and two baseline browser failures remain separate.
+  [Completion evidence](./docs/completed/assistant-model-preferences.md);
+  [current contract](./docs/product-chat-service/en/35-assistant-model-preferences.md).
+
 - [ ] **Active:** GPT-5.6 minimal-to-low normalization and the frozen public effort contract are
   locally implemented and offline-verified on `fix/gpt56-reasoning-normalization`; publication
   remains pending. [Verification](./docs/implementation-tracking.md#latest-verification-evidence).

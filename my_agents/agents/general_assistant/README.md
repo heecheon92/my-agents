@@ -202,8 +202,20 @@ OpenAI mode는 두 response route 모두에서 provider boundary에 hosted `web_
 
 Source 선택, focused/comprehensive 검색 선택, ContextForge intent 분류는 기본적으로 OpenRouter의 `typesafe/jev-1.13`을 사용합니다. 로컬에 `OPENROUTER_API_KEY`를 설정하세요. `MY_AGENTS_DECISION_PROVIDER=deterministic`은 로컬 규칙을, `openai`는 기존 source/tool 모델과 로컬 ContextForge intent를 사용합니다. `MY_AGENTS_RESPONSE_MODE=deterministic`에서는 항상 외부 결정 호출을 끕니다. 키 누락, 잘못된 응답, provider 오류는 로컬 규칙으로 fallback합니다. 재시도 없이 기본 10초 timeout(`MY_AGENTS_JEV_TIMEOUT_SECONDS`)을 사용합니다. 길이를 제한한 최근 대화와 source 선택의 개수/모드만 전송하며 credential과 provider 응답은 checkpoint에 저장하지 않습니다. 답변과 metadata 생성은 OpenAI를 유지합니다. Confidence는 권한 증명이 아니며 검증되지 않은 임계값은 적용하지 않습니다. 관련 테스트: `tests/test_jev_decisions.py`.
 
-GPT-5.6과 GPT-6 모델에서 `minimal`은 호환 alias로 받아 run 저장과 provider 호출 전에 `low`로 변환합니다. 일반 채팅, document workspace, replay 상속, guest를 포함한 서버 기본값에 적용하며 응답과 event에는 실제 적용값 `low`를 표시합니다. 다른 effort 값과 모델 기본값은 유지합니다.
+GPT-6.1 Sol은 standard/pro reasoning을 지원합니다. 지원 모델의 `minimal`은 `low`로 변환하며 GPT-6.1 Sol과 Astra는 `none`도 run 저장과 provider 호출 전에 `low`로 변환합니다. Replay 상속에도 적용하며 공개 effort 선택지는 유지합니다. 생략된 effort와 guest effort는 실행 surface 모델의 `my_agents/model_defaults.py` application 기본값을 사용합니다(API가 지원하는 여섯 모델 모두 `medium`). Reasoning-effort 환경 변수 override는 제거하며 일반 계정의 run별 선택은 유지합니다. 내부 RAG tool selector는 명시적인 standard/low workload 정책을 유지합니다.
 
-사용자가 어떤 모델과 대화 중인지 물으면 설정된 모델 ID를 알려주도록 지시합니다. 일반 채팅 system prompt에는 API 요청과 동일한 설정의 `MY_AGENTS_OPENAI_MODEL` 값이 들어갑니다. 설정 변경 후 backend를 재시작하면 prompt에도 자동 반영됩니다. 이 값은 설정한 모델 ID이며 provider가 내부적으로 선택한 snapshot을 의미하지 않습니다.
+사용자가 어떤 모델과 대화 중인지 물으면 설정된 모델 ID를 알려주도록 지시합니다. 일반 채팅 system prompt에는 API 요청과 동일한 설정에서 가져온 실제 run 모델이 들어갑니다. 저장된 일반 계정 선택은 재시작 없이 다음 run에 반영되며 `MY_AGENTS_OPENAI_MODEL`은 배포 fallback입니다. 이 값은 설정한 모델 ID이며 provider가 내부적으로 선택한 snapshot을 의미하지 않습니다.
 
 일반 assistant 답변은 친근하고 이해하기 쉬운 말투로 필요한 맥락을 설명합니다. 간단한 질문은 짧게, 학습·복잡한 질문은 필요한 깊이로 답합니다. 서버 기본값은 `MY_AGENTS_OPENAI_VERBOSITY=medium`이며 `low`/`high`도 설정할 수 있습니다. 기존 환경변수 override가 우선하며 출력 토큰 예산은 유지합니다. 사용자별 스타일 설정은 제안 단계이며 아직 구현되지 않았습니다.
+
+## 일반 계정의 assistant 모델 선택
+
+사용자 선택은 Product DB가 소유합니다. `MY_AGENTS_OPENAI_MODEL`은 fallback이며 guest는
+그 값으로 고정됩니다. Admission 시 `assistant_model`을 저장하고 runtime context로 response
+node에 전달합니다. Provider를 모델별로 cache하며 global Settings는 수정하지 않습니다.
+선택한 request model과 identity prompt는 같은 설정을 씁니다. Sync/stream/replay는 현재 선택,
+resume는 시작된 run의 고정 모델을 사용합니다. Document workspace와 내부 decision/embedding/
+metadata는 별도 설정을 유지합니다. [계약](../../../docs/product-chat-service/ko/35-assistant-model-preferences.md)을 참고하세요.
+
+Backend는 picker에 `gpt-6.1-sol`, `gpt-6-luna`, `gpt-6-astra`만 노출합니다.
+노출하지 않는 현재/기본 모델을 포함해 기존 여섯 모델의 API 설정은 그대로 유효합니다.

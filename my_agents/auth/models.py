@@ -29,6 +29,7 @@ class UserModel(Base):
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     rejected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     account_type: Mapped[str] = mapped_column(String(20), default="registered", nullable=False)
+    assistant_model_preference: Mapped[str | None] = mapped_column(String(80), nullable=True)
     user_type: Mapped[str] = mapped_column(
         String(20), default=UserType.NORMAL.value, nullable=False, index=True
     )

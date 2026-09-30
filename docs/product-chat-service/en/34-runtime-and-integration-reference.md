@@ -20,8 +20,8 @@ contract.
 - The assistant keeps a stable `my-agents` identity anchored to the canonical
   `https://my-agents.dev` domain, and grounds changing product facts in authorized context.
 - When asked which model they are interacting with, the assistant discloses its configured model
-  ID. The ordinary chat system prompt includes the same `MY_AGENTS_OPENAI_MODEL` value used for API
-  requests, so changing it and restarting the backend updates the prompt. The value is the
+  ID. The ordinary chat system prompt includes the same resolved run model used for API
+  requests: the saved registered preference or `MY_AGENTS_OPENAI_MODEL` deployment fallback. The value is the
   configured model ID, not a provider-resolved snapshot.
 - Ordinary answers use a warm, approachable tone: brief for simple questions, more detailed for
   learning and complex questions. The server default is `MY_AGENTS_OPENAI_VERBOSITY=medium`
@@ -33,13 +33,15 @@ contract.
 
 Registered-account run requests may optionally provide `reasoning_mode` (`standard` or `pro`) and
 `reasoning_effort` (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`). When omitted,
-mode is `standard` and effort comes from `MY_AGENTS_OPENAI_REASONING_EFFORT`. Guests are always
-fixed to `standard` and the environment default effort. `GET /capabilities/reasoning` reports the
-effective default and configured-model support. `pro` is accepted for GPT-5.6 and GPT-6 models.
+mode is `standard` and effort comes from the selected surface model's application-owned defaults
+in `my_agents/model_defaults.py` (currently `medium` for all six API-supported models). Guests are
+always fixed to `standard` and that model default. The retired
+`MY_AGENTS_OPENAI_REASONING_EFFORT` variable is ignored. `GET /capabilities/reasoning` reports the
+effective default and configured-model support. `pro` is accepted for the supported GPT-5.6, GPT-6, and GPT-6.1 Sol models.
 
 For GPT-5.6 and GPT-6 models, `minimal` is accepted as a compatibility alias and normalized to `low` before run
 persistence and provider calls. This applies to chat, document workspace, replay inheritance, and
-server defaults (including guests). Responses and events report the effective `low`; All other effort values remain unchanged.
+server defaults (including guests). GPT-6.1 Sol and Astra also normalize `none` to `low`. Responses and events report the effective effort; all other values remain unchanged.
 
 Full contract: [run reasoning preferences](./26-run-reasoning-preferences.md).
 
@@ -139,7 +141,7 @@ profile.
   `POST/GET/DELETE /conversations/{conversation_id}/attachments`; artifacts use
   `GET /conversations/{conversation_id}/artifacts` and their download URLs. A run's
   `attachment_ids` selects the files used for that execution.
-- `GET /capabilities/reasoning` reports per-surface Pro support, the server-default effort, stable
+- `GET /capabilities/reasoning` reports per-surface Pro support, the selected model's default effort, stable
   enums, and whether the current account may customize them. It intentionally omits raw provider
   model identifiers. Optional run/replay `reasoning_mode` and `reasoning_effort` values are
   persisted as effective run metadata and returned in responses and the `run_started` event.
@@ -166,3 +168,12 @@ profile.
   mark stages reached, not elapsed time.
 
 The broader streaming contract is in [HTTP streaming and frontend contract](./09-http-streaming-frontend-contract.md).
+
+## Assistant model preferences
+
+Registered users use `GET/PATCH /assistant/preferences` for a durable model selection.
+`MY_AGENTS_OPENAI_MODEL` is the deployment fallback; guests are locked to it. Model discovery is
+`GET /capabilities/assistant-models`; reasoning capabilities reflect the saved chat selection.
+Reset with `{"assistant_model": null}`. Ordinary run/stream/replay pins the selected model and
+resume keeps that pin. Apply migration `20260930_0035` before starting an existing database.
+Full contract: [assistant model preferences](./35-assistant-model-preferences.md).

@@ -156,6 +156,7 @@ def resumed_conversation_run_events(
         selection_context=selection_context,
         reasoning_mode=run.reasoning_mode,  # type: ignore[arg-type]
         reasoning_effort=run.reasoning_effort,  # type: ignore[arg-type]
+        assistant_model=run.assistant_model,
     )
     retrieval_context: ConversationRetrievalContext | None = None
     memory_snapshot: str | None = None
@@ -518,6 +519,7 @@ def stream_conversation_run(
         if document_workspace_provider is None:
             raise RuntimeError("document workspace provider is unavailable")
     reasoning = resolve_reasoning_preferences(
+        db=db,
         settings=settings,
         principal=principal,
         requested_mode=request.reasoning_mode,
@@ -532,6 +534,7 @@ def stream_conversation_run(
         selection_context=selection_context,
         reasoning_mode=reasoning.mode,
         reasoning_effort=reasoning.effort,
+        assistant_model=reasoning.model,
     )
     return StreamingResponse(
         conversation_run_events(
@@ -568,6 +571,7 @@ def conversation_run_events(
     principal = principal or Principal(user_id=user_id, session_id="stream-runtime")
     settings = settings or get_settings()
     reasoning = reasoning or resolve_reasoning_preferences(
+        db=db,
         settings=settings,
         principal=principal,
         requested_mode=request.reasoning_mode,
@@ -582,6 +586,7 @@ def conversation_run_events(
         selection_context=selection_context,
         reasoning_mode=reasoning.mode,
         reasoning_effort=reasoning.effort,
+        assistant_model=reasoning.model,
     )
     run = admitted.run
     user_message = admitted.user_message
@@ -608,6 +613,7 @@ def conversation_run_events(
                 "status": run.status,
                 "reasoning_mode": reasoning.mode,
                 "reasoning_effort": reasoning.effort,
+                "assistant_model": run.assistant_model,
                 **knowledge_base_selection_payload(selection_context),
             },
         )
@@ -650,6 +656,7 @@ def conversation_run_events(
             document_workspace_runtime=document_workspace_runtime,
             reasoning_mode=reasoning.mode,
             reasoning_effort=reasoning.effort,
+            assistant_model=reasoning.model,
         )
         retrieval_context: ConversationRetrievalContext | None = None
         memory_snapshot = graph_memory_source_snapshot_json(graph_input)

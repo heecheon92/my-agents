@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
@@ -304,8 +305,9 @@ def test_guest_prompt_cap_applies_to_chat_runs(monkeypatch) -> None:  # noqa: AN
     assert limited.json()["code"] == "guest_prompt_limit_reached"
 
 
-def test_guest_reasoning_preferences_are_fixed_by_the_server(monkeypatch) -> None:  # noqa: ANN001
-    monkeypatch.setenv("MY_AGENTS_OPENAI_REASONING_EFFORT", "low")
+@pytest.mark.parametrize("model", ["gpt-5.6-sol", "gpt-6.1-sol"])
+def test_guest_reasoning_preferences_are_fixed_by_the_server(monkeypatch, model) -> None:  # noqa: ANN001
+    monkeypatch.setenv("MY_AGENTS_OPENAI_MODEL", model)
     client = _client(monkeypatch)
     _guest_login(client)
     capability = client.get("/capabilities/reasoning")
@@ -322,10 +324,10 @@ def test_guest_reasoning_preferences_are_fixed_by_the_server(monkeypatch) -> Non
 
     assert capability.status_code == 200
     assert capability.json()["customizable"] is False
-    assert capability.json()["default_effort"] == "low"
+    assert capability.json()["default_effort"] == "medium"
     assert response.status_code == 200
     assert response.json()["reasoning_mode"] == "standard"
-    assert response.json()["reasoning_effort"] == "low"
+    assert response.json()["reasoning_effort"] == "medium"
 
 
 def test_guest_interrupted_prompt_counts_toward_prompt_cap(monkeypatch) -> None:  # noqa: ANN001

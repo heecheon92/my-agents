@@ -213,6 +213,7 @@ def _complete_sync_conversation_run(
         document_workspace_runtime=document_workspace_runtime,
         reasoning_mode=run.reasoning_mode,  # type: ignore[arg-type]
         reasoning_effort=run.reasoning_effort,  # type: ignore[arg-type]
+        assistant_model=run.assistant_model,
     )
     try:
         result = invoke_graph_runner_collecting_updates(
@@ -425,6 +426,7 @@ def complete_resumed_conversation_run(
         selection_context=selection_context,
         reasoning_mode=run.reasoning_mode,  # type: ignore[arg-type]
         reasoning_effort=run.reasoning_effort,  # type: ignore[arg-type]
+        assistant_model=run.assistant_model,
     )
     try:
         result = invoke_graph_runner_resume_collecting_updates(
@@ -832,6 +834,7 @@ def admit_run(
     selection_context: KnowledgeBaseSelectionContext,
     reasoning_mode: ReasoningMode,
     reasoning_effort: ReasoningEffort,
+    assistant_model: str | None = None,
     message: str | None = None,
     existing_user_message: MessageModel | None = None,
 ) -> AdmittedRun:
@@ -867,6 +870,7 @@ def admit_run(
             selection_context=selection_context,
             reasoning_mode=reasoning_mode,
             reasoning_effort=reasoning_effort,
+            assistant_model=assistant_model,
         )
         db.commit()
         return AdmittedRun(run=run, user_message=user_message)
@@ -903,6 +907,7 @@ def _insert_run(
     selection_context: KnowledgeBaseSelectionContext,
     reasoning_mode: ReasoningMode,
     reasoning_effort: ReasoningEffort,
+    assistant_model: str | None = None,
 ) -> AgentRunModel:
     run = AgentRunModel(
         conversation_id=conversation_id,
@@ -911,6 +916,7 @@ def _insert_run(
         graph_version=GRAPH_VERSION,
         reasoning_mode=reasoning_mode,
         reasoning_effort=reasoning_effort,
+        assistant_model=assistant_model,
         knowledge_base_selection_mode=selection_context.mode,
         selected_knowledge_base_ids_json=json.dumps(
             list(selection_context.knowledge_base_ids), sort_keys=True
@@ -932,6 +938,7 @@ def _insert_run(
             "status": run.status,
             "reasoning_mode": reasoning_mode,
             "reasoning_effort": reasoning_effort,
+            "assistant_model": assistant_model,
             **knowledge_base_selection_payload(selection_context),
         },
         commit=False,

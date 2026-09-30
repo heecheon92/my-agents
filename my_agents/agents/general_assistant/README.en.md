@@ -202,8 +202,21 @@ Tool binding currently does not change the API response schema. Add citations an
 
 Source selection, focused/comprehensive retrieval selection, and ContextForge intent use `typesafe/jev-1.13` through OpenRouter by default. Set `OPENROUTER_API_KEY` locally. `MY_AGENTS_DECISION_PROVIDER=deterministic` uses local rules; `openai` restores the previous source/tool models and local ContextForge intent. `MY_AGENTS_RESPONSE_MODE=deterministic` always disables provider decisions. Missing credentials, invalid output, and provider errors fall back to local rules. Requests use a 10-second timeout without retries (`MY_AGENTS_JEV_TIMEOUT_SECONDS`). Only bounded recent conversation text and source-selection counts/mode are sent; credentials and responses are not checkpointed. Answer generation and metadata enrichment remain OpenAI-backed. Confidence is not an authorization signal; no uncalibrated confidence threshold is imposed. See `tests/test_jev_decisions.py`.
 
-For GPT-5.6 and GPT-6 models, `minimal` is accepted as a compatibility alias and normalized to `low` before run persistence and provider calls. This applies to chat, document workspace, replay inheritance, and server defaults (including guests). Responses and events report the effective `low`; Model defaults are unchanged.
+GPT-6.1 Sol supports standard/pro reasoning. `minimal` resolves to `low` for supported models; GPT-6.1 Sol and Astra also resolve `none` to `low` before persistence and provider calls, including replay inheritance. Public effort choices stay frozen. Omitted effort and guest effort come from the selected surface model's application-owned defaults in `my_agents/model_defaults.py` (currently `medium` for all six API-supported models); the reasoning-effort environment override is retired. Registered per-run overrides remain available. The internal RAG tool selector retains its explicit standard/low workload policy.
 
-When asked which model they are interacting with, the assistant is instructed to disclose its configured model ID. The ordinary chat system prompt includes the configured `MY_AGENTS_OPENAI_MODEL` value from the same settings used for API requests. Changing that setting and restarting the backend updates the prompt automatically; the value describes the configured model ID, not a provider-resolved snapshot.
+When asked which model they are interacting with, the assistant is instructed to disclose its configured model ID. The ordinary chat system prompt includes the resolved run model from the same settings used for API requests. A saved registered preference applies to the next admitted run without a restart; `MY_AGENTS_OPENAI_MODEL` is the deployment fallback. The value describes the configured model ID, not a provider-resolved snapshot.
 
 Ordinary assistant answers use a warm, approachable tone and explain useful context. Simple questions stay brief; learning and complex questions receive appropriate detail. The server default is `MY_AGENTS_OPENAI_VERBOSITY=medium` (`low`/`high` remain configurable); existing environment overrides still win. The output-token budget is unchanged. Per-user style controls are proposed, not implemented.
+
+## Registered assistant model selection
+
+Product DB owns the user's assistant preference. `MY_AGENTS_OPENAI_MODEL` is the fallback;
+guests are locked to it. Run admission persists `assistant_model`; runtime context passes it
+to the response node, which obtains a provider cached by model without mutating global Settings.
+The selected request model and identity prompt use the same settings. Sync/stream/replay use
+current preference, while resume keeps the original pinned model. Document-workspace and
+internal decision/embedding/metadata models remain separately configured.
+See the [contract](../../../docs/product-chat-service/en/35-assistant-model-preferences.md).
+
+The backend advertises only `gpt-6.1-sol`, `gpt-6-luna`, and `gpt-6-astra` to model pickers.
+All six supported API preferences remain valid, including unadvertised current/default models.

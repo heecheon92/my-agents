@@ -10,7 +10,7 @@ Frontend는 일반 계정 사용자의 OpenAI reasoning 설정을 browser local 
 flowchart LR
     UI["Frontend local preference"] --> Request["Run 또는 replay request"]
     Request --> Guest{"Guest account인가?"}
-    Guest -->|Yes| Fixed["standard + server effort"]
+    Guest -->|Yes| Fixed["standard + 선택된 모델 기본값"]
     Guest -->|No| Resolve["request 값 또는 server default"]
     Resolve --> Check{"Standard 또는 Pro 지원 모델인가?"}
     Check -->|No| Error["400 reasoning_mode_not_supported"]
@@ -34,12 +34,34 @@ flowchart LR
 ```
 
 - `reasoning_mode`: `standard | pro`; 생략하면 `standard`.
-- `reasoning_effort`: `none | minimal | low | medium | high | xhigh | max`; 생략하면 `MY_AGENTS_OPENAI_REASONING_EFFORT`이며 repository 기본값은 `medium`.
-- GPT-5.6과 GPT-6 모델에서 `minimal`은 호환 alias로 받아 run 저장과 provider 호출 전에 `low`로 변환합니다. 일반 채팅, document workspace, replay 상속, guest를 포함한 서버 기본값에 적용하며 응답과 event에는 실제 적용값 `low`를 표시합니다. 다른 effort 값과 모델 기본값은 유지합니다.
+- `reasoning_effort`: `none | minimal | low | medium | high | xhigh | max`; 생략하면 실행 chat/workspace 모델의 `my_agents/model_defaults.py` application 기본값을 사용합니다. API가 지원하는 여섯 모델 모두 현재 `medium`이며 기존 `MY_AGENTS_OPENAI_REASONING_EFFORT` 환경 변수는 무시합니다.
+- GPT-5.6과 GPT-6 모델에서 `minimal`은 호환 alias로 받아 run 저장과 provider 호출 전에 `low`로 변환합니다. 일반 채팅, document workspace, replay 상속, guest를 포함한 모델 기본값에 적용하며 응답과 event에는 실제 적용값 `low`를 표시합니다. GPT-6.1 Sol과 Astra는 `none`도 `low`로 변환합니다. 다른 effort 값은 유지합니다.
 - Mode와 effort는 서로 독립적입니다.
-- `pro`는 해당 run이 선택하는 model이 GPT-5.6 또는 GPT-6 계열일 때만 허용합니다. 그렇지 않으면 user message나 run을 저장하기 전에 HTTP 400, `code=reasoning_mode_not_supported`로 실패합니다.
+- `pro`는 해당 run이 선택하는 model이 GPT-5.6, GPT-6 또는 GPT-6.1 Sol 계열일 때만 허용합니다. 그렇지 않으면 user message나 run을 저장하기 전에 HTTP 400, `code=reasoning_mode_not_supported`로 실패합니다.
 
 Completed run response, run-detail response, run summary, display-safe `run_started` event는 실제 적용한 `reasoning_mode`와 `reasoning_effort`를 반환합니다. Replay에 값을 명시하면 그 값을 쓰고, 생략하면 original run의 effective pair를 이어받습니다. 기존 row와 event는 `standard`와 `medium`으로 호환됩니다.
+
+## Application 모델 기본값
+
+`my_agents/model_defaults.py`가 모델별 기본 effort를 관리합니다. 이는 수정 가능한 application 기본값이며 provider 권장값은 초기 seed입니다.
+Luna/Sol 문서는 `medium`을 명시하며 Astra는 application의 `medium` seed를 사용합니다. 2026-09-30 공식 모델 문서로 확인했습니다.
+
+| 지원 모델 | Application 기본 effort (초기 seed) |
+| --- | --- |
+| [gpt-5.6-luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna) | `medium` |
+| [gpt-6-luna](https://developers.openai.com/api/docs/models/gpt-6-luna) | `medium` |
+| [gpt-6-sol](https://developers.openai.com/api/docs/models/gpt-6-sol) | `medium` |
+| [gpt-5.6-sol](https://developers.openai.com/api/docs/models/gpt-5.6-sol) | `medium` |
+| [gpt-6.1-sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol) | `medium` |
+| [gpt-6-astra](https://developers.openai.com/api/docs/models/gpt-6-astra) | `medium` (application seed) |
+
+배포 fallback은 환경 변수로 유지하며 일반 계정은 모델 선택을 저장할 수 있습니다. `MY_AGENTS_OPENAI_MODEL` 변경 후 재시작하면 채팅 기본값을
+선택하며 attachment run은 `MY_AGENTS_DOCUMENT_WORKSPACE_MODEL`을 별도로 사용합니다.
+일반 계정은 명시적인 run effort, replay 상속값, 선택된 모델 기본값 순서로 적용합니다.
+Guest는 항상 해당 모델 기본값을 사용합니다. 날짜가 붙은 snapshot은 등록 모델 기본값을 상속합니다.
+다른 모델 ID는 기존 `medium` fallback을 유지하지만 지원 보장은 아닙니다.
+기존 `MY_AGENTS_OPENAI_REASONING_EFFORT`는 편할 때 배포 설정에서 제거하세요.
+존재 여부나 값은 더 이상 실행 동작에 영향을 주지 않습니다.
 
 ## 고정된 사용자 effort 계약
 
@@ -61,11 +83,12 @@ capability의 `supported_efforts`를 유지해야 합니다. 모델의 API enum�
 | --- | --- | --- |
 | GPT-5.6 | `minimal` | `low` |
 | GPT-6 | `minimal` | `low` |
-| GPT-5.6 / GPT-6 | 나머지 값 | 현재 normalizer는 그대로 유지 |
+| GPT-6.1 Sol / GPT-6 Astra | `none` 또는 `minimal` | `low` |
+| 지원 모델 | 나머지 값 | 현재 normalizer는 그대로 유지 |
 | 다른 모델 | 모든 값 | 그대로 유지하며 provider 지원을 보장하지 않음 |
 
-GPT-6 Astra의 `none`은 별도로 해결해야 할 호환성 항목입니다. 이번 변경에서는 none-to-low 매핑을
-추가하지 않습니다. 이후 모델 도입 시 고정 enum과 별도로 이런 호환성을 확인해야 합니다.
+선택 가능한 GPT-6 Astra도 `none`을 `low`로 바꿉니다. 호환 매핑은 provider 제약이며
+application 기본 effort는 자유롭게 수정할 수 있습니다.
 
 요청/replay/기본값/guest 정책과 실행 surface의 모델을 결정한 뒤, run에 저장하기 전에 정규화합니다.
 Provider payload 생성 시에도 같은 멱등 함수를 적용해 직접 호출 경로를 보호합니다.
@@ -80,7 +103,7 @@ HTTP 400 `unsupported_value`로 거부됐습니다. 기존 GPT-6 전용 매핑�
 
 인증된 client는 `GET /capabilities/reasoning`을 호출할 수 있습니다. Stable option list, active default effort, chat/document-workspace surface의 `pro` 지원 여부, 현재 principal의 `customizable` 값을 반환합니다. Client에는 capability flag만 필요하고 deployment inventory는 필요하지 않으므로 raw provider model identifier는 의도적으로 제외합니다.
 
-Guest는 두 값을 올리거나 내릴 수 없습니다. Guest가 다른 값을 보내도 backend가 무시하고 `standard`와 `MY_AGENTS_OPENAI_REASONING_EFFORT`를 강제합니다. 이는 frontend control을 disable하는 정도가 아니라 authorization 및 cost policy입니다. Frontend는 `customizable=false`일 때 control을 숨길 수 있습니다.
+Guest는 두 값을 올리거나 내릴 수 없습니다. Guest가 다른 값을 보내도 backend가 무시하고 `standard`와 선택된 모델의 application 기본 effort를 강제합니다. Replay 상속값도 guest 기본값을 바꾸지 못합니다. 이는 frontend control을 disable하는 정도가 아니라 authorization 및 cost policy입니다. Frontend는 `customizable=false`일 때 control을 숨길 수 있습니다.
 
 ## Provider 경계
 
@@ -88,7 +111,7 @@ Effective pair는 마지막 answer generation call에 적용합니다.
 
 - 일반 chat은 Responses API를 쓰는 `ChatOpenAI`의 request-level `reasoning` object로 전달합니다.
 - Attachment turn은 같은 object를 isolated document-workspace adapter를 통해 GPT-5.6 Sol에 전달합니다.
-- 내부 source-selection gate는 서버가 선택한 decision provider를 사용합니다. Jev는 사용자 reasoning 설정을 사용하지 않으며 OpenAI rollback만 standard/server-default effort를 유지합니다.
+- 내부 source-selection gate는 서버가 선택한 decision provider를 사용합니다. Jev는 사용자 reasoning 설정을 사용하지 않으며 OpenAI source-selection rollback은 standard mode와 채팅 모델의 application 기본 effort를 사용합니다. 내부 RAG tool selector는 명시적인 standard/low workload 정책을 유지합니다.
 
 Raw chain-of-thought는 요청하거나 저장하거나 반환하지 않습니다. 이 설정은 provider computation만 조절합니다. OpenAI 문서상 `pro`는 더 많은 model work를 수행하므로 latency와 token usage가 늘 수 있습니다. Product credit enforcement는 별도의 usage-ledger 책임입니다.
 
@@ -103,3 +126,6 @@ retrieval-planning summary는 생략합니다. OpenAI rollback에서는 기존 p
 [동적 reasoning summary 계약](./28-dynamic-reasoning-summary-contract.md)을 기준으로 합니다.
 
 Reasoning token은 기존 output limit(`MY_AGENTS_OPENAI_MAX_OUTPUT_TOKENS`, `MY_AGENTS_DOCUMENT_WORKSPACE_MAX_OUTPUT_TOKENS`) 안에 포함됩니다. 높은 effort를 골라도 limit을 자동으로 늘리지 않으므로, operator는 `max`가 항상 더 긴 visible answer를 만든다고 가정하지 말고 실제 latency, incomplete response, cost 관측값을 보고 limit을 조정해야 합니다.
+
+모델 선택은 [assistant 모델 선택 계약](./35-assistant-model-preferences.md)이 소유합니다.
+`GET /capabilities/reasoning`은 이제 일반 계정의 저장된 채팅 모델 선택을 반영합니다.

@@ -80,6 +80,7 @@ def persist_waiting_document_selection(
     record_langgraph_persistence_operation(operation="interrupt", outcome="waiting")
     db.refresh(run)
     return ConversationRunInterruptedResponse(
+        assistant_model=run.assistant_model,
         run_id=run.id,
         conversation_id=run.conversation_id,
         interaction=interaction,
@@ -93,6 +94,7 @@ def interrupted_run_response(run: AgentRunModel) -> ConversationRunInterruptedRe
     except json.JSONDecodeError as exc:
         raise RuntimeError("stored run interaction payload is invalid") from exc
     return ConversationRunInterruptedResponse(
+        assistant_model=run.assistant_model,
         run_id=run.id,
         conversation_id=run.conversation_id,
         interaction=pending_interaction_adapter.validate_python(payload),

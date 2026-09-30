@@ -101,6 +101,7 @@ class ReplayContext:
     selection_context: KnowledgeBaseSelectionContext
     reasoning_mode: ReasoningMode
     reasoning_effort: ReasoningEffort
+    assistant_model: str
     preselected_document_id: str | None
 
 
@@ -140,6 +141,7 @@ def replay_assistant_message(
         selection_context=replay_context.selection_context,
         reasoning_mode=replay_context.reasoning_mode,
         reasoning_effort=replay_context.reasoning_effort,
+        assistant_model=replay_context.assistant_model,
     ).run
     messages = base_messages_from_persisted(replay_context.prefix_messages)
     response = complete_sync_conversation_run(
@@ -203,6 +205,7 @@ def stream_replay_assistant_message(
         selection_context=replay_context.selection_context,
         reasoning_mode=replay_context.reasoning_mode,
         reasoning_effort=replay_context.reasoning_effort,
+        assistant_model=replay_context.assistant_model,
     ).run
     return StreamingResponse(
         replay_conversation_run_events(
@@ -262,6 +265,7 @@ def replay_context_for_request(
         else request.knowledge_base_selection or KnowledgeBaseSelection()
     )
     reasoning = resolve_reasoning_preferences(
+        db=db,
         settings=settings,
         principal=principal,
         requested_mode=request.reasoning_mode,
@@ -310,6 +314,7 @@ def replay_context_for_request(
         selection_context=selection_context,
         reasoning_mode=reasoning.mode,
         reasoning_effort=reasoning.effort,
+        assistant_model=reasoning.model,
         preselected_document_id=preselected_document_id,
     )
 
@@ -332,6 +337,7 @@ def replay_conversation_run_events(
                 "status": run.status,
                 "reasoning_mode": replay_context.reasoning_mode,
                 "reasoning_effort": replay_context.reasoning_effort,
+                "assistant_model": run.assistant_model,
                 **knowledge_base_selection_payload(replay_context.selection_context),
             },
         )
@@ -357,6 +363,7 @@ def replay_conversation_run_events(
             selection_context=replay_context.selection_context,
             reasoning_mode=replay_context.reasoning_mode,
             reasoning_effort=replay_context.reasoning_effort,
+            assistant_model=replay_context.assistant_model,
         )
         retrieval_context: ConversationRetrievalContext | None = None
         memory_snapshot = graph_memory_source_snapshot_json(graph_input)

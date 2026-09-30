@@ -101,6 +101,7 @@ class AgentRunModel(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False)
     reasoning_mode: Mapped[str] = mapped_column(String(20), default="standard", nullable=False)
     reasoning_effort: Mapped[str] = mapped_column(String(20), default="medium", nullable=False)
+    assistant_model: Mapped[str | None] = mapped_column(String(80), nullable=True)
     route_label: Mapped[str | None] = mapped_column(String(80), nullable=True)
     route_explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
     retrieval_route: Mapped[str | None] = mapped_column(String(40), nullable=True)
