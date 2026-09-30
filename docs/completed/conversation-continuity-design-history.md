@@ -1,7 +1,7 @@
 ---
 created: 2026-09-30
 updated: 2026-09-30
-status: implemented
+status: archived
 topics: [context-engineering, conversation-history, rag, evidence-provenance]
 related_code:
   - my_agents/api/conversations/transcripts.py
@@ -12,18 +12,19 @@ related_code:
   - my_agents/decisions.py
 ---
 
-# Proposal: conversation history and evidence continuity
+# Original design proposal: conversation history and evidence continuity
 
-Accepted and implemented on 2026-09-30. Owner reported browser testing and approved publication;
-[completion evidence](../completed/conversation-continuity.md) preserves scope and limitations. The diagnosis below describes the pre-change baseline;
+Accepted and implemented on 2026-09-30. This archived proposal preserves the design history;
+[completion evidence](./conversation-continuity.md) records delivered scope and limitations.
+The diagnosis below describes the pre-change baseline;
 current behavior and accepted attachment retention/model choices are documented in
 [the continuity contract](../product-chat-service/en/36-conversation-continuity.md) and canonical tracking.
 
-This is a system-level suggestion and implementation handoff, not an implemented change or
-an instruction to start work. Canonical status and scheduling remain in
-[implementation tracking](../implementation-tracking.md). It records a user-reported incident
-and the current source-level diagnosis. No production logs, original provider requests, run IDs,
-or original document contents were inspected.
+This historical handoff records the original user-reported incident, source-level diagnosis,
+candidate budgets and proposed verification. It does not define current behavior or authorize
+additional work. Canonical status remains in [implementation tracking](../implementation-tracking.md).
+The original investigation did not inspect production logs, provider requests, run IDs or document
+contents.
 
 ## Outcome and owner intent
 
@@ -58,7 +59,7 @@ all of its claims were supported, nor whether the second turn bypassed retrieval
 different sources. The problematic behavior is the confident retrospective conclusion from an
 incomplete view of the earlier request.
 
-## Verified current behavior
+## Verified pre-implementation behavior
 
 | Source | Current behavior | Consequence |
 | --- | --- | --- |

@@ -17,6 +17,10 @@ the task requires deeper architecture, operations, decisions, or history.
 | [`learning/`](./learning/) | Personal learning notes and debugging lessons | Educational context, not project status |
 | [`performance/`](./performance/) | Measurement methods and historical performance evidence | Evidence source for performance work |
 
+`docs/idea/` is reserved for ideas that are not implemented. When an idea is implemented, move
+substantive design history into `docs/completed/`, link it from the completion record, and remove
+the implemented proposal from `docs/idea/`.
+
 Completed work is routed through the [shipped/completed index](./implementation-tracking.md#shipped-and-completed-index).
 Archive records preserve the original scope and distinguish delivered baselines from deferred
 extensions; moving a proposal does not mean every ambition in its historical text shipped.
