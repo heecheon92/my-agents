@@ -110,6 +110,7 @@ def stream_graph_items(
         final_result["route"] = classify_messages(graph_input.get("messages", []))
     if (
         "reply" in final_result
+        or "__interrupt__" in final_result
         or "rag_retrieval_result" in final_result
         or "rag_retrieval_snapshot" in final_result
     ):
@@ -261,6 +262,10 @@ def result_fields_from_update(update: dict[str, Any]) -> dict[str, Any]:
             if isinstance(value, list):
                 fields[field_name] = value
         for field_name in (
+            "context_delivery",
+            "attachment_access_unavailable",
+            "attachment_selection_required",
+            "attachment_selection_access",
             "rag_retrieval_result",
             "rag_retrieval_snapshot",
             "rag_halt_before_response",

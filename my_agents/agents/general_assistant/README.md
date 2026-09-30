@@ -151,7 +151,7 @@ Memory service는 이 agent folder 밖의 `my_agents/memory/`와 `my_agents/api/
 
 Document-selection HITL을 켜면 `clarification_required`가 `prepare_document_selection -> request_document_selection`으로 이어집니다. V2는 고유한 exact filename을 자동 결정하고, 그 외에는 권한을 확인한 관련 metadata 후보를 최대 5개만 노출합니다. `refine` answer는 같은 run에서 한 줄 filename 단서를 전달하며 두 번 해결하지 못한 뒤에만 전체 목록 탐색을 엽니다. 시도마다 새 UUID를 쓰지만 최초 expiry와 KB scope는 유지합니다. 선택 시 현재 권한을 다시 확인하고, 이미 대기 중인 V1 checkpoint는 기존 resume shape로 계속 처리합니다. Runtime DB session, provider client, ORM model, raw refinement text, document-workspace adapter는 checkpoint나 transcript에 넣지 않습니다.
 
-Comprehensive branch는 run compatibility marker를 `general-assistant-checkpoint-v2`로 올립니다. Compact document ID, offset, coverage, retrieval snapshot, 내부 next cursor만 checkpoint에 둘 수 있고 raw extracted text는 넣지 않습니다. 이전 graph version으로 waiting 상태가 된 run은 배포 후 재개할 수 없으므로 미리 drain/cancel해야 합니다. 남아 있으면 기존 version-mismatch 경로가 안전하게 failed 처리합니다.
+Comprehensive branch에서 도입한 checkpoint V2 이후, 대화 맥락 유지는 compatibility marker `general-assistant-checkpoint-v3`을 사용합니다. Compact document ID, offset, coverage, retrieval snapshot, 내부 next cursor만 checkpoint에 둘 수 있고 raw extracted text는 넣지 않습니다. 이전 graph version으로 waiting 상태가 된 run은 배포 후 재개할 수 없으므로 미리 drain/cancel해야 합니다. 남아 있으면 기존 version-mismatch 경로가 안전하게 failed 처리합니다.
 
 Public waiting payload와 typed resume answer는 [`docs/product-chat-service/ko/27-agent-frontend-interaction-contract.md`](../../../docs/product-chat-service/ko/27-agent-frontend-interaction-contract.md)의 versioned protocol-neutral 계약을 따릅니다. 앞으로 사용자 입력이 필요한 state도 이 semantic interaction boundary로 추가하고, graph node가 frontend component나 layout을 지정해서는 안 됩니다.
 
@@ -224,3 +224,14 @@ Backend는 picker에 `gpt-6.1-sol`, `gpt-6-luna`, `gpt-6-astra`만 노출합니�
 image file ID는 `input_image`(`detail=high`), 문서는 `input_file`로 전달하며 원본은 expiring
 user_data file과 network-disabled container에 유지합니다. 분석 입력 지원이며 이미지 출력 인증은
 추가하지 않습니다. [Image 계약](../../../docs/product-chat-service/ko/25-openai-document-workspace.md)을 참고하세요.
+
+## 대화 맥락 유지
+
+대화 경계가 공통 텍스트 예산으로 최근 원문, 버전이 있는 과거 구간 요약, 권한을 확인한 과거 근거
+상태를 제공합니다. Graph는 이 입력을 다시 메시지 6개로 자르지 않습니다. `resolve_attachments`가
+KB 분기 전에 실행되며 일반 계정의 모호한 파일 참조는 run 단위 V2 `attachment_selection`으로
+선택합니다. 필요한 원본만 다시 열거나 대화 메모를 사용하며 일반 assistant와 workspace 모델은
+분리합니다. 요약은 `ChatOpenAI`와 기본 GPT-6 Luna를 사용하고 별도 사용자 선호도가 있습니다.
+대화 요약 및 context 전달 metadata를 답변 본문과 공개 reasoning summary에 섞지 않습니다.
+Guest는 텍스트 맥락만 유지합니다. [계약](../../../docs/product-chat-service/ko/36-conversation-continuity.md)을
+참고하세요.

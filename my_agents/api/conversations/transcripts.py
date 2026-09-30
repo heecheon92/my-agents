@@ -31,8 +31,12 @@ def persisted_messages_for_conversation(db: Session, conversation_id: str) -> li
     )
 
 
-def messages_for_conversation(db: Session, conversation_id: str) -> list[BaseMessage]:
-    return base_messages_from_persisted(persisted_messages_for_conversation(db, conversation_id))
+def messages_for_conversation(
+    db: Session, conversation_id: str, run_id: str | None = None
+) -> list[BaseMessage]:
+    from my_agents.conversations.continuity import prepared_messages
+
+    return prepared_messages(db, conversation_id, run_id)
 
 
 def base_messages_from_persisted(persisted: list[MessageModel]) -> list[BaseMessage]:
@@ -102,13 +106,30 @@ def prune_conversation_from_message(
 
     if preserved_run_ids:
         run_ids_to_prune.difference_update(preserved_run_ids)
+    from my_agents.conversations.continuity import invalidate_summary
+
+    invalidate_summary(db, conversation_id, target_message)
     UserMemoryService(db).mark_transcript_memories_stale(
         source_message_ids=removed_message_ids,
         source_run_ids=run_ids_to_prune,
         stale_reason="source_transcript_pruned",
         commit=False,
     )
+    from my_agents.conversations.continuity_models import (
+        AttachmentNoteModel,
+        MessageAttachmentModel,
+    )
+
+    if removed_message_ids:
+        db.execute(
+            delete(MessageAttachmentModel).where(
+                MessageAttachmentModel.message_id.in_(removed_message_ids)
+            )
+        )
     if run_ids_to_prune:
+        db.execute(
+            delete(AttachmentNoteModel).where(AttachmentNoteModel.run_id.in_(run_ids_to_prune))
+        )
         db.execute(
             delete(ConversationArtifactModel).where(
                 ConversationArtifactModel.run_id.in_(run_ids_to_prune)
@@ -135,6 +156,9 @@ def delete_conversation_tree(db: Session, conversation: ConversationModel) -> No
     message_ids = db.scalars(
         select(MessageModel.id).where(MessageModel.conversation_id == conversation.id)
     ).all()
+    from my_agents.conversations.continuity import invalidate_summary
+
+    invalidate_summary(db, conversation.id)
     UserMemoryService(db).mark_transcript_memories_stale(
         source_conversation_id=conversation.id,
         source_message_ids=message_ids,
@@ -142,7 +166,30 @@ def delete_conversation_tree(db: Session, conversation: ConversationModel) -> No
         stale_reason="source_conversation_deleted",
         commit=False,
     )
+    from my_agents.conversations.continuity_models import (
+        AttachmentNoteModel,
+        MessageAttachmentModel,
+    )
+    from my_agents.document_workspace.retention import enqueue
+
+    for item in db.scalars(
+        select(ConversationAttachmentModel).where(
+            ConversationAttachmentModel.conversation_id == conversation.id
+        )
+    ).all():
+        enqueue(db, "file", item.provider_file_id)
+    for item in db.scalars(
+        select(DocumentWorkspaceModel).where(
+            DocumentWorkspaceModel.conversation_id == conversation.id
+        )
+    ).all():
+        if item.provider_container_id:
+            enqueue(db, "container", item.provider_container_id)
+    db.execute(
+        delete(MessageAttachmentModel).where(MessageAttachmentModel.message_id.in_(message_ids))
+    )
     if run_ids:
+        db.execute(delete(AttachmentNoteModel).where(AttachmentNoteModel.run_id.in_(run_ids)))
         db.execute(
             delete(ConversationArtifactModel).where(ConversationArtifactModel.run_id.in_(run_ids))
         )

@@ -41,7 +41,7 @@ def add_message(
     db.add(message)
     db.commit()
     db.refresh(message)
-    return message_response(message)
+    return message_response(message, None if principal.is_guest else db)
 
 
 @router.get("/{conversation_id}/messages", response_model=list[MessageResponse])
@@ -58,4 +58,4 @@ def list_messages(
         .where(MessageModel.conversation_id == conversation_id)
         .order_by(MessageModel.created_at, MessageModel.id)
     ).all()
-    return [message_response(message) for message in messages]
+    return [message_response(message, None if principal.is_guest else db) for message in messages]

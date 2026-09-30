@@ -524,8 +524,9 @@ def test_openai_provider_uses_explicit_source_context_bundle_policy() -> None:
     provider_contents = [str(message.content) for message in provider_messages]
     final_prompt = provider_contents[-1]
 
-    assert "old user 1" not in provider_contents
-    assert provider_contents[1:6] == [
+    assert "old user 1" in provider_contents
+    assert provider_contents[1:7] == [
+        "old user 1",
         "old assistant 1",
         "old user 2",
         "old assistant 2",
@@ -533,7 +534,7 @@ def test_openai_provider_uses_explicit_source_context_bundle_policy() -> None:
         "recent assistant 3",
     ]
     assert (
-        "Conversation context policy: using the latest 6 persisted Product DB message(s)"
+        "Conversation context policy: using the latest 7 selected Product DB message(s)"
         in final_prompt
     )
     assert "Stored memory context: none" in final_prompt

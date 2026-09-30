@@ -117,6 +117,7 @@ def run_summary_response(run: AgentRunModel) -> AgentRunSummaryResponse:
     source_payload = knowledge_base_selection_payload(run_knowledge_base_context(run))
     source_payload["knowledge_base_selection"] = run_knowledge_base_selection(run)
     return AgentRunSummaryResponse(
+        client_request_id=run.client_request_id,
         run_id=run.id,
         conversation_id=run.conversation_id,
         status=run.status,
@@ -378,10 +379,30 @@ def citation_response(db: Session, citation: CitationModel) -> CitationResponse:
     )
 
 
-def message_response(message: MessageModel) -> MessageResponse:
+def message_response(message: MessageModel, db: Session | None = None) -> MessageResponse:
+    attachments = []
+    if db is not None:
+        from sqlalchemy import select
+
+        from my_agents.conversations.continuity_models import MessageAttachmentModel
+        from my_agents.document_workspace.models import ConversationAttachmentModel
+        from my_agents.document_workspace.service import attachment_response
+
+        attachments = [
+            attachment_response(item)
+            for item in db.scalars(
+                select(ConversationAttachmentModel)
+                .join(
+                    MessageAttachmentModel,
+                    MessageAttachmentModel.attachment_id == ConversationAttachmentModel.id,
+                )
+                .where(MessageAttachmentModel.message_id == message.id)
+            ).all()
+        ]
     return MessageResponse(
         id=message.id,
         conversation_id=message.conversation_id,
         role=message.role,
         content=message.content,
+        attachments=attachments,
     )

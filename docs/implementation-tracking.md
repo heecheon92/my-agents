@@ -784,6 +784,11 @@ limits.
 
 ## Shipped and completed index
 
+- [x] **Shipped:** Conversation continuity, visible compaction, summarization model preferences,
+  message attachments and registered-user file recall/retention —
+  [scope, verification and owner browser testing](./completed/conversation-continuity.md).
+  Database migration and hosted deployment remain separate.
+
 - [x] **Shipped:** Static workspace image inputs with vision/file routing and validation —
   [completion evidence](./completed/workspace-image-inputs.md).
 

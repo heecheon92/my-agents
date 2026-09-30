@@ -70,7 +70,6 @@ from my_agents.api.conversations.serializers import (
     knowledge_base_selection_payload,
 )
 from my_agents.api.conversations.sse_contract import conversation_sse_responses
-from my_agents.api.conversations.transcripts import messages_for_conversation
 from my_agents.api.document_workspace import get_document_workspace_provider
 from my_agents.api.reasoning import resolve_reasoning_preferences
 from my_agents.auth.contracts import Principal
@@ -113,8 +112,12 @@ def stream_resumed_conversation_run(
     db: Annotated[Session, Depends(get_database_session)],
     graph_runner: Annotated[GraphRunner, Depends(get_graph_runner)],
     settings: Annotated[Settings, Depends(get_settings)],
+    document_workspace_provider: Annotated[
+        DocumentWorkspaceProvider | None, Depends(get_document_workspace_provider)
+    ],
 ) -> StreamingResponse:
     """Resume a paused run and expose the result through the existing SSE vocabulary."""
+    db.info["document_workspace_provider"] = document_workspace_provider
     prepared = prepare_conversation_run_resume(
         conversation_id=conversation_id,
         run_id=run_id,
@@ -167,6 +170,7 @@ def resumed_conversation_run_events(
     reasoning_delta_sequences: dict[str, int] = {}
     streamed_base_reply_parts: list[str] = []
     result: dict[str, Any] | None = None
+    seen_workspace_events: set[str] = set()
 
     try:
         for item in stream_resumed_graph_items(
@@ -175,6 +179,12 @@ def resumed_conversation_run_events(
             resume_value=prepared.resume_value,
             graph_context=graph_context,
         ):
+            yield from _workspace_sse_events(
+                db,
+                run.id,
+                {AgentEventType.RUN_MODEL_RESOLVED.value, AgentEventType.ATTACHMENTS_READY.value},
+                seen=seen_workspace_events,
+            )
             if item.result:
                 memory_snapshot = graph_memory_source_snapshot_json(item.result) or memory_snapshot
                 if retrieval_context is None and graph_has_retrieval_context(item.result):
@@ -224,6 +234,9 @@ def resumed_conversation_run_events(
                 )
             elif item.kind == "result":
                 result = item.result
+                from my_agents.conversations.continuity import record_delivery
+
+                record_delivery(db, run, result or {})
     except ResponseProviderConfigurationError as exc:
         yield from _failed_resumed_conversation_run_events(
             db=db,
@@ -506,6 +519,7 @@ def stream_conversation_run(
     `run_failed` plus `run_error` events instead of leaking raw prompts or provider
     exception text.
     """
+    db.info["document_workspace_provider"] = document_workspace_provider
     assert_guest_can_send_prompt(db, principal, settings)
     get_authorized_conversation(db, conversation_id, principal.user_id)
     assert_no_active_run(db, conversation_id)
@@ -535,6 +549,10 @@ def stream_conversation_run(
         reasoning_mode=reasoning.mode,
         reasoning_effort=reasoning.effort,
         assistant_model=reasoning.model,
+        attachment_ids=request.attachment_ids,
+        client_request_id=str(request.client_request_id) if request.client_request_id else None,
+        requested_reasoning_mode=request.reasoning_mode,
+        requested_reasoning_effort=request.reasoning_effort,
     )
     return StreamingResponse(
         conversation_run_events(
@@ -589,8 +607,10 @@ def conversation_run_events(
         assistant_model=reasoning.model,
     )
     run = admitted.run
+    execution_run_id = run.id
     user_message = admitted.user_message
     message_content_length = len(request.message.strip())
+    seen_workspace_events: set[str] = set()
     run_started = perf_counter()
     retrieval_route = "unknown"
     answer_mode = "unknown"
@@ -608,12 +628,13 @@ def conversation_run_events(
         yield sse_event(
             AgentEventType.RUN_STARTED.value,
             {
-                "run_id": run.id,
+                "run_id": execution_run_id,
                 "conversation_id": conversation_id,
                 "status": run.status,
                 "reasoning_mode": reasoning.mode,
                 "reasoning_effort": reasoning.effort,
                 "assistant_model": run.assistant_model,
+                "client_request_id": run.client_request_id,
                 **knowledge_base_selection_payload(selection_context),
             },
         )
@@ -633,21 +654,27 @@ def conversation_run_events(
                 settings=settings,
                 principal=principal,
                 conversation_id=conversation_id,
-                run_id=run.id,
+                run_id=execution_run_id,
                 attachment_ids=request.attachment_ids,
             )
             yield from _workspace_sse_events(
                 db,
-                run.id,
+                execution_run_id,
                 {AgentEventType.ATTACHMENTS_READY.value},
+                seen=seen_workspace_events,
             )
 
-        messages = messages_for_conversation(db, conversation_id)
+        from my_agents.conversations.continuity import context_events
+
+        messages = yield from context_events(db, conversation_id, execution_run_id, settings)
+        if is_run_cancelling(db, execution_run_id):
+            yield cancelled_sse_event(db, execution_run_id)
+            return
         graph_input = graph_input_for_run(
             messages=messages,
             user_id=user_id,
             conversation_id=conversation_id,
-            run_id=run.id,
+            run_id=execution_run_id,
         )
         graph_context = graph_context_for_run(
             db=db,
@@ -673,6 +700,15 @@ def conversation_run_events(
                 graph_input=graph_input,
                 graph_context=graph_context,
             ):
+                yield from _workspace_sse_events(
+                    db,
+                    execution_run_id,
+                    {
+                        AgentEventType.RUN_MODEL_RESOLVED.value,
+                        AgentEventType.ATTACHMENTS_READY.value,
+                    },
+                    seen=seen_workspace_events,
+                )
                 if item.kind == "update":
                     if item.result:
                         if retrieval_context is None and graph_has_retrieval_context(item.result):
@@ -680,14 +716,14 @@ def conversation_run_events(
                             retrieval_route = retrieval_context.decision.route
                             answer_mode = retrieval_context.answer_mode
                             retrieval_payload = record_retrieval_completed_event(
-                                db, run.id, retrieval_context
+                                db, execution_run_id, retrieval_context
                             )
                             yield sse_event(
                                 AgentEventType.RETRIEVAL_COMPLETED.value,
                                 retrieval_payload,
                             )
-                            if is_run_cancelling(db, run.id):
-                                yield cancelled_sse_event(db, run.id)
+                            if is_run_cancelling(db, execution_run_id):
+                                yield cancelled_sse_event(db, execution_run_id)
                                 record_run_metric("cancelled")
                                 return
                         memory_snapshot = (
@@ -704,7 +740,7 @@ def conversation_run_events(
                             memory_source_snapshot_json=memory_snapshot,
                         )
                         graph_event = append_run_event(
-                            db, run.id, AgentEventType.GRAPH_INVOKED, graph_payload
+                            db, execution_run_id, AgentEventType.GRAPH_INVOKED, graph_payload
                         )
                         yield sse_event(
                             AgentEventType.GRAPH_INVOKED.value,
@@ -729,11 +765,11 @@ def conversation_run_events(
                     retrieval_route = retrieval_context.decision.route
                     answer_mode = retrieval_context.answer_mode
                     retrieval_payload = record_retrieval_completed_event(
-                        db, run.id, retrieval_context
+                        db, execution_run_id, retrieval_context
                     )
                     yield sse_event(AgentEventType.RETRIEVAL_COMPLETED.value, retrieval_payload)
-                    if is_run_cancelling(db, run.id):
-                        yield cancelled_sse_event(db, run.id)
+                    if is_run_cancelling(db, execution_run_id):
+                        yield cancelled_sse_event(db, execution_run_id)
                         record_run_metric("cancelled")
                         return
                 if item.kind == "result":
@@ -747,6 +783,13 @@ def conversation_run_events(
                         or retrieval_context.insufficient_evidence
                     ):
                         continue
+                if (
+                    retrieval_context is None
+                    and item.kind == "result"
+                    and graph_interrupt_payload(item.result or {}) is not None
+                ):
+                    result = item.result
+                    continue
                 if retrieval_context is None:
                     raise RuntimeError("conversation graph streamed an answer before RAG retrieval")
                 if not graph_invoked:
@@ -760,15 +803,15 @@ def conversation_run_events(
                         memory_source_snapshot_json=memory_snapshot,
                     )
                     graph_event = append_run_event(
-                        db, run.id, AgentEventType.GRAPH_INVOKED, graph_payload
+                        db, execution_run_id, AgentEventType.GRAPH_INVOKED, graph_payload
                     )
                     yield sse_event(
                         AgentEventType.GRAPH_INVOKED.value,
                         graph_payload,
                     )
                     graph_invoked = True
-                if is_run_cancelling(db, run.id):
-                    yield cancelled_sse_event(db, run.id)
+                if is_run_cancelling(db, execution_run_id):
+                    yield cancelled_sse_event(db, execution_run_id)
                     record_run_metric("cancelled")
                     return
                 if item.kind == "delta":
@@ -782,7 +825,7 @@ def conversation_run_events(
         except ResponseProviderConfigurationError as exc:
             run_id = persist_failed_run(
                 db=db,
-                run_id=run.id,
+                run_id=execution_run_id,
                 conversation_id=conversation_id,
                 error_type=type(exc).__name__,
                 memory_source_snapshot=memory_snapshot,
@@ -804,7 +847,7 @@ def conversation_run_events(
         except Exception as exc:
             run_id = persist_failed_run(
                 db=db,
-                run_id=run.id,
+                run_id=execution_run_id,
                 conversation_id=conversation_id,
                 error_type=type(exc).__name__,
                 memory_source_snapshot=memory_snapshot,
@@ -825,14 +868,21 @@ def conversation_run_events(
 
         if result is None:
             raise RuntimeError("conversation graph stream ended without a final result")
+        if graph_interrupt_payload(result) is not None and not graph_has_retrieval_context(result):
+            interrupted = persist_waiting_document_selection(
+                db=db, run=run, graph_state=result, wait_seconds=settings.hitl_wait_seconds
+            )
+            yield sse_event("run_interrupted", interrupted.model_dump(mode="json"))
+            record_run_metric("waiting_for_input")
+            return
         final_retrieval_context = retrieval_context_from_graph_state(result, db)
         if retrieval_context is None:
             retrieval_payload = record_retrieval_completed_event(
-                db, run.id, final_retrieval_context
+                db, execution_run_id, final_retrieval_context
             )
             yield sse_event(AgentEventType.RETRIEVAL_COMPLETED.value, retrieval_payload)
-            if is_run_cancelling(db, run.id):
-                yield cancelled_sse_event(db, run.id)
+            if is_run_cancelling(db, execution_run_id):
+                yield cancelled_sse_event(db, execution_run_id)
                 record_run_metric("cancelled")
                 return
         retrieval_context = final_retrieval_context
@@ -859,7 +909,7 @@ def conversation_run_events(
             clarification = clarification_request(retrieval_context.decision)
             response = persist_completed_run(
                 db=db,
-                run_id=run.id,
+                run_id=execution_run_id,
                 conversation_id=conversation_id,
                 consulted_chunks=[],
                 route=route,
@@ -882,7 +932,7 @@ def conversation_run_events(
                     clarification=clarification,
                 ),
             )
-            delete_checkpoint_thread(graph_runner, run.id)
+            delete_checkpoint_thread(graph_runner, execution_run_id)
             yield sse_event("run_completed", response.model_dump(mode="json"))
             record_run_metric("clarification")
             return
@@ -890,7 +940,7 @@ def conversation_run_events(
             route = coerce_route(result.get("route") or classify_messages(messages))
             response = persist_completed_run(
                 db=db,
-                run_id=run.id,
+                run_id=execution_run_id,
                 conversation_id=conversation_id,
                 consulted_chunks=[],
                 route=route,
@@ -913,12 +963,12 @@ def conversation_run_events(
                     insufficient_evidence=True,
                 ),
             )
-            delete_checkpoint_thread(graph_runner, run.id)
+            delete_checkpoint_thread(graph_runner, execution_run_id)
             yield sse_event("run_completed", response.model_dump(mode="json"))
             record_run_metric("insufficient_evidence")
             return
         log_retrieval_context_for_llm(
-            run_id=run.id,
+            run_id=execution_run_id,
             conversation_id=conversation_id,
             user_id=user_id,
             retrieval_context=retrieval_context,
@@ -948,7 +998,9 @@ def conversation_run_events(
                 selection_context=retrieval_context.knowledge_base_selection,
                 memory_source_snapshot_json=memory_snapshot,
             )
-            graph_event = append_run_event(db, run.id, AgentEventType.GRAPH_INVOKED, graph_payload)
+            graph_event = append_run_event(
+                db, execution_run_id, AgentEventType.GRAPH_INVOKED, graph_payload
+            )
             yield sse_event(
                 AgentEventType.GRAPH_INVOKED.value,
                 graph_payload,
@@ -956,20 +1008,20 @@ def conversation_run_events(
             update_graph_invoked_event_memory_snapshot(db, graph_event, memory_snapshot)
         if not streamed_base_reply_parts:
             for delta in fallback_answer_deltas(reply):
-                if is_run_cancelling(db, run.id):
-                    yield cancelled_sse_event(db, run.id)
+                if is_run_cancelling(db, execution_run_id):
+                    yield cancelled_sse_event(db, execution_run_id)
                     record_run_metric("cancelled")
                     return
                 delta_sequence += 1
                 yield sse_event("answer_delta", {"delta": delta, "sequence": delta_sequence})
-        if is_run_cancelling(db, run.id):
-            yield cancelled_sse_event(db, run.id)
+        if is_run_cancelling(db, execution_run_id):
+            yield cancelled_sse_event(db, execution_run_id)
             record_run_metric("cancelled")
             return
         if document_workspace_runtime is not None:
             yield from _workspace_sse_events(
                 db,
-                run.id,
+                execution_run_id,
                 {
                     AgentEventType.DOCUMENT_WORKSPACE_STARTED.value,
                     AgentEventType.ARTIFACT_CREATED.value,
@@ -977,7 +1029,7 @@ def conversation_run_events(
             )
         response = persist_completed_run(
             db=db,
-            run_id=run.id,
+            run_id=execution_run_id,
             conversation_id=conversation_id,
             consulted_chunks=consulted_chunks,
             route=route,
@@ -1011,22 +1063,22 @@ def conversation_run_events(
                 insufficient_evidence=completion_insufficient_evidence,
             ),
         )
-        delete_checkpoint_thread(graph_runner, run.id)
+        delete_checkpoint_thread(graph_runner, execution_run_id)
         yield sse_event("run_completed", response.model_dump(mode="json"))
         record_run_metric("completed")
     except GeneratorExit:
-        current_run = db.get(AgentRunModel, run.id, populate_existing=True)
+        current_run = db.get(AgentRunModel, execution_run_id, populate_existing=True)
         if current_run is not None and current_run.status == RunStatus.WAITING_FOR_INPUT.value:
             raise
-        if is_run_active(db, run.id):
-            cancelled_sse_event(db, run.id)
-        delete_checkpoint_thread(graph_runner, run.id)
+        if is_run_active(db, execution_run_id):
+            cancelled_sse_event(db, execution_run_id)
+        delete_checkpoint_thread(graph_runner, execution_run_id)
         record_run_metric("cancelled")
         raise
     except ResponseProviderConfigurationError as exc:
         run_id = fail_active_run(
             db=db,
-            run_id=run.id,
+            run_id=execution_run_id,
             conversation_id=conversation_id,
             error_type=type(exc).__name__,
         )
@@ -1047,7 +1099,7 @@ def conversation_run_events(
     except Exception as exc:
         run_id = fail_active_run(
             db=db,
-            run_id=run.id,
+            run_id=execution_run_id,
             conversation_id=conversation_id,
             error_type=type(exc).__name__,
         )
@@ -1072,6 +1124,7 @@ def _workspace_sse_events(
     db: Session,
     run_id: str,
     event_types: set[str],
+    seen: set[str] | None = None,
 ) -> Iterator[str]:
     events = db.scalars(
         select(AgentEventModel)
@@ -1082,6 +1135,10 @@ def _workspace_sse_events(
         .order_by(AgentEventModel.sequence)
     ).all()
     for event in events:
+        if seen is not None:
+            if event.id in seen:
+                continue
+            seen.add(event.id)
         response = event_response(event)
         yield sse_event(
             response.event_type,

@@ -1,7 +1,7 @@
 ---
 created: 2026-09-30
 updated: 2026-09-30
-status: proposed
+status: implemented
 topics: [context-engineering, conversation-history, rag, evidence-provenance]
 related_code:
   - my_agents/api/conversations/transcripts.py
@@ -13,6 +13,11 @@ related_code:
 ---
 
 # Proposal: conversation history and evidence continuity
+
+Accepted and implemented on 2026-09-30. Owner reported browser testing and approved publication;
+[completion evidence](../completed/conversation-continuity.md) preserves scope and limitations. The diagnosis below describes the pre-change baseline;
+current behavior and accepted attachment retention/model choices are documented in
+[the continuity contract](../product-chat-service/en/36-conversation-continuity.md) and canonical tracking.
 
 This is a system-level suggestion and implementation handoff, not an implemented change or
 an instruction to start work. Canonical status and scheduling remain in

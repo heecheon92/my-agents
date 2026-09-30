@@ -66,6 +66,7 @@ from my_agents.api.conversations.serializers import (
 )
 from my_agents.api.errors import APIErrorCode, APIHTTPException
 from my_agents.conversations.models import (
+    AgentEventModel,
     AgentEventType,
     AgentRunModel,
     MessageModel,
@@ -113,6 +114,7 @@ def complete_sync_conversation_run(
     document_selection_hitl_allowed: bool = True,
     preselected_document_id: str | None = None,
 ) -> ConversationRunResult:
+    execution_run_id = run.id
     try:
         result = _complete_sync_conversation_run(
             db=db,
@@ -130,25 +132,25 @@ def complete_sync_conversation_run(
             preselected_document_id=preselected_document_id,
         )
         if isinstance(result, ConversationRunResponse):
-            delete_checkpoint_thread(graph_runner, run.id)
+            delete_checkpoint_thread(graph_runner, execution_run_id)
         return result
     except HTTPException:
         fail_active_run(
             db=db,
-            run_id=run.id,
+            run_id=execution_run_id,
             conversation_id=conversation_id,
             error_type="HTTPException",
         )
-        delete_checkpoint_thread(graph_runner, run.id)
+        delete_checkpoint_thread(graph_runner, execution_run_id)
         raise
     except ResponseProviderConfigurationError as exc:
         fail_active_run(
             db=db,
-            run_id=run.id,
+            run_id=execution_run_id,
             conversation_id=conversation_id,
             error_type=type(exc).__name__,
         )
-        delete_checkpoint_thread(graph_runner, run.id)
+        delete_checkpoint_thread(graph_runner, execution_run_id)
         raise APIHTTPException(
             status_code=503,
             detail="conversation run failed",
@@ -157,11 +159,11 @@ def complete_sync_conversation_run(
     except Exception as exc:
         fail_active_run(
             db=db,
-            run_id=run.id,
+            run_id=execution_run_id,
             conversation_id=conversation_id,
             error_type=type(exc).__name__,
         )
-        delete_checkpoint_thread(graph_runner, run.id)
+        delete_checkpoint_thread(graph_runner, execution_run_id)
         raise APIHTTPException(
             status_code=502,
             detail="conversation run failed",
@@ -222,6 +224,8 @@ def _complete_sync_conversation_run(
             graph_context=graph_context,
         )
     except GraphRunnerExecutionError as exc:
+        if not db.is_active:
+            db.rollback()
         partial_state = exc.partial_state
         memory_source_snapshot = graph_memory_source_snapshot_json(partial_state)
         if graph_has_retrieval_context(partial_state):
@@ -290,6 +294,16 @@ def _complete_sync_conversation_run(
             code=APIErrorCode.CONVERSATION_RUN_FAILED,
         ) from exc
 
+    from my_agents.conversations.continuity import record_delivery
+
+    record_delivery(db, run, result)
+    if graph_interrupt_payload(result) is not None and not graph_has_retrieval_context(result):
+        route = classify_messages(messages)
+        run.route_label = route.label
+        run.route_explanation = route.explanation
+        return persist_waiting_document_selection(
+            db=db, run=run, graph_state=result, wait_seconds=hitl_wait_seconds
+        )
     retrieval_context = retrieval_context_from_graph_state(result, db)
     retrieval_route = retrieval_context.decision.route
     answer_mode = retrieval_context.answer_mode
@@ -436,6 +450,8 @@ def complete_resumed_conversation_run(
             graph_context=graph_context,
         )
     except GraphRunnerExecutionError as exc:
+        if not db.is_active:
+            db.rollback()
         logger.warning(
             "conversation_run.resume_failed run_id=%s error_class=%s",
             run.id,
@@ -454,6 +470,9 @@ def complete_resumed_conversation_run(
             code=APIErrorCode.CONVERSATION_RUN_FAILED,
         ) from exc.original_exception
 
+    from my_agents.conversations.continuity import record_delivery
+
+    record_delivery(db, run, result)
     retrieval_context = retrieval_context_from_graph_state(result, db)
     record_retrieval_completed_event(db, run.id, retrieval_context)
     if graph_interrupt_payload(result) is not None:
@@ -562,6 +581,27 @@ def persist_completed_run(
     if run is None or run.conversation_id != conversation_id:
         raise RuntimeError("started conversation run is unavailable")
     run.status = RunStatus.COMPLETED.value
+    if run.attachment_notes_json:
+        from my_agents.conversations.continuity_models import AttachmentNoteModel
+
+        for note in json.loads(run.attachment_notes_json):
+            if (
+                db.scalar(
+                    select(AttachmentNoteModel.id).where(
+                        AttachmentNoteModel.run_id == run.id,
+                        AttachmentNoteModel.attachment_id == note["attachment_id"],
+                    )
+                )
+                is None
+            ):
+                db.add(
+                    AttachmentNoteModel(
+                        run_id=run.id,
+                        attachment_id=note["attachment_id"],
+                        body_json=json.dumps(note),
+                    )
+                )
+        run.attachment_notes_json = None
     run.route_label = route.label
     run.route_explanation = route.explanation
     run.retrieval_route = retrieval_decision.route
@@ -723,12 +763,15 @@ def persist_failed_run(
     error_type: str,
     memory_source_snapshot: str | None = None,
 ) -> str:
+    if not db.is_active:
+        db.rollback()
     run = db.get(AgentRunModel, run_id, populate_existing=True)
     if run is None or run.conversation_id != conversation_id:
         raise RuntimeError("started conversation run is unavailable")
     if run.status not in ACTIVE_RUN_STATUSES:
         return run.id
     run.status = RunStatus.FAILED.value
+    run.attachment_notes_json = None
     run.interaction_id = None
     run.interaction_type = None
     run.interaction_payload_json = None
@@ -805,6 +848,7 @@ def cleanup_stale_active_runs(db: Session, conversation_id: str) -> None:
             )
             continue
         run.status = RunStatus.FAILED.value
+        run.attachment_notes_json = None
         append_run_event(
             db,
             run.id,
@@ -837,6 +881,10 @@ def admit_run(
     assistant_model: str | None = None,
     message: str | None = None,
     existing_user_message: MessageModel | None = None,
+    client_request_id: str | None = None,
+    attachment_ids: list[str] | None = None,
+    requested_reasoning_mode: ReasoningMode | None = None,
+    requested_reasoning_effort: ReasoningEffort | None = None,
 ) -> AdmittedRun:
     """Atomically persist an authorized prompt/run/events; the DB arbitrates competitors.
 
@@ -845,6 +893,10 @@ def admit_run(
     """
     if (message is None) == (existing_user_message is None):
         raise ValueError("Supply either a new message or an existing replay prompt")
+    from my_agents.conversations.continuity import assert_prompt_budget
+
+    if message is not None:
+        assert_prompt_budget(message, get_settings())
     try:
         user_message = existing_user_message
         if user_message is None:
@@ -872,11 +924,79 @@ def admit_run(
             reasoning_effort=reasoning_effort,
             assistant_model=assistant_model,
         )
+        run.client_request_id = client_request_id
+        if client_request_id:
+            started = db.scalar(
+                select(AgentEventModel).where(
+                    AgentEventModel.run_id == run.id, AgentEventModel.event_type == "run_started"
+                )
+            )
+            payload = json.loads(started.payload_json)
+            payload["client_request_id"] = client_request_id
+            started.payload_json = json.dumps(payload)
+        if attachment_ids:
+            from my_agents.conversations.continuity_models import MessageAttachmentModel
+            from my_agents.document_workspace.service import validate_attachment_selection
+
+            attachments = validate_attachment_selection(
+                db,
+                conversation_id=conversation_id,
+                owner_user_id=user_id,
+                attachment_ids=attachment_ids,
+                settings=get_settings(),
+            )
+            db.add_all(
+                [
+                    MessageAttachmentModel(message_id=user_message.id, attachment_id=item.id)
+                    for item in attachments
+                ]
+            )
+        from my_agents.api.summarization_preferences import effective_summarization_model
+
+        run.requested_workspace_model = get_settings().document_workspace_model
+        run.requested_reasoning_mode = requested_reasoning_mode
+        run.requested_reasoning_effort = requested_reasoning_effort
+        run.summarization_model = effective_summarization_model(db, user_id, get_settings())
+        settings = get_settings()
+        if (
+            not attachment_ids
+            and settings.context_continuity_enabled
+            and settings.document_workspace_enabled
+        ):
+            from my_agents.conversations.file_context import submitted_files
+            from my_agents.conversations.models import ConversationModel
+
+            conversation = db.get(ConversationModel, conversation_id)
+            if conversation is not None and submitted_files(db, conversation):
+                run.assistant_model = None
+                started = db.scalar(
+                    select(AgentEventModel).where(
+                        AgentEventModel.run_id == run.id,
+                        AgentEventModel.event_type == "run_started",
+                    )
+                )
+                if started:
+                    payload = json.loads(started.payload_json)
+                    payload["assistant_model"] = None
+                    started.payload_json = json.dumps(payload)
         db.commit()
         return AdmittedRun(run=run, user_message=user_message)
     except IntegrityError as exc:
         db.rollback()
         diagnostic = getattr(exc.orig, "diag", None)
+        if (
+            getattr(diagnostic, "constraint_name", None) == "uq_agent_runs_client_request"
+            or str(exc.orig)
+            == "UNIQUE constraint failed: agent_runs.user_id, agent_runs.client_request_id"
+        ):
+            raise APIHTTPException(
+                status_code=409,
+                detail=(
+                    "client_request_id already admitted; "
+                    "retrieve the existing run before sending again"
+                ),
+                code=APIErrorCode.CONFLICT,
+            ) from exc
         postgres_conflict = (
             getattr(exc.orig, "sqlstate", None) == "23505"
             and getattr(diagnostic, "constraint_name", None) == "uq_agent_runs_active_conversation"
@@ -917,6 +1037,8 @@ def _insert_run(
         reasoning_mode=reasoning_mode,
         reasoning_effort=reasoning_effort,
         assistant_model=assistant_model,
+        requested_assistant_model=assistant_model,
+        user_message_id=user_message_id,
         knowledge_base_selection_mode=selection_context.mode,
         selected_knowledge_base_ids_json=json.dumps(
             list(selection_context.knowledge_base_ids), sort_keys=True

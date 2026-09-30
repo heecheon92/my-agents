@@ -12,7 +12,6 @@ from rich import print as rich_print
 from sqlalchemy.orm import Session
 
 from my_agents.agents.context_forge.contracts import RetrievalEvidence
-from my_agents.agents.general_assistant.context import RECENT_CONVERSATION_MESSAGE_LIMIT
 from my_agents.agents.rag_agent import (
     RagAgentRetrievalResult,
 )
@@ -202,7 +201,7 @@ def graph_input_for_run(
     preselected_document_id: str | None = None,
 ) -> dict[str, object]:
     graph_input: dict[str, object] = {
-        "messages": messages[-RECENT_CONVERSATION_MESSAGE_LIMIT:],
+        "messages": messages,
         "principal_id": user_id,
         "conversation_id": conversation_id,
         "run_id": run_id,

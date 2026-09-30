@@ -58,6 +58,13 @@ def graph_context_for_run(
         "full_document_max_chars": settings.full_document_max_chars,
         "full_document_range_chars": settings.full_document_range_chars,
     }
+    from my_agents.conversations.file_context import AttachmentRecallRuntime
+
+    context["attachment_recall_runtime"] = AttachmentRecallRuntime(
+        db,
+        getattr(document_workspace_runtime, "_provider", None)
+        or db.info.get("document_workspace_provider"),
+    )
     if document_workspace_runtime is not None:
         context["document_workspace_runtime"] = document_workspace_runtime
     return context

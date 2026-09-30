@@ -120,9 +120,50 @@ class PendingDocumentSelectionV2(InteractionReferenceV2):
     browse: DocumentSelectionBrowse
 
 
+class AttachmentSelectionOption(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    attachment_id: str
+    filename: str
+    category: str
+    original_available: bool
+    created_at: datetime | None = None
+    byte_size: int | None = None
+
+
+class PendingAttachmentSelection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    access: Literal["notes", "original"] = "original"
+    schema_version: Literal[2]
+    interaction_id: str
+    type: Literal["attachment_selection"]
+    reason_code: Literal["ambiguous_attachment_reference"]
+    message_key: Literal["clarification.attachment_scope.select_source"]
+    expires_at: datetime
+    option_count: int = Field(ge=0, le=50)
+    options: list[AttachmentSelectionOption] = Field(max_length=50)
+
+
+class ConversationAttachmentSelectRequestV2(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    schema_version: Literal[2]
+    interaction_id: str
+    type: Literal["attachment_selection"]
+    kind: Literal["select"]
+    attachment_ids: list[str] = Field(min_length=1, max_length=3)
+
+    @field_validator("attachment_ids")
+    @classmethod
+    def unique_ids(cls, value: list[str]) -> list[str]:
+        if len(set(value)) != len(value):
+            raise ValueError("attachment IDs must be unique")
+        return value
+
+
 # This alias is the sole backend extension point. Add future semantic interaction
 # models here; do not add frontend component or layout contracts to this package.
-type PendingInteraction = PendingDocumentSelection | PendingDocumentSelectionV2
+type PendingInteraction = (
+    PendingDocumentSelection | PendingDocumentSelectionV2 | PendingAttachmentSelection
+)
 pending_interaction_adapter = TypeAdapter(PendingInteraction)
 
 
@@ -155,7 +196,10 @@ class ConversationRunRefineRequestV2(InteractionReferenceV2):
 
 
 type ConversationRunResumeRequestType = (
-    ConversationRunResumeRequest | ConversationRunSelectRequestV2 | ConversationRunRefineRequestV2
+    ConversationRunResumeRequest
+    | ConversationRunSelectRequestV2
+    | ConversationRunRefineRequestV2
+    | ConversationAttachmentSelectRequestV2
 )
 conversation_run_resume_request_adapter = TypeAdapter(ConversationRunResumeRequestType)
 

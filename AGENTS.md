@@ -69,7 +69,9 @@ MY_AGENTS_OPENAI_VERBOSITY=low
 
 The optional temporary document workspace is disabled by default, forbidden to
 guest sessions, and uses `gpt-5.6-sol` plus an OpenAI-hosted, network-disabled
-container. Its full knobs and retention limits are documented in `.env.example`.
+container. New originals default to seven days, with conversation-scoped notes and a durable
+provider cleanup outbox. Guests receive text-only continuity, never workspace files or notes.
+Its full knobs and retention limits are documented in `.env.example`.
 
 For memory architecture, do not treat LangGraph checkpointers as conversation history or long-term memory. Product DB remains the source of truth for visible transcripts/runs/citations/audit and memory governance. PostgreSQL deployments own baseline PostgresSaver and a rebuildable PostgresStore semantic projection; Store candidates must be revalidated against Product DB rows and per-user experimental memory settings control consent and eligibility. PostgresSaver uses `run_id` only for bounded HITL/resume execution state. OpenAI `previous_response_id` may be stored as one field inside compact graph/run state, but should not replace application state.
 
@@ -243,3 +245,8 @@ A change is complete only when:
 - learning notes are updated when the change introduces new concepts or abstractions;
 - no secrets are exposed;
 - no frontend or non-OpenAI provider scope was added accidentally.
+
+Conversation summaries are derived Product DB records, not long-term memory consent or a new
+checkpointer thread scope. Keep context compaction activity metadata-only and preserve original
+message/run/source links. Jev must not receive summary or file-note channels. See
+`docs/product-chat-service/en/36-conversation-continuity.md`.

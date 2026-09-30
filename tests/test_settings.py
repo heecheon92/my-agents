@@ -94,7 +94,7 @@ def test_document_workspace_defaults_are_disabled_and_bounded(
     assert settings.document_workspace_max_files_per_run == 3
     assert settings.document_workspace_max_combined_bytes == 20 * 1024 * 1024
     assert settings.document_workspace_idle_ttl_seconds == 1200
-    assert settings.document_workspace_file_ttl_seconds == 3600
+    assert settings.document_workspace_file_ttl_seconds == 604800
 
 
 def test_enabled_document_workspace_requires_openai_key(

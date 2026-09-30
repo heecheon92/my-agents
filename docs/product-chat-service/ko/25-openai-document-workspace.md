@@ -33,7 +33,7 @@ sequenceDiagram
     API->>OpenAI: container file byte stream
 ```
 
-Product DB에는 file metadata, run association, workspace metadata, artifact metadata, immutable normalized usage event만 저장합니다. Response usage event는 input, cached-input, output, reasoning token을 구분하고 Hosted Shell 실행 여부를 기록합니다. 업로드하거나 생성한 file byte는 저장하지 않습니다. 기본값으로 OpenAI file은 한 시간 뒤, hosted container는 20분 idle 뒤 만료됩니다. 만료된 metadata는 UI가 상태를 정직하게 표시하고 usage를 감사하는 데 남습니다.
+Product DB에는 file metadata, run association, workspace metadata, artifact metadata, 대화 단위 파일 메모, immutable normalized usage event를 저장합니다. Response usage event는 input, cached-input, output, reasoning token을 구분하고 Hosted Shell 실행 여부를 기록합니다. 업로드하거나 생성한 file byte는 저장하지 않습니다. 새 OpenAI file은 기본값으로 업로드 후 7일 뒤, hosted container는 20분 idle 뒤 만료됩니다. 만료된 metadata는 UI가 상태를 정직하게 표시하고 usage를 감사하는 데 남습니다.
 
 ## Public API 계약
 
@@ -117,3 +117,5 @@ Upload는 `purpose=user_data`와 명시적 expiry를 유지합니다. Image는 n
 출력 인증 정책을 유지합니다. Image attachment turn도 별도 workspace 모델을 사용합니다.
 근거: [image 입력 요구사항](https://developers.openai.com/api/docs/guides/images-vision),
 [Files purpose/expiry](https://developers.openai.com/api/reference/typescript/resources/files/methods/create).
+
+[대화 맥락 유지와 파일 보관 정책](./36-conversation-continuity.md)은 메시지 연결, 대화 메모, 일반 계정의 자동 재참조와 정리를 추가합니다. 원본 byte는 provider에 남고 메모는 Product DB의 별도 파생 기록입니다. 새 원본의 기본 만료는 업로드 후 7일입니다.

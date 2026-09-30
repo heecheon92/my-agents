@@ -114,3 +114,7 @@ Implementation is tracked on develop. These checks do not establish live OpenAI 
 Exposed-catalog refinement: backend 747 passed / 13 skipped; lint/format passed. Claude reported
 390 frontend unit tests and 21 targeted browser tests passing, plus typecheck/build. Existing
 unexposed preferences/default reset are covered; no new migration or forced model change.
+
+## Automatic file recall and admission
+
+Conversation continuity captures the requested ordinary model and workspace model at admission. The actual `assistant_model` may remain unknown until file access is resolved; `run_model_resolved` publishes the selected execution model. A later original-file request uses the separate pinned workspace model, while discussion from retained notes uses the ordinary model. See [continuity](./36-conversation-continuity.md).

@@ -1,5 +1,6 @@
 """FastAPI application factory and route assembly for the assistant backend."""
 
+import asyncio
 import logging
 import time
 import uuid
@@ -28,6 +29,7 @@ from my_agents.api.knowledge_bases import knowledge_bases_router
 from my_agents.api.memories import memories_router
 from my_agents.api.metrics import metrics_router
 from my_agents.api.reasoning import reasoning_router
+from my_agents.api.summarization_preferences import router as summarization_preferences_router
 from my_agents.diagnostics import deploy_log, safe_database_url_summary, safe_email_domain
 from my_agents.observability.metrics import observe_http_request
 from my_agents.persistence.langgraph import open_langgraph_persistence
@@ -79,6 +81,7 @@ def create_app() -> FastAPI:
     app.include_router(document_workspace_router)
     app.include_router(reasoning_router)
     app.include_router(assistant_preferences_router)
+    app.include_router(summarization_preferences_router)
     app.include_router(memories_router)
     app.include_router(assistant_router)
     if settings.metrics_enabled:
@@ -92,6 +95,11 @@ def _application_lifespan(settings: Settings):
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         resources = open_langgraph_persistence(settings)
+        cleanup_task = None
+        if settings.document_workspace_enabled and settings.response_mode == "openai":
+            from my_agents.document_workspace.retention import cleanup_loop
+
+            cleanup_task = asyncio.create_task(cleanup_loop(settings))
         try:
             app.state.langgraph_persistence = resources
             app.state.langgraph_store = resources.store
@@ -102,6 +110,12 @@ def _application_lifespan(settings: Settings):
             )
             yield
         finally:
+            if cleanup_task is not None:
+                cleanup_task.cancel()
+                try:
+                    await cleanup_task
+                except asyncio.CancelledError:
+                    pass
             resources.close()
 
     return lifespan

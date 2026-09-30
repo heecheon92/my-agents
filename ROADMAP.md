@@ -497,3 +497,12 @@ The backend can be called v1 when all of the following are true:
 - [ ] Optional Postgres/Neon smoke tests pass against a dedicated test database.
 - [x] Korean and English READMEs remain accurate for the current backend status and setup surface.
 - [x] No real secrets are committed or printed; tracked secret-like matches are safe placeholders only.
+
+## Shipped: conversation continuity
+
+- [x] **Shipped:** Shared history budgets, source-linked compaction, visible activity, summarization
+  preference, message attachments and registered-user file recall/retention. Guests get text
+  continuity only. Owner reported browser testing and approved publication. See
+  [completion evidence](./docs/completed/conversation-continuity.md) and the canonical
+  [shipped index](./docs/implementation-tracking.md#shipped-and-completed-index).
+  Database migration and hosted deployment remain separate operations.

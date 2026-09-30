@@ -204,10 +204,25 @@ API는 `gpt-5.6-luna`, `gpt-5.6-sol`, `gpt-6-sol`도 받으며 노출하지 않�
 provider 권장값은 초기값입니다. GPT-6.1 Sol과 Astra는 지원하지 않는 `none`/`minimal`을 `low`로 바꿉니다.
 일반 채팅/stream/replay는 저장된 선택을 사용하고 resume는 시작된 run의 고정 모델을 사용합니다.
 Document workspace는 별도 모델 설정을 사용합니다. 기존 DB는 실행 전에 migration
-`20260930_0035`를 적용하세요. [모델 선택 계약](./docs/product-chat-service/ko/35-assistant-model-preferences.md)을 참고하세요.
+`20260930_0036`를 적용하세요. [모델 선택 계약](./docs/product-chat-service/ko/35-assistant-model-preferences.md)을 참고하세요.
 
 임시 document-workspace attachment는 정지 `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif` 이미지도
 분석할 수 있습니다. Backend가 실제 encoding/MIME를 검증하고 animation을 거부한 다음
 이미지는 `input_image`, 문서는 `input_file`로 전달합니다. Consent, guest 차단, 용량/개수 제한,
 expiry와 별도 workspace 모델은 유지합니다. Image는 분석 입력이며 다운로드 이미지 출력은 인증하지
 않습니다. [Workspace 계약](./docs/product-chat-service/ko/25-openai-document-workspace.md)을 참고하세요.
+
+## 대화 맥락 유지와 파일 재참조
+
+고정된 메시지 6개 대신 공통 token 예산과 원문 참조가 있는 대화 요약을 사용합니다. 필요한 경우
+답변 전에 오래된 대화를 정리하며 진행 상태를 표시합니다. Guest도 텍스트 대화의 맥락을 유지하지만
+임시 workspace 파일과 재참조는 일반 계정만 사용할 수 있습니다.
+
+`MY_AGENTS_SUMMARIZATION_MODEL`이 요약 모델 기본값(`gpt-6-luna`)을 정하며 일반 계정은
+Settings에서 변경할 수 있습니다. 원본 파일은 기본 7일간 OpenAI에 보관합니다. 접수한 첨부는
+보낸 메시지에 표시하고 입력 영역에서 제거합니다. 후속 질문에 정확한 원문이 필요하면 권한을 확인해
+자동으로 다시 열고, 만료 후에는 대화에 남은 메모로 이전 논의를 기억할 수 있습니다. 파일 제거는
+파생 메모를 지우고 대화 삭제는 원문 대화도 지웁니다. Provider 정리는 outbox로 재시도합니다.
+기존 DB는 실행 전에 migration `20260930_0036`을 적용하고 graph V3 배포 전에 기존 대기 run을
+완료·취소하세요. [맥락 유지 계약](./docs/product-chat-service/ko/36-conversation-continuity.md)을
+참고하세요.

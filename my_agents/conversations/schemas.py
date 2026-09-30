@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Annotated, Literal
+from uuid import UUID
 
 from pydantic import (
     BaseModel,
@@ -55,6 +56,7 @@ class MessageResponse(BaseModel):
     conversation_id: str
     role: str
     content: str
+    attachments: list[ConversationAttachmentResponse] = Field(default_factory=list)
 
 
 class AgentTraceText(BaseModel):
@@ -324,6 +326,8 @@ class ConversationClarificationRequest(BaseModel):
 class ConversationRunRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    client_request_id: UUID | None = None
+
     message: str = Field(min_length=1)
     reasoning_mode: ReasoningMode | None = None
     reasoning_effort: ReasoningEffort | None = None
@@ -408,6 +412,8 @@ class ConversationRunCancelResponse(BaseModel):
 class AgentRunSummaryResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    client_request_id: str | None = None
+
     assistant_model: str | None = None
 
     run_id: str
@@ -435,6 +441,7 @@ class KnowledgeSelectionEventPayload(AgentEventPayload):
 
 
 class RunStartedEventPayload(KnowledgeSelectionEventPayload):
+    client_request_id: str | None = None
     assistant_model: str | None = None
     run_id: str
     conversation_id: str
@@ -544,7 +551,7 @@ class RunInterruptedEventPayload(AgentEventPayload):
     status: Literal["waiting_for_input"] = "waiting_for_input"
     interaction_id: str
     interaction_schema_version: Literal[1, 2]
-    interaction_type: Literal["document_selection"] = "document_selection"
+    interaction_type: Literal["document_selection", "attachment_selection"] = "document_selection"
     option_count: int = Field(ge=0)
     expires_at: datetime
 
@@ -554,7 +561,7 @@ class RunResumedEventPayload(AgentEventPayload):
     status: Literal["running"] = "running"
     interaction_id: str
     interaction_schema_version: Literal[1, 2]
-    interaction_type: Literal["document_selection"] = "document_selection"
+    interaction_type: Literal["document_selection", "attachment_selection"] = "document_selection"
 
 
 class RunCancelledEventPayload(AgentEventPayload):
@@ -654,6 +661,31 @@ class RunFailedAgentEventResponse(AgentEventResponseBase):
     payload: RunFailedEventPayload
 
 
+class ContextCompactionEventPayload(AgentEventPayload):
+    policy_version: str
+    model: str
+    message_count: int = Field(ge=0)
+    fallback: bool = False
+
+
+class ContextCompactionAgentEventResponse(AgentEventResponseBase):
+    event_type: Literal[
+        "context_compaction_started", "context_compaction_completed", "context_compaction_failed"
+    ]
+    payload: ContextCompactionEventPayload
+
+
+class RunModelResolvedEventPayload(AgentEventPayload):
+    assistant_model: str
+    reasoning_mode: ReasoningMode
+    reasoning_effort: ReasoningEffort
+
+
+class RunModelResolvedAgentEventResponse(AgentEventResponseBase):
+    event_type: Literal["run_model_resolved"]
+    payload: RunModelResolvedEventPayload
+
+
 type AgentEventResponse = Annotated[
     RunStartedAgentEventResponse
     | UserMessageStoredAgentEventResponse
@@ -669,6 +701,8 @@ type AgentEventResponse = Annotated[
     | RunResumedAgentEventResponse
     | RunCancelRequestedAgentEventResponse
     | RunCancelledAgentEventResponse
-    | RunFailedAgentEventResponse,
+    | RunFailedAgentEventResponse
+    | ContextCompactionAgentEventResponse
+    | RunModelResolvedAgentEventResponse,
     Field(discriminator="event_type"),
 ]

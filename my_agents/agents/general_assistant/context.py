@@ -56,7 +56,7 @@ class SourceContextBundle:
     document_context: tuple[DocumentSourceContext, ...] = ()
     memory_context: tuple[str, ...] = ()
     conflicts: tuple[SourceConflict, ...] = ()
-    recent_message_limit: int = RECENT_CONVERSATION_MESSAGE_LIMIT
+    recent_message_limit: int | None = None
 
     @property
     def prior_provider_messages(self) -> tuple[BaseMessage, ...]:
@@ -73,12 +73,25 @@ def build_source_context_bundle(
     memory_context: Sequence[Mapping[str, Any] | str] = (),
     source_conflicts: Sequence[Mapping[str, Any]] = (),
     answer_mode: AnswerMode = "general_knowledge",
-    recent_message_limit: int = RECENT_CONVERSATION_MESSAGE_LIMIT,
+    recent_message_limit: int | None = None,
 ) -> SourceContextBundle:
     """Build explicit provider context from app-owned transcript and source channels."""
-    if recent_message_limit < 1:
+    if recent_message_limit is not None and recent_message_limit < 1:
         raise ValueError("recent_message_limit must be at least 1")
-    recent_conversation = tuple(messages[-recent_message_limit:])
+    from my_agents.conversations.continuity import select_recent
+    from my_agents.settings import get_settings
+
+    recent_conversation = (
+        tuple(messages[-recent_message_limit:])
+        if recent_message_limit is not None
+        else tuple(
+            [m for m in messages if m.additional_kwargs.get("continuity")]
+            + select_recent(
+                [m for m in messages if not m.additional_kwargs.get("continuity")],
+                get_settings().context_recent_tokens,
+            )
+        )
+    )
     latest_user_message = _latest_human_text(recent_conversation) or _latest_human_text(messages)
     return SourceContextBundle(
         recent_conversation=recent_conversation,

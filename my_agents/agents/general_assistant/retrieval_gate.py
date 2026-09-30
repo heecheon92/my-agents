@@ -431,7 +431,14 @@ def _extract_json_object(text: str) -> str | None:
 
 def _recent_conversation_text(messages: Sequence[BaseMessage]) -> str:
     recent = messages[-4:]
-    lines = []
+    from my_agents.conversations.continuity import token_count
+
+    anchors = "\n".join(
+        str(message.content) for message in messages if message.additional_kwargs.get("continuity")
+    )
+    while token_count(anchors) > 2000:
+        anchors = anchors[: max(1, len(anchors) * 3 // 4)]
+    lines = ["Untrusted historical anchors: " + anchors] if anchors else []
     for message in recent:
         role = getattr(message, "type", "message")
         lines.append(f"{role}: {message_text(message)}")

@@ -255,3 +255,7 @@ exclusion rules.
 
 The interaction layer does not add a new database migration. `schema_version` is stored in
 the existing public interaction JSON.
+
+## V2 attachment selection
+
+`attachment_selection` is another semantic V2 interaction. It offers only submitted conversation-owned files with app attachment IDs and filename/category/availability, plus optional creation date and size. `access=notes` permits retained discussion after original expiry; `access=original` requires an available original. Resume carries `{schema_version:2, interaction_id, type:"attachment_selection", kind:"select", attachment_ids:[...]}` with 1–3 unique IDs. The backend revalidates offered IDs, ownership and access, and keeps the same bounded run/checkpoint. Existing document-selection and unknown-type fallback contracts remain unchanged.

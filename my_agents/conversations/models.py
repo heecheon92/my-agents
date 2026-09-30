@@ -48,6 +48,10 @@ class AgentEventType(StrEnum):
     RUN_CANCEL_REQUESTED = "run_cancel_requested"
     RUN_CANCELLED = "run_cancelled"
     RUN_FAILED = "run_failed"
+    CONTEXT_COMPACTION_STARTED = "context_compaction_started"
+    CONTEXT_COMPACTION_COMPLETED = "context_compaction_completed"
+    CONTEXT_COMPACTION_FAILED = "context_compaction_failed"
+    RUN_MODEL_RESOLVED = "run_model_resolved"
 
 
 class ConversationModel(Base):
@@ -84,6 +88,7 @@ class AgentRunModel(Base):
 
     __tablename__ = "agent_runs"
     __table_args__ = (
+        Index("uq_agent_runs_client_request", "user_id", "client_request_id", unique=True),
         Index(
             "uq_agent_runs_active_conversation",
             "conversation_id",
@@ -101,7 +106,16 @@ class AgentRunModel(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False)
     reasoning_mode: Mapped[str] = mapped_column(String(20), default="standard", nullable=False)
     reasoning_effort: Mapped[str] = mapped_column(String(20), default="medium", nullable=False)
+    client_request_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     assistant_model: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    summarization_model: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    user_message_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    context_delivery_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    attachment_notes_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    requested_workspace_model: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    requested_assistant_model: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    requested_reasoning_mode: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    requested_reasoning_effort: Mapped[str | None] = mapped_column(String(20), nullable=True)
     route_label: Mapped[str | None] = mapped_column(String(80), nullable=True)
     route_explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
     retrieval_route: Mapped[str | None] = mapped_column(String(40), nullable=True)

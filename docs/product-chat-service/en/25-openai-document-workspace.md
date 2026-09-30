@@ -33,7 +33,7 @@ sequenceDiagram
     API->>OpenAI: stream container file bytes
 ```
 
-The Product DB stores file metadata, run associations, workspace metadata, artifact metadata, and immutable normalized usage events. The response usage event separates input, cached-input, output, and reasoning tokens and records whether Hosted Shell ran. It never stores uploaded or generated file bytes. OpenAI files currently expire after one hour by default; the hosted container expires after 20 idle minutes by default. Expired metadata remains useful for honest UI state and usage audit.
+The Product DB stores file metadata, run associations, workspace metadata, artifact metadata, conversation-scoped file notes, and immutable normalized usage events. The response usage event separates input, cached-input, output, and reasoning tokens and records whether Hosted Shell ran. It never stores uploaded or generated file bytes. New OpenAI files expire seven days after upload by default; the hosted container expires after 20 idle minutes by default. Expired metadata remains useful for honest UI state and usage audit.
 
 ## Public API contract
 
@@ -119,3 +119,5 @@ No provider-transfer consent is needed when no user bytes leave the browser, but
 Apply Alembic revision `20260809_0030` before enabling the flag. Set `OPENAI_API_KEY` and `MY_AGENTS_DOCUMENT_WORKSPACE_ENABLED=true`; tune limits through the documented `MY_AGENTS_DOCUMENT_WORKSPACE_*` variables. No local office suite, code sandbox, or high-memory parser is added to the Render process for this path.
 
 The test suite replaces the provider boundary with an offline fake. A credentialed live smoke remains an operator action because it creates billable OpenAI files, a container, model tokens, and possibly Hosted Shell usage.
+
+[Conversation continuity and updated file retention](./36-conversation-continuity.md) adds explicit message links, conversation notes, automatic registered-user recall and cleanup. Original bytes remain provider-side; notes are separate derived Product DB records.

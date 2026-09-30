@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any, BinaryIO, Protocol
 
 from openai import OpenAI
+from pydantic import BaseModel, ConfigDict
 
 from my_agents.reasoning import openai_reasoning_payload
 from my_agents.reasoning_summaries import provider_reasoning_summary
@@ -54,6 +55,20 @@ class ProviderExecutionResult:
     usage: dict[str, object]
     shell_used: bool
     reasoning_summary: str | None = None
+    file_observations: tuple[dict, ...] = ()
+
+
+class FileObservation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    file_id: str
+    finding: str
+    coverage: str
+
+
+class WorkspaceAnswer(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    answer: str
+    file_observations: list[FileObservation]
 
 
 class DocumentWorkspaceProvider(Protocol):
@@ -81,7 +96,7 @@ class DocumentWorkspaceProvider(Protocol):
         include_spreadsheet_skill: bool,
     ) -> ProviderContainer: ...
 
-    def add_file_to_container(self, *, container_id: str, provider_file_id: str) -> None: ...
+    def add_file_to_container(self, *, container_id: str, provider_file_id: str) -> str | None: ...
 
     def list_container_files(self, container_id: str) -> tuple[ProviderContainerFile, ...]: ...
 
@@ -103,6 +118,8 @@ class DocumentWorkspaceProvider(Protocol):
     ) -> Iterator[bytes]: ...
 
     def delete_container(self, provider_container_id: str) -> None: ...
+
+    def delete_container_file(self, *, container_id: str, provider_file_id: str) -> None: ...
 
 
 class OpenAIDocumentWorkspaceProvider:
@@ -181,11 +198,12 @@ class OpenAIDocumentWorkspaceProvider:
             raise DocumentWorkspaceProviderError("OpenAI container creation failed") from exc
         return ProviderContainer(id=str(container.id))
 
-    def add_file_to_container(self, *, container_id: str, provider_file_id: str) -> None:
+    def add_file_to_container(self, *, container_id: str, provider_file_id: str) -> str:
         try:
-            self._client.containers.files.create(container_id, file_id=provider_file_id)
+            mounted = self._client.containers.files.create(container_id, file_id=provider_file_id)
         except Exception as exc:
             raise DocumentWorkspaceProviderError("OpenAI container file mount failed") from exc
+        return str(mounted.id)
 
     def list_container_files(self, container_id: str) -> tuple[ProviderContainerFile, ...]:
         try:
@@ -247,14 +265,38 @@ class OpenAIDocumentWorkspaceProvider:
                 max_output_tokens=self._settings.document_workspace_max_output_tokens,
                 safety_identifier=safety_identifier,
                 store=False,
+                text={
+                    "format": {
+                        "type": "json_schema",
+                        "name": "workspace_answer",
+                        "strict": True,
+                        "schema": WorkspaceAnswer.model_json_schema(),
+                    }
+                },
             )
         except Exception as exc:
             raise DocumentWorkspaceProviderError("OpenAI document execution failed") from exc
         usage = _model_dump(getattr(response, "usage", None))
         output = getattr(response, "output", ()) or ()
+        output_text = str(response.output_text or "").strip()
+        observations: tuple[dict, ...] = ()
+        if output_text.lstrip().startswith("{"):
+            try:
+                parsed = WorkspaceAnswer.model_validate_json(output_text)
+                output_text = parsed.answer
+                observations = tuple(
+                    item.model_dump()
+                    for item in parsed.file_observations
+                    if item.file_id in provider_file_ids
+                )
+            except Exception as exc:
+                raise DocumentWorkspaceProviderError(
+                    "Invalid structured workspace response"
+                ) from exc
         return ProviderExecutionResult(
             response_id=str(response.id),
-            output_text=str(response.output_text or "").strip(),
+            output_text=output_text,
+            file_observations=observations,
             usage=usage,
             shell_used=any(getattr(item, "type", None) == "shell_call" for item in output),
             reasoning_summary=provider_reasoning_summary(response),
@@ -278,6 +320,23 @@ class OpenAIDocumentWorkspaceProvider:
                 response.close()
 
         return chunks()
+
+    def for_model(self, model: str) -> OpenAIDocumentWorkspaceProvider:
+        return OpenAIDocumentWorkspaceProvider(
+            self._settings.model_copy(update={"document_workspace_model": model}),
+            client=self._client,
+        )
+
+    def cleanup_provider(self) -> OpenAIDocumentWorkspaceProvider:
+        return OpenAIDocumentWorkspaceProvider(
+            self._settings, client=self._client.with_options(timeout=20, max_retries=0)
+        )
+
+    def delete_container_file(self, *, container_id: str, provider_file_id: str) -> None:
+        try:
+            self._client.containers.files.delete(provider_file_id, container_id=container_id)
+        except Exception as exc:
+            raise DocumentWorkspaceProviderError("OpenAI container file deletion failed") from exc
 
     def delete_container(self, provider_container_id: str) -> None:
         try:

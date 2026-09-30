@@ -54,6 +54,7 @@ from my_agents.document_workspace.service import (
 )
 from my_agents.interactions.schemas import (
     INTERACTION_SCHEMA_VERSION,
+    ConversationAttachmentSelectRequestV2,
     ConversationRunRefineRequestV2,
     ConversationRunResumeRequest,
     ConversationRunResumeRequestType,
@@ -63,6 +64,7 @@ from my_agents.interactions.schemas import (
     DocumentSelectionOptionsResponseV2,
     DocumentSelectionOptionsResult,
     DocumentSelectionOptionV2,
+    PendingAttachmentSelection,
     PendingDocumentSelection,
     PendingDocumentSelectionV2,
     pending_interaction_adapter,
@@ -93,6 +95,7 @@ def run_conversation(
         Depends(get_document_workspace_provider),
     ],
 ) -> ConversationRunResult:
+    db.info["document_workspace_provider"] = document_workspace_provider
     assert_guest_can_send_prompt(db, principal, settings)
     get_authorized_conversation(db, conversation_id, principal.user_id)
     assert_no_active_run(db, conversation_id)
@@ -122,6 +125,10 @@ def run_conversation(
         reasoning_mode=reasoning.mode,
         reasoning_effort=reasoning.effort,
         assistant_model=reasoning.model,
+        attachment_ids=request.attachment_ids,
+        client_request_id=str(request.client_request_id) if request.client_request_id else None,
+        requested_reasoning_mode=request.reasoning_mode,
+        requested_reasoning_effort=request.reasoning_effort,
     )
     run = admitted.run
     document_workspace_runtime = None
@@ -145,7 +152,7 @@ def run_conversation(
                 error_type=type(exc).__name__,
             )
             raise
-    messages = messages_for_conversation(db, conversation_id)
+    messages = messages_for_conversation(db, conversation_id, run.id)
     result = complete_sync_conversation_run(
         db=db,
         conversation_id=conversation_id,
@@ -256,7 +263,32 @@ def prepare_conversation_run_resume(
             code=APIErrorCode.RUN_INTERACTION_MISMATCH,
         )
     retrieval_service = RetrievalService(db)
-    if isinstance(request, (ConversationRunResumeRequest, ConversationRunSelectRequestV2)):
+    if isinstance(request, ConversationAttachmentSelectRequestV2):
+        if principal.is_guest or not isinstance(stored_interaction, PendingAttachmentSelection):
+            raise APIHTTPException(
+                status_code=403,
+                detail="Attachment selection is unavailable",
+                code=APIErrorCode.PERMISSION_DENIED,
+            )
+        allowed_ids = {option.attachment_id for option in stored_interaction.options}
+        if not set(request.attachment_ids).issubset(allowed_ids):
+            raise APIHTTPException(
+                status_code=409,
+                detail="Selected attachment is outside offered candidates",
+                code=APIErrorCode.RUN_INTERACTION_SELECTION_UNAVAILABLE,
+            )
+        from my_agents.document_workspace.service import validate_attachment_selection
+
+        if stored_interaction.access == "original":
+            validate_attachment_selection(
+                db,
+                conversation_id=conversation_id,
+                owner_user_id=principal.user_id,
+                attachment_ids=request.attachment_ids,
+                settings=get_settings(),
+            )
+        resume_value = {"kind": "select", "attachment_ids": request.attachment_ids}
+    elif isinstance(request, (ConversationRunResumeRequest, ConversationRunSelectRequestV2)):
         document_id = request.document_id
         if isinstance(stored_interaction, PendingDocumentSelectionV2):
             shortlist_ids = {option.document_id for option in stored_interaction.options}
@@ -320,7 +352,7 @@ def prepare_conversation_run_resume(
         "status": RunStatus.RUNNING.value,
         "interaction_id": request.interaction_id,
         "interaction_schema_version": request.schema_version,
-        "interaction_type": "document_selection",
+        "interaction_type": request.type,
     }
     append_run_event(
         db,
@@ -353,8 +385,12 @@ def resume_conversation_run(
     db: Annotated[Session, Depends(get_database_session)],
     graph_runner: Annotated[GraphRunner, Depends(get_graph_runner)],
     settings: Annotated[Settings, Depends(get_settings)],
+    document_workspace_provider: Annotated[
+        DocumentWorkspaceProvider | None, Depends(get_document_workspace_provider)
+    ],
 ) -> ConversationRunResult:
     """Resume one authorized document-selection checkpoint without storing a new prompt."""
+    db.info["document_workspace_provider"] = document_workspace_provider
     prepared = prepare_conversation_run_resume(
         conversation_id=conversation_id,
         run_id=run_id,
@@ -518,6 +554,27 @@ def get_run(
             )
         response = interrupted_run_response(run)
         interaction = response.interaction
+        if isinstance(interaction, PendingAttachmentSelection):
+            from my_agents.conversations.file_context import submitted_files
+            from my_agents.conversations.models import ConversationModel
+
+            conversation = db.get(ConversationModel, conversation_id)
+            current = {item.id: item for item in submitted_files(db, conversation)}
+            options = [
+                option.model_copy(
+                    update={
+                        "original_available": current[option.attachment_id].status == "available"
+                        and _as_utc(current[option.attachment_id].provider_expires_at)
+                        > datetime.now(UTC)
+                    }
+                )
+                for option in interaction.options
+                if option.attachment_id in current
+            ]
+            refreshed = interaction.model_copy(
+                update={"options": options, "option_count": len(options)}
+            )
+            return response.model_copy(update={"interaction": refreshed})
         service = RetrievalService(db)
         selection_context = run_knowledge_base_context(run)
         if isinstance(interaction, PendingDocumentSelection):

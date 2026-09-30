@@ -62,6 +62,21 @@ class Settings(BaseSettings):
         min_length=1,
         validation_alias=AliasChoices("MY_AGENTS_OPENAI_MODEL"),
     )
+    summarization_model: str = Field(
+        default="gpt-6-luna", validation_alias="MY_AGENTS_SUMMARIZATION_MODEL"
+    )
+    context_continuity_enabled: bool = Field(
+        default=True, validation_alias="MY_AGENTS_CONTEXT_CONTINUITY_ENABLED"
+    )
+    context_input_tokens: int = Field(
+        default=32000, ge=2048, validation_alias="MY_AGENTS_CONTEXT_INPUT_TOKENS"
+    )
+    context_recent_tokens: int = Field(
+        default=16000, ge=1024, validation_alias="MY_AGENTS_CONTEXT_RECENT_TOKENS"
+    )
+    summarization_timeout_seconds: float = Field(
+        default=30, gt=0, validation_alias="MY_AGENTS_SUMMARIZATION_TIMEOUT_SECONDS"
+    )
     openai_timeout_seconds: float = Field(
         default=30.0,
         gt=0,
@@ -124,7 +139,7 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("MY_AGENTS_DOCUMENT_WORKSPACE_IDLE_TTL_SECONDS"),
     )
     document_workspace_file_ttl_seconds: int = Field(
-        default=3600,
+        default=604800,
         ge=3600,
         le=2_592_000,
         validation_alias=AliasChoices("MY_AGENTS_DOCUMENT_WORKSPACE_FILE_TTL_SECONDS"),

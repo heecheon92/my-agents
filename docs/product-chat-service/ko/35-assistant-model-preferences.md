@@ -107,3 +107,7 @@ lint/typecheck/build와 unit 388개, 관련 browser test 17개 통과. 전체 br
 노출 목록 분리 검증: backend 747 passed / 13 skipped, lint/format 통과. Claude가 frontend unit
 390개와 관련 browser test 21개, typecheck/build 통과를 보고했습니다. 노출하지 않는 기존 설정과
 기본값 reset을 검증했으며 새 migration이나 강제 모델 변경은 없습니다.
+
+## 자동 파일 재참조와 접수
+
+대화 맥락 유지는 접수 시 일반 모델과 workspace 모델 선택을 고정합니다. 파일 접근을 결정할 때까지 실제 `assistant_model`은 미확인 상태일 수 있으며 `run_model_resolved`가 실행 모델을 알립니다. 원본을 다시 읽으면 별도 고정한 workspace 모델을, 메모로 논의를 이어가면 일반 모델을 사용합니다. [맥락 유지](./36-conversation-continuity.md)를 참고하세요.

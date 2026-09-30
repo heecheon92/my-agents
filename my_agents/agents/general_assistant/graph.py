@@ -48,13 +48,19 @@ from my_agents.knowledge.routing import AnswerMode, DocumentScope, RetrievalRout
 from my_agents.schemas import RouteDecision
 
 HANDLED_BY = "personal_assistant_graph"
-GRAPH_VERSION = "general-assistant-checkpoint-v2"
+GRAPH_VERSION = "general-assistant-checkpoint-v3"
 
 
 class AssistantState(TypedDict, total=False):
     """State passed through the personal assistant graph."""
 
     messages: Annotated[list[AnyMessage], add_messages]
+    attachment_selection_required: bool
+    attachment_selection_access: str
+    attachment_selection_options: list[dict[str, object]]
+    attachment_access_unavailable: bool
+    context_delivery: dict[str, object]
+    selected_attachment_ids: list[str]
     route: RouteDecision
     capability: AgentCapability
     reply: str
@@ -133,6 +139,12 @@ def decide_retrieval_source(
 ) -> AssistantState:
     """Decide whether this turn should enter private knowledge-base retrieval."""
     context = runtime.context or {}
+    if state.get("attachment_access_unavailable") or state.get("attachment_selection_required"):
+        return {
+            "retrieval_source_decision": RetrievalSourceDecision(
+                source="bypass", reason="Attachment originals unavailable or ambiguous"
+            )
+        }
     selection_context = context.get("knowledge_base_selection")
     if selection_context is None:
         raise RuntimeError(
@@ -322,7 +334,32 @@ def _compose_reply(
     runtime_context = runtime.context or {}
     reasoning_mode = runtime_context.get("reasoning_mode", "standard")
     reasoning_effort = runtime_context.get("reasoning_effort", "medium")
+    if state.get("attachment_access_unavailable") or state.get("attachment_selection_required"):
+        return {
+            "reply": (
+                "The original attachment is unavailable or the file reference is a"
+                "mbiguous. Retained discussion notes cannot verify exact contents."
+                " Upload the original again or explicitly attach the intended avai"
+                "lable file to continue exact analysis."
+            )
+        }
     workspace_runtime = runtime_context.get("document_workspace_runtime")
+    if (
+        workspace_runtime is None
+        and state.get("selected_attachment_ids")
+        and runtime_context.get("attachment_recall_runtime")
+    ):
+        updates = runtime_context["attachment_recall_runtime"].resolve(
+            state, runtime_context, state["selected_attachment_ids"]
+        )
+        if updates.get("attachment_access_unavailable"):
+            return {
+                "reply": (
+                    "The original attachment is no longer available. "
+                    "Exact verification requires uploading it again."
+                )
+            }
+        workspace_runtime = runtime_context.get("document_workspace_runtime")
     retrieved_context = (
         list(retrieved_context_override)
         if retrieved_context_override is not None
@@ -344,6 +381,11 @@ def _compose_reply(
         )
         return {
             "reply": result.reply,
+            **(
+                {"context_delivery": result.context_delivery}
+                if getattr(result, "context_delivery", None)
+                else {}
+            ),
             "document_artifacts": [
                 artifact.model_dump(mode="json") for artifact in result.artifacts
             ],
@@ -354,6 +396,12 @@ def _compose_reply(
                 else {}
             ),
         }
+    if state.get("attachment_selection_access") == "notes" and state.get("selected_attachment_ids"):
+        guidance += (
+            "\nUse retained discussion notes only for selected attachment IDs: "
+            + str(state["selected_attachment_ids"])
+            + ". No original file was reopened."
+        )
     assistant_model = runtime_context.get("assistant_model")
     provider = (
         get_response_provider(assistant_model) if assistant_model else get_response_provider()
@@ -375,6 +423,11 @@ def _compose_reply(
         )
         return {
             "reply": result.reply,
+            **(
+                {"context_delivery": result.context_delivery}
+                if getattr(result, "context_delivery", None)
+                else {}
+            ),
             **(
                 {"answer_synthesis_summary": result.reasoning_summary}
                 if result.reasoning_summary
@@ -451,6 +504,15 @@ def _build_graph(
     graph = StateGraph(AssistantState, context_schema=AssistantRuntimeContext)
     graph.add_node("classify_request", classify_request)
     if include_rag:
+        from my_agents.conversations.attachment_graph import (
+            request_attachments,
+            resolve_attachments,
+        )
+
+        graph.add_node("resolve_attachments", resolve_attachments)
+        if document_selection_hitl_enabled:
+            graph.add_node("request_attachments", request_attachments)
+    if include_rag:
         graph.add_node("decide_retrieval_source", decide_retrieval_source)
         graph.add_node("retrieve_rag_context", retrieve_rag_context)
         graph.add_node("skip_rag_context", skip_rag_context)
@@ -468,7 +530,23 @@ def _build_graph(
 
     graph.add_edge(START, "classify_request")
     if include_rag:
-        graph.add_edge("classify_request", "decide_retrieval_source")
+        graph.add_edge("classify_request", "resolve_attachments")
+        if document_selection_hitl_enabled:
+            graph.add_conditional_edges(
+                "resolve_attachments",
+                lambda state: (
+                    "request_attachments"
+                    if state.get("attachment_selection_required")
+                    else "decide_retrieval_source"
+                ),
+                {
+                    "request_attachments": "request_attachments",
+                    "decide_retrieval_source": "decide_retrieval_source",
+                },
+            )
+            graph.add_edge("request_attachments", "decide_retrieval_source")
+        else:
+            graph.add_edge("resolve_attachments", "decide_retrieval_source")
         graph.add_conditional_edges(
             "decide_retrieval_source",
             select_retrieval_source,

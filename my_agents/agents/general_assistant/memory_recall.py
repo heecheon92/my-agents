@@ -24,6 +24,7 @@ class AssistantRuntimeContext(TypedDict, total=False):
     rag_retrieval_tool_decider: object
     retrieval_source_decider: object
     knowledge_base_selection: KnowledgeBaseSelectionContext
+    attachment_recall_runtime: object
     document_workspace_runtime: object
     reasoning_mode: ReasoningMode
     reasoning_effort: ReasoningEffort

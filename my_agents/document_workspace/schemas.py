@@ -39,6 +39,10 @@ class DocumentWorkspaceCapabilityResponse(BaseModel):
     formats: list[DocumentFormatCapability]
     consent_required: Literal[True] = True
     retention: Literal["ephemeral"] = "ephemeral"
+    original_file_ttl_seconds: int = 604800
+    abandoned_upload_ttl_seconds: int = 86400
+    notes_retention: Literal["conversation"] = "conversation"
+    automatic_recall_supported: bool = False
 
 
 class ConversationAttachmentResponse(BaseModel):

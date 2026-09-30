@@ -65,6 +65,10 @@ def test_openapi_documents_error_and_discriminated_event_contracts() -> None:
     assert event_contract["discriminator"]["propertyName"] == "event_type"
     assert set(event_contract["discriminator"]["mapping"]) == {
         "run_started",
+        "context_compaction_started",
+        "context_compaction_completed",
+        "context_compaction_failed",
+        "run_model_resolved",
         "user_message_stored",
         "retrieval_completed",
         "full_document_read",

@@ -67,6 +67,11 @@ class FakeDocumentWorkspaceProvider:
         self.uploaded[file_id] = data
         return ProviderUploadedFile(id=file_id, bytes=len(data), filename=filename)
 
+    def delete_container_file(self, *, container_id: str, provider_file_id: str) -> None:
+        self.container_files = [
+            item for item in self.container_files if item.id != provider_file_id
+        ]
+
     def delete_file(self, provider_file_id: str) -> None:
         self.deleted_files.append(provider_file_id)
 

@@ -250,3 +250,7 @@ resolution도 authorization과 system-KB exclusion 규칙을 완화하지 않습
 
 Interaction layer 자체는 새 DB migration을 추가하지 않습니다. `schema_version`은 기존
 public interaction JSON에 저장합니다.
+
+## V2 첨부 파일 선택
+
+`attachment_selection`은 별도의 의미 기반 V2 interaction입니다. 해당 대화에 제출한 자신의 파일 ID, 파일명·유형·원본 가용성과 선택적 생성 시각·크기를 제공합니다. `access=notes`는 만료 후에도 남은 논의를 사용하고 `access=original`은 원본이 있어야 합니다. Resume는 `{schema_version:2, interaction_id, type:"attachment_selection", kind:"select", attachment_ids:[...]}`이며 서로 다른 ID 1–3개를 보냅니다. Backend가 제공한 ID와 소유권·접근을 다시 확인하며 같은 run/checkpoint를 사용합니다. 기존 문서 선택과 미지원 type fallback 계약은 유지합니다.

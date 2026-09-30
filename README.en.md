@@ -203,7 +203,7 @@ preferences and deployment defaults remain valid when not advertised.
 Application default efforts can be edited in `my_agents/model_defaults.py`; provider recommendations
 are seeds, not enforced policy. GPT-6.1 Sol and Astra resolve unsupported `none`/`minimal` to `low`.
 Ordinary chat, streaming, and replay use the saved preference; resume uses the admitted run's pinned
-model. The document workspace uses its separate model setting. Apply migration `20260930_0035`
+model. The document workspace uses its separate model setting. Apply migration `20260930_0036`
 before starting an existing database. See the [model preference contract](./docs/product-chat-service/en/35-assistant-model-preferences.md).
 
 Temporary document-workspace attachments also accept static `.jpg`, `.jpeg`, `.png`, `.webp`,
@@ -212,3 +212,18 @@ transfer, then sends image references as `input_image` alongside document `input
 Consent, guest exclusion, limits, expiry, and the separately configured workspace model apply.
 Image inputs are analysis-only; downloadable image outputs are not certified. See the
 [workspace contract](./docs/product-chat-service/en/25-openai-document-workspace.md#image-attachments).
+
+## Conversation continuity and file recall
+
+Conversation history now uses a shared token budget and source-linked summaries instead of a
+six-message cutoff. Compaction runs before answering when needed and appears as a visible activity.
+Guests receive text continuity; temporary workspace files and file recall remain registered-only.
+
+`MY_AGENTS_SUMMARIZATION_MODEL` seeds the summarization model (default `gpt-6-luna`); registered
+users can change it in Settings. Original files stay at OpenAI for seven days by default. Accepted
+attachments appear on the sent message and clear from the composer. Later exact questions reopen
+authorized originals automatically; retained conversation notes can recall discussion after expiry.
+File removal clears derived notes, while conversation removal also deletes its transcript. Provider
+cleanup is retried through a durable outbox. Apply migration `20260930_0036` before startup, and
+complete/cancel old waiting runs before deploying graph V3. See the
+[continuity contract](./docs/product-chat-service/en/36-conversation-continuity.md).

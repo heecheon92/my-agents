@@ -151,7 +151,7 @@ See [`docs/product-chat-service/en/19-langgraph-native-memory-migration.md`](../
 
 When document-selection HITL is enabled, `clarification_required` routes through `prepare_document_selection -> request_document_selection`. V2 resolves unique exact filenames automatically, otherwise exposes at most five ranked authorized metadata candidates. A `refine` answer supplies one private one-line filename clue and loops on the same run; two unresolved attempts unlock explicit broad browsing. Each attempt has a fresh UUID but preserves the original expiry and KB scope. Selection revalidates current authorization before normal retrieval. Already-waiting V1 checkpoints keep their legacy resume shape. Runtime DB sessions, provider clients, ORM models, raw refinement text, and document-workspace adapters are never checkpointed or persisted as transcript content.
 
-The comprehensive branch bumps the run compatibility marker to `general-assistant-checkpoint-v2`. Only compact document IDs, offsets, coverage, retrieval snapshots, and the internal next cursor may be checkpointed; raw extracted text must not be. Waiting runs created with an older graph version cannot resume after rollout and should be drained or cancelled before deployment; the existing version-mismatch path otherwise fails them safely.
+The comprehensive branch introduced checkpoint V2; conversation continuity now uses the compatibility marker `general-assistant-checkpoint-v3`. Only compact document IDs, offsets, coverage, retrieval snapshots, and the internal next cursor may be checkpointed; raw extracted text must not be. Waiting runs created with an older graph version cannot resume after rollout and should be drained or cancelled before deployment; the existing version-mismatch path otherwise fails them safely.
 
 The public waiting payload and its typed resume answer use the versioned, protocol-neutral contract in [`docs/product-chat-service/en/27-agent-frontend-interaction-contract.md`](../../../docs/product-chat-service/en/27-agent-frontend-interaction-contract.md). Add future user-input states through that semantic interaction boundary; graph nodes must not prescribe frontend components or layout.
 
@@ -226,3 +226,14 @@ routes validated image file IDs as `input_image` (`detail=high`), documents as `
 and keeps original bytes in expiring user_data files plus the network-disabled container.
 These inputs are for analysis; image output certification is not added. See the
 [image attachment contract](../../../docs/product-chat-service/en/25-openai-document-workspace.md#image-attachments).
+
+## Conversation continuity
+
+The conversation boundary supplies recent verbatim messages, a versioned prefix summary and
+permission-safe historical facts under shared text budgets. The graph no longer slices that input
+to six messages. `resolve_attachments` precedes KB routing; ambiguous registered-user file references
+use a run-scoped V2 `attachment_selection` interrupt. The runtime can reopen specific originals or
+use conversation notes; user model choices and the workspace model remain separate. Summarization
+uses `ChatOpenAI`, defaults to GPT-6 Luna, and has its own registered preference. Provider summaries
+and context delivery metadata remain separate from reply text and public reasoning summaries.
+Guest continuity is text-only. See [the contract](../../../docs/product-chat-service/en/36-conversation-continuity.md).

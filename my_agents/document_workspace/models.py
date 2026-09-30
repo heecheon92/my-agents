@@ -50,6 +50,10 @@ class ConversationAttachmentModel(Base):
     extension: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     category: Mapped[str] = mapped_column(String(40), nullable=False)
     byte_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    content_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    cleanup_scheduled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     provider: Mapped[str] = mapped_column(String(40), nullable=False, default="openai")
     provider_file_id: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     status: Mapped[str] = mapped_column(

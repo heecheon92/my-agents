@@ -65,6 +65,7 @@ class ResponseComposition:
 
     reply: str
     reasoning_summary: str | None = None
+    context_delivery: dict[str, object] | None = None
 
 
 class ResponseProvider(Protocol):
@@ -187,19 +188,20 @@ class OpenAIResponseProvider:
         if tools:
             model = model.bind_tools(tools)
 
+        provider_messages = _build_input_messages(
+            model_name=self._settings.openai_model,
+            messages=messages,
+            route=route,
+            guidance=guidance,
+            capability=capability,
+            retrieved_context=retrieved_context,
+            memory_context=memory_context,
+            source_conflicts=source_conflicts,
+            answer_mode=answer_mode,
+        )
         response = _stream_and_aggregate_response(
             model,
-            _build_input_messages(
-                model_name=self._settings.openai_model,
-                messages=messages,
-                route=route,
-                guidance=guidance,
-                capability=capability,
-                retrieved_context=retrieved_context,
-                memory_context=memory_context,
-                source_conflicts=source_conflicts,
-                answer_mode=answer_mode,
-            ),
+            provider_messages,
             reasoning=openai_reasoning_payload(
                 model=self._settings.openai_model,
                 mode=reasoning_mode,
@@ -212,6 +214,7 @@ class OpenAIResponseProvider:
                 debug_empty_response=debug_empty_response,
             ),
             reasoning_summary=provider_reasoning_summary(response),
+            context_delivery=provider_messages[-1].additional_kwargs.get("context_delivery"),
         )
 
 
@@ -249,7 +252,7 @@ def reset_response_provider_cache() -> None:
     get_response_provider.cache_clear()
 
 
-def _build_input_messages(
+def _render_input_messages(
     *,
     model_name: str,
     messages: Sequence[BaseMessage],
@@ -318,7 +321,10 @@ def _source_context_guidance(bundle: SourceContextBundle) -> str:
     return (
         f"Answer mode: {bundle.answer_mode}\n"
         f"Conversation context policy: using the latest "
-        f"{bundle.recent_message_limit} persisted Product DB message(s) for provider context.\n"
+        f"{len(bundle.recent_conversation)} selected Product DB message(s) under a token budget.\n"
+        "Current missing excerpts do not establish that earlier replies la"
+        "cked evidence. Historical grounding is unknown unless recorded; d"
+        "o not volunteer a retraction from absence alone.\n"
         f"Stored memory context: {format_memory_context(bundle)}\n"
         f"Authorized document context: {format_document_context(bundle)}\n"
         f"Material source conflicts: {format_conflict_context(bundle)}\n"
@@ -483,3 +489,59 @@ def _debug_dump_response(response: Any) -> str:
         except TypeError:
             return json.dumps(model_dump(), indent=2, default=str, ensure_ascii=False)
     return repr(response)
+
+
+def _build_input_messages(**kwargs: Any) -> list[BaseMessage]:
+    """Pack the rendered text boundary; never silently truncate the latest question."""
+    from my_agents.conversations.continuity import message_tokens
+    from my_agents.settings import get_settings
+
+    packed = dict(kwargs)
+    packed["messages"] = list(kwargs.get("messages", []))
+    packed["retrieved_context"] = list(kwargs.get("retrieved_context", []))
+    packed["memory_context"] = list(kwargs.get("memory_context", []))
+    omitted = False
+    budget = get_settings().context_input_tokens
+    while True:
+        rendered = _render_input_messages(**packed)
+        total = sum(map(message_tokens, rendered))
+        if total <= budget - 24:
+            break
+        history = packed["messages"]
+        droppable = [
+            index
+            for index, message in enumerate(history[:-1])
+            if not message.additional_kwargs.get("continuity")
+        ]
+        if droppable:
+            index = droppable[0]
+            del history[index]
+            if index < len(history) - 1 and isinstance(history[index], AIMessage):
+                del history[index]
+        elif packed["memory_context"]:
+            packed["memory_context"].pop()
+        elif packed["retrieved_context"]:
+            packed["retrieved_context"].pop()
+        elif len(history) > 1:
+            del history[0]
+        else:
+            raise ResponseProviderConfigurationError(
+                "Current request and mandatory context exceed the input budget"
+            )
+        omitted = True
+    manifest = {
+        "policy_version": "conversation-context-v1",
+        "estimated_text_input_tokens": total,
+        "message_ids": [message.id for message in packed["messages"] if message.id],
+        "retrieved_source_count": len(packed["retrieved_context"]),
+        "retrieved_document_ids": [
+            item["document_id"] for item in packed["retrieved_context"] if item.get("document_id")
+        ],
+        "memory_count": len(packed["memory_context"]),
+        "budget_truncated": omitted,
+        "historical_delivery": "recorded_text_boundary",
+    }
+    rendered[-1].additional_kwargs["context_delivery"] = manifest
+    if omitted:
+        rendered[-1].content = str(rendered[-1].content) + "\nEarlier context is incomplete."
+    return rendered

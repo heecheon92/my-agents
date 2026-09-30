@@ -30,6 +30,8 @@ from my_agents.conversations.schemas import (
     ArtifactCreatedEventPayload,
     AttachmentsReadyAgentEventResponse,
     AttachmentsReadyEventPayload,
+    ContextCompactionAgentEventResponse,
+    ContextCompactionEventPayload,
     ConversationClarificationRequest,
     DocumentWorkspaceStartedAgentEventResponse,
     DocumentWorkspaceStartedEventPayload,
@@ -49,6 +51,8 @@ from my_agents.conversations.schemas import (
     RunFailedEventPayload,
     RunInterruptedAgentEventResponse,
     RunInterruptedEventPayload,
+    RunModelResolvedAgentEventResponse,
+    RunModelResolvedEventPayload,
     RunResumedAgentEventResponse,
     RunResumedEventPayload,
     RunStartedAgentEventResponse,
@@ -301,6 +305,22 @@ def event_response(event: AgentEventModel) -> AgentEventResponse:
     raw_payload = json.loads(event.payload_json)
     common = {"id": event.id, "run_id": event.run_id, "sequence": event.sequence}
     match event_type:
+        case (
+            AgentEventType.CONTEXT_COMPACTION_STARTED
+            | AgentEventType.CONTEXT_COMPACTION_COMPLETED
+            | AgentEventType.CONTEXT_COMPACTION_FAILED
+        ):
+            return ContextCompactionAgentEventResponse(
+                **common,
+                event_type=event_type.value,
+                payload=_safe_event_payload(ContextCompactionEventPayload, raw_payload),
+            )
+        case AgentEventType.RUN_MODEL_RESOLVED:
+            return RunModelResolvedAgentEventResponse(
+                **common,
+                event_type=event_type.value,
+                payload=_safe_event_payload(RunModelResolvedEventPayload, raw_payload),
+            )
         case AgentEventType.RUN_STARTED:
             return RunStartedAgentEventResponse(
                 **common,
