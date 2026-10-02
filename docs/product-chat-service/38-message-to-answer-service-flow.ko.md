@@ -82,41 +82,33 @@ sequenceDiagram
     participant D as Product DB
     participant G as 그래프·context 런타임
     participant O as OpenAI
-    rect rgb(231, 242, 250)
-        Note over C,O: 접수 - 아직 답변이 없음
-        C->>A: POST /conversations/{id}/runs/stream
-        A->>D: 소유자, 사용 한도, 진행 중인 run, 출처 범위 확인
-        A->>A: 모델과 실제 적용할 reasoning 결정
-        A->>D: 사용자 메시지, run, 접수 event 저장
-        A-->>C: run_started + user_message_stored
+    Note over C,O: 접수 - 아직 답변이 없음
+    C->>A: POST /conversations/{id}/runs/stream
+    A->>D: 소유자, 사용 한도, 진행 중인 run, 출처 범위 확인
+    A->>A: 모델과 실제 적용할 reasoning 결정
+    A->>D: 사용자 메시지, run, 접수 event 저장
+    A-->>C: run_started + user_message_stored
+    Note over C,O: 준비 - context 구성은 3번 그림 참고
+    A->>G: Product DB에서 context 준비
+    opt 오래된 대화를 압축해야 할 때
+        G->>O: 제한된 요약 요청 (별도 모델)
+        O-->>G: 요약 또는 제한된 실패
+        G->>D: 유효한 요약과 activity metadata 저장
     end
-    rect rgb(242, 237, 251)
-        Note over C,O: 준비 - context 구성은 3번 그림 참고
-        A->>G: Product DB에서 context 준비
-        opt 오래된 대화를 압축해야 할 때
-            G->>O: 제한된 요약 요청 (별도 모델)
-            O-->>G: 요약 또는 제한된 실패
-            G->>D: 유효한 요약과 activity metadata 저장
-        end
-        A->>G: run_id로 그래프 실행
-        Note over G,D: 파일 확인, 근거 검색, 허용된 memory 회상
+    A->>G: run_id로 그래프 실행
+    Note over G,D: 파일 확인, 근거 검색, 허용된 memory 회상
+    Note over C,O: 답변 - 저장보다 글자가 먼저 보일 수 있음
+    G->>O: 조합한 system prompt, 질문, 선택된 context
+    loop 일반 제공자 스트리밍
+        O-->>G: 텍스트 / reasoning summary 조각
+        G-->>A: stream 항목
+        A-->>C: answer_delta / reasoning_summary_delta
     end
-    rect rgb(232, 246, 239)
-        Note over C,O: 답변 - 저장보다 글자가 먼저 보일 수 있음
-        G->>O: 조합한 system prompt, 질문, 선택된 context
-        loop 일반 제공자 스트리밍
-            O-->>G: 텍스트 / reasoning summary 조각
-            G-->>A: stream 항목
-            A-->>C: answer_delta / reasoning_summary_delta
-        end
-        G-->>A: 그래프 최종 결과
-    end
-    rect rgb(253, 244, 224)
-        Note over C,O: 완료 - 최종 알림 전에 답변을 영구 저장
-        A->>A: 최종 답변 구성과 근거 검사
-        A->>D: assistant 메시지, 근거, completed 상태 저장
-        A-->>C: answer_composed + run_completed
-    end
+    G-->>A: 그래프 최종 결과
+    Note over C,O: 완료 - 최종 알림 전에 답변을 영구 저장
+    A->>A: 최종 답변 구성과 근거 검사
+    A->>D: assistant 메시지, 근거, completed 상태 저장
+    A-->>C: answer_composed + run_completed
 ```
 
 [렌더링된 SVG 보기](./assets/message-flow/ko/diagram-2.svg)
@@ -157,12 +149,6 @@ block-beta
     Packed["최종 텍스트 예산: 추정 32k 토큰<br/>선택적 context부터 줄이고 현재 질문은 유지"]:3
     space Send<["전송"]>(down) space
     Model["OpenAI 답변 입력<br/>이미지·파일 입력은 별도 한도"]:3
-    classDef mandatory fill:#dceef8,stroke:#39789b
-    classDef derived fill:#eee8fa,stroke:#8060a6
-    classDef evidence fill:#e0f1e8,stroke:#40805b
-    class Mandatory mandatory
-    class Summary,Notes derived
-    class Evidence,Memory evidence
 ```
 
 [렌더링된 SVG 보기](./assets/message-flow/ko/diagram-3.svg)
@@ -214,10 +200,6 @@ flowchart TB
     Check -->|"진행 불가"| Safe["추가 질문 또는<br/>근거 부족 안내"]
     Ready --> Recall["관리되는 메모리 회상"]
     Recall --> Answer["일반 / 조사 /<br/>전체 문서 답변 node"]
-    classDef decision fill:#fff0cd,stroke:#ad8939
-    classDef wait fill:#eee8fa,stroke:#8060a6
-    class Gate,Method,Check decision
-    class Wait wait
 ```
 
 [렌더링된 SVG 보기](./assets/message-flow/ko/diagram-4.svg)
@@ -282,10 +264,6 @@ block-beta
     Keep --> Pack
     Alternatives --> Pack
     Pack --> Result
-    classDef scoring fill:#e0f1e8,stroke:#40805b
-    classDef fallback fill:#fff0cd,stroke:#ad8939
-    class Scoring scoring
-    class Keep fallback
 ```
 
 [렌더링된 SVG 보기](./assets/message-flow/ko/diagram-5.svg)
@@ -653,16 +631,21 @@ SVG는 저장소 root에서 Mermaid CLI 11.16.0 이상으로 다시 만듭니다
 label을 한국어로 옮겼으므로 SVG를 따로 둡니다. 코드 식별자, endpoint, event 이름, 저장되는 상태 값은 두 문서
 모두 영어로 유지합니다.
 
+Mermaid 원본에는 배경색이나 글자색을 고정하지 않습니다. 강조는 레이블, 도형, 단계별 note로
+표현하여 뷰어가 밝은 테마와 어두운 테마에 맞는 색상을 적용할 수 있게 합니다. SVG는 독립적으로
+읽기 쉽도록 neutral 테마와 불투명한 흰 배경으로 내보냅니다. 시각적 변경 후에는 9개 그림을
+밝은 테마와 어두운 테마 모두에서 확인합니다.
+
 ```bash
 # 영어
 mmdc -i docs/product-chat-service/38-message-to-answer-service-flow.md \
   -o docs/product-chat-service/assets/message-flow/diagram.svg \
-  -e svg -b white -w 1600
+  -e svg -t neutral -b white
 
 # 한국어
 mmdc -i docs/product-chat-service/38-message-to-answer-service-flow.ko.md \
   -o docs/product-chat-service/assets/message-flow/ko/diagram.svg \
-  -e svg -b white -w 1600
+  -e svg -t neutral -b white
 ```
 
 접수 순서, 그래프 분기, context channel, 모델의 역할, 스트리밍 보장, 재개 동작, 완료 저장 방식이 바뀌면 이 문서와

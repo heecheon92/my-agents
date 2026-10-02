@@ -85,41 +85,33 @@ sequenceDiagram
     participant D as Product DB
     participant G as Graph and context runtime
     participant O as OpenAI
-    rect rgb(231, 242, 250)
-        Note over C,O: ADMISSION - no answer exists yet
-        C->>A: POST /conversations/{id}/runs/stream
-        A->>D: Check owner, quotas, active run and source scope
-        A->>A: Resolve model and effective reasoning
-        A->>D: Commit user message, run and admission events
-        A-->>C: run_started + user_message_stored
+    Note over C,O: ADMISSION - no answer exists yet
+    C->>A: POST /conversations/{id}/runs/stream
+    A->>D: Check owner, quotas, active run and source scope
+    A->>A: Resolve model and effective reasoning
+    A->>D: Commit user message, run and admission events
+    A-->>C: run_started + user_message_stored
+    Note over C,O: PREPARATION - diagram 3 shows the context channels
+    A->>G: Prepare context from Product DB
+    opt Older history needs compaction
+        G->>O: Bounded summary request, separate model
+        O-->>G: Summary or bounded failure
+        G->>D: Store valid summary and activity metadata
     end
-    rect rgb(242, 237, 251)
-        Note over C,O: PREPARATION - diagram 3 shows the context channels
-        A->>G: Prepare context from Product DB
-        opt Older history needs compaction
-            G->>O: Bounded summary request, separate model
-            O-->>G: Summary or bounded failure
-            G->>D: Store valid summary and activity metadata
-        end
-        A->>G: Execute graph under run_id
-        Note over G,D: Resolve files, retrieve evidence, recall eligible memory
+    A->>G: Execute graph under run_id
+    Note over G,D: Resolve files, retrieve evidence, recall eligible memory
+    Note over C,O: ANSWER - visible text can precede persistence
+    G->>O: Packed system prompt, question and selected context
+    loop Ordinary provider streaming
+        O-->>G: Text / reasoning-summary chunk
+        G-->>A: Stream item
+        A-->>C: answer_delta / reasoning_summary_delta
     end
-    rect rgb(232, 246, 239)
-        Note over C,O: ANSWER - visible text can precede persistence
-        G->>O: Packed system prompt, question and selected context
-        loop Ordinary provider streaming
-            O-->>G: Text / reasoning-summary chunk
-            G-->>A: Stream item
-            A-->>C: answer_delta / reasoning_summary_delta
-        end
-        G-->>A: Final graph result
-    end
-    rect rgb(253, 244, 224)
-        Note over C,O: COMPLETION - durable answer before terminal notification
-        A->>A: Final composition and grounding checks
-        A->>D: Commit assistant message, evidence and completed status
-        A-->>C: answer_composed + run_completed
-    end
+    G-->>A: Final graph result
+    Note over C,O: COMPLETION - durable answer before terminal notification
+    A->>A: Final composition and grounding checks
+    A->>D: Commit assistant message, evidence and completed status
+    A-->>C: answer_composed + run_completed
 ```
 
 [Rendered SVG](./assets/message-flow/diagram-2.svg)
@@ -167,12 +159,6 @@ block-beta
     Packed["Final text budget: 32k estimated tokens<br/>Reduce optional context; preserve the current question"]:3
     space Send<["Send"]>(down) space
     Model["OpenAI answer input<br/>Typed image / file inputs have separate limits"]:3
-    classDef mandatory fill:#dceef8,stroke:#39789b
-    classDef derived fill:#eee8fa,stroke:#8060a6
-    classDef evidence fill:#e0f1e8,stroke:#40805b
-    class Mandatory mandatory
-    class Summary,Notes derived
-    class Evidence,Memory evidence
 ```
 
 [Rendered SVG](./assets/message-flow/diagram-3.svg)
@@ -226,10 +212,6 @@ flowchart TB
     Check -->|"Cannot continue"| Safe["Clarification or<br/>insufficient-evidence reply"]
     Ready --> Recall["Governed memory recall"]
     Recall --> Answer["General / research /<br/>full-document response node"]
-    classDef decision fill:#fff0cd,stroke:#ad8939
-    classDef wait fill:#eee8fa,stroke:#8060a6
-    class Gate,Method,Check decision
-    class Wait wait
 ```
 
 [Rendered SVG](./assets/message-flow/diagram-4.svg)
@@ -300,10 +282,6 @@ block-beta
     Keep --> Pack
     Alternatives --> Pack
     Pack --> Result
-    classDef scoring fill:#e0f1e8,stroke:#40805b
-    classDef fallback fill:#fff0cd,stroke:#ad8939
-    class Scoring scoring
-    class Keep fallback
 ```
 
 [Rendered SVG](./assets/message-flow/diagram-5.svg)
@@ -682,16 +660,21 @@ documents describe the same diagrams, but the Korean document uses Korean labels
 its own SVG set. Code identifiers, endpoints, event names, and stored states stay in English in
 both versions.
 
+Keep Mermaid source theme-neutral: do not add fixed background fills or text colors.
+Use labels, shapes, and phase notes for emphasis so the viewer can choose matching light/dark
+colors. SVG exports use the neutral theme on an opaque white background for standalone readability.
+Check all nine diagrams in both light and dark themes after visual changes.
+
 ```bash
 # English
 mmdc -i docs/product-chat-service/38-message-to-answer-service-flow.md \
   -o docs/product-chat-service/assets/message-flow/diagram.svg \
-  -e svg -b white -w 1600
+  -e svg -t neutral -b white
 
 # Korean
 mmdc -i docs/product-chat-service/38-message-to-answer-service-flow.ko.md \
   -o docs/product-chat-service/assets/message-flow/ko/diagram.svg \
-  -e svg -b white -w 1600
+  -e svg -t neutral -b white
 ```
 
 Update this walkthrough whenever admission order, graph branches, context channels, model roles,
