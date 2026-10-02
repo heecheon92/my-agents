@@ -10,7 +10,7 @@
 - Conversation run은 `general_assistant` graph의 `retrieve_rag_context` node를 통해 RAG Agent runtime에 진입하고, RAG Agent가 내부적으로 얇은 ContextForge LangGraph retrieval wrapper를 호출합니다.
 - 여러 역할 구조는 독립 hosted agent가 아니라 테스트 가능한 Python 클래스로 구현되어 있습니다.
 - 문서/지식베이스 권한의 hard boundary는 기존 `RetrievalService`와 source-selection helper 안에 유지합니다.
-- 기본 동작은 오프라인 테스트 가능한 deterministic 방식입니다. Cross-encoder reranking은 `MY_AGENTS_RERANKER_MODE=cross_encoder`로 켜는 optional second-stage seam입니다.
+- 권한 있는 발췌의 Jev rubric 재순위를 기본값으로 사용합니다. Deterministic offline mode와 cross-encoder 재순위도 대안으로 유지합니다.
 - RAG 품질이 중요한 경로이므로 token 절약보다 high-recall 컨텍스트를 우선하되, 후보/context budget은 명시합니다.
 - `clarification_required` route에서는 정적 영어 답변을 만들지 않고 API layer가 language-neutral `clarification` payload를 반환해 사람이 문서 범위를 지정하도록 합니다.
 
@@ -44,7 +44,7 @@ flowchart TD
 | `candidates.py` | authorized vector/lexical chunk와 structured entity retrieval 후보 수집 |
 | `debug.py` | opt-in Rich print 역할 handoff trace |
 | `fusion.py` | `chunk_id` 기준 RRF 후보 fusion 및 source evidence 보존 |
-| `reranking.py` | deterministic reranker, optional cross-encoder reranker, settings 기반 factory |
+| `reranking.py` | Jev rubric reranker, deterministic/cross-encoder 대안, settings 기반 factory |
 | `packing.py` | 명시적 budget 기반 high-recall context packing |
 | `observability.py` | Citation Auditor용 redacted evidence payload |
 | `service.py` | `ContextForgeService.retrieve(...)` 메인 orchestration boundary |
@@ -98,7 +98,7 @@ Structured entity는 document, chunk, extraction run, page, offset, confidence, 
 
 ## Cross-encoder reranking
 
-기본 `MY_AGENTS_RERANKER_MODE=deterministic`은 fused score order를 안정적으로 유지하므로 offline test와 credential-free smoke check가 깨지지 않습니다. RAG 품질이 더 중요한 runtime에서는 optional `sentence-transformers` package를 설치한 뒤 다음처럼 켤 수 있습니다.
+`MY_AGENTS_RERANKER_MODE=deterministic`은 fused score order를 유지합니다. 기본 Jev 대신 기존 cross-encoder 경로를 선택하면 `sentence-transformers`를 lazy load합니다.
 
 ```bash
 MY_AGENTS_RERANKER_MODE=cross_encoder
@@ -118,7 +118,7 @@ Local retrieval이 너무 느려 어떤 단계가 병목인지 보고 싶으면 
 
 ## 보안 경계
 
-ContextForge는 RAG Agent 뒤의 delegated engine이어도 권한 판단을 prompt에 맡기지 않습니다. 후보 생성은 기존 resolved `KnowledgeBaseSelectionContext`와 low-level retrieval SQL filter에서 시작합니다. LangGraph wrapper는 service call과 sufficiency state를 오케스트레이션할 뿐 source authorization을 수행하거나 storage를 직접 query하거나 hidden scratchpad를 노출하지 않습니다. Deterministic/cross-encoder reranking, packing, RAG Agent trace state, graph input, citation, event는 승인된 후보만 받습니다.
+ContextForge는 RAG Agent 뒤의 delegated engine이어도 권한 판단을 prompt에 맡기지 않습니다. 후보 생성은 기존 resolved `KnowledgeBaseSelectionContext`와 low-level retrieval SQL filter에서 시작합니다. LangGraph wrapper는 service call과 sufficiency state를 오케스트레이션할 뿐 source authorization을 수행하거나 storage를 직접 query하거나 hidden scratchpad를 노출하지 않습니다. Jev/deterministic/cross-encoder reranking, packing, RAG Agent trace state, graph input, citation, event는 승인된 후보만 받습니다.
 모호한 문서 참조가 여러 승인 문서에 걸릴 때는 무리하게 전체 문서를 검색하지 않고, 정적 assistant 문장 없이 `message_key`/`input_slot` 기반 clarification contract로 멈춥니다.
 
 ## RetrievalGraph / tool seam
@@ -152,4 +152,10 @@ uv run pytest -q tests/test_permission_aware_rag.py tests/test_retrieval_routing
 
 ## Jev 결정 설정
 
-Source 선택, focused/comprehensive 검색 선택, ContextForge intent 분류는 기본적으로 OpenRouter의 `typesafe/jev-1.13`을 사용합니다. 로컬에 `OPENROUTER_API_KEY`를 설정하세요. `MY_AGENTS_DECISION_PROVIDER=deterministic`은 로컬 규칙을, `openai`는 기존 source/tool 모델과 로컬 ContextForge intent를 사용합니다. `MY_AGENTS_RESPONSE_MODE=deterministic`에서는 항상 외부 결정 호출을 끕니다. 키 누락, 잘못된 응답, provider 오류는 로컬 규칙으로 fallback합니다. 재시도 없이 기본 10초 timeout(`MY_AGENTS_JEV_TIMEOUT_SECONDS`)을 사용합니다. 길이를 제한한 최근 대화와 source 선택의 개수/모드만 전송하며 credential과 provider 응답은 checkpoint에 저장하지 않습니다. 답변과 metadata 생성은 OpenAI를 유지합니다. Confidence는 권한 증명이 아니며 검증되지 않은 임계값은 적용하지 않습니다. 관련 테스트: `tests/test_jev_decisions.py`.
+Source 선택, focused/comprehensive 검색 선택, ContextForge intent 분류는 기본적으로 OpenRouter의 `typesafe/jev-1.13`을 사용합니다. 로컬에 `OPENROUTER_API_KEY`를 설정하세요. `MY_AGENTS_DECISION_PROVIDER=deterministic`은 로컬 규칙을, `openai`는 기존 source/tool 모델과 로컬 ContextForge intent를 사용합니다. `MY_AGENTS_RESPONSE_MODE=deterministic`에서는 항상 외부 결정 호출을 끕니다. 키 누락, 잘못된 응답, provider 오류는 로컬 규칙으로 fallback합니다. 재시도 없이 기본 10초 timeout(`MY_AGENTS_JEV_TIMEOUT_SECONDS`)을 사용합니다. Routing 결정에는 길이를 제한한 최근 대화와 source 선택의 개수/모드만 전송하며 credential과 provider 응답은 checkpoint에 저장하지 않습니다. 답변과 metadata 생성은 OpenAI를 유지합니다. Confidence는 권한 증명이 아니며 검증되지 않은 임계값은 적용하지 않습니다. 관련 테스트: `tests/test_jev_decisions.py`.
+
+ContextForge 재순위는 별도로 `MY_AGENTS_RERANKER_MODE=jev`를 기본값으로 사용합니다. 같은
+Decisions API에 질문과 길이를 제한한 권한 있는 발췌, 임시 후보 ID만 보냅니다. Summary, file
+note, memory channel은 보내지 않습니다. Routing provider 선택은 이 mode를 바꾸지 않습니다.
+어느 batch든 실패하면 전체 fused shortlist를 유지하며 offline response mode는 Jev 호출을
+끕니다. [재순위 계약](../../../docs/product-chat-service/ko/37-jev-evidence-reranking.md)을 참고하세요.

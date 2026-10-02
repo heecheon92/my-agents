@@ -21,7 +21,7 @@ DeploymentEnvironment = Literal["local", "preview", "production"]
 AuthEmailMode = Literal["local", "smtp", "resend_http"]
 EmbeddingMode = Literal["deterministic", "openai"]
 DoclingAccelerator = Literal["auto", "cpu", "cuda", "mps", "xpu"]
-RerankerMode = Literal["deterministic", "cross_encoder"]
+RerankerMode = Literal["deterministic", "jev", "cross_encoder"]
 DocumentMetadataEnrichmentMode = Literal["auto", "deterministic", "openai"]
 IngestionExecutionMode = Literal["in_process_thread", "external_worker"]
 
@@ -166,7 +166,7 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("MY_AGENTS_EMBEDDING_BATCH_SIZE"),
     )
     reranker_mode: RerankerMode = Field(
-        default="deterministic",
+        default="jev",
         validation_alias=AliasChoices("MY_AGENTS_RERANKER_MODE"),
     )
     reranker_top_k: int = Field(
@@ -174,6 +174,21 @@ class Settings(BaseSettings):
         ge=1,
         le=200,
         validation_alias=AliasChoices("MY_AGENTS_RERANKER_TOP_K"),
+    )
+    jev_reranker_batch_size: int = Field(
+        default=8, ge=1, le=40, validation_alias="MY_AGENTS_JEV_RERANKER_BATCH_SIZE"
+    )
+    jev_reranker_max_input_bytes: int = Field(
+        default=24000,
+        ge=4096,
+        le=24000,
+        validation_alias="MY_AGENTS_JEV_RERANKER_MAX_INPUT_BYTES",
+    )
+    jev_reranker_max_excerpt_bytes: int = Field(
+        default=3000,
+        ge=256,
+        le=8000,
+        validation_alias="MY_AGENTS_JEV_RERANKER_MAX_EXCERPT_BYTES",
     )
     cross_encoder_model: str = Field(
         default="BAAI/bge-reranker-v2-m3",

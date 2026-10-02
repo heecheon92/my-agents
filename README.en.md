@@ -91,7 +91,7 @@ Production runs one assistant orchestration flow with a retrieval subworkflow. T
 - Invite-only group membership and a personal-to-group sharing request and approval flow
 - Personal, group, and administrator-provided knowledge bases with document-level permissions
 - PDF, Markdown, plain text, `.xlsx`, `.pptx`, and `.docx` upload and ingestion (PyMuPDF first, with pypdf, Docling, and Tesseract fallbacks)
-- Hybrid retrieval that merges pgvector and BM25 with RRF, plus optional cross-encoder reranking
+- Hybrid retrieval that merges pgvector and BM25 with RRF, with default Jev rubric reranking and an optional cross-encoder alternative
 - Full-document review with complete/partial coverage disclosure and range-backed citations
 - Server-owned conversation/run history, SSE streaming, answer-supporting citations, and redacted agent events
 - User-enabled experimental long-term memory
@@ -104,7 +104,7 @@ Production runs one assistant orchestration flow with a retrieval subworkflow. T
 | API / application | Python 3.14, FastAPI, Pydantic |
 | Agent / model | LangGraph, `langchain-openai`, `ChatOpenAI` |
 | Persistence | SQLAlchemy, Alembic, PostgreSQL/Neon, pgvector |
-| Retrieval | Vector search, BM25Okapi, RRF, optional BAAI cross-encoder |
+| Retrieval | Vector search, BM25Okapi, RRF, Jev, optional BAAI cross-encoder |
 | Document processing | PyMuPDF, pypdf, Docling, Tesseract, openpyxl, python-pptx |
 | Streaming / observability | SSE, Prometheus metrics, redacted run events |
 | Quality / delivery | pytest, Ruff, uv, Docker, Render |
@@ -227,3 +227,14 @@ File removal clears derived notes, while conversation removal also deletes its t
 cleanup is retried through a durable outbox. Apply migration `20260930_0036` before startup, and
 complete/cancel old waiting runs before deploying graph V3. See the
 [continuity contract](./docs/product-chat-service/en/36-conversation-continuity.md).
+
+## Evidence reranking
+
+ContextForge defaults to `MY_AGENTS_RERANKER_MODE=jev`, independently of the routing
+decision provider. Set `OPENROUTER_API_KEY` locally: Jev receives the query and bounded
+authorized document excerpts, then reorders the fused shortlist before context packing.
+Missing credentials or any failed batch preserve the entire original shortlist.
+`deterministic` and `cross_encoder` remain selectable alternatives;
+`MY_AGENTS_RESPONSE_MODE=deterministic` disables the default Jev path for offline tests.
+Existing explicit reranker settings keep their selected mode. No database migration is needed.
+See the [reranking contract](./docs/product-chat-service/en/37-jev-evidence-reranking.md).

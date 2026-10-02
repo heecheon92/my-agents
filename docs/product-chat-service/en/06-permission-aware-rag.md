@@ -312,3 +312,8 @@ was consulted. Legacy runs return `consulted_sources: null` and retain their his
 - 2026-05-21: Added deterministic retrieval routing, answer modes, clarification route, and response/event metadata.
 - 2026-05-17: Updated limitations after adding structured run events in the next slice.
 - 2026-05-17: Created after adding thin permission-aware retrieval, graph expansion, and citations.
+
+ContextForge now defaults to Jev rubric reranking over bounded authorized excerpts; deterministic
+and cross-encoder modes remain alternatives. This separate scoring path sends the query and
+excerpts after authorization, never conversation-summary, file-note, or memory channels. See the
+[reranking contract](./37-jev-evidence-reranking.md) for budgets, fallback, and live-evaluation gaps.

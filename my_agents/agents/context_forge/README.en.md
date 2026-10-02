@@ -10,7 +10,7 @@
 - Conversation runs enter the RAG Agent runtime through the `retrieve_rag_context` node in the `general_assistant` graph; the RAG Agent then calls the thin ContextForge LangGraph retrieval wrapper internally.
 - Multi-role structure implemented as testable Python classes, not as separate hosted agents.
 - Keeps hard document and knowledge-base authorization inside `RetrievalService` and existing source-selection helpers.
-- Uses deterministic offline behavior by default; cross-encoder reranking is an optional second-stage seam enabled with `MY_AGENTS_RERANKER_MODE=cross_encoder`.
+- Defaults to Jev rubric reranking over authorized excerpts; deterministic offline mode and cross-encoder reranking remain alternatives.
 - Favors high-recall context for critical RAG quality, while keeping explicit candidate/context budgets.
 - For `clarification_required`, the API layer returns a language-neutral `clarification` payload instead of static English prose so a human can choose the document scope.
 
@@ -44,7 +44,7 @@ flowchart TD
 | `candidates.py` | Candidate Scouts for authorized vector/lexical chunks and structured-entity retrieval |
 | `debug.py` | Opt-in Rich print trace for role handoffs |
 | `fusion.py` | RRF candidate fusion by `chunk_id` and source evidence preservation |
-| `reranking.py` | Deterministic reranker, optional cross-encoder reranker, and settings-based factory |
+| `reranking.py` | Jev rubric reranker, deterministic/cross-encoder alternatives, and settings-based factory |
 | `packing.py` | Context Curator high-recall packing under explicit budgets |
 | `observability.py` | Citation Auditor redacted evidence payloads |
 | `service.py` | Main `ContextForgeService.retrieve(...)` orchestration boundary |
@@ -101,7 +101,7 @@ Structured entities preserve document, chunk, extraction-run, page, offset, conf
 
 ## Cross-encoder reranking
 
-The default `MY_AGENTS_RERANKER_MODE=deterministic` keeps fused-score ordering stable so offline tests and credential-free smoke checks remain cheap. In runtimes where retrieval precision matters more, install the optional `sentence-transformers` package and enable:
+Use `MY_AGENTS_RERANKER_MODE=deterministic` for fused-score ordering. As an alternative to default Jev ranking, the existing cross-encoder path loads `sentence-transformers` lazily:
 
 ```bash
 MY_AGENTS_RERANKER_MODE=cross_encoder
@@ -121,7 +121,7 @@ Enable `MY_AGENTS_DEBUG_RETRIEVAL_TIMING_LOGGING=true` when local retrieval is t
 
 ## Security boundary
 
-Even as the delegated engine behind the RAG Agent, ContextForge must never make authorization prompt-dependent. Candidate generation starts from the existing resolved `KnowledgeBaseSelectionContext` and low-level retrieval SQL filters. The LangGraph wrapper orchestrates service calls and sufficiency state; it does not authorize sources, query storage directly, or expose hidden scratchpads. Deterministic/cross-encoder reranking, packing, RAG Agent trace state, graph input, citations, and events only receive authorized candidates.
+Even as the delegated engine behind the RAG Agent, ContextForge must never make authorization prompt-dependent. Candidate generation starts from the existing resolved `KnowledgeBaseSelectionContext` and low-level retrieval SQL filters. The LangGraph wrapper orchestrates service calls and sufficiency state; it does not authorize sources, query storage directly, or expose hidden scratchpads. Jev/deterministic/cross-encoder reranking, packing, RAG Agent trace state, graph input, citations, and events only receive authorized candidates.
 When an ambiguous document reference spans multiple authorized documents, the run stops with a `message_key`/`input_slot` clarification contract instead of broadly searching every accessible document or generating backend-authored English text.
 
 ## RetrievalGraph / tool seam
@@ -156,4 +156,10 @@ When this package changes, also run the full offline suite plus Ruff checks befo
 
 ## Jev decision configuration
 
-Source selection, focused/comprehensive retrieval selection, and ContextForge intent use `typesafe/jev-1.13` through OpenRouter by default. Set `OPENROUTER_API_KEY` locally. `MY_AGENTS_DECISION_PROVIDER=deterministic` uses local rules; `openai` restores the previous source/tool models and local ContextForge intent. `MY_AGENTS_RESPONSE_MODE=deterministic` always disables provider decisions. Missing credentials, invalid output, and provider errors fall back to local rules. Requests use a 10-second timeout without retries (`MY_AGENTS_JEV_TIMEOUT_SECONDS`). Only bounded recent conversation text and source-selection counts/mode are sent; credentials and responses are not checkpointed. Answer generation and metadata enrichment remain OpenAI-backed. Confidence is not an authorization signal; no uncalibrated confidence threshold is imposed. See `tests/test_jev_decisions.py`.
+Source selection, focused/comprehensive retrieval selection, and ContextForge intent use `typesafe/jev-1.13` through OpenRouter by default. Set `OPENROUTER_API_KEY` locally. `MY_AGENTS_DECISION_PROVIDER=deterministic` uses local rules; `openai` restores the previous source/tool models and local ContextForge intent. `MY_AGENTS_RESPONSE_MODE=deterministic` always disables provider decisions. Missing credentials, invalid output, and provider errors fall back to local rules. Requests use a 10-second timeout without retries (`MY_AGENTS_JEV_TIMEOUT_SECONDS`). Routing decisions send only bounded recent conversation text and source-selection counts/mode; credentials and responses are not checkpointed. Answer generation and metadata enrichment remain OpenAI-backed. Confidence is not an authorization signal; no uncalibrated confidence threshold is imposed. See `tests/test_jev_decisions.py`.
+
+ContextForge reranking separately defaults to `MY_AGENTS_RERANKER_MODE=jev`. It sends only
+the query and bounded authorized excerpts to the same Decisions API, with synthetic candidate IDs.
+It never sends summary, file-note, or memory channels. Routing-provider selection does not change
+this mode. Any failed batch preserves the entire fused shortlist; offline response mode suppresses
+Jev calls. See the [reranking contract](../../../docs/product-chat-service/en/37-jev-evidence-reranking.md).

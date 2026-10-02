@@ -31,8 +31,12 @@ The graph currently has one production assistant/router path. Route labels and c
 
 - No frontend files, UI framework setup, or browser app scaffolding in this repo.
 - OpenAI remains the generative provider. The approved narrow exception is OpenRouter
-  Jev for source selection, RAG retrieval-method selection, and ContextForge intent
-  classification through `my_agents/decisions.py`; no other provider scope is approved.
+  Jev for source selection, RAG retrieval-method selection, ContextForge intent
+  classification, and bounded authorized-excerpt reranking through `my_agents/decisions.py`;
+  no other provider scope is approved. Jev is the default reranking strategy; deterministic
+  response mode suppresses its network calls, and failures preserve the entire fused shortlist.
+  Reranking sends only the query, synthetic candidate IDs, and bounded authorized excerpts;
+  do not add conversation summaries, file notes, memory, or provider credentials to that state.
 - Use `langchain-openai` / `ChatOpenAI` for ordinary OpenAI model access. The one
   approved exception is `my_agents/document_workspace/provider.py`, whose narrow
   OpenAI SDK adapter is required for Files, Containers, Hosted Shell, and Skills

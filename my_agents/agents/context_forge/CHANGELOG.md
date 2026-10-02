@@ -1,5 +1,11 @@
 # ContextForge changelog
 
+## 2026-10-02 — Default to Jev evidence reranking
+
+- **Why:** Add rubric-based relevance judgments as an alternative to local query/document cross-encoder scoring.
+- **Behavior / contract impact:** Default `jev` scores bounded authorized excerpts through the existing Decisions boundary, using fixed criteria and stable ties. Routing-provider selection is independent. Deterministic response mode remains offline; explicit deterministic/cross-encoder settings retain their behavior. Any invalid, unavailable, or late batch discards all partial scores and preserves the original fused shortlist. Original retrieval scores, authorization, context packing, and citations remain unchanged. Evidence/timing distinguish Jev from whole-pass fallback. No dependencies, migrations, or frontend schemas added.
+- **Verification evidence:** `tests/test_jev_reranking.py` covers mocked HTTP contracts, bounds, privacy, identity/order, shared deadlines, no retries, whole-pass failure, and authorized top-k handoff. Real-provider quality/latency/cost remain unverified. See the [current contract](../../../docs/product-chat-service/en/37-jev-evidence-reranking.md).
+
 ## 2026-07-24 — Make hybrid retrieval with RRF the default
 
 - **Why:** The previous first stage blended lexical overlap into semantic scores and fused candidates by strongest raw score, so exact-term matches outside vector top-k could not contribute and score scales from different retrieval sources were not rank-normalized.

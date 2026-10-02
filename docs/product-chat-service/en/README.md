@@ -42,3 +42,4 @@ They live outside `docs/learning/` because `docs/learning/` is reserved for the 
 - [Performance optimization records](../../performance/README.md)
 
 - [35. Assistant model preferences](./35-assistant-model-preferences.md)
+- [37. Jev evidence reranking](./37-jev-evidence-reranking.md)

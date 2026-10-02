@@ -200,7 +200,7 @@ Tool binding currently does not change the API response schema. Add citations an
 
 ## Jev decision configuration
 
-Source selection, focused/comprehensive retrieval selection, and ContextForge intent use `typesafe/jev-1.13` through OpenRouter by default. Set `OPENROUTER_API_KEY` locally. `MY_AGENTS_DECISION_PROVIDER=deterministic` uses local rules; `openai` restores the previous source/tool models and local ContextForge intent. `MY_AGENTS_RESPONSE_MODE=deterministic` always disables provider decisions. Missing credentials, invalid output, and provider errors fall back to local rules. Requests use a 10-second timeout without retries (`MY_AGENTS_JEV_TIMEOUT_SECONDS`). Only bounded recent conversation text and source-selection counts/mode are sent; credentials and responses are not checkpointed. Answer generation and metadata enrichment remain OpenAI-backed. Confidence is not an authorization signal; no uncalibrated confidence threshold is imposed. See `tests/test_jev_decisions.py`.
+Source selection, focused/comprehensive retrieval selection, and ContextForge intent use `typesafe/jev-1.13` through OpenRouter by default. Set `OPENROUTER_API_KEY` locally. `MY_AGENTS_DECISION_PROVIDER=deterministic` uses local rules; `openai` restores the previous source/tool models and local ContextForge intent. `MY_AGENTS_RESPONSE_MODE=deterministic` always disables provider decisions. Missing credentials, invalid output, and provider errors fall back to local rules. Requests use a 10-second timeout without retries (`MY_AGENTS_JEV_TIMEOUT_SECONDS`). Routing decisions send only bounded recent conversation text and source-selection counts/mode; credentials and responses are not checkpointed. Answer generation and metadata enrichment remain OpenAI-backed. Confidence is not an authorization signal; no uncalibrated confidence threshold is imposed. See `tests/test_jev_decisions.py`.
 
 GPT-6.1 Sol supports standard/pro reasoning. `minimal` resolves to `low` for supported models; GPT-6.1 Sol and Astra also resolve `none` to `low` before persistence and provider calls, including replay inheritance. Public effort choices stay frozen. Omitted effort and guest effort come from the selected surface model's application-owned defaults in `my_agents/model_defaults.py` (currently `medium` for all six API-supported models); the reasoning-effort environment override is retired. Registered per-run overrides remain available. The internal RAG tool selector retains its explicit standard/low workload policy.
 
@@ -237,3 +237,9 @@ use conversation notes; user model choices and the workspace model remain separa
 uses `ChatOpenAI`, defaults to GPT-6 Luna, and has its own registered preference. Provider summaries
 and context delivery metadata remain separate from reply text and public reasoning summaries.
 Guest continuity is text-only. See [the contract](../../../docs/product-chat-service/en/36-conversation-continuity.md).
+
+ContextForge reranking separately defaults to `MY_AGENTS_RERANKER_MODE=jev`. It sends only
+the query and bounded authorized excerpts to the same Decisions API, with synthetic candidate IDs.
+It never sends summary, file-note, or memory channels. Routing-provider selection does not change
+this mode. Any failed batch preserves the entire fused shortlist; offline response mode suppresses
+Jev calls. See the [reranking contract](../../../docs/product-chat-service/en/37-jev-evidence-reranking.md).

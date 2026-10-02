@@ -1,6 +1,6 @@
 # Implementation tracking
 
-Last updated: 2026-09-30
+Last updated: 2026-10-02
 Status owner: repo-tracked source of truth for cross-machine agent handoff
 
 This is the portable implementation/status record, independent of machine-local agent sessions.
@@ -161,7 +161,7 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
 - RAG Agent now owns the assistant-facing conversation-run retrieval boundary through `my_agents/agents/rag_agent/retrieval.py`; `general_assistant` invokes it inside the graph before memory/answer nodes only when the source-selection gate chooses private knowledge-base retrieval.
 - The same RAG Agent runtime now owns typed `resolve_full_document_target` and `read_full_document_range` seams for explicit whole-document tasks. Resolution and every read reuse the permission-first user-selectable-document filter, including owner/group/explicit-document grants while excluding ambient system KB documents.
 - For explicit comprehensive-document intent, normalized extracted text at or below 24,000 characters is one complete read. Larger documents currently contribute only characters `[0, 12000)` and receive a localized partial-review disclosure; overlapping authorized chunks remain the consulted provenance source.
-- ContextForge remains the delegated permission-first retrieval engine behind that boundary, with a thin LangGraph RetrievalGraph wrapper over deterministic query planning, source-boundary handoff, independent vector and request-local `BM25Okapi` lexical rankings, `chunk_id`-keyed RRF fusion (`k=60`), deterministic default or optional lazily loaded cross-encoder reranking, high-recall context packing, redacted retrieval evidence, and opt-in Rich debug traces for role handoff messages.
+- ContextForge remains the delegated permission-first retrieval engine behind that boundary, with a thin LangGraph RetrievalGraph wrapper over deterministic query planning, source-boundary handoff, independent vector and request-local `BM25Okapi` lexical rankings, `chunk_id`-keyed RRF fusion (`k=60`), default Jev rubric reranking with deterministic and lazily loaded cross-encoder alternatives, high-recall context packing, redacted retrieval evidence, and opt-in Rich debug traces for role handoff messages.
 - Retrieval candidate gathering includes authorized document title/source-filename metadata matching, so filename-only user references can find the matching uploaded document even when the filename is absent from chunk content.
 - Ingestion stores structured knowledge entities for API endpoints, config keys, shell commands, error codes, and database table references with document/chunk/run/page/offset provenance.
 - Deterministic retrieval routing supports `no_retrieval`, `retrieval_required`, `retrieval_optional`, and `clarification_required`. Non-interrupted clarification replies retain visible text; checkpoint-backed HITL instead returns explicit `waiting_for_input` interaction state, not a completed assistant reply.
@@ -199,6 +199,17 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
 - Reusable LangGraph practice conventions, pattern docs, and runnable simulated-agent implementations now live in `~/Git/Playground/langgraph-playground`.
 
 ## Latest verification evidence
+
+Jev evidence reranking — 2026-10-02 (**Shipped:** implemented on develop):
+
+- Default `MY_AGENTS_RERANKER_MODE=jev`; deterministic and cross-encoder remain alternatives.
+  Routing-provider selection is independent. Offline response mode suppresses default Jev calls.
+- Fixed-rubric scoring sends only the query, synthetic IDs, and bounded authorized excerpts.
+  Any failed batch restores the complete fused shortlist; original retrieval scores remain intact.
+- Full offline suite: **812 passed / 13 skipped / 12 dependency/API deprecation warnings**.
+  Ruff lint/format and diff whitespace checks passed. No dependencies, migrations, or frontend
+  contract changes. Broader live quality, latency, cost, and production evidence remain separate.
+- [Current reranking contract](./product-chat-service/en/37-jev-evidence-reranking.md).
 
 Static workspace image inputs — 2026-09-30 (`develop` implementation):
 
@@ -537,7 +548,7 @@ Earlier hosted smoke status on 2026-06-03:
 - Async ingestion progress is available through an additive endpoint (`POST /documents/{id}/ingest/async`) plus direct run polling. Local/default mode still supports in-process threads; hosted mode can set `MY_AGENTS_INGESTION_EXECUTION_MODE=external_worker` and run `python -m my_agents.ingestion_worker`. Frontend multi-file upload fan-out is exposed as a safe `/health` hint backed by `MY_AGENTS_DOCUMENT_UPLOAD_CONCURRENCY` (default `3`). Durable queue semantics and stale-run recovery remain future work.
 - Ingestion performance now has a repeatable local benchmark harness plus an opt-in redacted Rich timing panel (`MY_AGENTS_DEBUG_INGESTION_TIMING_LOGGING=true`) for upload parse, PDF parser subphases, extraction/indexing phases, and OpenAI metadata/embedding spans. OpenAI metadata generation overlaps chunk embedding/indexing when metadata mode is OpenAI-backed.
 - Embeddings use a provider boundary: deterministic 32-dimensional lexical-hash vectors by default, or opt-in OpenAI embeddings through `langchain-openai` when `MY_AGENTS_EMBEDDING_MODE=openai`; Postgres chunks also store a pgvector `embedding_vector` through Alembic migration `20260521_0007`.
-- Retrieval ranking is permission-first RAG Agent -> ContextForge orchestration over pgvector SQL vector search on Postgres, JSON cosine fallback for SQLite/tests, an independent request-local `BM25Okapi` lexical ranking, `chunk_id`-keyed Reciprocal Rank Fusion (`k=60`), entity expansion, structured entity retrieval, deterministic reranking, optional cross-encoder second-stage reranking over bounded authorized candidates, and a narrow personal-document fallback. BM25 reads a lightweight authorized chunk projection, hydrates only lexical top-k models, and retains the `keyword_match` source label, so this default hybrid path needs no dedicated DB index or migration; safe corpus caching/full-text indexing, multilingual tokenization, ANN/vector index tuning, production reranker packaging, and retrieval-quality/latency evals remain future work.
+- Retrieval ranking is permission-first RAG Agent -> ContextForge orchestration over pgvector SQL vector search on Postgres, JSON cosine fallback for SQLite/tests, an independent request-local `BM25Okapi` lexical ranking, `chunk_id`-keyed Reciprocal Rank Fusion (`k=60`), entity expansion, structured entity retrieval, default Jev rubric reranking, deterministic/cross-encoder alternatives over bounded authorized candidates, and a narrow personal-document fallback. BM25 reads a lightweight authorized chunk projection, hydrates only lexical top-k models, and retains the `keyword_match` source label, so this default hybrid path needs no dedicated DB index or migration; safe corpus caching/full-text indexing, multilingual tokenization, ANN/vector index tuning, production reranker packaging, and retrieval-quality/latency evals remain future work.
 - `rag_agent` is the assistant-facing retrieval-agent boundary. Conversation runs enter it from the `general_assistant` graph; the RAG Agent delegates internally to ContextForge’s thin LangGraph `RetrievalGraph`. The current `rag_agent` contract graph remains the compact trace/grounding verification surface. Hard authorization stays in `RetrievalService`/ContextForge internals.
 - Entity extraction is deterministic regex/technical-term extraction, not production NLP/LLM extraction. Canonical entity creation is conflict-safe for concurrent async ingestion: names are pre-collected in stable order and inserted with dialect-aware `ON CONFLICT DO NOTHING` to avoid Postgres unique-index lock cycles.
 
@@ -661,7 +672,7 @@ scheduled. Intent, current behavior, adoption triggers, and acceptance requireme
 
 The next RAG correctness milestone is not to force one tokenizer across every model. It is to keep
 each model paired with its own tokenizer while preventing silent reranker truncation and incompatible
-embedding-space comparisons. The repository already defaults to `BAAI/bge-reranker-v2-m3`; the
+embedding-space comparisons. The cross-encoder alternative defaults to `BAAI/bge-reranker-v2-m3`; Jev is the default strategy; the
 2026-07-14 safe effective-settings audit found an MS MARCO MiniLM runtime override whose English
 WordPiece tokenizer reduced a representative 1,500-character Korean query/chunk pair from 2,388
 tokens to the model's 512-token input. The same audit found that stored embeddings have no complete
@@ -765,7 +776,7 @@ Suggested order:
 1. [done] Add file-upload metadata and text extraction boundaries.
 2. [done] Keep parsers local/deterministic first.
 3. [done] Add pgvector-backed ranking behind the existing permission filter.
-4. Cross-encoder reranking is now available only as a second-stage pass over top-k authorized candidates; next work is production packaging, latency budgets, and eval fixtures. Do not let a reranker see unauthorized chunks.
+4. Jev is the default second-stage reranker over top-k authorized candidates, with deterministic/cross-encoder alternatives. Next work is live quality/latency evaluation and truncation-aware evidence windows. Do not let a reranker see unauthorized chunks.
 5. Add LLM query rewrite or context compression only after measuring retrieval quality.
 6. [done] Add ingestion status transitions for queued/running/completed/failed.
 7. Add tests proving unauthorized chunks never enter reranking, context, citations, or events.

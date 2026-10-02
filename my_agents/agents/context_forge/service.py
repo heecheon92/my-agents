@@ -236,6 +236,8 @@ class ContextForgeService:
                     plan=plan,
                     candidates=candidates[: plan.limits.rerank_limit],
                 )
+        effective_reranker_name = getattr(self._reranker, "effective_name", self._reranker.name)
+        timing.update(reranker=effective_reranker_name)
         timing.update(reranked_candidate_count=len(reranked))
         debug_agent_turn(
             sender="EvidenceJudge",
@@ -285,7 +287,7 @@ class ContextForgeService:
             injected_chunks=injected_chunks,
             rejected_count=len(rejected),
             budget_truncated=budget_truncated,
-            reranker_name=self._reranker.name,
+            reranker_name=effective_reranker_name,
         )
         result = ContextForgeResult(
             plan=plan,

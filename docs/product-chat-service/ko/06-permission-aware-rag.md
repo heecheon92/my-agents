@@ -83,3 +83,8 @@ Jev는 prose를 생성하지 않아 model-authored planning summary는 생략합
 - 2026-08-25: Chunk-level audit provenance 위에 document/knowledge-base 이름을 추가하고 document-level UI grouping 계약을 기록했습니다.
 - 2026-08-25: Consulted source 전체 집합과 보수적인 answer-supported citation subset을 분리하고 legacy `null`/신규 빈 배열 의미 및 동일 ID 계약을 기록했습니다.
 - 2026-08-25: Valid 190-chunk Markdown 문서가 insufficient evidence로 잘못 종료되던 문제를 bounded distributed provenance sampling으로 수정했습니다.
+
+ContextForge는 권한 있는 발췌의 Jev rubric 재순위를 기본값으로 사용하며 deterministic과
+cross-encoder 대안을 유지합니다. 별도 score 경로는 권한 확인 후 질문과 발췌만 보내며 대화
+summary, file note, memory는 보내지 않습니다. 예산, fallback과 실제 평가 한계는
+[재순위 계약](./37-jev-evidence-reranking.md)을 참고하세요.

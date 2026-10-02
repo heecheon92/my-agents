@@ -91,7 +91,7 @@ flowchart TD
 - 초대로만 맺어지는 그룹 멤버십, 개인 문서를 그룹에 공유 요청하고 승인하는 흐름
 - 개인, 그룹, 관리자 공통 지식 베이스와 문서 단위 권한 관리
 - PDF, Markdown, 일반 텍스트, `.xlsx`, `.pptx`, `.docx` 업로드와 수집 (PyMuPDF 우선, pypdf·Docling·Tesseract 순으로 대체)
-- pgvector와 BM25를 RRF로 합친 하이브리드 검색과 선택적 cross-encoder 재순위
+- pgvector와 BM25를 RRF로 합친 하이브리드 검색과 기본 Jev rubric 재순위와 선택적 cross-encoder 대안
 - 전체 문서 검토와 완전·부분 검토 안내, 범위 기반 인용
 - 서버가 소유하는 대화·실행 기록, SSE 스트리밍, 답변을 뒷받침하는 인용, 가려진 에이전트 이벤트
 - 사용자가 직접 켜는 실험적인 장기 메모리
@@ -104,7 +104,7 @@ flowchart TD
 | API / 애플리케이션 | Python 3.14, FastAPI, Pydantic |
 | 에이전트 / 모델 | LangGraph, `langchain-openai`, `ChatOpenAI` |
 | 저장소 | SQLAlchemy, Alembic, PostgreSQL/Neon, pgvector |
-| 검색 | 벡터 검색, BM25Okapi, RRF, 선택적 BAAI cross-encoder |
+| 검색 | 벡터 검색, BM25Okapi, RRF, Jev, 선택적 BAAI cross-encoder |
 | 문서 처리 | PyMuPDF, pypdf, Docling, Tesseract, openpyxl, python-pptx |
 | 스트리밍 / 관측 | SSE, Prometheus, 가려진 실행 이벤트 |
 | 품질 / 배포 | pytest, Ruff, uv, Docker, Render |
@@ -226,3 +226,13 @@ Settings에서 변경할 수 있습니다. 원본 파일은 기본 7일간 OpenA
 기존 DB는 실행 전에 migration `20260930_0036`을 적용하고 graph V3 배포 전에 기존 대기 run을
 완료·취소하세요. [맥락 유지 계약](./docs/product-chat-service/ko/36-conversation-continuity.md)을
 참고하세요.
+
+## 검색 근거 재순위
+
+ContextForge의 기본값은 `MY_AGENTS_RERANKER_MODE=jev`이며 routing decision provider와
+독립적입니다. 로컬에 `OPENROUTER_API_KEY`를 설정하면 질문과 길이를 제한한 권한 있는 문서
+발췌를 Jev에 보내고, 합쳐진 후보의 순서를 바꾼 뒤 context를 구성합니다. 키 누락이나 어느
+batch의 실패든 전체 원래 후보 순서를 유지합니다. `deterministic`, `cross_encoder` 대안도
+유지하며 `MY_AGENTS_RESPONSE_MODE=deterministic`은 기본 Jev 경로를 오프라인으로 실행합니다.
+기존 명시적 reranker 설정은 선택한 mode를 유지합니다. DB migration은 필요 없습니다.
+[재순위 계약](./docs/product-chat-service/ko/37-jev-evidence-reranking.md)을 참고하세요.

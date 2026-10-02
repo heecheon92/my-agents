@@ -1,10 +1,10 @@
-"""Narrow OpenRouter Jev boundary for bounded choices, never authorization."""
+"""Narrow OpenRouter Jev boundary for bounded choices/scores, never authorization."""
 
 from __future__ import annotations
 
 import logging
 from collections.abc import Mapping, Sequence
-from typing import Protocol
+from typing import Literal, Protocol
 
 import httpx
 from langchain_core.messages import BaseMessage
@@ -32,6 +32,69 @@ class ChoiceDecider(Protocol):
     ) -> str | None:
         """Return an allowed label, or None to request local fallback."""
         ...
+
+
+class ScoreAnswer(BaseModel):
+    """An ordinal rubric score, not a retrieval similarity or authorization signal."""
+
+    model_config = ConfigDict(strict=True)
+    type: Literal["score"]
+    score: float = Field(ge=0, allow_inf_nan=False)
+    confidence: float | None = Field(default=None, ge=0, le=1, allow_inf_nan=False)
+
+
+class ScoreDecider(Protocol):
+    def score(
+        self,
+        *,
+        state: Mapping[str, object],
+        questions: Mapping[str, Mapping[str, object]],
+        timeout_seconds: float,
+    ) -> dict[str, float] | None:
+        """Score every named question, or return None for whole-pass fallback."""
+        ...
+
+
+class JevScoreClient:
+    """The existing Decisions endpoint with strictly validated score answers."""
+
+    def __init__(self, settings: Settings, *, transport: httpx.BaseTransport | None = None):
+        self._settings = settings
+        self._transport = transport
+
+    def score(
+        self,
+        *,
+        state: Mapping[str, object],
+        questions: Mapping[str, Mapping[str, object]],
+        timeout_seconds: float,
+    ) -> dict[str, float] | None:
+        key = self._settings.openrouter_api_key
+        if not key or not key.get_secret_value().strip():
+            return None
+        try:
+            with httpx.Client(timeout=timeout_seconds, transport=self._transport) as client:
+                response = client.post(
+                    JEV_ENDPOINT,
+                    headers={"Authorization": f"Bearer {key.get_secret_value()}"},
+                    json={"model": JEV_MODEL, "state": dict(state), "questions": dict(questions)},
+                )
+                response.raise_for_status()
+                answers = response.json()["answers"]
+                if not isinstance(answers, dict) or set(answers) != set(questions):
+                    raise ValueError("Score answers do not match requested candidates")
+                scores = {}
+                for question_id, question in questions.items():
+                    answer = ScoreAnswer.model_validate(answers[question_id])
+                    if answer.score > len(question["criteria"]) - 1:
+                        raise ValueError("Score exceeds the rubric")
+                    scores[question_id] = answer.score
+                return scores
+        except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+            logger.warning(
+                "Jev scoring failed (%s); preserving retrieval order", type(exc).__name__
+            )
+            return None
 
 
 class JevDecisionClient:

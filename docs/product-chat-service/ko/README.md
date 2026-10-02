@@ -68,3 +68,4 @@
   기록합니다.
 
 - [35. Assistant model preferences](./35-assistant-model-preferences.md)
+- [37. Jev 검색 근거 재순위](./37-jev-evidence-reranking.md)
