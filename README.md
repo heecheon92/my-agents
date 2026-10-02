@@ -236,3 +236,8 @@ batch의 실패든 전체 원래 후보 순서를 유지합니다. `deterministi
 유지하며 `MY_AGENTS_RESPONSE_MODE=deterministic`은 기본 Jev 경로를 오프라인으로 실행합니다.
 기존 명시적 reranker 설정은 선택한 mode를 유지합니다. DB migration은 필요 없습니다.
 [재순위 계약](./docs/product-chat-service/ko/37-jev-evidence-reranking.md)을 참고하세요.
+
+Console에서 재순위 전후를 비교하려면 `MY_AGENTS_DEPLOYMENT_ENVIRONMENT=local`과
+`MY_AGENTS_DEBUG_KNOWLEDGE_CONTEXT_LOGGING=true`를 사용합니다. 각 순서의 상위 10개 후보에
+대해 rank, document/chunk 위치, RRF/reranker 점수와 짧은 발췌를 표시하며 Jev fallback도
+구분합니다. Preview/production에서는 이 flag를 켜도 해당 표를 출력하지 않습니다.

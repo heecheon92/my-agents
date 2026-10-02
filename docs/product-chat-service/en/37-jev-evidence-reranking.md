@@ -64,6 +64,14 @@ an in-flight synchronous request. Errors log only safe reasons/exception classes
 Existing retrieval evidence/timing report `jev` or `jev_fallback_deterministic`. Fallback
 diagnostics are local to the calling request. No frontend contract or preference API changes.
 
+## Local console comparison
+
+For a readable before/after console comparison, enable
+`MY_AGENTS_DEBUG_KNOWLEDGE_CONTEXT_LOGGING=true` with
+`MY_AGENTS_DEPLOYMENT_ENVIRONMENT=local`. The table shows ranks, document/chunk locations,
+RRF/reranker scores, and bounded excerpts for the top 10 of each order. It reports the effective
+mode, including Jev fallback, and never prints in preview/production even with the flag enabled.
+
 ## Verification and remaining evidence
 
 `tests/test_jev_reranking.py` uses fake credentials and mocked HTTP to verify wire shape,

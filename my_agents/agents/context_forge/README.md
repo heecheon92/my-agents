@@ -159,3 +159,8 @@ Decisions API에 질문과 길이를 제한한 권한 있는 발췌, 임시 후�
 note, memory channel은 보내지 않습니다. Routing provider 선택은 이 mode를 바꾸지 않습니다.
 어느 batch든 실패하면 전체 fused shortlist를 유지하며 offline response mode는 Jev 호출을
 끕니다. [재순위 계약](../../../docs/product-chat-service/ko/37-jev-evidence-reranking.md)을 참고하세요.
+
+Console에서 재순위 전후를 비교하려면 `MY_AGENTS_DEPLOYMENT_ENVIRONMENT=local`과
+`MY_AGENTS_DEBUG_KNOWLEDGE_CONTEXT_LOGGING=true`를 사용합니다. 각 순서의 상위 10개 후보에
+대해 rank, document/chunk 위치, RRF/reranker 점수와 짧은 발췌를 표시하며 Jev fallback도
+구분합니다. Preview/production에서는 이 flag를 켜도 해당 표를 출력하지 않습니다.

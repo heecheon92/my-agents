@@ -204,9 +204,11 @@ Jev evidence reranking — 2026-10-02 (**Shipped:** implemented on develop):
 
 - Default `MY_AGENTS_RERANKER_MODE=jev`; deterministic and cross-encoder remain alternatives.
   Routing-provider selection is independent. Offline response mode suppresses default Jev calls.
+- Local-only, opted-in console comparison shows before/after ranks, document/chunk locations,
+  fused/rerank scores, and bounded excerpts; preview/production suppress this table.
 - Fixed-rubric scoring sends only the query, synthetic IDs, and bounded authorized excerpts.
   Any failed batch restores the complete fused shortlist; original retrieval scores remain intact.
-- Full offline suite: **812 passed / 13 skipped / 12 dependency/API deprecation warnings**.
+- Full offline suite: **819 passed / 13 skipped / 12 dependency/API deprecation warnings**.
   Ruff lint/format and diff whitespace checks passed. No dependencies, migrations, or frontend
   contract changes. Broader live quality, latency, cost, and production evidence remain separate.
 - [Current reranking contract](./product-chat-service/en/37-jev-evidence-reranking.md).

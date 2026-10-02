@@ -60,6 +60,13 @@ Batch는 전체 요청 UTF-8 예산에 맞게 줄입니다. 질문이 4096 bytes
 기존 evidence/timing은 `jev` 또는 `jev_fallback_deterministic`을 기록하며 요청 간 진단
 상태는 섞이지 않습니다. Frontend 계약이나 preference API는 바꾸지 않습니다.
 
+## 로컬 콘솔 비교
+
+Console에서 재순위 전후를 비교하려면 `MY_AGENTS_DEPLOYMENT_ENVIRONMENT=local`과
+`MY_AGENTS_DEBUG_KNOWLEDGE_CONTEXT_LOGGING=true`를 사용합니다. 각 순서의 상위 10개 후보에
+대해 rank, document/chunk 위치, RRF/reranker 점수와 짧은 발췌를 표시하며 Jev fallback도
+구분합니다. Preview/production에서는 이 flag를 켜도 해당 표를 출력하지 않습니다.
+
 ## 검증 한계
 
 `tests/test_jev_reranking.py`는 fake key와 mocked HTTP로 wire contract, 순서와 원본 보존,

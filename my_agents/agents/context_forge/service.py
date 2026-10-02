@@ -12,7 +12,7 @@ from my_agents.agents.context_forge.contracts import (
     ContextForgeRequest,
     ContextForgeResult,
 )
-from my_agents.agents.context_forge.debug import debug_agent_turn
+from my_agents.agents.context_forge.debug import debug_agent_turn, debug_reranking_comparison
 from my_agents.agents.context_forge.fusion import fuse_candidates
 from my_agents.agents.context_forge.observability import build_retrieval_evidence
 from my_agents.agents.context_forge.packing import ContextCurator
@@ -50,6 +50,8 @@ class ContextForgeService:
         self._reranker = reranker or build_reranker(settings)
         self._curator = ContextCurator()
         self._debug_retrieval_timing_logging = settings.debug_retrieval_timing_logging
+        self._deployment_environment = settings.deployment_environment
+        self._debug_knowledge_context_logging = settings.debug_knowledge_context_logging
 
     def retrieve(self, request: ContextForgeRequest) -> ContextForgeResult:
         context_forge_started = perf_counter()
@@ -237,6 +239,14 @@ class ContextForgeService:
                     candidates=candidates[: plan.limits.rerank_limit],
                 )
         effective_reranker_name = getattr(self._reranker, "effective_name", self._reranker.name)
+        debug_reranking_comparison(
+            environment=self._deployment_environment,
+            enabled=self._debug_knowledge_context_logging,
+            query=plan.rewritten_query,
+            reranker=effective_reranker_name,
+            before=candidates[: plan.limits.rerank_limit],
+            after=reranked,
+        )
         timing.update(reranker=effective_reranker_name)
         timing.update(reranked_candidate_count=len(reranked))
         debug_agent_turn(

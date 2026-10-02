@@ -163,3 +163,9 @@ the query and bounded authorized excerpts to the same Decisions API, with synthe
 It never sends summary, file-note, or memory channels. Routing-provider selection does not change
 this mode. Any failed batch preserves the entire fused shortlist; offline response mode suppresses
 Jev calls. See the [reranking contract](../../../docs/product-chat-service/en/37-jev-evidence-reranking.md).
+
+For a readable before/after console comparison, enable
+`MY_AGENTS_DEBUG_KNOWLEDGE_CONTEXT_LOGGING=true` with
+`MY_AGENTS_DEPLOYMENT_ENVIRONMENT=local`. The table shows ranks, document/chunk locations,
+RRF/reranker scores, and bounded excerpts for the top 10 of each order. It reports the effective
+mode, including Jev fallback, and never prints in preview/production even with the flag enabled.

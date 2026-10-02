@@ -238,3 +238,9 @@ Missing credentials or any failed batch preserve the entire original shortlist.
 `MY_AGENTS_RESPONSE_MODE=deterministic` disables the default Jev path for offline tests.
 Existing explicit reranker settings keep their selected mode. No database migration is needed.
 See the [reranking contract](./docs/product-chat-service/en/37-jev-evidence-reranking.md).
+
+For a readable before/after console comparison, enable
+`MY_AGENTS_DEBUG_KNOWLEDGE_CONTEXT_LOGGING=true` with
+`MY_AGENTS_DEPLOYMENT_ENVIRONMENT=local`. The table shows ranks, document/chunk locations,
+RRF/reranker scores, and bounded excerpts for the top 10 of each order. It reports the effective
+mode, including Jev fallback, and never prints in preview/production even with the flag enabled.
