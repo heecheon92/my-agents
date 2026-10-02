@@ -45,6 +45,7 @@ They live outside `docs/learning/` because `docs/learning/` is reserved for the 
 
 - [35. Assistant model preferences](./35-assistant-model-preferences.md)
 - [37. Jev evidence reranking](./37-jev-evidence-reranking.md)
+- [38. Message-to-answer service flow](./38-message-to-answer-service-flow.md)
 
 ## Documentation language convention
 

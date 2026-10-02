@@ -44,6 +44,8 @@ The [performance logs](./docs/performance/README.md) record exact scenarios and 
 
 ## Architecture
 
+For an in-depth walkthrough of message admission, retrieval, streaming, persistence, and resume, see the [message-to-answer service flow](./docs/product-chat-service/38-message-to-answer-service-flow.md).
+
 ```mermaid
 flowchart LR
     Client["Browser or API client"] --> Frontend["Separate Next.js frontend"]

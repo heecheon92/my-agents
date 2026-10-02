@@ -374,6 +374,11 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
 
 ## 13. Near-term recommended sequence
 
+- [x] **Completed:** The source-backed [message-to-answer walkthrough](./docs/product-chat-service/38-message-to-answer-service-flow.md)
+  is owner-approved in English/Korean, with nine Mermaid views across six types and localized SVG exports.
+  Runtime behavior is unchanged. See implementation tracking for verification.
+
+
 - [x] **Shipped:** Static workspace image inputs (JPEG/PNG/WebP/GIF), vision/file routing,
   and pre-transfer validation are implemented on `develop`. Backend 765 passed / 13 skipped,
   frontend 399 unit / 18 workspace browser checks, OpenAPI/real-BFF refusal/guest checks passed.

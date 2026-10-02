@@ -44,6 +44,8 @@
 
 ## 아키텍처
 
+메시지 접수, 검색, 스트리밍, 저장과 재개를 단계별로 설명한 [서비스 흐름 문서](./docs/product-chat-service/38-message-to-answer-service-flow.ko.md)를 참고하세요.
+
 ```mermaid
 flowchart LR
     Client["Browser or API client"] --> Frontend["Separate Next.js frontend"]

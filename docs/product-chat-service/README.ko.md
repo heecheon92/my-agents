@@ -69,3 +69,4 @@
 
 - [35. Assistant model preferences](./35-assistant-model-preferences.ko.md)
 - [37. Jev 검색 근거 재순위](./37-jev-evidence-reranking.ko.md)
+- [38. 메시지 전송부터 답변 수신까지의 서비스 흐름](./38-message-to-answer-service-flow.ko.md)

@@ -200,6 +200,21 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
 
 ## Latest verification evidence
 
+Message-to-answer walkthrough — 2026-10-02 (**Completed:** owner-approved documentation):
+
+- Added adjacent English/Korean service-flow documents with nine Mermaid views across six types covering
+  admission, streaming, continuity, graph branches, RAG/Jev reranking, workspace recall,
+  selection/resume, and terminal states. Source links distinguish execution from public evidence.
+- All nine diagram designs were visually inspected and all 31 official Mermaid types assessed.
+  After the owner-approved language edits, both language versions render successfully with
+  Mermaid CLI 11.16.0 (18 diagrams total). Each language has its own SVG fallback set.
+  Local file links and credential-pattern checks passed; the review preview remains a local artifact.
+- Full offline suite: **826 passed, 14 skipped, 12 dependency deprecation warnings**;
+  Ruff lint/format and diff checks passed. Relative file links checked; no live provider or
+  frontend runtime validation is claimed. Runtime behavior is unchanged.
+- [Walkthrough](./product-chat-service/38-message-to-answer-service-flow.md).
+
+
 Markdown language naming — 2026-10-02 (**Completed:** applied on develop):
 
 - English is the default `.md`; Korean uses `.ko.md`, colocated in each topic folder.
