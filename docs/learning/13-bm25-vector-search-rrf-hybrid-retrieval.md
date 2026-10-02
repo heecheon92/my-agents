@@ -17,7 +17,7 @@ related_code:
   - my_agents/agents/context_forge/reranking.py
   - tests/test_permission_aware_rag.py
   - tests/test_context_forge_reranking.py
-  - docs/performance/en/rag-retrieval-performance-log.md
+  - docs/performance/rag-retrieval-performance-log.md
 ---
 
 # Hybrid retrieval with BM25, vector search, and RRF

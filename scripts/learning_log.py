@@ -11,6 +11,7 @@ import re
 from collections.abc import Sequence
 from datetime import date
 from pathlib import Path
+from typing import Literal
 
 DEFAULT_DOCS_DIR = Path("docs/learning")
 INDEX_FILENAME = "README.md"
@@ -25,15 +26,19 @@ def create_learning_log(
     related_code: Sequence[str],
     docs_dir: Path = DEFAULT_DOCS_DIR,
     today: str | None = None,
+    language: Literal["en", "ko"] = "en",
 ) -> Path:
     """Create a numbered personal learning note and add it to the learning index."""
     clean_title = _normalize_required_text(title, "title")
     clean_body = _normalize_required_text(body, "body")
     note_date = today or date.today().isoformat()
     _validate_iso_date(note_date)
+    if language not in {"en", "ko"}:
+        raise ValueError("language must be en or ko")
 
     docs_dir.mkdir(parents=True, exist_ok=True)
-    note_path = docs_dir / f"{_next_note_number(docs_dir):02d}-{_slugify(clean_title)}.md"
+    suffix = ".ko.md" if language == "ko" else ".md"
+    note_path = docs_dir / f"{_next_note_number(docs_dir):02d}-{_slugify(clean_title)}{suffix}"
     if note_path.exists():
         raise FileExistsError(f"Learning note already exists: {note_path}")
 
@@ -161,6 +166,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--docs-dir", type=Path, default=DEFAULT_DOCS_DIR)
     parser.add_argument("--date", help="Override creation/update date in YYYY-MM-DD format.")
+    parser.add_argument(
+        "--language",
+        choices=("en", "ko"),
+        default="en",
+        help="English .md (default), or Korean .ko.md; preserves the supplied content.",
+    )
     return parser
 
 
@@ -175,6 +186,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         related_code=args.related_code,
         docs_dir=args.docs_dir,
         today=args.date,
+        language=args.language,
     )
     print(note_path)
     return 0

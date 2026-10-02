@@ -1,0 +1,123 @@
+# OpenAI-hosted document workspace
+
+[한국어](./25-openai-document-workspace.ko.md) | English
+
+## Status and scope
+
+This is an opt-in conversation capability for approved registered accounts. It delegates expensive document analysis and spreadsheet generation to OpenAI instead of using Render CPU/RAM for local office-file editing. It does not introduce Deep Agents, a second assistant, durable file storage, or guest access.
+
+Ordinary chat remains on the existing `ChatOpenAI` provider. Only attachment turns use the narrow OpenAI SDK adapter because the required Files, Containers, Hosted Shell, and Skills APIs are not exposed by the current `ChatOpenAI` surface.
+
+## Lifecycle
+
+```mermaid
+sequenceDiagram
+    participant UI
+    participant API as FastAPI
+    participant DB as Product DB
+    participant OpenAI
+    participant Graph as general_assistant
+
+    UI->>API: upload file + provider_consent=true
+    API->>OpenAI: Files API (purpose=user_data, expiry)
+    API->>DB: metadata + normalized upload usage
+    UI->>API: run(message, attachment_ids)
+    API->>DB: authorize conversation and attachments
+    API->>Graph: normal run + document_workspace_runtime
+    Graph->>OpenAI: expiring network-disabled container
+    Graph->>OpenAI: GPT-5.6 Sol + Hosted Shell (+ spreadsheet skill)
+    OpenAI-->>Graph: reply + files under /mnt/data/output/
+    Graph->>DB: artifact metadata + normalized token/tool usage
+    API-->>UI: run response with attachments and certified artifacts
+    UI->>API: authenticated artifact download
+    API->>OpenAI: stream container file bytes
+```
+
+The Product DB stores file metadata, run associations, workspace metadata, artifact metadata, conversation-scoped file notes, and immutable normalized usage events. The response usage event separates input, cached-input, output, and reasoning tokens and records whether Hosted Shell ran. It never stores uploaded or generated file bytes. New OpenAI files expire seven days after upload by default; the hosted container expires after 20 idle minutes by default. Expired metadata remains useful for honest UI state and usage audit.
+
+## Public API contract
+
+- `GET /capabilities/document-workspace`: effective feature state, account eligibility, format registry, limits, and retention.
+- `POST /conversations/{conversation_id}/attachments`: multipart `file` plus required `provider_consent=true`.
+- `GET /conversations/{conversation_id}/attachments`: attachment metadata and expiry state.
+- `DELETE /conversations/{conversation_id}/attachments/{attachment_id}`: removes the provider file when it still exists and marks metadata deleted.
+- `POST /conversations/{conversation_id}/runs`: accepts an additive `attachment_ids` list.
+- `GET /conversations/{conversation_id}/artifacts`: generated artifact metadata.
+- `GET /conversations/{conversation_id}/artifacts/{artifact_id}/download`: authenticated byte stream proxied from the active provider container.
+
+Run responses add `attachments` and `artifacts`. The display-safe persisted event enum adds `attachments_ready`, `document_workspace_started`, and `artifact_created`; their payloads expose counts, provider-reported byte sizes when available, filenames, content types, IDs, and expiry timestamps only.
+
+## Formats and output certification
+
+The analysis allowlist is versioned in `my_agents/document_workspace/formats.py` and mirrors the OpenAI File Inputs extension families verified on 2026-08-09: PDF, spreadsheet, rich-document, presentation, and text/code files. Video and arbitrary binary uploads are out of scope. The effective registry is served by the capability endpoint so the frontend does not hardcode it.
+
+Analysis support is broader than output certification. `.xlsx`, `.csv`, `.tsv`, `.docx`, `.pptx`, `.pdf`, `.md`, `.markdown`, `.html`, and `.htm` outputs under `/mnt/data/output/` become downloadable artifacts. Other accepted inputs can be analyzed, but the assistant must not claim a downloadable edited document was produced. Certification means that the hosted-shell result is recognized, retained as expiring artifact metadata, and available through the authenticated download path; it does not promise pixel-perfect fidelity across every office application, so users should review generated files before relying on them.
+
+## Image attachments
+
+The workspace accepts static JPEG (`.jpg`, `.jpeg`), PNG (`.png`), WebP (`.webp`), and GIF
+(`.gif`) for visual analysis. The served registry reports category `image`, the canonical MIME
+for each extension, `analysis_supported=true`, and `artifact_status=unavailable`. These image
+inputs do not extend the certified output formats or introduce an image-generation feature.
+
+Before provider transfer, the backend checks consent/account/conversation ownership, extension,
+MIME, and the existing byte ceiling. It then validates the image's actual encoding, decodability,
+and static nature using Pillow already present in the Docling/office dependency tree. Malformed,
+renamed/mismatched, animated GIF/APNG/WebP, and Pillow decompression-bomb inputs return 415
+`unsupported_attachment_type`; explicit false consent returns the existing 400, and a missing
+required consent field remains 422. Original bytes are preserved, and generic binary MIME is
+canonicalized after validation. Local validation decodes a bounded image; analysis itself remains
+hosted. No new package or database migration is required.
+
+Files retain `purpose=user_data` and explicit expiration. Images remain mounted in the
+network-disabled container for optional shell work and are supplied to Responses as `input_image`
+file-ID parts, while documents keep `input_file`. Mixed inputs retain their order:
+
+```json
+[
+  {"type": "input_text", "text": "Compare this picture with the document"},
+  {"type": "input_image", "file_id": "file-image", "detail": "high"},
+  {"type": "input_file", "file_id": "file-document"}
+]
+```
+
+`detail=high` bounds provider image preprocessing rather than using original-resolution auto
+mode, which can reject large photos at the patch limit. Existing file-count/combined-byte,
+consent, ownership, guest exclusion, retention, model, and output-certification policies apply.
+The separate workspace model is still used for image attachment turns.
+Sources: [image input requirements](https://developers.openai.com/api/docs/guides/images-vision),
+[Files upload purpose and expiry](https://developers.openai.com/api/reference/typescript/resources/files/methods/create).
+
+## Security and economic boundaries
+
+- The feature is disabled by default and rejects guest principals.
+- File transfer requires explicit consent on every upload.
+- Conversation ownership and attachment ownership are checked before any provider execution or download.
+- Hosted container networking is disabled.
+- Uploaded files, retrieved KB snippets, and memory snippets are marked as untrusted data in provider instructions.
+- Provider traces, shell commands, stdout, prompts, credentials, and hidden reasoning never enter public events.
+- Usage events record provider-neutral units such as input/output/cached tokens, file-input bytes, container starts, and hosted-shell calls. Unique idempotency keys prevent double recording and leave later credit settlement independent of Langfuse or one model vendor.
+
+## Deferred extension: artifact generation without attachments
+
+The current implementation constructs `document_workspace_runtime` only when a run includes at least one `attachment_id`. A request such as “explain this concept as an HTML file” therefore remains an ordinary chat response today; expanding the downloadable extension allowlist does not activate Hosted Shell by itself.
+
+A future milestone may add a typed `create_artifact` capability owned by the General Assistant. The RAG Agent should continue to own retrieval decisions, not output-file generation. When the user explicitly requests a downloadable result, the General Assistant could select a server-approved output format and invoke the existing document-workspace adapter with zero or more attachments. With no attachments, the adapter would create an empty expiring, network-disabled hosted container; generated files would reuse the existing artifact metadata, event, expiry, authorization, usage-accounting, and authenticated-download paths.
+
+This extension is intentionally deferred and is not the immediate next task. Before implementation, decide:
+
+- whether natural-language intent alone is sufficient or the frontend should also provide an explicit file-format control;
+- how explicit a request must be to distinguish downloadable HTML or Markdown from an in-chat code block;
+- whether the model selects from a closed output-format enum or the client may request a format directly;
+- which account-credit and Hosted Shell limits apply when no user file is transferred; and
+- whether artifact-producing requests should require Hosted Shell rather than leaving tool choice optional.
+
+No provider-transfer consent is needed when no user bytes leave the browser, but feature eligibility, guest restrictions, cost accounting, output allowlisting, and safe event disclosure still apply. This path must not expose arbitrary shell access, provider traces, or unrestricted filenames to clients.
+
+## Deployment
+
+Apply Alembic revision `20260809_0030` before enabling the flag. Set `OPENAI_API_KEY` and `MY_AGENTS_DOCUMENT_WORKSPACE_ENABLED=true`; tune limits through the documented `MY_AGENTS_DOCUMENT_WORKSPACE_*` variables. No local office suite, code sandbox, or high-memory parser is added to the Render process for this path.
+
+The test suite replaces the provider boundary with an offline fake. A credentialed live smoke remains an operator action because it creates billable OpenAI files, a container, model tokens, and possibly Hosted Shell usage.
+
+[Conversation continuity and updated file retention](./36-conversation-continuity.md) adds explicit message links, conversation notes, automatic registered-user recall and cleanup. Original bytes remain provider-side; notes are separate derived Product DB records.

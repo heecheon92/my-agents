@@ -1,0 +1,79 @@
+# HTTP streaming과 frontend contract
+
+[English original](./09-http-streaming-frontend-contract.md) | 한국어
+
+## 요약
+
+이 문서는 `product-chat-service/09-http-streaming-frontend-contract.md`의 한국어 문서 트랙 항목입니다. 현재는 핵심 목적과 영어 원문 위치를 안내하는 요약본입니다.
+
+현재 영어 원문은 일반 대화 실행의 `POST /conversations/{conversation_id}/runs/stream`뿐 아니라 답변 재생성용 `POST /conversations/{conversation_id}/messages/{message_id}/replay/stream`도 다룹니다. 재생성 스트림은 진행 이벤트와 `answer_delta`를 제공하고, 새 답변이 성공적으로 완료된 뒤에만 기존 답변 이후 transcript를 정리합니다. 실패 시 기존 답변은 보존됩니다.
+
+Opt-in 전체 문서 검토에서는 provider token을 즉시 노출하지 않고 최종 답변을 먼저
+buffering합니다. `partial`이면 “전체 문서 검토가 아니며 0-N자만 읽었다”는 한국어/영어
+안내를 backend가 먼저 붙인 다음 `answer_delta`로 보냅니다. 따라서 제한 안내가 답변
+뒤늦게 나타나지 않습니다. 합친 delta는 `run_completed.reply`와 같습니다.
+
+이 경로에서는 마지막 `answer_delta` 뒤, `answer_composed` 앞에 선택적으로
+`full_document_read` event가 나타납니다. Event와
+`run_completed.document_coverage`는 `complete|partial`, document metadata,
+start/end offset, total chars를 공유하고 event에는 latency가 추가됩니다. Raw document
+body와 내부 next cursor는 공개하지 않습니다.
+
+전체 문서 답변을 replay할 때는 원래 event의 document를 그대로 preselect하고 현재
+권한을 다시 검사합니다. 삭제되었거나 권한이 없으면 다른 document로 교체하지 않고
+unavailable-source warning과 빈 coverage/citation으로 종료합니다.
+
+`POST /conversations/{conversation_id}/runs/{run_id}/resume/stream`은 waiting run을 먼저
+atomic하게 claim하고 첫 SSE event로 `run_resumed`를 보냅니다. 그 뒤 checkpoint가 계속
+실행되는 동안 실제 `retrieval_completed`, `graph_invoked`, `answer_delta`를 전송하고 stream
+step 사이에 cancellation을 확인합니다. 사용자가 option을 고른 순간 frontend는 suspended
+card를 내리고 일반 streaming answer처럼 progress, stop, follow-up queue를 제공해야 합니다.
+이전처럼 sync resume을 끝까지 실행한 뒤 완성된 text를 가짜 delta로 재생하지 않습니다.
+
+일반 OpenAI-backed answer composition은 `ChatOpenAI.stream()`을 호출합니다. 각 provider
+`AIMessageChunk`는 graph 실행 중 전달되며 final persistence와 reasoning-summary extraction에
+사용할 하나의 message로도 aggregate됩니다. Reasoning-summary block은 `answer_delta` 또는
+persisted reply text에 들어가지 않습니다.
+
+완료 응답은 `consulted_sources`와 `citations`를 구분합니다. 전자는 모델에 제공된
+user-visible source 전체 superset이고 후자는 최종 답변에서 근거가 확인된 보수적 subset입니다.
+두 배열에 같은 source가 있으면 동일한 persisted `id`와 `chunk_id`를 사용합니다.
+Attribution이 실행됐지만 source가 없으면 `consulted_sources: []`, attribution 도입 이전
+legacy run이면 `consulted_sources: null`입니다. 이 필드는 sync 완료, 일반 SSE 및 resume SSE의
+`run_completed`, replay 완료, `GET /conversations/{conversation_id}/runs/{run_id}`에서 동일하게
+직렬화되어 새로고침 뒤에도 구분이 유지됩니다.
+
+## 동적 reasoning summary stream
+
+SSE 전용 `reasoning_summary_delta`와 bounded persisted `reasoning_summary_generated` event를
+제공합니다. Closed `stage`, text delta/final text, stage별 sequence를 전달하고
+`answer_delta`에는 final answer text만 남깁니다. `run_completed`와 run detail은 refresh-safe
+`reasoning_summaries` list를 반환합니다.
+
+Frontend는 이를 model-generated 접근 요약으로 표시하고 verified `agent_trace`와 분리해야
+합니다. 자세한 내용은 [동적 reasoning summary 계약](./28-dynamic-reasoning-summary-contract.ko.md)을
+봅니다.
+
+Normal run, resume, replay OpenAPI operation은 `text/event-stream` media object의
+`x-sse-events.reasoning_summary_delta` extension에 정확한 delta payload를 게시합니다. Payload는
+`stage`, nonblank `delta`, positive per-stage `sequence`를 요구합니다. 개별 delta에는 500자
+maximum이 없고 completed persisted item이 final bound를 소유합니다. Optional summary event
+parse failure는 answer stream을 실패시키면 안 됩니다.
+
+Backend attribution/audit 배열은 chunk 단위를 유지하지만 frontend citation presentation은
+document 단위입니다. `document_id`로 grouping하고 `source_filename`이 있으면 우선 표시하며,
+없으면 `document_title`을 사용합니다. `knowledge_base_name`과 deduplicated optional
+`source_page`만 함께 보여주고 일반 citation 상세에서는 snippet과 document/KB/chunk ID를
+숨깁니다.
+
+2026-06-09 기준으로 중요한 알려진 한계도 추가되었습니다. 현재 streamed chat generation은 client-held HTTP/SSE request에 묶여 있어서, 사용자가 탭을 닫거나 다른 화면으로 이동해 stream이 끊기면 assistant message가 최종 저장되기 전에 run이 cancelled/failed로 terminalize될 수 있습니다. 이 경우 사용자가 conversation에 다시 들어와도 생성 중이던 답변이 보이지 않을 수 있습니다. 가까운 시일 내에 server-owned background run execution과 resumable/listener-style SSE 구조로 보완해야 합니다.
+
+## 문서 상태
+
+- 영어 원문은 `docs/product-chat-service/09-http-streaming-frontend-contract.md`에 있습니다.
+- 이 한국어 파일은 같은 주제의 위치를 고정하기 위한 문서입니다.
+- 상세 번역이 필요하면 이 파일을 확장하고, 영어 원문과 의미가 어긋나지 않게 유지하세요.
+
+## 관련 위치
+
+- 영어 원문: [product-chat-service/09-http-streaming-frontend-contract.md](./09-http-streaming-frontend-contract.md)

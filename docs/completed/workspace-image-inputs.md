@@ -3,8 +3,8 @@
 - Status: Shipped implementation on `develop`; the owner reported successful manual browser testing.
 - Completed: 2026-09-30.
 - Canonical status: [implementation tracking](../implementation-tracking.md#shipped-and-completed-index).
-- Current contract: [image attachments](../product-chat-service/en/25-openai-document-workspace.md#image-attachments).
-- Learning/debug notes: [workspace image inputs](../learning/project-notes/workspace-image-inputs.md).
+- Current contract: [image attachments](../product-chat-service/25-openai-document-workspace.md#image-attachments).
+- Learning/debug notes: [workspace image inputs](../learning/project-notes/workspace-image-inputs.ko.md).
 
 ## Delivered scope
 

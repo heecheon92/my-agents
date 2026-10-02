@@ -3,9 +3,9 @@
 - Status: Shipped implementation on `develop`; production rollout and provider verification remain separate.
 - Completed: 2026-09-30.
 - Canonical status: [implementation tracking](../implementation-tracking.md#shipped-and-completed-index).
-- Current contracts: [model preferences](../product-chat-service/en/35-assistant-model-preferences.md),
-  [reasoning policy](../product-chat-service/en/26-run-reasoning-preferences.md),
-  [runtime reference](../product-chat-service/en/34-runtime-and-integration-reference.md).
+- Current contracts: [model preferences](../product-chat-service/35-assistant-model-preferences.md),
+  [reasoning policy](../product-chat-service/26-run-reasoning-preferences.md),
+  [runtime reference](../product-chat-service/34-runtime-and-integration-reference.md).
 
 ## Delivered scope
 

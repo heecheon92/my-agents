@@ -12,8 +12,8 @@ related_code:
   - my_agents/knowledge/ingestion_worker.py
   - my_agents/knowledge/extraction.py
   - my_agents/settings.py
-  - docs/product-chat-service/en/05-knowledge-ingestion-extraction.md
-  - docs/product-chat-service/en/15-deployment-troubleshooting-log.md
+  - docs/product-chat-service/05-knowledge-ingestion-extraction.md
+  - docs/product-chat-service/15-deployment-troubleshooting-log.md
 ---
 
 # Production async ingestion queued without a worker

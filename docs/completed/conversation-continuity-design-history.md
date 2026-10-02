@@ -18,7 +18,7 @@ Accepted and implemented on 2026-09-30. This archived proposal preserves the des
 [completion evidence](./conversation-continuity.md) records delivered scope and limitations.
 The diagnosis below describes the pre-change baseline;
 current behavior and accepted attachment retention/model choices are documented in
-[the continuity contract](../product-chat-service/en/36-conversation-continuity.md) and canonical tracking.
+[the continuity contract](../product-chat-service/36-conversation-continuity.md) and canonical tracking.
 
 This historical handoff records the original user-reported incident, source-level diagnosis,
 candidate budgets and proposed verification. It does not define current behavior or authorize
@@ -74,7 +74,7 @@ incomplete view of the earlier request.
 Product DB also stores run retrieval/answer-mode metadata and consulted/answer-supported source
 attribution. That information exists outside plain transcript reconstruction; its presence does
 not mean it is currently supplied to the final-answer model. See the current
-[conversation contract](../product-chat-service/en/04-server-owned-conversations.md).
+[conversation contract](../product-chat-service/04-server-owned-conversations.md).
 
 ## Likely failure mechanism
 

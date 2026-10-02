@@ -3,7 +3,7 @@
 - Status: Shipped to frontend develop/main; feature-level production verification remains limited.
 - Recorded: 2026-09-05.
 - Release evidence: frontend `9c8e365`; owner-reported manual testing during implementation.
-- Current contract: [rich response rendering](../product-chat-service/en/30-rich-response-rendering-and-agent-ui-boundaries.md).
+- Current contract: [rich response rendering](../product-chat-service/30-rich-response-rendering-and-agent-ui-boundaries.md).
 - Canonical status: [implementation tracking](../implementation-tracking.md#shipped-and-completed-index).
 
 ## Delivered scope and decisions

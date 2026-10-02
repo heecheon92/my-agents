@@ -4,7 +4,7 @@
 - Recorded: 2026-09-05
 - Integration evidence: backend `92d7a50`; frontend `af0176c`.
 - Release evidence: backend release `7a450cc` / later hotfix `e62d45a`, frontend `9c8e365` on 2026-09-05.
-- Current behavior: [workspace contract](../product-chat-service/en/25-openai-document-workspace.md).
+- Current behavior: [workspace contract](../product-chat-service/25-openai-document-workspace.md).
 - Canonical status: [implementation tracking](../implementation-tracking.md#shipped-and-completed-index).
 
 ## Delivered scope
@@ -41,6 +41,6 @@ The owner reported successful live XLSX generation in the 2026-09-02 session.
 
 ## Historical implementation record
 
-See the preserved [frontend rollout plan](../product-chat-service/en/29-frontend-document-workspace-rollout.md)
+See the preserved [frontend rollout plan](../product-chat-service/29-frontend-document-workspace-rollout.md)
 and the sibling frontend's `docs/implementation-log.md`, section
 `2026-09-02 — temporary conversation files`, for implementation decisions and verification details.

@@ -84,5 +84,5 @@ changes separately rather than silently lifting limits whenever a user chooses `
 
 - [Response prompt and model configuration](../../my_agents/agents/general_assistant/responders.py)
 - [Server settings](../../my_agents/settings.py)
-- [Existing reasoning preference contract](../product-chat-service/en/26-run-reasoning-preferences.md)
-- [Semantic interaction contract](../product-chat-service/en/27-agent-frontend-interaction-contract.md)
+- [Existing reasoning preference contract](../product-chat-service/26-run-reasoning-preferences.md)
+- [Semantic interaction contract](../product-chat-service/27-agent-frontend-interaction-contract.md)

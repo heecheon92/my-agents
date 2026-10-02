@@ -4,9 +4,9 @@
 - Completed: 2026-09-05.
 - Integration/release: `7a450cc`; subsequent pool hotfix `e62d45a`.
 - Canonical status: [implementation tracking](../implementation-tracking.md#shipped-and-completed-index).
-- Current contracts: [atomic admission](../product-chat-service/en/31-atomic-run-admission.md),
-  [answer finalization](../product-chat-service/en/32-answer-finalization.md),
-  [document resolution](../product-chat-service/en/33-document-resolution-helpers.md).
+- Current contracts: [atomic admission](../product-chat-service/31-atomic-run-admission.md),
+  [answer finalization](../product-chat-service/32-answer-finalization.md),
+  [document resolution](../product-chat-service/33-document-resolution-helpers.md).
 
 ## Delivered scope
 
@@ -31,6 +31,6 @@ The owner reported no problems during the combined manual test pass.
 The later production checkpoint connection failure was not caught by those fresh-connection
 tests. Hotfix e62d45a added checkout health checks and local stale-connection regressions;
 the owner subsequently reported successful authenticated chat. See the
-[incident note](../learning/project-notes/langgraph-stale-connections.md). Longer-idle production
+[incident note](../learning/project-notes/langgraph-stale-connections.ko.md). Longer-idle production
 verification remains distinct from immediate recovery. These records do not certify all
 product flows or erase the remaining operational, queue, and security work.

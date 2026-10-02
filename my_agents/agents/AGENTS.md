@@ -10,12 +10,12 @@ When adding a new concrete agent folder under `my_agents/agents/<agent_name>/`, 
 updating behavior, graph shape, routing, state contract, tool policy, provider policy, or
 extension guidance for an existing agent folder, that agent folder must contain:
 
-- `README.md` — Korean documentation;
-- `README.en.md` — English documentation;
+- `README.md` — English documentation;
+- `README.ko.md` — Korean documentation;
 - `CHANGELOG.md` — concise rationale/history for why the agent needed each meaningful
   change.
 
-Keep `README.md` and `README.en.md` semantically aligned. They do not need to be literal
+Keep `README.md` and `README.ko.md` semantically aligned. They do not need to be literal
 line-by-line translations, but both must explain the same behavior and boundaries.
 
 ## Required README structure

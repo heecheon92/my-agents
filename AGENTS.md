@@ -79,7 +79,7 @@ Its full knobs and retention limits are documented in `.env.example`.
 
 For memory architecture, do not treat LangGraph checkpointers as conversation history or long-term memory. Product DB remains the source of truth for visible transcripts/runs/citations/audit and memory governance. PostgreSQL deployments own baseline PostgresSaver and a rebuildable PostgresStore semantic projection; Store candidates must be revalidated against Product DB rows and per-user experimental memory settings control consent and eligibility. PostgresSaver uses `run_id` only for bounded HITL/resume execution state. OpenAI `previous_response_id` may be stored as one field inside compact graph/run state, but should not replace application state.
 
-All agent-requested user input must use the versioned, semantic contract in `docs/product-chat-service/en/27-agent-frontend-interaction-contract.md`. Backend interactions describe required input, never frontend components or layout. Keep activity events separate from pending interaction state, require typed answers, and add future AG-UI/A2UI support only as a boundary adapter rather than a Product DB domain model.
+All agent-requested user input must use the versioned, semantic contract in `docs/product-chat-service/27-agent-frontend-interaction-contract.md`. Backend interactions describe required input, never frontend components or layout. Keep activity events separate from pending interaction state, require typed answers, and add future AG-UI/A2UI support only as a boundary adapter rather than a Product DB domain model.
 Ambient system knowledge is automatically injected internal context, not a user-controllable source axis: never expose system KBs/documents as interaction options or accept them as resume selections.
 
 ## Reasoning compatibility policy
@@ -99,7 +99,7 @@ Registered assistant model preferences belong to Product DB; guests stay on the 
 default. Pin the answer model at run admission and use it on resume. Ordinary model selection
 must not change document workspace, decision, embedding, or metadata models.
 Apply effective values before persistence and again at the provider boundary; preserve
-request/replay/guest policy. See `docs/product-chat-service/en/26-run-reasoning-preferences.md`
+request/replay/guest policy. See `docs/product-chat-service/26-run-reasoning-preferences.md`
 for the mapping contract and known model-specific gaps.
 
 ## Dependency policy
@@ -173,10 +173,19 @@ Prefer this sequence:
 
 ## Documentation expectations
 
+Markdown language convention:
+
+- `.md` is English by default; Korean documents use `.ko.md`.
+- Put translations together in the same topic folder: `topic.md` and `topic.ko.md`.
+  Do not create language-only `en/` or `ko/` folders or use `.en.md`.
+- Preserve existing Korean-only learning notes as `.ko.md`; a rename does not require
+  inventing an English translation. Keep machine-discovered names such as `AGENTS.md`
+  and `SKILL.md` in English.
+
 This repository maintains two README files:
 
-- `README.md` is the Korean README.
-- `README.en.md` is the English README.
+- `README.md` is the English README.
+- `README.ko.md` is the Korean README.
 
 Rules for README maintenance:
 
@@ -190,13 +199,13 @@ Agent-level README convention:
 
 - Every concrete production-surface agent implementation folder under `my_agents/agents/<agent_name>/` should have its own bilingual README pair.
 - Concrete simulation-only implementation folders belong in `~/Git/Playground/langgraph-playground` and should keep their own documentation there.
-- `README.md` is Korean.
-- `README.en.md` is English.
+- `README.md` is English.
+- `README.ko.md` is Korean.
 - Agent README files should cross-link to each other near the top, just like the repo-root READMEs.
 - Agent README files should explain the agent purpose, file responsibilities, graph/tool flow, current behavior, planned extension seams, and relevant tests.
 - Update the agent README pair whenever that agent's behavior, graph shape, tool policy, state contract, or extension guidance changes.
 
-Learning documentation that supports the owner's learning path lives under `docs/learning/`. Keep the root numbered sequence for personal learning logs, and use subfolders such as `docs/learning/project-notes/` for focused project notes that came from conversations. Agent-generated project architecture docs that are not primarily learning logs should live outside `docs/learning/` (for the product chat service, use `docs/product-chat-service/en/`).
+Learning documentation that supports the owner's learning path lives under `docs/learning/`. Keep the root numbered sequence for personal learning logs, and use subfolders such as `docs/learning/project-notes/` for focused project notes that came from conversations. Agent-generated project architecture docs that are not primarily learning logs should live outside `docs/learning/` (for the product chat service, use `docs/product-chat-service/`).
 
 Reusable simulated-agent pattern references live in `~/Git/Playground/langgraph-playground/docs/agent-patterns/`. Personal my-agents-specific learning notes may remain under `docs/learning/project-notes/`, but runnable simulated-agent practice code belongs in the playground repo.
 
@@ -232,8 +241,8 @@ Mermaid diagram guidance for Markdown work:
 
 When behavior changes, update:
 
-- `README.md` and `README.en.md` for user-facing setup and examples.
-- `docs/learning/` when the content supports the owner's learning path; use `docs/learning/project-notes/` for focused my-agents project notes and `docs/product-chat-service/en/` for service architecture docs.
+- `README.md` and `README.ko.md` for user-facing setup and examples.
+- `docs/learning/` when the content supports the owner's learning path; use `docs/learning/project-notes/` for focused my-agents project notes and `docs/product-chat-service/` for service architecture docs.
 - `.env.example` for safe env knobs.
 - tests for the behavior contract.
 - this `AGENTS.md` if project constraints or architecture conventions change.
@@ -253,4 +262,4 @@ A change is complete only when:
 Conversation summaries are derived Product DB records, not long-term memory consent or a new
 checkpointer thread scope. Keep context compaction activity metadata-only and preserve original
 message/run/source links. Jev must not receive summary or file-note channels. See
-`docs/product-chat-service/en/36-conversation-continuity.md`.
+`docs/product-chat-service/36-conversation-continuity.md`.

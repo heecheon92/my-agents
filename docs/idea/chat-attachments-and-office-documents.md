@@ -7,7 +7,7 @@ This note captures the product and architecture discussion from 2026-06-09 about
 This is a **partially superseded design**, not the current attachment API contract.
 Durable Office parsing and temporary conversation attachments are implemented; see the
 [workspace completion record](../completed/document-workspace.md) and
-[current workspace contract](../product-chat-service/en/25-openai-document-workspace.md).
+[current workspace contract](../product-chat-service/25-openai-document-workspace.md).
 The shipped attachment flow uploads consented files first, then sends `attachment_ids` on the
 ordinary run request. It uses the provider-hosted workspace, not the multipart run endpoint,
 local temporary chunk table, or shared ContextForge attachment search proposed below.

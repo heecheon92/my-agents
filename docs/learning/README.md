@@ -1,5 +1,9 @@
 # Learning notes
 
+English notes use `.md`; Korean notes use `.ko.md`. The language variants share one numbered
+reading sequence. Use `scripts.learning_log --language ko` for a Korean note; it preserves the
+provided content without translation. Korean-only notes do not need an English counterpart.
+
 These notes explain the backend from a learner's point of view. They are also a durable review trail for future maintenance.
 
 Start here:
@@ -20,10 +24,10 @@ Start here:
 14. [Hybrid retrieval with BM25, vector search, and RRF](./13-bm25-vector-search-rrf-hybrid-retrieval.md)
 15. [Ambient System Knowledge and User-Visible Provenance](./14-ambient-system-knowledge-and-user-visible-provenance.md)
 16. [Product identity belongs in the always-present responder prompt](./15-product-identity-belongs-in-the-always-present-responder-prompt.md)
-17. [LangGraph Checkpointer와 Store의 역할 분리](./14-langgraph-checkpointer-store.md)
+17. [LangGraph Checkpointer와 Store의 역할 분리](./14-langgraph-checkpointer-store.ko.md)
 18. [Full-document retrieval: coverage, authorization, and checkpoint safety](./16-full-document-retrieval-coverage-and-safety.md)
 
-This directory is the owner's learning path archive. The root numbered notes are personal learning logs. Focused project-specific notes can live in subfolders, such as [`project-notes/`](./project-notes/). Project architecture docs that are not primarily learning logs live outside this directory, for example [`docs/product-chat-service/en/`](../product-chat-service/).
+This directory is the owner's learning path archive. The root numbered notes are personal learning logs. Focused project-specific notes can live in subfolders, such as [`project-notes/`](./project-notes/). Project architecture docs that are not primarily learning logs live outside this directory, for example [`docs/product-chat-service/`](../product-chat-service/).
 
 ## Learning-doc workflow
 
@@ -68,7 +72,8 @@ If the reader would naturally ask, "Where is the separate lesson for this topic?
 Use numbered reading-order filenames:
 
 ```text
-NN-short-topic-slug.md
+NN-short-topic-slug.md       # English (default)
+NN-short-topic-slug.ko.md    # Korean
 ```
 
 Examples:

@@ -613,6 +613,10 @@ Creates a numbered personal learning note under `docs/learning/` and updates the
 learning index. Use it when adding owner learning notes so filenames, front
 matter, revision history, and index ordering stay consistent.
 
+English `.md` is the default. Use `--language ko` for Korean `.ko.md` notes; the helper
+does not translate the supplied body. Both languages share the numbered reading sequence
+and the English index can link to Korean-only notes.
+
 Commands:
 
 ```bash
@@ -641,6 +645,7 @@ Useful options:
 | `--related-code` | Repeatable repo path related to the note. |
 | `--docs-dir` | Alternate learning-note directory. Defaults to `docs/learning`. |
 | `--date` | Override created/updated date in `YYYY-MM-DD` format. |
+| `--language` | `en` (default) writes `.md`; `ko` writes `.ko.md`. |
 
 ## Adding new scripts
 
@@ -656,7 +661,7 @@ When adding a new command module:
 
 ## `scripts.benchmark_reranking`
 
-See the [benchmark protocol and verdict](../docs/performance/en/reranking-benchmark-2026-10-02.md#reproduce-and-audit).
+See the [benchmark protocol and verdict](../docs/performance/reranking-benchmark-2026-10-02.md#reproduce-and-audit).
 `prepare` reads loopback PostgreSQL using the selected VS Code profile and account authorization;
 `run` replays private frozen inputs without writing Product DB or generating final answers.
 Use already configured provider keys and keep case/snapshot/label files outside the repository.

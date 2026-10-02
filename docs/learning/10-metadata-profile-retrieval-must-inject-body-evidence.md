@@ -9,8 +9,8 @@ topics:
   - system-knowledge-base
 related_code:
   - my_agents/knowledge/retrieval.py
+  - my_agents/agents/context_forge/README.ko.md
   - my_agents/agents/context_forge/README.md
-  - my_agents/agents/context_forge/README.en.md
   - tests/test_permission_aware_rag.py
 ---
 

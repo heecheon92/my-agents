@@ -73,7 +73,7 @@ Current honest status:
 - [x] OpenAI-backed default response mode through `langchain-openai` / `ChatOpenAI`.
 - [x] Safe `.env.example` with no secrets.
 - [x] Korean and English root READMEs.
-- [x] Product architecture docs under `docs/product-chat-service/en/`.
+- [x] Product architecture docs under `docs/product-chat-service/`.
 - [x] Learning notes under `docs/learning/`.
 
 ## 2. Assistant / LangGraph foundation
@@ -192,7 +192,7 @@ Current honest status:
 - [x] Query-time intent routing for enumeration/structured extraction questions such as “list endpoints,” “show env vars,” “what commands are documented,” or “list error codes,” so the RAG agent can retrieve by extracted entity type rather than relying only on semantic similarity to the user wording.
 - [ ] Structured retrieval/answer contracts for extracted entities, e.g. endpoint tables with method, path, summary, source document/page, confidence, and missing/ambiguous-source notes.
 - [~] RAG source policy for unified `knowledge_base_selection` across authorized personal, published, and group KBs exists for the current product path; owner-private transcripts, membership-scoped group knowledge, hidden staging exclusion, and no source leakage are covered, while deletion/retention edge cases still need production hardening.
-- [~] Hybrid retrieval strategy: independent permission-filtered vector and request-local `BM25Okapi` lexical rankings now use `chunk_id`-keyed Reciprocal Rank Fusion (`k=60`) by default, alongside graph/entity/structured expansion. BM25 reuses authorized chunk text and needs no dedicated DB index or migration; production corpus caching/full-text indexing, multilingual tokenization, and retrieval-quality/latency evaluation remain guided by [`docs/product-chat-service/en/12-retrieval-agent-hybrid-reference.md`](./docs/product-chat-service/en/12-retrieval-agent-hybrid-reference.md).
+- [~] Hybrid retrieval strategy: independent permission-filtered vector and request-local `BM25Okapi` lexical rankings now use `chunk_id`-keyed Reciprocal Rank Fusion (`k=60`) by default, alongside graph/entity/structured expansion. BM25 reuses authorized chunk text and needs no dedicated DB index or migration; production corpus caching/full-text indexing, multilingual tokenization, and retrieval-quality/latency evaluation remain guided by [`docs/product-chat-service/12-retrieval-agent-hybrid-reference.md`](./docs/product-chat-service/12-retrieval-agent-hybrid-reference.md).
 - [~] Cross-encoder reranker stage over top-k authorized candidates after vector/full-text retrieval; the interface and `MY_AGENTS_RERANKER_MODE=cross_encoder` path exist, while production model packaging/latency evals remain follow-up work. Jev is now the default strategy; local tests stay offline through deterministic response mode and fake-model coverage. On small hosted runtimes, switch to deterministic mode if memory/startup latency becomes unstable.
 - [ ] **Next retrieval hardening move — tokenizer-aware retrieval and embedding-index safety.** Keep `BAAI/bge-reranker-v2-m3` as the Korean/multilingual cross-encoder direction instead of the effective MS MARCO override; add query-aware reranker token windows so over-limit Korean/code chunks do not silently lose tail evidence; persist embedding provider/model/dimensions/encoding/index-version identity and exclude incompatible stored vectors even when dimensions match; add a re-embed/backfill decision for existing documents; and make final answer-context token usage observable while preserving the current character cap as a fallback. Require Korean, English, and code quality/latency fixtures before calling the milestone complete. See [`docs/learning/project-notes/tokenizer-consistency-audit-and-rag-index-safety.md`](./docs/learning/project-notes/tokenizer-consistency-audit-and-rag-index-safety.md).
 - [~] **Read-only full-document pull tool for comprehensive document tasks.**
@@ -284,7 +284,7 @@ This is the product-facing equivalent of repo-local `AGENTS.md`: durable Markdow
   refresh/replay reconstruction while keeping final answer text, verified `agent_trace`, and
   evidence separate. Raw chain-of-thought, prompts, provider traces, hidden provenance,
   credentials, and document body text remain forbidden. See
-  [`28-dynamic-reasoning-summary-contract.md`](./docs/product-chat-service/en/28-dynamic-reasoning-summary-contract.md).
+  [`28-dynamic-reasoning-summary-contract.md`](./docs/product-chat-service/28-dynamic-reasoning-summary-contract.md).
 - [x] Tests keep OpenAI calls offline/mocked by default.
 - [~] Evals are deterministic fixtures, not a production evaluation platform.
 - [~] Structured application logging policy; permanent redacted deployment diagnostics exist and should be tuned into the broader logging policy.
@@ -329,14 +329,14 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
 - [x] **Shipped (status mirror):** Mermaid rendering is integrated in frontend release `9c8e365`.
   Preserve Markdown fallback and strict rendering boundaries; AG-UI/A2UI remain future adapters.
   See [completion evidence and open verification](./docs/completed/mermaid-rendering.md) and
-  [current contract](./docs/product-chat-service/en/30-rich-response-rendering-and-agent-ui-boundaries.md).
+  [current contract](./docs/product-chat-service/30-rich-response-rendering-and-agent-ui-boundaries.md).
 - [ ] **Deferred, not immediate — create downloadable artifacts without attachments.** Consider a
   General Assistant-owned typed `create_artifact` capability that activates the existing Hosted
   Shell workspace with zero or more attachments. Keep output formats closed and server-owned, reuse
   artifact authorization/expiry/usage/download contracts, and leave retrieval ownership with the
   RAG Agent. Natural-language activation, an optional frontend format control, ambiguity handling,
   and credit limits remain open decisions. See the deferred extension in
-  [`25-openai-document-workspace.md`](./docs/product-chat-service/en/25-openai-document-workspace.md).
+  [`25-openai-document-workspace.md`](./docs/product-chat-service/25-openai-document-workspace.md).
 - [ ] **Deferred:** Preserve OpenAI Responses API assistant phases as provider-boundary
   compatibility work rather than a frontend feature: user messages omit phase, intermediate
   `commentary` stays separate from the completed `final_answer`, and manual assistant-history replay
@@ -349,7 +349,7 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
   2026-09-05: missing input leaves execution paused and Cancel remains terminal. Reconsider only
   on explicit request; the existing cancellation notice does not require a new model call.
   See [canonical status](./docs/implementation-tracking.md#deferred-continue-without-document-selection)
-  and [interaction boundary](./docs/product-chat-service/en/27-agent-frontend-interaction-contract.md#cancellation-and-declining-a-clarification).
+  and [interaction boundary](./docs/product-chat-service/27-agent-frontend-interaction-contract.md#cancellation-and-declining-a-clarification).
 - [x] Hosted frontend/backend auth verification path works after adding `/verify-email` and `/password-reset` frontend landing pages.
 
 ## 12. Testing and quality gates
@@ -386,7 +386,7 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
   frontend 390 unit / 21 targeted browser tests and deterministic live-BFF checks passed.
   Production rollout/provider access and two baseline browser failures remain separate.
   [Completion evidence](./docs/completed/assistant-model-preferences.md);
-  [current contract](./docs/product-chat-service/en/35-assistant-model-preferences.md).
+  [current contract](./docs/product-chat-service/35-assistant-model-preferences.md).
 
 - [ ] **Active:** GPT-5.6 minimal-to-low normalization and the frozen public effort contract are
   locally implemented and offline-verified on `fix/gpt56-reasoning-normalization`; publication
@@ -400,8 +400,12 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
   Pro support and minimal-to-low normalization. Model-default migration and live verification
   remain separate; see [verification](./docs/implementation-tracking.md#latest-verification-evidence).
 
+- [x] **Completed:** Markdown language naming uses `.md` English and
+  `.ko.md` Korean, with colocated topic pairs and English root/agent READMEs. See the
+  [current naming authority](./docs/README.md#language-and-filenames) and implementation tracking.
+
 - [x] **Shipped:** Jev evidence reranking is the new default,
-  with deterministic/cross-encoder alternatives and whole-pass fallback. A [54-run local benchmark](./docs/performance/en/reranking-benchmark-2026-10-02.md) supports the default with source-derived relevance/facet metrics and API-reported cost; broader held-out and production evidence remain open. See the [reranking contract](./docs/product-chat-service/en/37-jev-evidence-reranking.md).
+  with deterministic/cross-encoder alternatives and whole-pass fallback. A [54-run local benchmark](./docs/performance/reranking-benchmark-2026-10-02.md) supports the default with source-derived relevance/facet metrics and API-reported cost; broader held-out and production evidence remain open. See the [reranking contract](./docs/product-chat-service/37-jev-evidence-reranking.md).
 
 - [ ] **Active:** Jev bounded decisions are implemented and offline-verified on `develop`
   (source gate, RAG method, ContextForge intent); deployment and live evaluation remain separate.
@@ -435,7 +439,7 @@ The next recommendation mirrors implementation tracking; it is not new implement
    - The September release is deployed, with owner-confirmed immediate chat recovery after the pool hotfix. Full feature smoke remains open; future backend contract cutovers must serve a compatible frontend first.
    - Run hosted smoke: signup with nickname -> email verification/approval as configured -> login -> group invitation/acceptance -> small document upload/ingest -> publish request review/approval -> cited group-knowledge chat.
    - Keep permanent redacted `DEPLOY_DIAG` logs available for hosted smoke/debug; tune noisy call sites only if needed.
-   - Record smoke evidence and remaining risks in `docs/product-chat-service/en/15-deployment-troubleshooting-log.md` if anything new is found.
+   - Record smoke evidence and remaining risks in `docs/product-chat-service/15-deployment-troubleshooting-log.md` if anything new is found.
    - Invite only trusted testers at first, with explicit alpha framing and a warning against sensitive uploads.
 
 4. **Hosted ingestion performance pass**
@@ -478,7 +482,7 @@ The next recommendation mirrors implementation tracking; it is not new implement
 
 ## 14. Strict v1 phase gates
 
-Phase 0 contract/evidence mapping is tracked in [`docs/product-chat-service/en/11-v1-phase-0-contract-freeze-evidence-map.md`](./docs/product-chat-service/en/11-v1-phase-0-contract-freeze-evidence-map.md). Use that map before starting the next strict v1 phase so backend evidence, frontend gates, docs evidence, owner repo, and known contract gaps stay aligned.
+Phase 0 contract/evidence mapping is tracked in [`docs/product-chat-service/11-v1-phase-0-contract-freeze-evidence-map.md`](./docs/product-chat-service/11-v1-phase-0-contract-freeze-evidence-map.md). Use that map before starting the next strict v1 phase so backend evidence, frontend gates, docs evidence, owner repo, and known contract gaps stay aligned.
 
 ## 15. Definition of done for v1
 

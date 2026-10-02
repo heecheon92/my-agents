@@ -63,3 +63,20 @@ def test_create_learning_log_numbers_after_existing_notes(tmp_path) -> None:
 
     index = (docs_dir / "README.md").read_text(encoding="utf-8")
     assert "2. [Dict kwargs expansion](./02-dict-kwargs-expansion.md)" in index
+
+
+def test_korean_notes_use_suffix_and_share_numbering_with_english_notes(tmp_path) -> None:
+    (tmp_path / "01-english.md").write_text("English")
+    (tmp_path / "02-korean.ko.md").write_text("한국어")
+    note_path = create_learning_log(
+        title="Korean learning note",
+        body="한국어 본문",
+        language="ko",
+        topics=[],
+        related_code=[],
+        docs_dir=tmp_path,
+        today="2026-10-02",
+    )
+    assert note_path.name == "03-korean-learning-note.ko.md"
+    assert "한국어 본문" in note_path.read_text()
+    assert "./03-korean-learning-note.ko.md" in (tmp_path / "README.md").read_text()

@@ -4,6 +4,18 @@ This file routes contributors and agents to the smallest authoritative document 
 not preload the entire documentation tree: read current summaries first and follow links only when
 the task requires deeper architecture, operations, decisions, or history.
 
+## Language and filenames
+
+- English is the default `.md`; Korean uses `.ko.md`.
+- Keep translations adjacent in the topic folder, such as `architecture.md` and
+  `architecture.ko.md`. Language-only `en/` and `ko/` directories and `.en.md` are retired.
+- Root and agent READMEs are `README.md` (English) and `README.ko.md` (Korean), with links
+  to each other near the top. Korean-only personal notes may exist without an English twin.
+- Renaming a historical record preserves its content and immutable creation metadata;
+  update references without rewriting historical evidence.
+- `scripts.learning_log` defaults to English filenames; use `--language ko` for `.ko.md`.
+  The helper preserves the supplied prose and does not translate it.
+
 ## Source-of-truth map
 
 | Document or class | Owns | Authority |

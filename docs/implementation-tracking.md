@@ -89,7 +89,7 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
 - OpenAI-backed response generation uses `langchain-openai` / `ChatOpenAI` by default.
 - Deterministic mode remains available for tests and offline smoke checks.
 - Hosted web search is exposed at the OpenAI response-provider boundary for both `general_assistant` and `research_helper`; the provider prompt, not app-side language-specific keyword hints, decides when the model should call it.
-- Opt-in long-term memory V1 is implemented as a Product DB-backed governance/runtime scaffold: settings, memory CRUD, suggest-confirm lifecycle, policy gates, source provenance, source staleness, relevance-minimized context injection, conflict guidance, and redacted run snapshots. The LangGraph-native migration target is documented in `docs/product-chat-service/en/19-langgraph-native-memory-migration.md`.
+- Opt-in long-term memory V1 is implemented as a Product DB-backed governance/runtime scaffold: settings, memory CRUD, suggest-confirm lifecycle, policy gates, source provenance, source staleness, relevance-minimized context injection, conflict guidance, and redacted run snapshots. The LangGraph-native migration target is documented in `docs/product-chat-service/19-langgraph-native-memory-migration.md`.
 
 ### Auth/session foundation
 
@@ -188,17 +188,32 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
 
 ### Documentation and learning support
 
-- Bilingual root README pair: `README.md`, `README.en.md`.
+- Bilingual root README pair: `README.ko.md`, `README.md`.
 - General assistant README pair under `my_agents/agents/general_assistant/`.
 - ContextForge README pair under `my_agents/agents/context_forge/`.
 - RAG Agent workflow README pair under `my_agents/agents/rag_agent/`.
-- Product architecture notes under `docs/product-chat-service/en/`, including the G001
+- Product architecture notes under `docs/product-chat-service/`, including the G001
   architecture report at
-  `docs/product-chat-service/en/22-general-assistant-rag-agent-architecture-change-report.md`.
+  `docs/product-chat-service/22-general-assistant-rag-agent-architecture-change-report.md`.
 - Personal backend learning logs and my-agents-specific project notes under `docs/learning/`.
 - Reusable LangGraph practice conventions, pattern docs, and runnable simulated-agent implementations now live in `~/Git/Playground/langgraph-playground`.
 
 ## Latest verification evidence
+
+Markdown language naming — 2026-10-02 (**Completed:** applied on develop):
+
+- English is the default `.md`; Korean uses `.ko.md`, colocated in each topic folder.
+  Migrated 94 Markdown paths and an unchanged companion OpenAPI JSON, removed four language-only
+  folders, and merged the product
+  landing router into its English reading index. Root/agent README defaults are now English.
+- Seven Korean-only learning notes retain their original content under `.ko.md`; no translations
+  were invented. Instructions, repo-owned skill references, and navigation follow the convention.
+- `scripts.learning_log` defaults to English and supports explicit `--language ko`; both languages
+  share reading-order numbering. All 458 local Markdown links resolve. Full offline suite: **827 passed / 13 skipped**,
+  with 12 existing dependency/API deprecation warnings; Ruff lint/format and diff checks pass. Old external bookmarks and historical frontend references
+  require the new paths after publication.
+- [Naming authority](./README.md#language-and-filenames).
+
 
 Jev evidence reranking — 2026-10-02 (**Shipped:** implemented on develop):
 
@@ -215,8 +230,8 @@ Jev evidence reranking — 2026-10-02 (**Shipped:** implemented on develop):
   75.0% / 100.0% / 91.7%; median scoring 0.018 / 1518.340 / 2557.392 ms.
   Jev scoring API-reported cost: $0.010742886 for 18 passes. No final-answer quality judgment.
   Broader held-out queries, production rollout/load, and truncation stress remain unverified.
-- [Benchmark protocol, redacted evidence, and verdict](./performance/en/reranking-benchmark-2026-10-02.md).
-- [Current reranking contract](./product-chat-service/en/37-jev-evidence-reranking.md).
+- [Benchmark protocol, redacted evidence, and verdict](./performance/reranking-benchmark-2026-10-02.md).
+- [Current reranking contract](./product-chat-service/37-jev-evidence-reranking.md).
 
 Static workspace image inputs — 2026-09-30 (`develop` implementation):
 
@@ -248,7 +263,7 @@ GPT-5.6 normalization and frozen effort contract — 2026-09-27 (local branch im
   adapt the normalization layer instead of changing client enums.
 - Full offline suite: **643 passed, 14 skipped, 11 dependency deprecation warnings**.
   Ruff lint/format and diff checks passed. No new DB migration, dependency, or env setting.
-- Canonical policy: [frozen effort contract](./product-chat-service/en/26-run-reasoning-preferences.md#frozen-public-effort-contract).
+- Canonical policy: [frozen effort contract](./product-chat-service/26-run-reasoning-preferences.md#frozen-public-effort-contract).
 
 
 Warmer assistant defaults — 2026-09-23 (develop implementation; deployment not verified):
@@ -278,7 +293,7 @@ GPT-6 reasoning compatibility — 2026-09-23 (develop implementation; deployment
   are covered. Active model defaults are unchanged.
 - Full offline suite: **622 passed, 14 skipped, 11 dependency deprecation warnings**.
   Ruff lint/format and diff whitespace checks passed. No live GPT-6 request was made.
-- [Compatibility learning note](./learning/project-notes/gpt6-reasoning-compatibility.md).
+- [Compatibility learning note](./learning/project-notes/gpt6-reasoning-compatibility.ko.md).
 
 
 Jev decision integration — 2026-09-23 (develop implementation; deployment not verified):
@@ -290,7 +305,7 @@ Jev decision integration — 2026-09-23 (develop implementation; deployment not 
 - Full offline suite: **602 passed, 14 skipped, 11 dependency deprecation warnings**.
   After final text-block and nullable-summary changes: **33 focused tests passed**.
   Ruff check and format passed; no dependencies added. Jev live accuracy/cost/latency unverified.
-- See [bounded decision learning note](./learning/project-notes/jev-bounded-decisions.md).
+- See [bounded decision learning note](./learning/project-notes/jev-bounded-decisions.ko.md).
 
 
 LangGraph stale-connection hotfix on 2026-09-05:
@@ -305,10 +320,10 @@ LangGraph stale-connection hotfix on 2026-09-05:
 - The owner reported successful authenticated chat after the hotfix. This confirms immediate
   recovery, not the longer-idle production case; that remains unverified. Health/401 probes
   do not exercise checkpoint reads and are not evidence that this failure path is fixed.
-- [Debugging note and recovery boundaries](./learning/project-notes/langgraph-stale-connections.md).
+- [Debugging note and recovery boundaries](./learning/project-notes/langgraph-stale-connections.ko.md).
 - The owner confirmed Render's pre-deploy command is Alembic-only. The stronger framework
   setup/status/reconciliation chain and isolated regression release gate are documented
-  recommendations, not configured automation. See [the Render runbook](./product-chat-service/en/14-render-migration-and-rollback-notes.md#production-pre-deploy-guardrail).
+  recommendations, not configured automation. See [the Render runbook](./product-chat-service/14-render-migration-and-rollback-notes.md#production-pre-deploy-guardrail).
 
 True checkpoint-resume streaming on 2026-08-26:
 
@@ -489,7 +504,7 @@ Hosted smoke status on 2026-06-06:
 
 - Production guest smoke passed through the Vercel production BFF and hosted backend after Render
   and Neon were upgraded from the prior constrained tier. Evidence is recorded in
-  `docs/product-chat-service/en/16-production-smoke-evidence-2026-06-06.md`.
+  `docs/product-chat-service/16-production-smoke-evidence-2026-06-06.md`.
 - Verified health, guest request, operator-issued guest code with Resend HTTP delivery, guest login,
   BFF session/CSRF cookie handoff, `/auth/me` guest restore, guest conversation-limit rejection,
   personal KB creation, text-document creation, ingest, selected-KB streamed run, answer deltas,
@@ -502,7 +517,7 @@ Hosted smoke status on 2026-06-06:
 Agentic RAG workflow v1 verification-lane status on 2026-06-06:
 
 - Redaction requirements and the final evidence checklist are documented in
-  `docs/product-chat-service/en/17-agentic-rag-v1-verification-plan.md`.
+  `docs/product-chat-service/17-agentic-rag-v1-verification-plan.md`.
 - `scripts.local_demo_smoke.assert_redacted_run_events` now fails if run event payloads expose
   sensitive keys such as `token`, `password`, `api_key`, `raw_context`, `prompt`, `message`,
   `content`, or `reply`, and the smoke path checks for prompt/account/document strings in run
@@ -571,7 +586,7 @@ Earlier hosted smoke status on 2026-06-03:
   `reasoning_summaries`, streamed through `reasoning_summary_delta`, and reconstructed from
   persisted summary events. They remain separate from final answer text, verified trace, and
   evidence. See
-  [`28-dynamic-reasoning-summary-contract.md`](./product-chat-service/en/28-dynamic-reasoning-summary-contract.md).
+  [`28-dynamic-reasoning-summary-contract.md`](./product-chat-service/28-dynamic-reasoning-summary-contract.md).
 - Temporary conversation files are included in the deployed frontend `9c8e365`; feature enablement
   and end-to-end production verification remain separate. See [the completion record](./completed/document-workspace.md).
 - Assistant Mermaid rendering is integrated and shipped in frontend `9c8e365`, with owner-reported
@@ -583,9 +598,9 @@ Earlier hosted smoke status on 2026-06-03:
 - `uv run python -m scripts.local_demo_seed` seeds a verified local demo user, text document, and extraction run for file-backed SQLite demos.
 - `uv run python -m scripts.local_demo_smoke --base-url http://localhost:8000` verifies the seeded V1 API path without the frontend.
 - Credentialed CORS can be enabled for exact frontend origins through `MY_AGENTS_CORS_ALLOWED_ORIGINS`.
-- `docs/product-chat-service/en/10-frontend-demo-runbook.md` documents local SQLite demo startup, dev auth outbox, cookie/CSRF expectations, frontend SSE flow, and run-detail refresh.
-- `docs/product-chat-service/en/11-v1-phase-0-contract-freeze-evidence-map.md` freezes the Phase 0 strict V1 DoD evidence matrix, backend OpenAPI inventory, frontend gate expectations, and known backend contract gaps by phase.
-- `docs/product-chat-service/en/12-public-demo-deployment-readiness.md` defines hosted preview/public smoke gates, provider/dependency decision records, privacy boundaries, rollback paths, and redacted evidence bundle schema.
+- `docs/product-chat-service/10-frontend-demo-runbook.md` documents local SQLite demo startup, dev auth outbox, cookie/CSRF expectations, frontend SSE flow, and run-detail refresh.
+- `docs/product-chat-service/11-v1-phase-0-contract-freeze-evidence-map.md` freezes the Phase 0 strict V1 DoD evidence matrix, backend OpenAPI inventory, frontend gate expectations, and known backend contract gaps by phase.
+- `docs/product-chat-service/12-public-demo-deployment-readiness.md` defines hosted preview/public smoke gates, provider/dependency decision records, privacy boundaries, rollback paths, and redacted evidence bundle schema.
 - Current production graph is still one assistant/controller path, now with a graph-owned RAG Agent retrieval node before memory/answer synthesis.
 - Full-document retrieval is an explicit-intent-only first slice. Documents up to the configured 24,000-character threshold can be covered completely; larger documents stop after the first configured 12,000-character range and must disclose partial coverage. Automatic continuation, multi-range summary accumulation, and final whole-document synthesis are not implemented yet.
 - The current safety limits are character based, not provider-tokenizer based. Final answer-context token usage, provider-reported usage, and quality/latency comparisons against focused chunk retrieval remain open work.
@@ -606,7 +621,7 @@ Earlier hosted smoke status on 2026-06-03:
 - Permanent redacted `DEPLOY_DIAG` logs are available for hosted smoke checks and deployment debugging.
 - Render's owner-confirmed pre-deploy command runs Alembic automatically. Framework setup,
   reconciliation, isolated regression gates, and authenticated smoke are separate responsibilities;
-  the stronger chain remains a documented proposal. See [the Render runbook](./product-chat-service/en/14-render-migration-and-rollback-notes.md#production-pre-deploy-guardrail).
+  the stronger chain remains a documented proposal. See [the Render runbook](./product-chat-service/14-render-migration-and-rollback-notes.md#production-pre-deploy-guardrail).
 - Opt-in Prometheus text metrics now expose aggregate backend timing for internal
   review. Production dashboards, alerts, OpenTelemetry traces, token/cost metrics,
   and failure-rate metrics remain future work.
@@ -646,7 +661,7 @@ while reusing the existing artifact, expiry, authorization, usage, and download 
 Agent remains responsible for retrieval, not output generation. Natural-language activation versus
 an explicit frontend format control, ambiguity handling, account-credit limits, and required tool
 choice remain owner decisions. See the deferred extension in
-[`25-openai-document-workspace.md`](./product-chat-service/en/25-openai-document-workspace.md).
+[`25-openai-document-workspace.md`](./product-chat-service/25-openai-document-workspace.md).
 
 ### Deferred: continue without document selection
 
@@ -661,7 +676,7 @@ on Cancel or create a redundant stored acknowledgement to replace that notice.
 A future explicit “continue without choosing” answer could resume the graph and produce a normal
 stored reply, with honest source limitations. Define the semantic answer, eligibility and cost
 policy before implementation. Actual cancellations must retain their notice even if continuation
-ships. See the [interaction contract](./product-chat-service/en/27-agent-frontend-interaction-contract.md#cancellation-and-declining-a-clarification).
+ships. See the [interaction contract](./product-chat-service/27-agent-frontend-interaction-contract.md#cancellation-and-declining-a-clarification).
 
 ### Deferred: Responses API assistant phase round-tripping
 
@@ -720,7 +735,7 @@ Suggested smoke path:
 2. Create a group, invite a second user by email, accept the invitation as an existing account or complete invite-token nickname/password signup for a no-account recipient, and confirm the manager-only roster shows nickname but not email.
 3. Create or upload a small supported personal source, create a publish request, review readable source preview/content, approve into a group KB, and ask a cited group-knowledge question.
 4. Confirm route-addressable frontend group pages work for members, invitations, source spaces, and publish requests; keep per-item publish review in the drawer.
-5. Record any issue in `docs/product-chat-service/en/15-deployment-troubleshooting-log.md` and do not broaden the invite until the smoke path is stable.
+5. Record any issue in `docs/product-chat-service/15-deployment-troubleshooting-log.md` and do not broaden the invite until the smoke path is stable.
 
 Stop condition:
 
@@ -756,7 +771,7 @@ Suggested order:
 
 1. Run and record hosted smoke: signup -> email verification -> login -> small document upload/ingest -> chat with citation.
 2. Deploy or verify the ingestion worker path for hosted demo: set `MY_AGENTS_INGESTION_EXECUTION_MODE=external_worker` on the web service and run `uv run python -m my_agents.ingestion_worker` as a separate worker process.
-3. Record any new issue in `docs/product-chat-service/en/15-deployment-troubleshooting-log.md`.
+3. Record any new issue in `docs/product-chat-service/15-deployment-troubleshooting-log.md`.
 4. Keep redacted `DEPLOY_DIAG` logs available; tune only noisy call sites after hosted signup/login/chat smoke remains stable.
 5. Treat Render free-tier PDF ingestion slowness as a known resource limitation; prefer small Markdown/plain-text/native-text PDFs for demo until the worker path has smoke evidence or the host is larger.
 
@@ -771,8 +786,8 @@ Stop condition:
 Backend knowledge-base path work is KB-first. The cross-repo gate remains for the separate
 frontend to keep create/select KB → upload/create document inside that KB → ingest inside that KB
 → choose KB sources for chat as the primary UX. The handoff artifact is
-`docs/product-chat-service/en/12-knowledge-base-path-openapi-handoff.md`, with a filtered OpenAPI
-contract JSON at `docs/product-chat-service/en/12-knowledge-base-path-openapi-handoff.json`.
+`docs/product-chat-service/12-knowledge-base-path-openapi-handoff.md`, with a filtered OpenAPI
+contract JSON at `docs/product-chat-service/12-knowledge-base-path-openapi-handoff.json`.
 
 ### Alternative next milestone: production RAG realism
 
@@ -801,6 +816,14 @@ system, a multi-device guest account model, or a replacement for shared rate
 limits.
 
 ## Shipped and completed index
+
+- [x] **Shipped:** Default Jev evidence reranking with offline/whole-pass fallback and local-only
+  comparison logging — [current contract](./product-chat-service/37-jev-evidence-reranking.md).
+- [x] **Completed:** Controlled 54-run reranking quality, warm latency, and API-usage benchmark —
+  [protocol, redacted measurements and verdict](./performance/reranking-benchmark-2026-10-02.md).
+- [x] **Completed:** English-default `.md` / Korean `.ko.md` naming with colocated topic pairs,
+  updated navigation, and language-aware learning-note creation —
+  [convention](./README.md#language-and-filenames).
 
 - [x] **Shipped:** Conversation continuity, visible compaction, summarization model preferences,
   message attachments and registered-user file recall/retention —
@@ -835,43 +858,43 @@ incrementally when related work next touches them.
 | 2026-06-25 | Added generic/repo-local performance workflow support, ingestion benchmark tooling, redacted ingestion timing panels, OpenAI metadata/embedding overlap, and lazy PDF classification; local Aliro PDF profile improved from 36.16s to 16.57s end-to-end while preserving parser/source/chunk/entity/relationship counts. | `.codex/skills/performance-optimizer/`; `.codex/skills/rag-performance-optimizer/SKILL.md`; `scripts/measure_ingestion_performance.py`; `my_agents/knowledge/timing.py`; `my_agents/knowledge/uploads.py`; `my_agents/knowledge/pdf_uploads.py`; `my_agents/knowledge/extraction.py`; `tests/test_knowledge_ingestion.py`; `tests/test_settings.py`; README pair; ingestion docs; performance logs; full suite `459 passed, 1 skipped`. |
 | 2026-06-23 | Added DOCX-only upload, Markdown parse artifacts, ingestion/citation coverage, and legacy `.doc` rejection. | `my_agents/knowledge/office_uploads.py`; upload route descriptions; `tests/test_office_uploads.py`; `tests/test_knowledge_ingestion.py`; `tests/test_publish_requests.py`; ingestion docs. |
 | 2026-06-22 | Added a graph-level source-selection gate so explicit KB bypass and common/web requests can skip ContextForge, removed language-specific general-assistant web-search hints, and delayed optional cross-encoder model loading until the first non-empty ContextForge rerank call. | `my_agents/agents/general_assistant/retrieval_gate.py`; `my_agents/agents/general_assistant/graph.py`; `my_agents/agents/general_assistant/rag_retrieval.py`; `my_agents/agents/general_assistant/responders.py`; `my_agents/agents/capabilities.py`; `my_agents/agents/context_forge/reranking.py`; `tests/test_retrieval_gate.py`; `tests/test_graph.py`; `tests/test_responders.py`; `tests/test_context_forge_reranking.py`; README and agent README pairs. |
-| 2026-06-16 | Documented the General Assistant -> RAG Agent -> ContextForge architecture correction with a dedicated change report and review map. | `docs/product-chat-service/en/22-general-assistant-rag-agent-architecture-change-report.md`; product docs index; implementation tracking docs section. |
+| 2026-06-16 | Documented the General Assistant -> RAG Agent -> ContextForge architecture correction with a dedicated change report and review map. | `docs/product-chat-service/22-general-assistant-rag-agent-architecture-change-report.md`; product docs index; implementation tracking docs section. |
 | 2026-06-16 | Added opt-in Prometheus timing metrics for internal performance and quality analysis without changing the frontend/product surface. | `pyproject.toml`; `my_agents/observability/metrics.py`; `my_agents/api/metrics.py`; `my_agents/api/__init__.py`; ContextForge/retrieval/embedding/graph/run timing hooks; `tests/test_metrics.py`; README pair; observability docs; `ROADMAP.md`. |
 | 2026-06-14 | Product status review refreshed roadmap/tracking and marked the current version as controlled-alpha worthy after deploy smoke. | `docs/implementation-tracking.md`; `ROADMAP.md`; local docs consistency review; backend verification recorded above. |
 | 2026-06-14 | Publish-request review became owner-actionable: backend responses expose source labels, filenames, excerpts, and source-document content lookup for confident approve/reject; frontend renders list-scale group management as dedicated routes while keeping per-request review in a drawer. | Backend commit `3812ef3`; frontend commits `5eefc77`, `58212af`, `19f33f0`; `tests/test_publish_requests.py`; `tests/test_kb_openapi_contract.py`; frontend `e2e/group-knowledge-v1.spec.ts`. |
 | 2026-06-14 | Fixed no-account group invitations so token-proved invitees choose nickname/password only, keep email as sign-in identity, and accept membership in one flow. | `my_agents/groups/service.py`; `my_agents/api/groups.py`; `my_agents/auth/email_templates/`; `tests/test_group_invitations_api.py`; `tests/test_auth_email.py`; README pair; group/nickname contract docs. |
-| 2026-06-14 | Implemented and documented the nickname signup and manager-only member roster contract. | `docs/product-chat-service/en/20-nickname-signup-member-roster-contract.md`; `docs/product-chat-service/ko/20-nickname-signup-member-roster-contract.md`; README pair; group-permission docs; implementation tracking. |
+| 2026-06-14 | Implemented and documented the nickname signup and manager-only member roster contract. | `docs/product-chat-service/20-nickname-signup-member-roster-contract.md`; `docs/product-chat-service/20-nickname-signup-member-roster-contract.ko.md`; README pair; group-permission docs; implementation tracking. |
 | 2026-06-10 | Added a thin ContextForge LangGraph `RetrievalGraph` wrapper as the conversation-run retrieval entrypoint and future agent tool/subgraph seam. | `my_agents/agents/context_forge/graph.py`; `my_agents/agents/context_forge/__init__.py`; `my_agents/api/conversations/retrieval_context.py`; `tests/test_context_forge_contracts.py`; ContextForge README pair; retrieval architecture docs; targeted ContextForge/RAG tests. |
 | 2026-06-07 | Added real streamed assistant-message replay and newest-first conversation list ordering for the chat sidebar. | `my_agents/api/conversations/endpoints/replay.py`; `my_agents/api/conversations/endpoints/conversations.py`; `tests/test_conversations_api.py`; `tests/test_kb_openapi_contract.py`; streaming frontend contract docs; `uv run ruff check . --no-cache`; `uv run ruff format --check .`; `uv run pytest -q` (306 passed, 2 skipped). |
 | 2026-06-06 | Added RAG Agent contracts for the agentic RAG workflow and compact localized trace payloads for run responses/SSE/events. | `my_agents/agents/rag_agent/`; `my_agents/api/conversations/agent_trace.py`; `my_agents/api/conversations/run_events.py`; `my_agents/api/conversations/run_lifecycle.py`; `my_agents/api/conversations/serializers.py`; `my_agents/api/conversations/endpoints/stream.py`; `my_agents/conversations/schemas.py`; `tests/test_rag_agent_contracts.py`; `tests/test_conversations_api.py`; RAG Agent README pair; local targeted Ruff/pytest evidence. |
 | 2026-05-27 | Added external-worker ingestion mode so hosted async document ingestion no longer needs to run inside the web request process. | `my_agents/knowledge/ingestion_worker.py`; `my_agents/ingestion_worker.py`; `my_agents/api/documents.py`; `my_agents/settings.py`; `.env.example`; `tests/test_knowledge_ingestion.py`; `tests/test_settings.py`; README pair; Render migration/troubleshooting docs. |
-| 2026-05-27 | Basic hosted deployment and CI/CD baseline proven with Render backend, Vercel frontend, Neon Postgres, Resend HTTP email, verified `my-agents.dev`, and frontend auth email landing routes. | Backend commits `7a3b864`, `a6975cc`, `e455774`, `4f0b0b0`; frontend commit `7ade1aa`; `docs/product-chat-service/en/14-render-migration-and-rollback-notes.md`; `docs/product-chat-service/en/15-deployment-troubleshooting-log.md`; hosted logs showing `POST /auth/signup 201 Created` and `auth.email.resend_http.completed`. |
-| 2026-05-26 | Email-gated guest requests added so the browser receives only an acknowledgement while operators issue one-time codes manually. | `my_agents/auth/service.py`; `my_agents/api/auth.py`; `my_agents/auth/models.py`; `alembic/versions/20260526_0016_guest_access_requests.py`; `scripts/issue_guest_access_code.py`; `tests/test_guest_access_api.py`; `docs/product-chat-service/en/02-first-party-auth-sessions.md`. |
+| 2026-05-27 | Basic hosted deployment and CI/CD baseline proven with Render backend, Vercel frontend, Neon Postgres, Resend HTTP email, verified `my-agents.dev`, and frontend auth email landing routes. | Backend commits `7a3b864`, `a6975cc`, `e455774`, `4f0b0b0`; frontend commit `7ade1aa`; `docs/product-chat-service/14-render-migration-and-rollback-notes.md`; `docs/product-chat-service/15-deployment-troubleshooting-log.md`; hosted logs showing `POST /auth/signup 201 Created` and `auth.email.resend_http.completed`. |
+| 2026-05-26 | Email-gated guest requests added so the browser receives only an acknowledgement while operators issue one-time codes manually. | `my_agents/auth/service.py`; `my_agents/api/auth.py`; `my_agents/auth/models.py`; `alembic/versions/20260526_0016_guest_access_requests.py`; `scripts/issue_guest_access_code.py`; `tests/test_guest_access_api.py`; `docs/product-chat-service/02-first-party-auth-sessions.md`. |
 | 2026-05-24 | Added ContextForge as the dedicated RAG retrieval-agent service boundary with structured entity extraction and endpoint enumeration retrieval. | `my_agents/agents/context_forge/`; `my_agents/knowledge/models.py`; `my_agents/knowledge/extraction.py`; `my_agents/knowledge/retrieval.py`; `my_agents/api/conversations/retrieval_context.py`; `my_agents/api/conversations/run_events.py`; `alembic/versions/20260524_0014_structured_knowledge_entities.py`; `tests/test_context_forge_contracts.py`; `tests/test_context_forge_structured_retrieval.py`; README pair; ContextForge README pair; `ROADMAP.md`. |
 | 2026-05-24 | Added an OCR page cap for the Tesseract PDF fallback and moved lightweight text extractors before heavyweight Docling/OCR fallback, preventing image-heavy PDFs from monopolizing synchronous upload requests. | `my_agents/knowledge/pdf_uploads.py`; `my_agents/api/documents.py`; `my_agents/settings.py`; `.env.example`; `tests/test_knowledge_ingestion.py`; `tests/test_settings.py`; README pair. |
 | 2026-05-24 | Added optional ContextForge cross-encoder reranking and Rich role-handoff debug traces behind env settings while preserving deterministic offline defaults. | `my_agents/agents/context_forge/reranking.py`; `my_agents/agents/context_forge/debug.py`; `my_agents/agents/context_forge/service.py`; `my_agents/settings.py`; `.env.example`; `tests/test_context_forge_reranking.py`; README pair; ContextForge README pair; `ROADMAP.md`. |
-| 2026-05-21 | Added a local Docker pgvector helper for pulling DockerHub pgvector/Postgres, writing ignored backend env wiring, running Alembic, and executing the gated migration smoke. | `scripts/dev_pgvector.py`; `tests/test_dev_pgvector_script.py`; `.env.example`; README pair; `docs/product-chat-service/en/08-postgres-alembic-neon.md`. |
-| 2026-05-22 | Fixed and documented the Postgres parallel-ingestion deadlock caused by shared entity names racing on `entities.name`. | `my_agents/knowledge/extraction.py`; `tests/test_knowledge_ingestion.py`; `docs/learning/06-parallel-ingestion-postgres-deadlock.md`; `docs/product-chat-service/en/05-knowledge-ingestion-extraction.md`; `docs/product-chat-service/en/08-postgres-alembic-neon.md`. |
-| 2026-05-22 | Added additive async document ingestion with extraction-run progress fields, direct polling, in-process background execution, and permission-safe tests. | `my_agents/api/documents.py`; `my_agents/knowledge/extraction.py`; `my_agents/knowledge/models.py`; `my_agents/knowledge/schemas.py`; `alembic/versions/20260522_0008_async_extraction_progress.py`; `tests/test_knowledge_ingestion.py`; `tests/test_migrations.py`; README pair; `docs/product-chat-service/en/05-knowledge-ingestion-extraction.md`. |
-| 2026-05-21 | Added Slice B pgvector chunk storage and permission-filtered SQL vector search with JSON/SQLite fallback. | `alembic/versions/20260521_0007_pgvector_chunk_embeddings.py`; `my_agents/knowledge/models.py`; `my_agents/knowledge/extraction.py`; `my_agents/knowledge/retrieval.py`; `tests/test_migrations.py`; `tests/test_permission_aware_rag.py`; README pair; `docs/product-chat-service/en/05-knowledge-ingestion-extraction.md`; `docs/product-chat-service/en/06-permission-aware-rag.md`; `docs/product-chat-service/en/08-postgres-alembic-neon.md`. |
-| 2026-05-21 | Extended document upload beyond PDF to Markdown and plain text while preserving PDF provenance and retrieval behavior. | `my_agents/api/documents.py`; `my_agents/knowledge/uploads.py`; `tests/test_knowledge_ingestion.py`; README pair; `docs/product-chat-service/en/05-knowledge-ingestion-extraction.md`. |
-| 2026-05-21 | Retrieval routing and answer-mode metadata added before graph invocation. | `my_agents/knowledge/routing.py`; `my_agents/knowledge/retrieval.py`; `my_agents/api/conversations.py`; `my_agents/conversations/models.py`; `alembic/versions/20260521_0006_retrieval_routing_metadata.py`; `tests/test_retrieval_routing.py`; `tests/test_conversations_api.py`; `tests/test_permission_aware_rag.py`; README pair; general assistant README pair; `docs/product-chat-service/en/06-permission-aware-rag.md`. |
-| 2026-05-21 | PDF/text ingestion sophistication improved with `pypdf`, better chunking/entity extraction, and 32-d deterministic embedding fixtures. | `pyproject.toml`; `uv.lock`; `my_agents/knowledge/pdf_uploads.py`; `my_agents/knowledge/extraction.py`; `tests/test_knowledge_ingestion.py`; README pair; `docs/product-chat-service/en/05-knowledge-ingestion-extraction.md`. |
+| 2026-05-21 | Added a local Docker pgvector helper for pulling DockerHub pgvector/Postgres, writing ignored backend env wiring, running Alembic, and executing the gated migration smoke. | `scripts/dev_pgvector.py`; `tests/test_dev_pgvector_script.py`; `.env.example`; README pair; `docs/product-chat-service/08-postgres-alembic-neon.md`. |
+| 2026-05-22 | Fixed and documented the Postgres parallel-ingestion deadlock caused by shared entity names racing on `entities.name`. | `my_agents/knowledge/extraction.py`; `tests/test_knowledge_ingestion.py`; `docs/learning/06-parallel-ingestion-postgres-deadlock.md`; `docs/product-chat-service/05-knowledge-ingestion-extraction.md`; `docs/product-chat-service/08-postgres-alembic-neon.md`. |
+| 2026-05-22 | Added additive async document ingestion with extraction-run progress fields, direct polling, in-process background execution, and permission-safe tests. | `my_agents/api/documents.py`; `my_agents/knowledge/extraction.py`; `my_agents/knowledge/models.py`; `my_agents/knowledge/schemas.py`; `alembic/versions/20260522_0008_async_extraction_progress.py`; `tests/test_knowledge_ingestion.py`; `tests/test_migrations.py`; README pair; `docs/product-chat-service/05-knowledge-ingestion-extraction.md`. |
+| 2026-05-21 | Added Slice B pgvector chunk storage and permission-filtered SQL vector search with JSON/SQLite fallback. | `alembic/versions/20260521_0007_pgvector_chunk_embeddings.py`; `my_agents/knowledge/models.py`; `my_agents/knowledge/extraction.py`; `my_agents/knowledge/retrieval.py`; `tests/test_migrations.py`; `tests/test_permission_aware_rag.py`; README pair; `docs/product-chat-service/05-knowledge-ingestion-extraction.md`; `docs/product-chat-service/06-permission-aware-rag.md`; `docs/product-chat-service/08-postgres-alembic-neon.md`. |
+| 2026-05-21 | Extended document upload beyond PDF to Markdown and plain text while preserving PDF provenance and retrieval behavior. | `my_agents/api/documents.py`; `my_agents/knowledge/uploads.py`; `tests/test_knowledge_ingestion.py`; README pair; `docs/product-chat-service/05-knowledge-ingestion-extraction.md`. |
+| 2026-05-21 | Retrieval routing and answer-mode metadata added before graph invocation. | `my_agents/knowledge/routing.py`; `my_agents/knowledge/retrieval.py`; `my_agents/api/conversations.py`; `my_agents/conversations/models.py`; `alembic/versions/20260521_0006_retrieval_routing_metadata.py`; `tests/test_retrieval_routing.py`; `tests/test_conversations_api.py`; `tests/test_permission_aware_rag.py`; README pair; general assistant README pair; `docs/product-chat-service/06-permission-aware-rag.md`. |
+| 2026-05-21 | PDF/text ingestion sophistication improved with `pypdf`, better chunking/entity extraction, and 32-d deterministic embedding fixtures. | `pyproject.toml`; `uv.lock`; `my_agents/knowledge/pdf_uploads.py`; `my_agents/knowledge/extraction.py`; `tests/test_knowledge_ingestion.py`; README pair; `docs/product-chat-service/05-knowledge-ingestion-extraction.md`. |
 | 2026-05-21 | Added Slice A embedding provider boundary with deterministic default, optional OpenAI embeddings through `langchain-openai`, and permission-first JSON cosine retrieval ranking. | `my_agents/knowledge/embeddings.py`; `my_agents/knowledge/extraction.py`; `my_agents/knowledge/retrieval.py`; `.env.example`; README pair; permission/observability tests. |
-| 2026-05-21 | Provider-free public-demo guest access added with one-time codes, guest sessions, and backend limits. | `my_agents/auth/service.py`; `my_agents/api/auth.py`; `my_agents/auth/guest_limits.py`; `alembic/versions/20260521_0005_guest_access.py`; `tests/test_guest_access_api.py`; README pair; `docs/product-chat-service/en/02-first-party-auth-sessions.md`. |
-| 2026-05-21 | Generic container deployment path and backend signup disable switch added for public demos. | `Dockerfile`; `.dockerignore`; `my_agents/settings.py`; `my_agents/api/auth.py`; `tests/test_auth_api.py`; README pair; `docs/product-chat-service/en/13-generic-container-deployment-path.md`. |
-| 2026-05-20 | PDF parser rejects corrupted binary text and supports FlateDecode resume retrieval smoke. | `my_agents/knowledge/pdf_uploads.py`; `tests/test_knowledge_ingestion.py`; README pair; `docs/product-chat-service/en/05-knowledge-ingestion-extraction.md`. |
+| 2026-05-21 | Provider-free public-demo guest access added with one-time codes, guest sessions, and backend limits. | `my_agents/auth/service.py`; `my_agents/api/auth.py`; `my_agents/auth/guest_limits.py`; `alembic/versions/20260521_0005_guest_access.py`; `tests/test_guest_access_api.py`; README pair; `docs/product-chat-service/02-first-party-auth-sessions.md`. |
+| 2026-05-21 | Generic container deployment path and backend signup disable switch added for public demos. | `Dockerfile`; `.dockerignore`; `my_agents/settings.py`; `my_agents/api/auth.py`; `tests/test_auth_api.py`; README pair; `docs/product-chat-service/13-generic-container-deployment-path.md`. |
+| 2026-05-20 | PDF parser rejects corrupted binary text and supports FlateDecode resume retrieval smoke. | `my_agents/knowledge/pdf_uploads.py`; `tests/test_knowledge_ingestion.py`; README pair; `docs/product-chat-service/05-knowledge-ingestion-extraction.md`. |
 | 2026-05-20 | Resume/profile RAG fallback added for broad personal-document questions. | `my_agents/knowledge/retrieval.py`; `my_agents/api/conversations.py`; `my_agents/agents/general_assistant/graph.py`; `my_agents/agents/general_assistant/responders.py`; `tests/test_permission_aware_rag.py`; `tests/test_responders.py`; README pair; general assistant README pair; `docs/learning/05-resume-rag-fallback-after-broad-personal-questions.md`. |
-| 2026-05-20 | Public visitor auth email/provider boundary added. | `my_agents/auth/email.py`; `my_agents/auth/dependencies.py`; `my_agents/settings.py`; `tests/test_auth_email.py`; `tests/test_settings.py`; `.env.example`; README pair; `docs/product-chat-service/en/10-frontend-demo-runbook.md`; `docs/product-chat-service/en/12-public-demo-deployment-readiness.md`. |
+| 2026-05-20 | Public visitor auth email/provider boundary added. | `my_agents/auth/email.py`; `my_agents/auth/dependencies.py`; `my_agents/settings.py`; `tests/test_auth_email.py`; `tests/test_settings.py`; `.env.example`; README pair; `docs/product-chat-service/10-frontend-demo-runbook.md`; `docs/product-chat-service/12-public-demo-deployment-readiness.md`. |
 | 2026-05-20 | Strict V1 Phase 2 backend PDF upload/ingestion added. | `my_agents/api/documents.py`; `my_agents/knowledge/pdf_uploads.py`; `my_agents/knowledge/extraction.py`; `my_agents/knowledge/models.py`; `alembic/versions/20260520_0004_pdf_upload_provenance.py`; `tests/test_knowledge_ingestion.py`; README pair. |
-| 2026-05-20 | Strict V1 Phase 1 backend auth/session hardening added. | `my_agents/settings.py`; `tests/test_auth_api.py`; `tests/test_cors_api.py`; `tests/test_settings.py`; `docs/product-chat-service/en/02-first-party-auth-sessions.md`; `docs/product-chat-service/en/10-frontend-demo-runbook.md`. |
-| 2026-05-20 | Strict V1 Phase 0 backend contract/evidence map added. | `docs/product-chat-service/en/11-v1-phase-0-contract-freeze-evidence-map.md`; `docs/product-chat-service/en/README.md`; `docs/implementation-tracking.md`. |
-| 2026-05-20 | Public demo deployment readiness runbook added. | `docs/product-chat-service/en/12-public-demo-deployment-readiness.md`; `docs/product-chat-service/en/README.md`; `docs/implementation-tracking.md`. |
-| 2026-05-20 | Backend-only V1 API smoke helper added for the seeded demo path. | `scripts/local_demo_smoke.py`; `tests/test_local_demo_smoke.py`; `docs/product-chat-service/en/10-frontend-demo-runbook.md`. |
-| 2026-05-20 | Local V1 demo seed helper added for verified user, text document, and extraction run. | `scripts/local_demo_seed.py`; `tests/test_local_demo_seed.py`; `docs/product-chat-service/en/10-frontend-demo-runbook.md`. |
+| 2026-05-20 | Strict V1 Phase 1 backend auth/session hardening added. | `my_agents/settings.py`; `tests/test_auth_api.py`; `tests/test_cors_api.py`; `tests/test_settings.py`; `docs/product-chat-service/02-first-party-auth-sessions.md`; `docs/product-chat-service/10-frontend-demo-runbook.md`. |
+| 2026-05-20 | Strict V1 Phase 0 backend contract/evidence map added. | `docs/product-chat-service/11-v1-phase-0-contract-freeze-evidence-map.md`; `docs/product-chat-service/README.md`; `docs/implementation-tracking.md`. |
+| 2026-05-20 | Public demo deployment readiness runbook added. | `docs/product-chat-service/12-public-demo-deployment-readiness.md`; `docs/product-chat-service/README.md`; `docs/implementation-tracking.md`. |
+| 2026-05-20 | Backend-only V1 API smoke helper added for the seeded demo path. | `scripts/local_demo_smoke.py`; `tests/test_local_demo_smoke.py`; `docs/product-chat-service/10-frontend-demo-runbook.md`. |
+| 2026-05-20 | Local V1 demo seed helper added for verified user, text document, and extraction run. | `scripts/local_demo_seed.py`; `tests/test_local_demo_seed.py`; `docs/product-chat-service/10-frontend-demo-runbook.md`. |
 | 2026-05-20 | Refresh-safe run detail and gated local auth dev outbox added for frontend demo verification. | `tests/test_conversations_api.py`; `tests/test_permission_aware_rag.py`; `tests/test_auth_api.py`; `tests/test_migrations.py`. |
-| 2026-05-20 | Credentialed frontend CORS configuration and local frontend demo runbook added. | `tests/test_cors_api.py`; `tests/test_settings.py`; `docs/product-chat-service/en/10-frontend-demo-runbook.md`. |
-| 2026-05-19 | Product conversation runs gained SSE progress and assistant-delta streaming plus frontend contract docs. | `tests/test_conversations_api.py`; `docs/product-chat-service/en/09-http-streaming-frontend-contract.md`. |
+| 2026-05-20 | Credentialed frontend CORS configuration and local frontend demo runbook added. | `tests/test_cors_api.py`; `tests/test_settings.py`; `docs/product-chat-service/10-frontend-demo-runbook.md`. |
+| 2026-05-19 | Product conversation runs gained SSE progress and assistant-delta streaming plus frontend contract docs. | `tests/test_conversations_api.py`; `docs/product-chat-service/09-http-streaming-frontend-contract.md`. |
 | 2026-05-19 | Local auth abuse protection added for account lifecycle endpoints. | `92 passed, 1 skipped`; Ruff check/format pass; in-process `AuthAbuseProtector`; README/env/learning docs updated. |
 | 2026-05-18 | Product chat-service v0 backend foundation is in a strong test-backed state. | `84 passed, 1 skipped`; Ruff check/format pass. |
 | 2026-05-18 | Portable implementation tracking added outside `.omx/`. | `docs/implementation-tracking.md` created and linked from root READMEs. |
@@ -894,6 +917,6 @@ Before starting a new workflow on any machine:
 - Added `POST /knowledge-bases/team-upload-staging` to create/reuse a hidden personal staging KB for group document publication.
 - Excluded staging KBs from normal KB lists, chat selected/all source resolution, retrieval filters, and whole-KB publish requests.
 - Preserved document-copy publication: staged documents can be copied into a target group KB, and only the approved group copy is ingested/retrieved.
-- Captured the service flow in `docs/product-chat-service/en/18-team-upload-staging-flow.md` and the Korean companion note.
+- Captured the service flow in `docs/product-chat-service/18-team-upload-staging-flow.md` and the Korean companion note.
 
 Verification so far: targeted pytest for staging publish/retrieval, OpenAPI contract, and Alembic head migration.

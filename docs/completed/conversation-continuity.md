@@ -2,8 +2,8 @@
 
 - Status: shipped repository implementation; deployment is a separate operation.
 - Completed: 2026-09-30.
-- Current behavior: [English contract](../product-chat-service/en/36-conversation-continuity.md),
-  [Korean contract](../product-chat-service/ko/36-conversation-continuity.md).
+- Current behavior: [English contract](../product-chat-service/36-conversation-continuity.md),
+  [Korean contract](../product-chat-service/36-conversation-continuity.ko.md).
 - Design history: [original proposal and pre-implementation diagnosis](./conversation-continuity-design-history.md).
 
 ## Delivered scope

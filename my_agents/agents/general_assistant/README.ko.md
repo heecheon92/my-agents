@@ -1,0 +1,243 @@
+# general_assistant 에이전트
+
+한국어 | [English](./README.md)
+
+`general_assistant`는 이 저장소의 기본 LangGraph assistant/controller입니다. 사용자의 메시지를 route label로 분류한 뒤, private knowledge-base retrieval을 실행할지 먼저 결정하고, 필요하면 graph 안에서 RAG Agent를 호출해 범위가 좁은 검색 또는 명시적인 전체 문서 context를 가져오고, opt-in memory를 recall한 다음, 선택된 response node가 공통 response provider로 답변을 구성합니다.
+
+## 현재 역할
+
+- `build_graph()`는 conversation run이 사용하는 retrieval-enabled product graph입니다.
+- `build_legacy_chat_graph()`는 FastAPI legacy `/assistant/chat`와 터미널 CLI가 사용하는 no-KB graph입니다.
+- Product conversation run에서는 top-level controller처럼 동작하며 `decide_retrieval_source`를 거친 뒤 필요할 때 `retrieve_rag_context` node로 `rag_agent` retrieval runtime을 호출합니다.
+- Private knowledge 위임 뒤 RAG Agent의 Jev planner가 focused chunk search와 comprehensive document read를 고릅니다. Deterministic mode와 provider failure는 같은 local fallback을 유지하며 comprehensive choice는 `resolve_full_document_target -> prepare_full_document_read -> retrieve_memory -> respond_full_document` 경로로 갑니다.
+- 라우트 라벨은 응답 방식을 고르는 메타데이터입니다.
+- 라우트 라벨은 `AgentCapability` metadata와 연결되어 사용 가능한 tool, data source, side effect를 정직하게 전달합니다.
+- 현재 라우트별 response node는 별도의 hosted 전문 에이전트 실행을 의미하지 않습니다.
+- OpenAI 응답 생성은 `langchain-openai`의 `ChatOpenAI`를 통해 수행합니다.
+- 항상 포함되는 responder system prompt는 어시스턴트를 `https://my-agents.dev`의
+  `my-agents` 내부 어시스턴트로 식별합니다. 바뀔 수 있는 제품 정보는 이 정체성
+  prompt에 고정하거나 추측하지 않고, 권한이 확인된 context에서 가져옵니다.
+- deterministic 모드는 테스트와 오프라인 smoke check를 위해 유지합니다.
+
+## 파일 구조
+
+| 파일 | 책임 |
+| --- | --- |
+| `graph.py` | LangGraph `StateGraph`, RAG/memory/response 노드, 조건부 라우팅, graph state 정의 |
+| `classifier.py` | LangChain messages를 읽고 결정론적 `RouteDecision` 생성 |
+| `retrieval_gate.py` | Private KB retrieval을 실행할지, general/web 답변으로 bypass할지 결정하는 얇은 deterministic/Jev source-selection gate |
+| `rag_retrieval.py` | graph-owned RAG Agent invocation과 전체 문서 target/read 준비 node; RAG 결과를 checkpoint-safe assistant state로 바꾸고 halt 여부를 결정 |
+| `memory_recall.py` | graph-owned memory recall node helper와 source-conflict 감지 |
+| `context.py` | Product DB conversation message, authorized document context, stored memory context, material source conflict를 명시적인 provider source context로 조립 |
+| `responders.py` | deterministic/OpenAI response provider, OpenAI 호출 경계, 향후 hosted tool policy 위치 |
+| `__init__.py` | 패키지 경계 |
+
+## 그래프 흐름
+
+```mermaid
+flowchart TD
+    Start([START]) --> Classify["classify_request"]
+    Classify --> SourceGate["decide_retrieval_source"]
+    SourceGate -->|knowledge_base| RAGChoice{"RAG Agent Jev tool choice"}
+    RAGChoice -->|search_authorized_chunks| RAG["retrieve_rag_context\ncall RAG Agent runtime"]
+    RAGChoice -->|read comprehensively| FullTarget["resolve_full_document_target"]
+    SourceGate -->|bypass| SkipRAG["skip_rag_context\nexplicit no_retrieval result"]
+    FullTarget -->|one authorized document| FullPrepare["prepare_full_document_read\ncompact coverage + chunk IDs"]
+    FullTarget -->|ambiguous + HITL| Select["prepare/request document_selection"]
+    Select --> FullTarget
+    FullTarget -->|unavailable| End
+    RAG --> Halt{"clarification or\ninsufficient evidence?"}
+    SkipRAG --> Halt
+    Halt -->|yes| End([END])
+    Halt -->|no| Memory["retrieve_memory"]
+    FullPrepare --> Memory
+    Memory --> Route{"route label"}
+    Route -->|general_assistant| General["respond_general"]
+    Route -->|research_helper| Research["respond_research"]
+    Route -->|comprehensive document| FullResponse["respond_full_document\nre-read authorized range"]
+    General --> Provider["response provider"]
+    Research --> Provider
+    FullResponse --> Provider
+    Provider --> End
+```
+
+## Route label 의미
+
+| 라벨 | 현재 의미 |
+| --- | --- |
+| `general_assistant` | 일반 요청, 정리, 학습/계획/커리어 도움, 다음 단계 제안 |
+| `research_helper` | 리서치 질문, 자료 탐색, 출처 중심 답변 방향 |
+
+## Capability metadata
+
+`my_agents/agents/capabilities.py`는 route capability name, purpose, tool, data source, side effect를 기록합니다. 그래프는 classification 뒤에 이 metadata를 붙이고, `responders.py`는 deterministic reply와 OpenAI prompt에 이를 포함합니다.
+
+이 구조는 API를 정직하게 유지합니다. OpenAI mode에서는 hosted `web_search`를 `general_assistant`와 `research_helper` 모두에 노출할 수 있지만, assistant가 별도 task database나 외부 project-management tool side effect를 주장하지는 않아야 합니다.
+
+## Product service layer와의 관계
+
+`general_assistant` 폴더는 graph/classifier/RAG invocation/memory recall/responder 경계를 소유합니다. Auth, group/document permission, server-owned conversation, knowledge ingestion, source selection, citation, agent event persistence는 `my_agents/api/`, `my_agents/knowledge/`, `my_agents/conversations/` 같은 service layer에서 소유합니다.
+
+제품 conversation run은 DB-backed `SqlAlchemyRagAgentRuntime`과 resolved `KnowledgeBaseSelectionContext`를 LangGraph runtime context로 전달합니다. `general_assistant`는 먼저 broad source-selection gate를 실행합니다. Gate가 `knowledge_base`로 위임하면 RAG-owned Jev planner가 typed focused/comprehensive operation을 선택하고, `general_assistant`는 retrieval policy나 authorization을 소유하지 않은 채 compact choice를 routing합니다. RAG Agent는 public retrieval boundary이고 ContextForge는 focused retrieval engine입니다. Source gate가 `bypass`를 선택하면 explicit `no_retrieval` result를 남깁니다. RAG 결과가 `clarification_required`이면 visible clarification을 구성하고 structured contract를 persist합니다. Required evidence가 부족하면 answer node 전에 멈추며, 그 외에는 memory recall 뒤 shared Sol response provider가 final answer를 구성합니다.
+
+Comprehensive branch는 일반 검색보다 더 좁습니다. Jev는 explicit 또는 의미상 분명한 exhaustive document task를 선택하며, named document와 “빠짐없이”가 결합된 자연스러운 요청도 포함합니다. 일반적인 “이 문서를 요약해줘”는 focused path에 남습니다. Deterministic fallback도 document reference, exhaustive coverage 표현, task verb를 조합해 같은 결정을 내립니다. Resume selection, 유일한 eligible target, 고유한 title/filename match 순서로 현재 권한이 있는 user-controllable document 한 개를 결정합니다. 대상이 모호하면 typed document-selection interrupt를 재사용하고 ambient system document는 모든 target/read boundary에서 제외합니다.
+
+`prepare_full_document_read`는 coverage와 겹치는 citation chunk를 검증하지만 raw document body는 state에 쓰지 않습니다. 정규화된 추출 텍스트가 `MY_AGENTS_FULL_DOCUMENT_MAX_CHARS` 이하이면(기본 24,000자) `complete`입니다. 큰 문서는 현재 `[0, MY_AGENTS_FULL_DOCUMENT_RANGE_CHARS)`만 준비하며(기본 12,000자) `partial`로 표시하고, 응답 맨 앞에 피할 수 없는 현지화된 부분 검토 안내를 붙입니다. Memory recall 뒤 `respond_full_document`가 같은 범위의 권한과 내용을 node 안에서 다시 확인해 읽고, LangSmith tracing을 끈 채 provider를 호출한 뒤 reply만 반환합니다. 문서가 바뀌거나 삭제되거나 권한이 사라지면 다른 source를 대신 고르지 않고 안전한 insufficient-evidence 결과로 내려갑니다.
+
+Authorized document context에는 ambient system/project knowledge가 포함될 수 있습니다. 이는 user memory도 user-visible source도 아닌 internal retrieval context입니다. System chunk가 provider context에 들어갈 때는 snippet만 남기고, prompt는 생략된 provenance를 추론하거나 공개하지 않도록 지시합니다. Source-selection gate는 latest turn을 우선하지만 multi-turn context도 봅니다. “저장된 문서 쓰지 마”나 “업로드한 문서를 써” 같은 최신 turn의 명시적 지시는 우선하고, follow-up처럼 보이는 turn은 새로운 document/KB 의도가 없으면 최근 web/current 의도를 이어받아 private KB retrieval을 bypass할 수 있습니다. Memory node는 LangGraph `context`로 전달된 runtime-only `MemoryRuntime` adapter를 사용해 opt-in/governance filter가 적용된 active user memory를 검색하고, compact `memory_context`와 `source_conflicts`를 graph state에 기록합니다. Provider prompt 구성은 명시적인 `SourceContextBundle`을 거칩니다. 최근 Product DB conversation message, opt-in stored memory, authorized document context, material source conflict는 암묵적인 message slice가 아니라 분리된 channel로 전달됩니다. 보안 결정과 permission filter는 계속 `RetrievalService`/ContextForge/API layer에 남고, memory governance는 `my_agents/memory/`가 계속 소유합니다.
+
+```mermaid
+sequenceDiagram
+    participant RunAPI as conversation run API
+    participant Graph as general_assistant graph
+    participant Gate as source-selection gate
+    participant RAG as RAG Agent runtime
+    participant Retrieval as ContextForge / RetrievalService
+    participant Memory as MemoryRuntime
+    participant Provider as response provider
+    participant Events as citations / events
+
+    RunAPI->>Graph: messages + runtime context(user, KB selection, RAG runtime, memory runtime)
+    Graph->>Graph: classify_request
+    Graph->>Gate: decide_retrieval_source
+    alt knowledge_base
+        Gate-->>Graph: run RAG retrieval
+        Graph->>RAG: retrieve_rag_context
+        RAG->>Retrieval: delegated permission-first retrieval
+        Retrieval-->>RAG: authorized context + redacted evidence
+        RAG-->>Graph: retrieval route, answer mode, retrieved_context
+    else bypass
+        Gate-->>Graph: skip private KB retrieval
+        Graph-->>Graph: explicit no_retrieval RAG result
+    end
+    alt clarification required
+        Graph->>Memory: retrieve_memory
+        Memory-->>Graph: memory_context + source_conflicts
+        Graph->>Provider: compose visible clarification
+        Provider-->>Graph: clarification reply
+        Graph-->>RunAPI: reply + clarification state
+        RunAPI->>Events: persist retrieval event + clarification contract
+    else insufficient evidence
+        Graph-->>RunAPI: halt before answer node
+        RunAPI->>Events: persist retrieval event + safe terminal state
+    else answerable
+        Graph->>Memory: retrieve_memory
+        Memory-->>Graph: memory_context + source_conflicts
+        Graph->>Provider: compose with explicit source channels
+        Provider-->>Graph: reply
+        Graph-->>RunAPI: reply + graph state
+        RunAPI->>Events: persist citations, trace, grounding result
+    end
+```
+
+이 분리는 제품 설명에서 중요합니다. LangGraph는 assistant control flow를 보여주고, RAG Agent는 assistant-callable retrieval boundary를 보여주며, ContextForge/RetrievalService/API 레이어는 실제 제품에 필요한 auth/permission/provenance 경계를 보여줍니다. Ingestion(upload/parse/chunk/embed)은 retrieval routing과 분리된 별도 pipeline입니다.
+
+## Conversation / source context assembly
+
+`context.py`는 provider context 선택을 명시적으로 관리합니다. Product conversation run은 graph invocation 전에 server-owned SQL transcript를 로드하지만, provider는 prompt 구성 내부의 숨겨진 `messages[-6:]` slice에 직접 의존하지 않고 `SourceContextBundle`을 통해 제한된 최근 conversation window를 받습니다.
+
+현재 channel은 다음과 같습니다.
+
+| Channel | 현재 source | 비고 |
+| --- | --- | --- |
+| recent conversation | graph state로 전달된 Product DB transcript | Product DB가 visible transcript source of truth입니다 |
+| authorized documents | graph-owned focused retrieval 또는 explicit comprehensive-document call이 사용하는 RAG Agent runtime | Focused retrieval은 prompt-safe compact context를 제공합니다. Comprehensive retrieval은 response node 안에서만 재검증한 personal/group extracted-text range 한 개를 제공하며 ambient system document는 이 경로에 들어갈 수 없습니다. |
+| stored memory | runtime `MemoryRuntime`을 사용하는 graph-owned `retrieve_memory` node | disabled, sensitive, stale, inactive, deleted, stable-preference shape이 아닌 memory, query-irrelevant non-preference memory는 현재 Product DB-backed adapter에서 제외됩니다 |
+| material conflicts | `memory_recall.py`의 graph-owned `source_conflicts` | stored memory와 충돌하면 최신 conversation을 우선하고, document-grounded claim은 authorized document를 우선합니다 |
+
+Memory service는 이 agent folder 밖의 `my_agents/memory/`와 `my_agents/api/memories.py`에 있습니다. Public memory write는 client가 주장하는 provenance ID를 받지 않으며, service-owned path가 document-derived memory를 만들 때 provenance를 제공해야 합니다. Agent graph는 recall orchestration을 소유하지만 persistence/governance는 `MemoryRuntime` 뒤에 유지합니다. Graph state는 untrusted JSON prompt data로 직렬화된 active memory context와 conflict metadata만 받습니다. Replay/regeneration은 historical memory content가 아니라 현재 active memory context를 사용합니다. Completed/failed run에는 내부 audit용 redacted memory-source snapshot을 남길 수 있지만, frontend-visible run event에는 memory count/category/provenance type만 노출합니다.
+
+자세한 LangGraph-native memory migration 내용은 [`docs/product-chat-service/19-langgraph-native-memory-migration.ko.md`](../../../docs/product-chat-service/19-langgraph-native-memory-migration.ko.md)를 봅니다. 선택적으로 켜는 production graph는 이제 `run_id`를 thread boundary로 쓰는 PostgresSaver와, governance 검증을 거치는 memory-search projection인 PostgresStore로 compile됩니다. Checkpoint는 document selection을 기다리는 동안 제한된 serializable execution state만 보관하고, Product DB는 transcript/run/citation/permission/memory governance source of truth로 유지됩니다.
+
+Document-selection HITL을 켜면 `clarification_required`가 `prepare_document_selection -> request_document_selection`으로 이어집니다. V2는 고유한 exact filename을 자동 결정하고, 그 외에는 권한을 확인한 관련 metadata 후보를 최대 5개만 노출합니다. `refine` answer는 같은 run에서 한 줄 filename 단서를 전달하며 두 번 해결하지 못한 뒤에만 전체 목록 탐색을 엽니다. 시도마다 새 UUID를 쓰지만 최초 expiry와 KB scope는 유지합니다. 선택 시 현재 권한을 다시 확인하고, 이미 대기 중인 V1 checkpoint는 기존 resume shape로 계속 처리합니다. Runtime DB session, provider client, ORM model, raw refinement text, document-workspace adapter는 checkpoint나 transcript에 넣지 않습니다.
+
+Comprehensive branch에서 도입한 checkpoint V2 이후, 대화 맥락 유지는 compatibility marker `general-assistant-checkpoint-v3`을 사용합니다. Compact document ID, offset, coverage, retrieval snapshot, 내부 next cursor만 checkpoint에 둘 수 있고 raw extracted text는 넣지 않습니다. 이전 graph version으로 waiting 상태가 된 run은 배포 후 재개할 수 없으므로 미리 drain/cancel해야 합니다. 남아 있으면 기존 version-mismatch 경로가 안전하게 failed 처리합니다.
+
+Public waiting payload와 typed resume answer는 [`docs/product-chat-service/27-agent-frontend-interaction-contract.ko.md`](../../../docs/product-chat-service/27-agent-frontend-interaction-contract.ko.md)의 versioned protocol-neutral 계약을 따릅니다. 앞으로 사용자 입력이 필요한 state도 이 semantic interaction boundary로 추가하고, graph node가 frontend component나 layout을 지정해서는 안 됩니다.
+
+Streaming resume transport는 SSE를 열기 전에 waiting run을 atomic하게 claim하고 첫 event로 `run_resumed`를 보낸 뒤 LangGraph checkpoint를 `messages` + `updates` mode로 재개합니다. 따라서 실제 retrieval/graph 진행 event가 live answer delta보다 먼저 도착하고 stream step 사이에 cancellation을 확인합니다. Sync resume endpoint도 같은 authorization/claim helper를 재사용하지만 기존 completed response 계약을 유지합니다.
+
+Document-selection option에는 사용자가 통제하는 personal/group document만 포함합니다. Ambient system knowledge는 계속 자동으로 주입되는 internal context이며 visible/selectable source가 아닙니다. Client가 system document ID를 직접 보내더라도 resume boundary가 거절합니다.
+
+## OpenAI hosted tools를 추가할 위치
+
+OpenAI Responses API의 `web_search` 같은 일반 답변 built-in tool은 **그래프 노드가 아니라 `responders.py`의 OpenAI provider 경계**에 둡니다. Full-document retrieval은 hosted provider tool이 아니라 application이 실행하는 typed graph path입니다. 단, 임시 파일이 선택된 run은 `document_workspace_runtime`을 LangGraph runtime context로 받아 마지막 응답 node에서 격리된 document workspace adapter를 호출합니다. 이 adapter는 `ChatOpenAI`가 아직 노출하지 않는 Files, Containers, Hosted Shell, Skills API 때문에 필요한 의도적인 예외입니다.
+
+같은 runtime context는 run에 저장된 effective `reasoning_mode`와 `reasoning_effort`도 마지막 response node로 전달합니다. 일반 답변은 `ChatOpenAI.stream(..., reasoning={...})`으로 전달하고 provider는 같은 chunk를 final graph result로 aggregate하며 LangGraph는 이를 live message event로 전달합니다. Attachment 답변은 document-workspace Responses API adapter에 같은 값을 전달하며 buffered 상태를 유지합니다. Source-selection gate는 서버가 선택한 decision provider를 사용하며 사용자 reasoning 설정은 Jev 결정에 적용하지 않습니다. Guest override 차단과 GPT-5.6/GPT-6 `pro` 검증은 graph 진입 전 API boundary에서 수행합니다.
+
+Reasoning이 켜져 있으면 두 final-response path 모두 provider `summary="auto"` output을 요청하고 bounded `summary_text`를 별도 `answer_synthesis_summary`로 유지합니다. Graph는 이를 `reply`에 합치지 않으며 conversation boundary가 전용 reasoning-summary 계약으로 저장하고 제공합니다.
+
+일반 model streaming은 하나의 source of truth를 사용합니다. 각 `AIMessageChunk`는 LangGraph `messages` stream mode에 보이는 동시에 하나의 final message로 더해져 reply와 reasoning summary 추출에 사용됩니다. Provider는 두 번째 completion call을 만들지 않습니다. Deterministic path와 full-document path는 문서화된 fallback/buffering behavior를 유지합니다.
+
+이유:
+
+- `graph.py`는 라우트 결정, RAG/memory orchestration, 흐름 제어만 담당하게 유지할 수 있습니다.
+- `respond_general`, `respond_research` 같은 노드는 provider 세부사항을 몰라도 됩니다.
+- OpenAI 전용 기능은 `OpenAIResponseProvider` 안에 모아 provider 교체/테스트가 쉬워집니다.
+- route-specific tool policy를 한 곳에서 테스트할 수 있습니다.
+- 첨부가 있는 turn은 명시적으로 선택된 KB가 없으면 private KB retrieval을 우회하고 임시 첨부를 source로 사용합니다. 명시적 KB 선택이 있으면 기존 permission-first RAG context도 함께 전달합니다.
+
+## Web search policy
+
+OpenAI mode는 두 response route 모두에서 provider boundary에 hosted `web_search`를 bind합니다. General-assistant 요청이 웹을 필요로 하는지는 앱의 언어별 keyword heuristic으로 판단하지 않고, tool이 노출된 뒤 model이 multilingual 및 multi-turn intent를 판단하게 둡니다.
+
+| 라우트 | web search 기본 정책 |
+| --- | --- |
+| `general_assistant` | Tool은 사용 가능하지만, provider prompt는 최신/최근/웹 기반/출처 기반/외부 검증 정보가 필요할 때와 같은 source need를 이어받은 follow-up일 때만 호출하라고 지시 |
+| `research_helper` | 기본적으로 tool 사용 가능 |
+
+현재 tool binding은 API 응답 스키마를 바꾸지 않습니다. Citation과 tool metadata는 실제 응답 형태를 확인한 뒤 `ChatResponse`에 추가하는 것이 안전합니다.
+
+## 변경 시 확인할 것
+
+- 그래프 흐름을 바꾸면 `tests/test_graph.py`를 확인합니다.
+- RAG retrieval boundary를 바꾸면 `tests/test_conversations_api.py`, `tests/test_permission_aware_rag.py`, `tests/test_rag_agent_contracts.py`를 확인합니다.
+- Comprehensive intent, target resolution, coverage, replay, checkpoint safety를 바꾸면 `tests/test_full_document_retrieval.py`와 `tests/test_settings.py`를 확인합니다.
+- 라우팅 키워드를 바꾸면 `tests/test_classifier.py`와 대표 prompt fixture를 확인합니다.
+- response provider 동작을 바꾸면 `tests/test_responders.py`를 확인합니다.
+- OpenAI mode는 실제 API 키 없이 테스트 가능해야 합니다.
+- README 변경 시 이 파일과 [`README.md`](./README.md)를 함께 갱신합니다.
+
+## Jev 결정 설정
+
+Source 선택, focused/comprehensive 검색 선택, ContextForge intent 분류는 기본적으로 OpenRouter의 `typesafe/jev-1.13`을 사용합니다. 로컬에 `OPENROUTER_API_KEY`를 설정하세요. `MY_AGENTS_DECISION_PROVIDER=deterministic`은 로컬 규칙을, `openai`는 기존 source/tool 모델과 로컬 ContextForge intent를 사용합니다. `MY_AGENTS_RESPONSE_MODE=deterministic`에서는 항상 외부 결정 호출을 끕니다. 키 누락, 잘못된 응답, provider 오류는 로컬 규칙으로 fallback합니다. 재시도 없이 기본 10초 timeout(`MY_AGENTS_JEV_TIMEOUT_SECONDS`)을 사용합니다. Routing 결정에는 길이를 제한한 최근 대화와 source 선택의 개수/모드만 전송하며 credential과 provider 응답은 checkpoint에 저장하지 않습니다. 답변과 metadata 생성은 OpenAI를 유지합니다. Confidence는 권한 증명이 아니며 검증되지 않은 임계값은 적용하지 않습니다. 관련 테스트: `tests/test_jev_decisions.py`.
+
+GPT-6.1 Sol은 standard/pro reasoning을 지원합니다. 지원 모델의 `minimal`은 `low`로 변환하며 GPT-6.1 Sol과 Astra는 `none`도 run 저장과 provider 호출 전에 `low`로 변환합니다. Replay 상속에도 적용하며 공개 effort 선택지는 유지합니다. 생략된 effort와 guest effort는 실행 surface 모델의 `my_agents/model_defaults.py` application 기본값을 사용합니다(API가 지원하는 여섯 모델 모두 `medium`). Reasoning-effort 환경 변수 override는 제거하며 일반 계정의 run별 선택은 유지합니다. 내부 RAG tool selector는 명시적인 standard/low workload 정책을 유지합니다.
+
+사용자가 어떤 모델과 대화 중인지 물으면 설정된 모델 ID를 알려주도록 지시합니다. 일반 채팅 system prompt에는 API 요청과 동일한 설정에서 가져온 실제 run 모델이 들어갑니다. 저장된 일반 계정 선택은 재시작 없이 다음 run에 반영되며 `MY_AGENTS_OPENAI_MODEL`은 배포 fallback입니다. 이 값은 설정한 모델 ID이며 provider가 내부적으로 선택한 snapshot을 의미하지 않습니다.
+
+일반 assistant 답변은 친근하고 이해하기 쉬운 말투로 필요한 맥락을 설명합니다. 간단한 질문은 짧게, 학습·복잡한 질문은 필요한 깊이로 답합니다. 서버 기본값은 `MY_AGENTS_OPENAI_VERBOSITY=medium`이며 `low`/`high`도 설정할 수 있습니다. 기존 환경변수 override가 우선하며 출력 토큰 예산은 유지합니다. 사용자별 스타일 설정은 제안 단계이며 아직 구현되지 않았습니다.
+
+## 일반 계정의 assistant 모델 선택
+
+사용자 선택은 Product DB가 소유합니다. `MY_AGENTS_OPENAI_MODEL`은 fallback이며 guest는
+그 값으로 고정됩니다. Admission 시 `assistant_model`을 저장하고 runtime context로 response
+node에 전달합니다. Provider를 모델별로 cache하며 global Settings는 수정하지 않습니다.
+선택한 request model과 identity prompt는 같은 설정을 씁니다. Sync/stream/replay는 현재 선택,
+resume는 시작된 run의 고정 모델을 사용합니다. Document workspace와 내부 decision/embedding/
+metadata는 별도 설정을 유지합니다. [계약](../../../docs/product-chat-service/35-assistant-model-preferences.ko.md)을 참고하세요.
+
+Backend는 picker에 `gpt-6.1-sol`, `gpt-6-luna`, `gpt-6-astra`만 노출합니다.
+노출하지 않는 현재/기본 모델을 포함해 기존 여섯 모델의 API 설정은 그대로 유효합니다.
+
+임시 workspace turn은 정지 JPEG/PNG/WebP/GIF 이미지도 받습니다. Workspace adapter가 검증한
+image file ID는 `input_image`(`detail=high`), 문서는 `input_file`로 전달하며 원본은 expiring
+user_data file과 network-disabled container에 유지합니다. 분석 입력 지원이며 이미지 출력 인증은
+추가하지 않습니다. [Image 계약](../../../docs/product-chat-service/25-openai-document-workspace.ko.md)을 참고하세요.
+
+## 대화 맥락 유지
+
+대화 경계가 공통 텍스트 예산으로 최근 원문, 버전이 있는 과거 구간 요약, 권한을 확인한 과거 근거
+상태를 제공합니다. Graph는 이 입력을 다시 메시지 6개로 자르지 않습니다. `resolve_attachments`가
+KB 분기 전에 실행되며 일반 계정의 모호한 파일 참조는 run 단위 V2 `attachment_selection`으로
+선택합니다. 필요한 원본만 다시 열거나 대화 메모를 사용하며 일반 assistant와 workspace 모델은
+분리합니다. 요약은 `ChatOpenAI`와 기본 GPT-6 Luna를 사용하고 별도 사용자 선호도가 있습니다.
+대화 요약 및 context 전달 metadata를 답변 본문과 공개 reasoning summary에 섞지 않습니다.
+Guest는 텍스트 맥락만 유지합니다. [계약](../../../docs/product-chat-service/36-conversation-continuity.ko.md)을
+참고하세요.
+
+ContextForge 재순위는 별도로 `MY_AGENTS_RERANKER_MODE=jev`를 기본값으로 사용합니다. 같은
+Decisions API에 질문과 길이를 제한한 권한 있는 발췌, 임시 후보 ID만 보냅니다. Summary, file
+note, memory channel은 보내지 않습니다. Routing provider 선택은 이 mode를 바꾸지 않습니다.
+어느 batch든 실패하면 전체 fused shortlist를 유지하며 offline response mode는 Jev 호출을
+끕니다. [재순위 계약](../../../docs/product-chat-service/37-jev-evidence-reranking.ko.md)을 참고하세요.

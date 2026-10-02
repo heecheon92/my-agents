@@ -104,6 +104,6 @@ Revisit this note when any of the following becomes true:
 
 ## Related contracts
 
-- [HTTP streaming and frontend contract](../product-chat-service/en/09-http-streaming-frontend-contract.md)
-- [Run reasoning preferences](../product-chat-service/en/26-run-reasoning-preferences.md)
-- [Dynamic model-authored reasoning summary contract](../product-chat-service/en/28-dynamic-reasoning-summary-contract.md)
+- [HTTP streaming and frontend contract](../product-chat-service/09-http-streaming-frontend-contract.md)
+- [Run reasoning preferences](../product-chat-service/26-run-reasoning-preferences.md)
+- [Dynamic model-authored reasoning summary contract](../product-chat-service/28-dynamic-reasoning-summary-contract.md)

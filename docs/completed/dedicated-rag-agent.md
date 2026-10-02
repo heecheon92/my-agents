@@ -2,8 +2,8 @@
 
 - Status: Shipped baseline; broader retrieval extensions remain deferred.
 - Archive reconciliation: 2026-09-05. The controller/delegation split was recorded as implemented on 2026-06-16.
-- Current behavior: [RAG Agent README](../../my_agents/agents/rag_agent/README.en.md) and
-  [controller/RAG architecture](../product-chat-service/en/22-general-assistant-rag-agent-architecture-change-report.md).
+- Current behavior: [RAG Agent README](../../my_agents/agents/rag_agent/README.md) and
+  [controller/RAG architecture](../product-chat-service/22-general-assistant-rag-agent-architecture-change-report.md).
 - Canonical status: [implementation tracking](../implementation-tracking.md#shipped-and-completed-index).
 
 ## Delivered scope and evidence

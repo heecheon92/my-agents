@@ -1,35 +1,35 @@
 # RAG Agent workflow
 
-[English](./README.en.md) | 한국어
+[한국어](./README.ko.md) | English
 
-`rag_agent`는 문서 기반 conversation run에서 `general_assistant`가 호출하는 production-facing RAG Agent boundary입니다. 이 코드베이스에서 **agentic RAG**는 더 넓은 architecture pattern / milestone을 뜻하고, **RAG Agent**는 그 안에서 assistant가 사용할 수 있는 구체적인 retrieval subgraph/tool contract를 뜻합니다. 현재 RAG Agent는 공개 boundary를 소유하고, low-level 검색 구현은 permission-first engine인 ContextForge에 위임합니다.
+`rag_agent` is the production-facing RAG Agent boundary that `general_assistant` calls for document-grounded conversation runs. In this codebase, **agentic RAG** names the broader pattern/milestone, while **RAG Agent** names the concrete retrieval subgraph/tool contract available to the assistant. The RAG Agent now owns the public boundary and delegates the low-level retrieval implementation to ContextForge, the permission-first retrieval engine.
 
-## 현재 역할
+## Current role
 
-- `general_assistant` graph 안의 `retrieve_rag_context` node가 호출하는 runtime-only `RagAgentRuntime` contract를 제공합니다.
-- General Assistant가 private knowledge로 위임한 뒤 Jev decision planner가 `search_authorized_chunks`와 `read_authorized_document_comprehensively` 중 typed retrieval operation 하나를 선택합니다. Jev는 prose를 반환하지 않으므로 optional model-authored approach summary는 비워 둡니다.
-- Deterministic mode, invalid output, provider failure는 같은 two-tool contract의 credential-free semantic fallback을 사용합니다.
-- `RagAgentRetrievalResult`로 route, answer mode, authorized chunks, redacted retrieval evidence, retry/sufficiency state를 반환합니다.
-- 명시적인 comprehensive-document task를 위해 typed `resolve_full_document_target`, `read_full_document_range` runtime method를 제공하되 raw text는 checkpoint되는 RAG result에 넣지 않습니다.
-- ContextForge를 내부 retrieval implementation으로 위임 호출해 query planning, source-boundary handoff, authorized candidate search, reranking, context packing을 수행합니다.
-- Query Cartographer, Source Warden, Candidate Scouts, Evidence Judge, Context Curator, Assistant Graph, Answer Composer 단계 contract와 compact trace graph(`plan_workflow -> verify_workflow`)를 유지합니다.
-- stage 순서, 한/영 copy, public RAG Agent ownership, redacted evidence key를 검증합니다.
-- database authorization policy, ingestion, raw SQL tuning, provider secret handling, final answer persistence는 직접 소유하지 않습니다.
+- Provides the runtime-only `RagAgentRuntime` contract invoked by the `retrieve_rag_context` node inside the `general_assistant` graph.
+- After the General Assistant delegates to private knowledge, uses a Jev decision planner to choose exactly one typed retrieval operation: `search_authorized_chunks` or `read_authorized_document_comprehensively`. Jev returns no prose, so the optional model-authored approach summary is absent.
+- Keeps deterministic mode, invalid-output handling, and provider failures on a credential-free semantic fallback with the same two-tool contract.
+- Returns `RagAgentRetrievalResult` with route, answer mode, authorized chunks, redacted retrieval evidence, and retry/sufficiency state.
+- Provides typed `resolve_full_document_target` and `read_full_document_range` runtime methods for explicit comprehensive-document tasks without making raw text part of the checkpointed RAG result.
+- Delegates to ContextForge for query planning, source-boundary handoff, authorized candidate search, reranking, and context packing.
+- Keeps the Query Cartographer, Source Warden, Candidate Scouts, Evidence Judge, Context Curator, Assistant Graph, and Answer Composer stage contract plus the compact trace graph (`plan_workflow -> verify_workflow`).
+- Verifies stage order, bilingual copy, public RAG Agent ownership, and redacted evidence keys.
+- Does not directly own database authorization policy, ingestion, raw SQL tuning, provider-secret handling, or final-answer persistence.
 
-## 파일 구조
+## File structure
 
-| 파일 | 책임 |
+| File | Responsibility |
 | --- | --- |
-| `contracts.py` | dataclass contract, stage identifier, public/internal role name, expected stage order. |
-| `retrieval.py` | `general_assistant`가 호출하는 public RAG Agent runtime; focused ContextForge retrieval과 permission-first full-document target/range read를 감쌉니다. |
-| `graph.py` | RAG Agent trace/grounding contract를 계획하고 검증하는 전용 LangGraph form. |
-| `planner.py` | compact run trace를 위한 deterministic stage planner. |
-| `tool_selection.py` | Jev 기반 focused/comprehensive retrieval-tool 선택과 deterministic fallback. Authorization을 실행하거나 raw document text를 반환하지 않습니다. |
-| `verifier.py` | trace contract의 shape/safety와 grounding boundary를 검증하는 deterministic verifier. |
-| `README.md` / `README.en.md` | 한국어/영어 behavior 및 boundary 문서. |
-| `CHANGELOG.md` | agent folder 변경 이유 기록. |
+| `contracts.py` | Dataclass contracts, stage identifiers, public/internal role names, and expected stage order. |
+| `retrieval.py` | Public RAG Agent runtime called by `general_assistant`; wraps focused ContextForge retrieval and permission-first full-document target/range reads. |
+| `graph.py` | Dedicated LangGraph form that plans and verifies the RAG Agent trace/grounding contract. |
+| `planner.py` | Deterministic stage planner for compact run traces. |
+| `tool_selection.py` | Jev-backed focused/comprehensive retrieval-tool selection plus deterministic fallback; never executes authorization or returns raw document text. |
+| `verifier.py` | Deterministic safety/shape and grounding-boundary verifier. |
+| `README.ko.md` / `README.md` | Korean/English behavior and boundary docs. |
+| `CHANGELOG.md` | Why this agent folder changed. |
 
-## Graph 또는 실행 흐름
+## Graph or execution flow
 
 ```mermaid
 sequenceDiagram
@@ -58,56 +58,56 @@ sequenceDiagram
     GA-->>Events: reply, citations, grounding check result
 ```
 
-## Route/tool/state 의미
+## Route/tool/state meaning
 
-- Public retrieval-agent 이름은 `RAG Agent`입니다.
-- Internal delegated implementation 이름은 `ContextForge`입니다.
-- Jev는 semantic operation만 선택합니다. Jev에서는 optional model-authored planning summary를 비워 둡니다. Document ID, 권한, 서버 예산, 최종 답변은 이 결정 밖에 유지합니다. 사용자 reasoning 설정은 최종 답변에만 적용합니다.
-- `search_authorized_chunks`는 focused ContextForge retrieval이고 `read_authorized_document_comprehensively`는 explicit 또는 의미상 분명한 exhaustive intent를 위한 bounded target/range read입니다. Focused evidence가 약하다는 이유만으로 comprehensive tool로 승격하지 않습니다.
-- `rag_retrieval_result`는 graph runtime object이며 그대로 frontend나 checkpoint에 노출하지 않습니다.
-- `retrieved_context`는 이미 권한 확인이 끝난 prompt-safe compact context입니다. Ambient
-  system entry는 답변에 쓸 snippet만 포함하며, KB/document/chunk/title/filename/page와
-  retrieval-source provenance는 provider invocation 전에 생략합니다.
-- `FullDocumentTargetResolution`은 safe target metadata와 option count만 담습니다. `FullDocumentReadResult`는 half-open extracted-text range 한 개, offset, 전체 문자 수, 내부 decimal cursor, complete flag, 겹치는 authorized chunk를 담습니다.
-- Target resolution과 모든 range read는 user-selectable permission boundary를 재사용합니다. Owner/group/explicit-document access는 허용될 수 있지만 ambient system KB document와 hidden staging document는 대상이 될 수 없습니다.
-- 겹치는 chunk는 현재 extracted text와 모두 검증합니다. 최대 2,000개까지 scan하며, valid chunk가 100개보다 많으면 첫/마지막을 포함해 문서 범위 전체에 고르게 분산된 provenance chunk 100개만 유지합니다. 따라서 citation 양은 bounded 상태를 유지하면서 전체 문서 evidence를 버리지 않습니다. 유지된 chunk는 internal grounding/citation path에 `source="full_document"`, score `1.0`으로 들어갑니다. Public citation response는 기존 schema를 유지하며 이 내부 source/score pair를 노출하지 않습니다.
-- Product response는 consultation과 attribution을 구분합니다. `consulted_sources`는 answer composition에 들어간 user-visible source 전체이고, `citations`는 답변 text가 보수적인 post-hoc selector로 지원을 확인한 subset입니다. 두 배열의 겹치는 항목은 같은 persisted evidence row를 serialize하므로 `id`와 `chunk_id`가 동일합니다. Legacy run은 `consulted_sources=null`, 새 attribution run은 source나 match가 없어도 `[]`을 반환합니다.
-- Chunk-level row는 persistence/audit contract로 유지하지만 public shape에는 nullable `document_title`과 `knowledge_base_name`도 포함합니다. Product UI는 `document_id`로 row를 묶고, document 하나당 이름/knowledge-base 이름/optional unique page number만 표시하며 일반 citation 상세에서 chunk ID와 snippet을 숨겨야 합니다.
-- 기본 complete-read threshold는 24,000자입니다. 큰 문서는 현재 첫 12,000자 range만 graph path에 반환합니다. Runtime seam에는 continuation cursor가 있지만 automatic multi-range traversal/synthesis는 아직 없습니다.
-- `clarification_required` 또는 required retrieval의 insufficient evidence는 `general_assistant` graph를 answer node 전에 멈추게 합니다.
-- `completed`, `skipped`, `waiting`은 frontend trace state이며 hidden chain-of-thought가 아닙니다.
-- `agent_trace`의 stage ID, event type, status, 한/영 copy, evidence field는 stable typed API contract입니다.
-- Trace description은 semantic display copy만 사용합니다. Active reranker 같은 deployment-specific 값은 user-facing 문구에 보간하지 않고 structured evidence에만 유지합니다.
-- Skip되지 않은 모든 stage는 closed semantic message key로 discriminate하는 version 1 `operational_summary`도 제공합니다. 각 key는 별도 allowlisted parameter schema를 가지며 skipped stage에는 summary가 없습니다. Answer가 waiting이면 `agent_trace.clarification_requested`를 사용합니다. Frontend는 arbitrary backend prose를 신뢰하지 않고 이 key를 localize합니다.
-- Evidence는 allowlist된 route/mode, count, bounded label, boolean 중심입니다. Raw prompt, snippet, provider error, message content는 verifier와 API response serializer가 거부합니다.
+- The public retrieval-agent name is `RAG Agent`.
+- The internal delegated implementation name is `ContextForge`.
+- Jev selects only the semantic operation. Optional model-authored planning summaries remain absent for Jev. Document IDs, authorization, server budgets, and final answers remain outside this decision. User reasoning controls apply only to final answers.
+- `search_authorized_chunks` means focused ContextForge retrieval. `read_authorized_document_comprehensively` means bounded target resolution/range reading for explicit or clearly implied exhaustive intent. Weak focused evidence alone must not escalate to the comprehensive tool.
+- `rag_retrieval_result` is a graph runtime object; do not expose it directly to frontend clients or checkpoints.
+- `retrieved_context` is already-authorized, prompt-safe compact context. Ambient system
+  entries contain only answerable snippet text; their KB/document/chunk/title/filename/page
+  and retrieval-source provenance is omitted before provider invocation.
+- `FullDocumentTargetResolution` contains only safe target metadata and an option count. `FullDocumentReadResult` carries one half-open extracted-text range, offsets, total characters, an internal decimal cursor, a complete flag, and overlapping authorized chunks.
+- Target resolution and every range read reuse the user-selectable permission boundary: owner/group/explicit-document access can qualify, while ambient system KB documents and hidden staging documents cannot.
+- Overlapping chunks are all validated against the current extracted text. Up to 2,000 may be scanned; when more than 100 are valid, the runtime keeps 100 evenly distributed provenance chunks, including the first and last, so citation volume stays bounded without discarding whole-document evidence. Those retained chunks enter the internal grounding/citation path with `source="full_document"` and score `1.0`. Public citation responses keep their existing schema and do not expose that internal source/score pair.
+- Product responses distinguish consultation from attribution. `consulted_sources` is the complete user-visible source set admitted to answer composition; `citations` is the conservative post-hoc answer-supported subset. Both arrays serialize the same persisted evidence rows, so an overlapping item has the identical `id` and `chunk_id`. Legacy runs use `consulted_sources=null`; newly attributed runs use a list, including `[]` when no source was consulted or matched.
+- Chunk-level rows remain the persistence/audit contract, but the public shape also includes nullable `document_title` and `knowledge_base_name`. Product UIs should group rows by `document_id`, display one document entry with its knowledge-base name and optional unique page numbers, and keep chunk IDs/snippets out of ordinary citation details.
+- The default complete-read threshold is 24,000 characters. Larger documents currently return only the first 12,000-character range to the graph path; continuation cursors exist at the runtime seam but automatic multi-range traversal/synthesis is not implemented.
+- `clarification_required` and required retrieval with insufficient evidence stop the `general_assistant` graph before answer nodes.
+- `completed`, `skipped`, and `waiting` are frontend trace states, not hidden chain-of-thought.
+- The `agent_trace` stage IDs, event types, statuses, bilingual copy, and evidence fields are a stable typed API contract.
+- Trace descriptions use semantic display copy; deployment-specific values such as the active reranker remain in structured evidence instead of being interpolated into user-facing prose.
+- Every non-skipped stage also emits a version-1 `operational_summary` discriminated by a closed semantic message key. Each key has its own allowlisted parameter schema; skipped stages emit none, and a waiting answer uses `agent_trace.clarification_requested`. Frontends localize these keys rather than trusting arbitrary backend prose.
+- Evidence is limited to allowlisted routes/modes, counts, bounded labels, and booleans; raw prompts, snippets, provider errors, and message content are rejected by both the verifier and API response serializer.
 
-## Capability / boundary metadata
+## Capability or boundary metadata
 
-이 패키지는 production RAG Agent boundary입니다. Retrieval graph/tool seam을 제공하고 OpenAI mode에서 bounded Jev tool-choice call 한 번을 수행하지만, hard authorization과 low-level candidate SQL은 ContextForge/RetrievalService 안에 남습니다. Autonomous hosted agent service가 아니고 external side effect가 없으며 provider credential은 application setting에 머물고 agent state에 persist되지 않습니다.
+This package is the production RAG Agent boundary. It exposes a graph/tool seam for retrieval and now performs one bounded Jev tool-choice call in OpenAI mode, while hard authorization and low-level candidate SQL stay in ContextForge/RetrievalService. It is not an autonomous hosted agent service and has no external side effects; provider credentials remain application settings and are never persisted in agent state.
 
-## Service layer와의 관계
+## Relationship to service layers
 
-Conversation API는 user/conversation/knowledge-base selection과 DB-backed `SqlAlchemyRagAgentRuntime`을 LangGraph runtime context로 전달합니다. General Assistant source gate가 private knowledge로 위임한 뒤 RAG-owned planner가 retrieval tool을 고르고, `general_assistant`는 그 compact choice를 routing해 RAG runtime을 호출합니다. API layer는 graph state에서 retrieval result를 읽어 consulted evidence, 보수적인 answer-use attribution, `retrieval_completed`, grounding event, optional `document_coverage`/`full_document_read` metadata를 persist합니다. System evidence row는 internal audit data로 유지하고 public serializer에서 provenance를 제거합니다. Raw full-document text는 graph node 안에서만 소비하며 checkpoint, event, application trace, API coverage object에 넣지 않습니다. Auth, broad source selection, ingestion, persistence, evidence row, final Sol response composition은 RAG Agent 밖에 남습니다.
+Conversation APIs pass user/conversation/knowledge-base selection plus a DB-backed `SqlAlchemyRagAgentRuntime` through LangGraph runtime context. After the General Assistant's source gate delegates to private knowledge, the RAG-owned planner chooses the retrieval tool; `general_assistant` routes that compact choice and invokes the RAG runtime. The API layer reads retrieval results from graph state to persist consulted evidence, conservative answer-use attribution, `retrieval_completed`, grounding events, and optional `document_coverage`/`full_document_read` metadata. System evidence rows remain internal audit data; public serializers remove their provenance. Raw full-document text is consumed only inside graph nodes and is excluded from checkpoints, events, application traces, and API coverage objects. Auth, broad source selection, ingestion, persistence, evidence rows, and final Sol response composition remain outside the RAG Agent.
 
-## 확장 가이드
+## Extension guidance
 
-새 retrieval tool이나 deeper graph node가 필요하면 public seam은 먼저 `rag_agent.retrieval.RagAgentRuntime`에 추가합니다. ContextForge internals는 permission-first focused-retrieval engine으로 유지하고 full-document authorization/range read도 같은 runtime boundary 뒤에 둡니다. Verifier가 허용할 수 있는 compact/redacted evidence만 trace surface로 올립니다. Provider secret, raw prompt transcript, unauthorized candidate, raw full-document text, raw ContextForge graph state를 이 패키지 밖으로 노출하지 마세요.
+If a new retrieval tool or deeper graph node is needed, add it first to the public `rag_agent.retrieval.RagAgentRuntime` seam. Keep ContextForge internals as the permission-first focused-retrieval engine, and keep full-document authorization/range reads behind the same runtime boundary. Expose only compact/redacted evidence that the verifier can allow. Do not leak provider secrets, raw prompt transcripts, unauthorized candidates, raw full-document text, or raw ContextForge graph state out of this package.
 
-## 변경 체크리스트
+## Change checklist
 
-- Retrieval boundary 변경 시 `tests/test_conversations_api.py`와 `tests/test_permission_aware_rag.py`를 업데이트합니다.
-- Contract/trace 변경 시 `tests/test_rag_agent_contracts.py`를 업데이트합니다.
-- Jev model policy, tool description, multilingual intent, deterministic/provider-failure fallback 변경 시 `tests/test_rag_agent_tool_selection.py`를 업데이트합니다.
-- Full-document resolution, range, authorization, citation, replay, checkpoint safety 변경 시 `tests/test_full_document_retrieval.py`를 업데이트합니다.
-- ContextForge 위임 경로 변경 시 `tests/test_context_forge_contracts.py`, `tests/test_context_forge_reranking.py`, `tests/test_context_forge_structured_retrieval.py`를 실행합니다.
-- README pair와 `CHANGELOG.md`를 함께 유지합니다.
+- Update `tests/test_conversations_api.py` and `tests/test_permission_aware_rag.py` for retrieval-boundary changes.
+- Update `tests/test_rag_agent_contracts.py` for contract/trace changes.
+- Update `tests/test_rag_agent_tool_selection.py` for Jev model policy, tool descriptions, multilingual intent, and deterministic/provider-failure fallback changes.
+- Update `tests/test_full_document_retrieval.py` for full-document resolution, range, authorization, citation, replay, and checkpoint-safety changes.
+- Run `tests/test_context_forge_contracts.py`, `tests/test_context_forge_reranking.py`, and `tests/test_context_forge_structured_retrieval.py` when the delegated ContextForge path changes.
+- Keep this README pair and `CHANGELOG.md` aligned.
 
-## Jev 결정 설정
+## Jev decision configuration
 
-Source 선택, focused/comprehensive 검색 선택, ContextForge intent 분류는 기본적으로 OpenRouter의 `typesafe/jev-1.13`을 사용합니다. 로컬에 `OPENROUTER_API_KEY`를 설정하세요. `MY_AGENTS_DECISION_PROVIDER=deterministic`은 로컬 규칙을, `openai`는 기존 source/tool 모델과 로컬 ContextForge intent를 사용합니다. `MY_AGENTS_RESPONSE_MODE=deterministic`에서는 항상 외부 결정 호출을 끕니다. 키 누락, 잘못된 응답, provider 오류는 로컬 규칙으로 fallback합니다. 재시도 없이 기본 10초 timeout(`MY_AGENTS_JEV_TIMEOUT_SECONDS`)을 사용합니다. Routing 결정에는 길이를 제한한 최근 대화와 source 선택의 개수/모드만 전송하며 credential과 provider 응답은 checkpoint에 저장하지 않습니다. 답변과 metadata 생성은 OpenAI를 유지합니다. Confidence는 권한 증명이 아니며 검증되지 않은 임계값은 적용하지 않습니다. 관련 테스트: `tests/test_jev_decisions.py`.
+Source selection, focused/comprehensive retrieval selection, and ContextForge intent use `typesafe/jev-1.13` through OpenRouter by default. Set `OPENROUTER_API_KEY` locally. `MY_AGENTS_DECISION_PROVIDER=deterministic` uses local rules; `openai` restores the previous source/tool models and local ContextForge intent. `MY_AGENTS_RESPONSE_MODE=deterministic` always disables provider decisions. Missing credentials, invalid output, and provider errors fall back to local rules. Requests use a 10-second timeout without retries (`MY_AGENTS_JEV_TIMEOUT_SECONDS`). Routing decisions send only bounded recent conversation text and source-selection counts/mode; credentials and responses are not checkpointed. Answer generation and metadata enrichment remain OpenAI-backed. Confidence is not an authorization signal; no uncalibrated confidence threshold is imposed. See `tests/test_jev_decisions.py`.
 
-ContextForge 재순위는 별도로 `MY_AGENTS_RERANKER_MODE=jev`를 기본값으로 사용합니다. 같은
-Decisions API에 질문과 길이를 제한한 권한 있는 발췌, 임시 후보 ID만 보냅니다. Summary, file
-note, memory channel은 보내지 않습니다. Routing provider 선택은 이 mode를 바꾸지 않습니다.
-어느 batch든 실패하면 전체 fused shortlist를 유지하며 offline response mode는 Jev 호출을
-끕니다. [재순위 계약](../../../docs/product-chat-service/ko/37-jev-evidence-reranking.md)을 참고하세요.
+ContextForge reranking separately defaults to `MY_AGENTS_RERANKER_MODE=jev`. It sends only
+the query and bounded authorized excerpts to the same Decisions API, with synthetic candidate IDs.
+It never sends summary, file-note, or memory channels. Routing-provider selection does not change
+this mode. Any failed batch preserves the entire fused shortlist; offline response mode suppresses
+Jev calls. See the [reranking contract](../../../docs/product-chat-service/37-jev-evidence-reranking.md).
