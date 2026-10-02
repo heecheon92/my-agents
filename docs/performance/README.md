@@ -7,11 +7,13 @@ before/after optimization work where preserving quality is part of the result.
 
 - [Ingestion performance log](./en/ingestion-performance-log.md)
 - [RAG retrieval performance log](./en/rag-retrieval-performance-log.md)
+- [2026-10-02 reranking quality benchmark and verdict](./en/reranking-benchmark-2026-10-02.md)
 
 ## Korean summaries
 
 - [Ingestion performance log](./ko/ingestion-performance-log.md)
 - [RAG retrieval performance log](./ko/rag-retrieval-performance-log.md)
+- [2026-10-02 재순위 품질 benchmark와 verdict](./ko/reranking-benchmark-2026-10-02.md)
 
 ## Logging contract
 

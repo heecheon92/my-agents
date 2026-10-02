@@ -400,9 +400,8 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
   Pro support and minimal-to-low normalization. Model-default migration and live verification
   remain separate; see [verification](./docs/implementation-tracking.md#latest-verification-evidence).
 
-- [x] **Shipped:** Jev is the default authorized-excerpt reranker, with deterministic/cross-encoder
-  alternatives and whole-pass fallback. Live evaluation remains separate. See the
-  [reranking contract](./docs/product-chat-service/en/37-jev-evidence-reranking.md).
+- [x] **Shipped:** Jev evidence reranking is the new default,
+  with deterministic/cross-encoder alternatives and whole-pass fallback. A [54-run local benchmark](./docs/performance/en/reranking-benchmark-2026-10-02.md) supports the default with source-derived relevance/facet metrics and API-reported cost; broader held-out and production evidence remain open. See the [reranking contract](./docs/product-chat-service/en/37-jev-evidence-reranking.md).
 
 - [ ] **Active:** Jev bounded decisions are implemented and offline-verified on `develop`
   (source gate, RAG method, ContextForge intent); deployment and live evaluation remain separate.

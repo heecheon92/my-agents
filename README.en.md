@@ -244,3 +244,7 @@ For a readable before/after console comparison, enable
 `MY_AGENTS_DEPLOYMENT_ENVIRONMENT=local`. The table shows ranks, document/chunk locations,
 RRF/reranker scores, and bounded excerpts for the top 10 of each order. It reports the effective
 mode, including Jev fallback, and never prints in preview/production even with the flag enabled.
+
+The [local reranking benchmark and verdict](./docs/performance/en/reranking-benchmark-2026-10-02.md) records the owner comparison and
+54 controlled live component runs. It measures evidence ordering/fact coverage, warm latency,
+and API-reported cost; final-response quality was not evaluated.

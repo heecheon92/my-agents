@@ -1,6 +1,6 @@
 ---
 created: 2026-06-22
-updated: 2026-06-22
+updated: 2026-10-02
 status: active
 topics:
   - rag
@@ -71,10 +71,10 @@ When comparing before and after, keep the scenario stable:
 | Phase | Meaning | Typical action if slow |
 | --- | --- | --- |
 | `authorized_document_count` | Count distinct readable documents before planning. | Check auth/count SQL and indexes. |
-| `query_planning` | Deterministic query planning and route/intent selection. | Should stay near zero; investigate only if it grows. |
+| `query_planning` | Query planning and route/intent selection, including optional Jev intent classification. | Separate provider latency from local planning. |
 | `candidate_gather` | First-stage retrieval: metadata, embeddings, vector/keyword search, expansion, overview supplement, structured facts. | Primary target when raw candidates are few but gathering is slow. |
 | `candidate_fusion` | Dedupe and source fusion before reranking. | Should stay near zero. |
-| `reranking` | Optional deterministic or cross-encoder reranking over bounded candidates. | Tune `MY_AGENTS_RERANKER_MODE` / `MY_AGENTS_RERANKER_TOP_K` if gather is already fast. |
+| `reranking` | Default Jev, deterministic, or cross-encoder ranking over bounded authorized candidates. | Compare evidence quality and warm/cold latency before changing mode or limits. |
 | `context_pack` | Build answer-ready context under injected-count and character budgets. | Check budget and packing only if this grows. |
 
 ### Nested `candidate_gather.*` phases
@@ -99,6 +99,26 @@ When comparing before and after, keep the scenario stable:
 ## Measurement log
 
 Entries are ordered newest-to-oldest so the latest measured state is visible first.
+
+### 2026-10-02 — Jev versus deterministic and warm BGE reranking
+
+The [reranking benchmark report](./reranking-benchmark-2026-10-02.md) records the owner's
+three-mode pgvector trace and 54 additional live component comparisons over frozen authorized
+shortlists. This evaluates reranking evidence quality, not final-response quality.
+
+| Metric | Deterministic | Jev | Warm BGE |
+| --- | ---: | ---: | ---: |
+| Mean nDCG@5 | 0.595 | 0.964 | 0.657 |
+| Mean packed fact coverage | 75.0% | 100.0% | 91.7% |
+| Median scoring ms | 0.018 | 1518.340 | 2557.392 |
+
+BGE cold load/inference was separately measured at 10247.829 ms. Jev's 18 passes made 90
+successful scoring requests with 255783 reported input tokens and total API-reported scoring
+cost $0.010742886. Single-agent relevance labels were fixed before scoring. The six cases span
+five scenario families with one bilingual version; they do not establish broad model superiority.
+Retain Jev as the default, preserve deterministic/BGE alternatives, and evaluate duplicate-content
+packing separately before reducing context limits. Per-case evidence, protocol, cost exclusions,
+and redacted per-run data are linked from the report.
 
 ### 2026-07-24 — Lightweight BM25 corpus projection
 
@@ -383,6 +403,15 @@ Example row format:
 
 ## Current interpretation and next step
 
+As of 2026-10-02, the controlled reranking suite supports the new Jev default: higher graded
+ordering and complete packed target-fact coverage at low measured scoring cost. The next
+quality-preserving experiment is duplicate-content packing with citation provenance retained.
+BGE remains an explicit alternative. Small-context and long-input stress tests remain needed;
+do not infer production performance or final-response quality from this component benchmark.
+See the [full verdict](./reranking-benchmark-2026-10-02.md#verdict).
+
+### Historical June interpretation
+
 As of RAG-PERF-2026-06-22-D, request-local matched-document row reuse produced another
 same-scenario latency improvement:
 
@@ -437,6 +466,8 @@ git diff --check
 ```
 
 ## Revision history
+
+- 2026-10-02: Recorded three-mode owner timing and 54 frozen-shortlist live comparisons with relevance/facet metrics and provider-reported cost.
 
 - 2026-06-22: Added RAG-PERF-2026-06-22-D and measured the request-local matched-document chunk row reuse optimization.
 - 2026-06-22: Reordered this ledger newest-to-oldest and recorded request-local matched-document chunk row reuse as pending same-scenario measurement.

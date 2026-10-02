@@ -1,0 +1,5852 @@
+{
+  "environment": {
+    "profile": "FastAPI: uvicorn main:app (local pgvector)",
+    "platform": "Darwin",
+    "architecture": "arm64",
+    "python": "3.14.5",
+    "embedding_mode": "openai",
+    "embedding_model": "text-embedding-3-small",
+    "cross_encoder_model": "BAAI/bge-reranker-v2-m3",
+    "cross_encoder_batch_size": 16,
+    "cross_encoder_device": "library_auto",
+    "jev_batch_size": 8,
+    "jev_excerpt_bytes": 3000,
+    "jev_input_bytes": 24000,
+    "jev_timeout_seconds": 10.0,
+    "packages": {
+      "sentence-transformers": "5.5.1",
+      "torch": "2.12.0",
+      "transformers": "5.9.0",
+      "httpx": "0.28.1"
+    },
+    "hardware": {
+      "architecture": "arm64",
+      "physical_cores": 12,
+      "ram_gib": 48,
+      "mps_available": true
+    }
+  },
+  "repeats": 3,
+  "cross_encoder_cold_ms": 10247.829,
+  "labels_digest": "d0a9fb74653e9030fe709f30bb41eaab80b60388b216118f04867b59495bfb2c",
+  "cases": [
+    {
+      "id": "paper_ko",
+      "shortlist_digest": "3f366709dc36e8505a7647b83a5612297e61e93e8f7b2ea0fd33d00c8afd97ac",
+      "shortlist_count": 40,
+      "candidate_count": 79,
+      "prepare_ms": 2306.096,
+      "gold_labels": {
+        "c01": {
+          "grade": 4,
+          "facets": [
+            "vector_db",
+            "dimensions",
+            "metric"
+          ]
+        },
+        "c02": {
+          "grade": 4,
+          "facets": [
+            "vector_db",
+            "dimensions",
+            "metric"
+          ]
+        },
+        "c03": {
+          "grade": 4,
+          "facets": [
+            "vector_db",
+            "dimensions",
+            "metric"
+          ]
+        },
+        "c04": {
+          "grade": 4,
+          "facets": [
+            "vector_db",
+            "dimensions",
+            "metric"
+          ]
+        },
+        "c05": {
+          "grade": 1,
+          "facets": []
+        },
+        "c06": {
+          "grade": 1,
+          "facets": []
+        },
+        "c07": {
+          "grade": 1,
+          "facets": []
+        },
+        "c08": {
+          "grade": 0,
+          "facets": []
+        },
+        "c09": {
+          "grade": 1,
+          "facets": []
+        },
+        "c10": {
+          "grade": 1,
+          "facets": []
+        },
+        "c11": {
+          "grade": 1,
+          "facets": []
+        },
+        "c12": {
+          "grade": 1,
+          "facets": []
+        },
+        "c13": {
+          "grade": 1,
+          "facets": []
+        },
+        "c14": {
+          "grade": 0,
+          "facets": []
+        },
+        "c15": {
+          "grade": 1,
+          "facets": []
+        },
+        "c16": {
+          "grade": 0,
+          "facets": []
+        },
+        "c17": {
+          "grade": 0,
+          "facets": []
+        },
+        "c18": {
+          "grade": 0,
+          "facets": []
+        },
+        "c19": {
+          "grade": 0,
+          "facets": []
+        },
+        "c20": {
+          "grade": 0,
+          "facets": []
+        },
+        "c21": {
+          "grade": 0,
+          "facets": []
+        },
+        "c22": {
+          "grade": 1,
+          "facets": []
+        },
+        "c23": {
+          "grade": 0,
+          "facets": []
+        },
+        "c24": {
+          "grade": 0,
+          "facets": []
+        },
+        "c25": {
+          "grade": 0,
+          "facets": []
+        },
+        "c26": {
+          "grade": 0,
+          "facets": []
+        },
+        "c27": {
+          "grade": 0,
+          "facets": []
+        },
+        "c28": {
+          "grade": 0,
+          "facets": []
+        },
+        "c29": {
+          "grade": 0,
+          "facets": []
+        },
+        "c30": {
+          "grade": 0,
+          "facets": []
+        },
+        "c31": {
+          "grade": 1,
+          "facets": []
+        },
+        "c32": {
+          "grade": 0,
+          "facets": []
+        },
+        "c33": {
+          "grade": 0,
+          "facets": []
+        },
+        "c34": {
+          "grade": 1,
+          "facets": []
+        },
+        "c35": {
+          "grade": 1,
+          "facets": []
+        },
+        "c36": {
+          "grade": 0,
+          "facets": []
+        },
+        "c37": {
+          "grade": 1,
+          "facets": []
+        },
+        "c38": {
+          "grade": 0,
+          "facets": []
+        },
+        "c39": {
+          "grade": 1,
+          "facets": []
+        },
+        "c40": {
+          "grade": 0,
+          "facets": []
+        }
+      },
+      "required_facets": [
+        "vector_db",
+        "dimensions",
+        "metric"
+      ],
+      "anonymous_content_groups": {
+        "c01": "p01",
+        "c02": "p01",
+        "c03": "p02",
+        "c04": "p02",
+        "c05": "p03",
+        "c06": "p03",
+        "c07": "p04",
+        "c08": "p05",
+        "c09": "p06",
+        "c10": "p04",
+        "c11": "p07",
+        "c12": "p07",
+        "c13": "p08",
+        "c14": "p09",
+        "c15": "p08",
+        "c16": "p10",
+        "c17": "p11",
+        "c18": "p12",
+        "c19": "p13",
+        "c20": "p11",
+        "c21": "p14",
+        "c22": "p06",
+        "c23": "p15",
+        "c24": "p12",
+        "c25": "p16",
+        "c26": "p12",
+        "c27": "p17",
+        "c28": "p18",
+        "c29": "p19",
+        "c30": "p20",
+        "c31": "p21",
+        "c32": "p22",
+        "c33": "p13",
+        "c34": "p21",
+        "c35": "p23",
+        "c36": "p24",
+        "c37": "p25",
+        "c38": "p26",
+        "c39": "p25",
+        "c40": "p27"
+      },
+      "plan": {
+        "intent": "semantic_qa",
+        "route": "retrieval_required",
+        "limits": {
+          "vector_limit": 20,
+          "lexical_limit": 20,
+          "structured_limit": 80,
+          "rerank_limit": 40,
+          "injected_limit": 12,
+          "char_budget": 24000
+        }
+      }
+    },
+    {
+      "id": "paper_en",
+      "shortlist_digest": "e849030e9d2c9abab915390319559b9b02dd1227efbe0e426afdc8ad4a282982",
+      "shortlist_count": 40,
+      "candidate_count": 81,
+      "prepare_ms": 1358.929,
+      "gold_labels": {
+        "c01": {
+          "grade": 4,
+          "facets": [
+            "vector_db",
+            "dimensions",
+            "metric"
+          ]
+        },
+        "c02": {
+          "grade": 4,
+          "facets": [
+            "vector_db",
+            "dimensions",
+            "metric"
+          ]
+        },
+        "c03": {
+          "grade": 4,
+          "facets": [
+            "vector_db",
+            "dimensions",
+            "metric"
+          ]
+        },
+        "c04": {
+          "grade": 4,
+          "facets": [
+            "vector_db",
+            "dimensions",
+            "metric"
+          ]
+        },
+        "c05": {
+          "grade": 0,
+          "facets": []
+        },
+        "c06": {
+          "grade": 0,
+          "facets": []
+        },
+        "c07": {
+          "grade": 1,
+          "facets": []
+        },
+        "c08": {
+          "grade": 1,
+          "facets": []
+        },
+        "c09": {
+          "grade": 1,
+          "facets": []
+        },
+        "c10": {
+          "grade": 1,
+          "facets": []
+        },
+        "c11": {
+          "grade": 1,
+          "facets": []
+        },
+        "c12": {
+          "grade": 1,
+          "facets": []
+        },
+        "c13": {
+          "grade": 1,
+          "facets": []
+        },
+        "c14": {
+          "grade": 1,
+          "facets": []
+        },
+        "c15": {
+          "grade": 0,
+          "facets": []
+        },
+        "c16": {
+          "grade": 0,
+          "facets": []
+        },
+        "c17": {
+          "grade": 0,
+          "facets": []
+        },
+        "c18": {
+          "grade": 0,
+          "facets": []
+        },
+        "c19": {
+          "grade": 0,
+          "facets": []
+        },
+        "c20": {
+          "grade": 0,
+          "facets": []
+        },
+        "c21": {
+          "grade": 0,
+          "facets": []
+        },
+        "c22": {
+          "grade": 0,
+          "facets": []
+        },
+        "c23": {
+          "grade": 0,
+          "facets": []
+        },
+        "c24": {
+          "grade": 0,
+          "facets": []
+        },
+        "c25": {
+          "grade": 0,
+          "facets": []
+        },
+        "c26": {
+          "grade": 0,
+          "facets": []
+        },
+        "c27": {
+          "grade": 0,
+          "facets": []
+        },
+        "c28": {
+          "grade": 1,
+          "facets": []
+        },
+        "c29": {
+          "grade": 0,
+          "facets": []
+        },
+        "c30": {
+          "grade": 0,
+          "facets": []
+        },
+        "c31": {
+          "grade": 1,
+          "facets": []
+        },
+        "c32": {
+          "grade": 0,
+          "facets": []
+        },
+        "c33": {
+          "grade": 1,
+          "facets": []
+        },
+        "c34": {
+          "grade": 0,
+          "facets": []
+        },
+        "c35": {
+          "grade": 1,
+          "facets": []
+        },
+        "c36": {
+          "grade": 0,
+          "facets": []
+        },
+        "c37": {
+          "grade": 1,
+          "facets": []
+        },
+        "c38": {
+          "grade": 0,
+          "facets": []
+        },
+        "c39": {
+          "grade": 1,
+          "facets": []
+        },
+        "c40": {
+          "grade": 0,
+          "facets": []
+        }
+      },
+      "required_facets": [
+        "vector_db",
+        "dimensions",
+        "metric"
+      ],
+      "anonymous_content_groups": {
+        "c01": "p01",
+        "c02": "p01",
+        "c03": "p02",
+        "c04": "p02",
+        "c05": "p03",
+        "c06": "p03",
+        "c07": "p04",
+        "c08": "p05",
+        "c09": "p04",
+        "c10": "p05",
+        "c11": "p06",
+        "c12": "p07",
+        "c13": "p06",
+        "c14": "p07",
+        "c15": "p08",
+        "c16": "p09",
+        "c17": "p10",
+        "c18": "p11",
+        "c19": "p12",
+        "c20": "p08",
+        "c21": "p13",
+        "c22": "p08",
+        "c23": "p14",
+        "c24": "p15",
+        "c25": "p16",
+        "c26": "p17",
+        "c27": "p18",
+        "c28": "p19",
+        "c29": "p20",
+        "c30": "p09",
+        "c31": "p19",
+        "c32": "p21",
+        "c33": "p22",
+        "c34": "p23",
+        "c35": "p24",
+        "c36": "p25",
+        "c37": "p26",
+        "c38": "p27",
+        "c39": "p24",
+        "c40": "p28"
+      },
+      "plan": {
+        "intent": "semantic_qa",
+        "route": "retrieval_required",
+        "limits": {
+          "vector_limit": 20,
+          "lexical_limit": 20,
+          "structured_limit": 80,
+          "rerank_limit": 40,
+          "injected_limit": 12,
+          "char_budget": 24000
+        }
+      }
+    },
+    {
+      "id": "routing_ko",
+      "shortlist_digest": "a15d2e9b3dcd6e0cb31c5fe32d6aa90af974a469301dc8452c737619a88de2ea",
+      "shortlist_count": 40,
+      "candidate_count": 86,
+      "prepare_ms": 1130.312,
+      "gold_labels": {
+        "c01": {
+          "grade": 1,
+          "facets": []
+        },
+        "c02": {
+          "grade": 1,
+          "facets": []
+        },
+        "c03": {
+          "grade": 0,
+          "facets": []
+        },
+        "c04": {
+          "grade": 3,
+          "facets": [
+            "fix"
+          ]
+        },
+        "c05": {
+          "grade": 0,
+          "facets": []
+        },
+        "c06": {
+          "grade": 1,
+          "facets": []
+        },
+        "c07": {
+          "grade": 1,
+          "facets": []
+        },
+        "c08": {
+          "grade": 1,
+          "facets": []
+        },
+        "c09": {
+          "grade": 0,
+          "facets": []
+        },
+        "c10": {
+          "grade": 1,
+          "facets": []
+        },
+        "c11": {
+          "grade": 0,
+          "facets": []
+        },
+        "c12": {
+          "grade": 1,
+          "facets": []
+        },
+        "c13": {
+          "grade": 0,
+          "facets": []
+        },
+        "c14": {
+          "grade": 0,
+          "facets": []
+        },
+        "c15": {
+          "grade": 4,
+          "facets": [
+            "both_routes",
+            "fix"
+          ]
+        },
+        "c16": {
+          "grade": 0,
+          "facets": []
+        },
+        "c17": {
+          "grade": 0,
+          "facets": []
+        },
+        "c18": {
+          "grade": 1,
+          "facets": []
+        },
+        "c19": {
+          "grade": 1,
+          "facets": []
+        },
+        "c20": {
+          "grade": 0,
+          "facets": []
+        },
+        "c21": {
+          "grade": 0,
+          "facets": []
+        },
+        "c22": {
+          "grade": 4,
+          "facets": [
+            "both_routes",
+            "fix"
+          ]
+        },
+        "c23": {
+          "grade": 0,
+          "facets": []
+        },
+        "c24": {
+          "grade": 0,
+          "facets": []
+        },
+        "c25": {
+          "grade": 1,
+          "facets": []
+        },
+        "c26": {
+          "grade": 0,
+          "facets": []
+        },
+        "c27": {
+          "grade": 1,
+          "facets": []
+        },
+        "c28": {
+          "grade": 0,
+          "facets": []
+        },
+        "c29": {
+          "grade": 0,
+          "facets": []
+        },
+        "c30": {
+          "grade": 1,
+          "facets": []
+        },
+        "c31": {
+          "grade": 1,
+          "facets": []
+        },
+        "c32": {
+          "grade": 0,
+          "facets": []
+        },
+        "c33": {
+          "grade": 0,
+          "facets": []
+        },
+        "c34": {
+          "grade": 1,
+          "facets": []
+        },
+        "c35": {
+          "grade": 1,
+          "facets": []
+        },
+        "c36": {
+          "grade": 0,
+          "facets": []
+        },
+        "c37": {
+          "grade": 0,
+          "facets": []
+        },
+        "c38": {
+          "grade": 1,
+          "facets": []
+        },
+        "c39": {
+          "grade": 0,
+          "facets": []
+        },
+        "c40": {
+          "grade": 0,
+          "facets": []
+        }
+      },
+      "required_facets": [
+        "both_routes",
+        "fix"
+      ],
+      "anonymous_content_groups": {
+        "c01": "p01",
+        "c02": "p02",
+        "c03": "p03",
+        "c04": "p04",
+        "c05": "p05",
+        "c06": "p06",
+        "c07": "p07",
+        "c08": "p08",
+        "c09": "p09",
+        "c10": "p10",
+        "c11": "p11",
+        "c12": "p08",
+        "c13": "p12",
+        "c14": "p13",
+        "c15": "p14",
+        "c16": "p15",
+        "c17": "p16",
+        "c18": "p17",
+        "c19": "p18",
+        "c20": "p19",
+        "c21": "p20",
+        "c22": "p21",
+        "c23": "p22",
+        "c24": "p23",
+        "c25": "p24",
+        "c26": "p25",
+        "c27": "p26",
+        "c28": "p27",
+        "c29": "p28",
+        "c30": "p29",
+        "c31": "p30",
+        "c32": "p31",
+        "c33": "p32",
+        "c34": "p33",
+        "c35": "p30",
+        "c36": "p34",
+        "c37": "p35",
+        "c38": "p36",
+        "c39": "p37",
+        "c40": "p38"
+      },
+      "plan": {
+        "intent": "semantic_qa",
+        "route": "retrieval_required",
+        "limits": {
+          "vector_limit": 20,
+          "lexical_limit": 20,
+          "structured_limit": 80,
+          "rerank_limit": 40,
+          "injected_limit": 12,
+          "char_budget": 24000
+        }
+      }
+    },
+    {
+      "id": "typing_ko",
+      "shortlist_digest": "55975a755e0039af4e68ccf97260aff5d7dcf2cbe2c18a043243b6820b2a7bdb",
+      "shortlist_count": 40,
+      "candidate_count": 81,
+      "prepare_ms": 966.325,
+      "gold_labels": {
+        "c01": {
+          "grade": 3,
+          "facets": [
+            "annotated_arbitrary",
+            "literal_constraint"
+          ]
+        },
+        "c02": {
+          "grade": 2,
+          "facets": [
+            "field_validation"
+          ]
+        },
+        "c03": {
+          "grade": 1,
+          "facets": []
+        },
+        "c04": {
+          "grade": 1,
+          "facets": []
+        },
+        "c05": {
+          "grade": 1,
+          "facets": []
+        },
+        "c06": {
+          "grade": 0,
+          "facets": []
+        },
+        "c07": {
+          "grade": 2,
+          "facets": [
+            "literal_constraint"
+          ]
+        },
+        "c08": {
+          "grade": 1,
+          "facets": []
+        },
+        "c09": {
+          "grade": 0,
+          "facets": []
+        },
+        "c10": {
+          "grade": 2,
+          "facets": [
+            "annotated_arbitrary"
+          ]
+        },
+        "c11": {
+          "grade": 2,
+          "facets": [
+            "annotated_arbitrary"
+          ]
+        },
+        "c12": {
+          "grade": 0,
+          "facets": []
+        },
+        "c13": {
+          "grade": 1,
+          "facets": []
+        },
+        "c14": {
+          "grade": 1,
+          "facets": []
+        },
+        "c15": {
+          "grade": 1,
+          "facets": []
+        },
+        "c16": {
+          "grade": 0,
+          "facets": []
+        },
+        "c17": {
+          "grade": 0,
+          "facets": []
+        },
+        "c18": {
+          "grade": 0,
+          "facets": []
+        },
+        "c19": {
+          "grade": 0,
+          "facets": []
+        },
+        "c20": {
+          "grade": 0,
+          "facets": []
+        },
+        "c21": {
+          "grade": 0,
+          "facets": []
+        },
+        "c22": {
+          "grade": 1,
+          "facets": []
+        },
+        "c23": {
+          "grade": 0,
+          "facets": []
+        },
+        "c24": {
+          "grade": 0,
+          "facets": []
+        },
+        "c25": {
+          "grade": 2,
+          "facets": [
+            "field_validation"
+          ]
+        },
+        "c26": {
+          "grade": 0,
+          "facets": []
+        },
+        "c27": {
+          "grade": 0,
+          "facets": []
+        },
+        "c28": {
+          "grade": 1,
+          "facets": []
+        },
+        "c29": {
+          "grade": 1,
+          "facets": []
+        },
+        "c30": {
+          "grade": 0,
+          "facets": []
+        },
+        "c31": {
+          "grade": 0,
+          "facets": []
+        },
+        "c32": {
+          "grade": 0,
+          "facets": []
+        },
+        "c33": {
+          "grade": 0,
+          "facets": []
+        },
+        "c34": {
+          "grade": 1,
+          "facets": []
+        },
+        "c35": {
+          "grade": 0,
+          "facets": []
+        },
+        "c36": {
+          "grade": 0,
+          "facets": []
+        },
+        "c37": {
+          "grade": 1,
+          "facets": []
+        },
+        "c38": {
+          "grade": 2,
+          "facets": [
+            "literal_constraint"
+          ]
+        },
+        "c39": {
+          "grade": 0,
+          "facets": []
+        },
+        "c40": {
+          "grade": 0,
+          "facets": []
+        }
+      },
+      "required_facets": [
+        "annotated_arbitrary",
+        "literal_constraint",
+        "field_validation"
+      ],
+      "anonymous_content_groups": {
+        "c01": "p01",
+        "c02": "p02",
+        "c03": "p03",
+        "c04": "p04",
+        "c05": "p05",
+        "c06": "p06",
+        "c07": "p07",
+        "c08": "p08",
+        "c09": "p09",
+        "c10": "p10",
+        "c11": "p11",
+        "c12": "p12",
+        "c13": "p13",
+        "c14": "p14",
+        "c15": "p15",
+        "c16": "p16",
+        "c17": "p17",
+        "c18": "p18",
+        "c19": "p19",
+        "c20": "p20",
+        "c21": "p21",
+        "c22": "p05",
+        "c23": "p22",
+        "c24": "p23",
+        "c25": "p24",
+        "c26": "p25",
+        "c27": "p26",
+        "c28": "p27",
+        "c29": "p28",
+        "c30": "p29",
+        "c31": "p30",
+        "c32": "p31",
+        "c33": "p32",
+        "c34": "p33",
+        "c35": "p34",
+        "c36": "p35",
+        "c37": "p36",
+        "c38": "p37",
+        "c39": "p38",
+        "c40": "p39"
+      },
+      "plan": {
+        "intent": "comparison",
+        "route": "retrieval_optional",
+        "limits": {
+          "vector_limit": 20,
+          "lexical_limit": 20,
+          "structured_limit": 80,
+          "rerank_limit": 40,
+          "injected_limit": 12,
+          "char_budget": 24000
+        }
+      }
+    },
+    {
+      "id": "eligibility_ko",
+      "shortlist_digest": "56c6e51bb5921a591e4ed10fcf9f6059743bf45ce6f665f9f21aa0a40805d03c",
+      "shortlist_count": 40,
+      "candidate_count": 54,
+      "prepare_ms": 924.93,
+      "gold_labels": {
+        "c01": {
+          "grade": 1,
+          "facets": []
+        },
+        "c02": {
+          "grade": 1,
+          "facets": []
+        },
+        "c03": {
+          "grade": 0,
+          "facets": []
+        },
+        "c04": {
+          "grade": 0,
+          "facets": []
+        },
+        "c05": {
+          "grade": 0,
+          "facets": []
+        },
+        "c06": {
+          "grade": 3,
+          "facets": [
+            "exchange_gpa"
+          ]
+        },
+        "c07": {
+          "grade": 1,
+          "facets": []
+        },
+        "c08": {
+          "grade": 1,
+          "facets": []
+        },
+        "c09": {
+          "grade": 1,
+          "facets": []
+        },
+        "c10": {
+          "grade": 1,
+          "facets": []
+        },
+        "c11": {
+          "grade": 1,
+          "facets": []
+        },
+        "c12": {
+          "grade": 0,
+          "facets": []
+        },
+        "c13": {
+          "grade": 0,
+          "facets": []
+        },
+        "c14": {
+          "grade": 1,
+          "facets": []
+        },
+        "c15": {
+          "grade": 0,
+          "facets": []
+        },
+        "c16": {
+          "grade": 0,
+          "facets": []
+        },
+        "c17": {
+          "grade": 0,
+          "facets": []
+        },
+        "c18": {
+          "grade": 0,
+          "facets": []
+        },
+        "c19": {
+          "grade": 0,
+          "facets": []
+        },
+        "c20": {
+          "grade": 0,
+          "facets": []
+        },
+        "c21": {
+          "grade": 0,
+          "facets": []
+        },
+        "c22": {
+          "grade": 0,
+          "facets": []
+        },
+        "c23": {
+          "grade": 0,
+          "facets": []
+        },
+        "c24": {
+          "grade": 0,
+          "facets": []
+        },
+        "c25": {
+          "grade": 0,
+          "facets": []
+        },
+        "c26": {
+          "grade": 0,
+          "facets": []
+        },
+        "c27": {
+          "grade": 1,
+          "facets": []
+        },
+        "c28": {
+          "grade": 0,
+          "facets": []
+        },
+        "c29": {
+          "grade": 0,
+          "facets": []
+        },
+        "c30": {
+          "grade": 0,
+          "facets": []
+        },
+        "c31": {
+          "grade": 0,
+          "facets": []
+        },
+        "c32": {
+          "grade": 0,
+          "facets": []
+        },
+        "c33": {
+          "grade": 0,
+          "facets": []
+        },
+        "c34": {
+          "grade": 3,
+          "facets": [
+            "academic_gpa"
+          ]
+        },
+        "c35": {
+          "grade": 1,
+          "facets": []
+        },
+        "c36": {
+          "grade": 0,
+          "facets": []
+        },
+        "c37": {
+          "grade": 0,
+          "facets": []
+        },
+        "c38": {
+          "grade": 0,
+          "facets": []
+        },
+        "c39": {
+          "grade": 0,
+          "facets": []
+        },
+        "c40": {
+          "grade": 0,
+          "facets": []
+        }
+      },
+      "required_facets": [
+        "academic_gpa",
+        "exchange_gpa"
+      ],
+      "anonymous_content_groups": {
+        "c01": "p01",
+        "c02": "p02",
+        "c03": "p03",
+        "c04": "p03",
+        "c05": "p03",
+        "c06": "p04",
+        "c07": "p05",
+        "c08": "p06",
+        "c09": "p07",
+        "c10": "p08",
+        "c11": "p09",
+        "c12": "p10",
+        "c13": "p11",
+        "c14": "p12",
+        "c15": "p13",
+        "c16": "p14",
+        "c17": "p15",
+        "c18": "p15",
+        "c19": "p13",
+        "c20": "p13",
+        "c21": "p15",
+        "c22": "p16",
+        "c23": "p17",
+        "c24": "p16",
+        "c25": "p18",
+        "c26": "p18",
+        "c27": "p19",
+        "c28": "p20",
+        "c29": "p21",
+        "c30": "p22",
+        "c31": "p23",
+        "c32": "p24",
+        "c33": "p20",
+        "c34": "p25",
+        "c35": "p26",
+        "c36": "p27",
+        "c37": "p28",
+        "c38": "p27",
+        "c39": "p27",
+        "c40": "p29"
+      },
+      "plan": {
+        "intent": "comparison",
+        "route": "retrieval_required",
+        "limits": {
+          "vector_limit": 20,
+          "lexical_limit": 20,
+          "structured_limit": 80,
+          "rerank_limit": 40,
+          "injected_limit": 12,
+          "char_budget": 24000
+        }
+      }
+    },
+    {
+      "id": "funding_ko",
+      "shortlist_digest": "74c8ddf5c18c95da15b773bbc3cc8d74beb5b5a534cd4ce33269ca674eb6c03f",
+      "shortlist_count": 40,
+      "candidate_count": 62,
+      "prepare_ms": 1299.142,
+      "gold_labels": {
+        "c01": {
+          "grade": 1,
+          "facets": []
+        },
+        "c02": {
+          "grade": 3,
+          "facets": [
+            "total_funding"
+          ]
+        },
+        "c03": {
+          "grade": 1,
+          "facets": []
+        },
+        "c04": {
+          "grade": 1,
+          "facets": []
+        },
+        "c05": {
+          "grade": 0,
+          "facets": []
+        },
+        "c06": {
+          "grade": 0,
+          "facets": []
+        },
+        "c07": {
+          "grade": 1,
+          "facets": []
+        },
+        "c08": {
+          "grade": 0,
+          "facets": []
+        },
+        "c09": {
+          "grade": 0,
+          "facets": []
+        },
+        "c10": {
+          "grade": 0,
+          "facets": []
+        },
+        "c11": {
+          "grade": 0,
+          "facets": []
+        },
+        "c12": {
+          "grade": 0,
+          "facets": []
+        },
+        "c13": {
+          "grade": 0,
+          "facets": []
+        },
+        "c14": {
+          "grade": 0,
+          "facets": []
+        },
+        "c15": {
+          "grade": 0,
+          "facets": []
+        },
+        "c16": {
+          "grade": 0,
+          "facets": []
+        },
+        "c17": {
+          "grade": 3,
+          "facets": [
+            "nih_funding"
+          ]
+        },
+        "c18": {
+          "grade": 0,
+          "facets": []
+        },
+        "c19": {
+          "grade": 0,
+          "facets": []
+        },
+        "c20": {
+          "grade": 0,
+          "facets": []
+        },
+        "c21": {
+          "grade": 1,
+          "facets": []
+        },
+        "c22": {
+          "grade": 0,
+          "facets": []
+        },
+        "c23": {
+          "grade": 0,
+          "facets": []
+        },
+        "c24": {
+          "grade": 0,
+          "facets": []
+        },
+        "c25": {
+          "grade": 0,
+          "facets": []
+        },
+        "c26": {
+          "grade": 0,
+          "facets": []
+        },
+        "c27": {
+          "grade": 0,
+          "facets": []
+        },
+        "c28": {
+          "grade": 1,
+          "facets": []
+        },
+        "c29": {
+          "grade": 0,
+          "facets": []
+        },
+        "c30": {
+          "grade": 1,
+          "facets": []
+        },
+        "c31": {
+          "grade": 0,
+          "facets": []
+        },
+        "c32": {
+          "grade": 0,
+          "facets": []
+        },
+        "c33": {
+          "grade": 0,
+          "facets": []
+        },
+        "c34": {
+          "grade": 0,
+          "facets": []
+        },
+        "c35": {
+          "grade": 1,
+          "facets": []
+        },
+        "c36": {
+          "grade": 0,
+          "facets": []
+        },
+        "c37": {
+          "grade": 0,
+          "facets": []
+        },
+        "c38": {
+          "grade": 0,
+          "facets": []
+        },
+        "c39": {
+          "grade": 0,
+          "facets": []
+        },
+        "c40": {
+          "grade": 0,
+          "facets": []
+        }
+      },
+      "required_facets": [
+        "total_funding",
+        "nih_funding"
+      ],
+      "anonymous_content_groups": {
+        "c01": "p01",
+        "c02": "p02",
+        "c03": "p03",
+        "c04": "p04",
+        "c05": "p05",
+        "c06": "p06",
+        "c07": "p07",
+        "c08": "p08",
+        "c09": "p09",
+        "c10": "p10",
+        "c11": "p05",
+        "c12": "p05",
+        "c13": "p11",
+        "c14": "p08",
+        "c15": "p08",
+        "c16": "p12",
+        "c17": "p13",
+        "c18": "p12",
+        "c19": "p12",
+        "c20": "p14",
+        "c21": "p15",
+        "c22": "p16",
+        "c23": "p17",
+        "c24": "p18",
+        "c25": "p16",
+        "c26": "p19",
+        "c27": "p20",
+        "c28": "p21",
+        "c29": "p22",
+        "c30": "p23",
+        "c31": "p24",
+        "c32": "p20",
+        "c33": "p25",
+        "c34": "p26",
+        "c35": "p27",
+        "c36": "p28",
+        "c37": "p29",
+        "c38": "p30",
+        "c39": "p31",
+        "c40": "p32"
+      },
+      "plan": {
+        "intent": "semantic_qa",
+        "route": "retrieval_required",
+        "limits": {
+          "vector_limit": 20,
+          "lexical_limit": 20,
+          "structured_limit": 80,
+          "rerank_limit": 40,
+          "injected_limit": 12,
+          "char_budget": 24000
+        }
+      }
+    }
+  ],
+  "runs": [
+    {
+      "case": "paper_ko",
+      "trial": 1,
+      "mode": "deterministic",
+      "effective_mode": "deterministic",
+      "rerank_ms": 0.014,
+      "order": [
+        "c01",
+        "c02",
+        "c03",
+        "c04",
+        "c05",
+        "c06",
+        "c07",
+        "c08",
+        "c09",
+        "c10",
+        "c11",
+        "c12",
+        "c14",
+        "c13",
+        "c15",
+        "c16",
+        "c17",
+        "c18",
+        "c20",
+        "c19",
+        "c21",
+        "c22",
+        "c24",
+        "c23",
+        "c26",
+        "c25",
+        "c28",
+        "c27",
+        "c30",
+        "c29",
+        "c31",
+        "c33",
+        "c32",
+        "c34",
+        "c36",
+        "c35",
+        "c37",
+        "c38",
+        "c39",
+        "c40"
+      ],
+      "metrics": {
+        "ndcg_at_5": 1.0,
+        "ndcg_at_12": 0.9922973235403699,
+        "facet_coverage_at_5": 1.0,
+        "facet_coverage_at_12": 1.0,
+        "unique_content_rate_at_12": 0.5833333333333334,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": 1,
+        "zero_grade_count_at_12": 1
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 1.0,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": []
+    },
+    {
+      "case": "paper_ko",
+      "trial": 1,
+      "mode": "jev",
+      "effective_mode": "jev",
+      "rerank_ms": 1632.3,
+      "order": [
+        "c03",
+        "c04",
+        "c02",
+        "c01",
+        "c34",
+        "c31",
+        "c05",
+        "c06",
+        "c22",
+        "c09",
+        "c13",
+        "c15",
+        "c29",
+        "c10",
+        "c27",
+        "c07",
+        "c37",
+        "c14",
+        "c35",
+        "c39",
+        "c11",
+        "c12",
+        "c32",
+        "c16",
+        "c21",
+        "c20",
+        "c23",
+        "c17",
+        "c25",
+        "c19",
+        "c38",
+        "c33",
+        "c40",
+        "c08",
+        "c24",
+        "c30",
+        "c18",
+        "c28",
+        "c26",
+        "c36"
+      ],
+      "metrics": {
+        "ndcg_at_5": 1.0,
+        "ndcg_at_12": 1.0,
+        "facet_coverage_at_5": 1.0,
+        "facet_coverage_at_12": 1.0,
+        "unique_content_rate_at_12": 0.5,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": 1,
+        "zero_grade_count_at_12": 0
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 1.0,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": [
+        {
+          "ms": 446.832,
+          "input_bytes": 8090,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2222,
+            "output_tokens": 124,
+            "cost": 9.3324e-05
+          }
+        },
+        {
+          "ms": 238.01,
+          "input_bytes": 7888,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2140,
+            "output_tokens": 130,
+            "cost": 8.988e-05
+          }
+        },
+        {
+          "ms": 454.673,
+          "input_bytes": 13414,
+          "status": 200,
+          "usage": {
+            "input_tokens": 3309,
+            "output_tokens": 132,
+            "cost": 0.000138978
+          }
+        },
+        {
+          "ms": 248.157,
+          "input_bytes": 9821,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2565,
+            "output_tokens": 132,
+            "cost": 0.00010773
+          }
+        },
+        {
+          "ms": 240.94,
+          "input_bytes": 10681,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2854,
+            "output_tokens": 132,
+            "cost": 0.000119868
+          }
+        }
+      ]
+    },
+    {
+      "case": "paper_ko",
+      "trial": 1,
+      "mode": "cross_encoder",
+      "effective_mode": "cross_encoder",
+      "rerank_ms": 1562.028,
+      "order": [
+        "c09",
+        "c22",
+        "c01",
+        "c02",
+        "c05",
+        "c06",
+        "c19",
+        "c33",
+        "c37",
+        "c39",
+        "c03",
+        "c04",
+        "c35",
+        "c11",
+        "c12",
+        "c13",
+        "c15",
+        "c31",
+        "c34",
+        "c14",
+        "c27",
+        "c07",
+        "c10",
+        "c17",
+        "c20",
+        "c32",
+        "c29",
+        "c16",
+        "c18",
+        "c24",
+        "c26",
+        "c25",
+        "c38",
+        "c08",
+        "c30",
+        "c36",
+        "c21",
+        "c23",
+        "c40",
+        "c28"
+      ],
+      "metrics": {
+        "ndcg_at_5": 0.41168618569168947,
+        "ndcg_at_12": 0.6143769716026964,
+        "facet_coverage_at_5": 1.0,
+        "facet_coverage_at_12": 1.0,
+        "unique_content_rate_at_12": 0.5,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": 3,
+        "zero_grade_count_at_12": 2
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 1.0,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": []
+    },
+    {
+      "case": "paper_ko",
+      "trial": 2,
+      "mode": "jev",
+      "effective_mode": "jev",
+      "rerank_ms": 1857.488,
+      "order": [
+        "c03",
+        "c04",
+        "c01",
+        "c02",
+        "c34",
+        "c31",
+        "c05",
+        "c06",
+        "c22",
+        "c09",
+        "c13",
+        "c15",
+        "c29",
+        "c10",
+        "c14",
+        "c37",
+        "c07",
+        "c27",
+        "c35",
+        "c39",
+        "c11",
+        "c12",
+        "c32",
+        "c16",
+        "c21",
+        "c20",
+        "c23",
+        "c17",
+        "c25",
+        "c19",
+        "c38",
+        "c33",
+        "c40",
+        "c08",
+        "c24",
+        "c28",
+        "c30",
+        "c18",
+        "c26",
+        "c36"
+      ],
+      "metrics": {
+        "ndcg_at_5": 1.0,
+        "ndcg_at_12": 1.0,
+        "facet_coverage_at_5": 1.0,
+        "facet_coverage_at_12": 1.0,
+        "unique_content_rate_at_12": 0.5,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": 1,
+        "zero_grade_count_at_12": 0
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 1.0,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": [
+        {
+          "ms": 252.047,
+          "input_bytes": 8090,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2222,
+            "output_tokens": 124,
+            "cost": 9.3324e-05
+          }
+        },
+        {
+          "ms": 514.962,
+          "input_bytes": 7888,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2140,
+            "output_tokens": 130,
+            "cost": 8.988e-05
+          }
+        },
+        {
+          "ms": 242.594,
+          "input_bytes": 13414,
+          "status": 200,
+          "usage": {
+            "input_tokens": 3309,
+            "output_tokens": 132,
+            "cost": 0.000138978
+          }
+        },
+        {
+          "ms": 290.31,
+          "input_bytes": 9821,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2565,
+            "output_tokens": 132,
+            "cost": 0.00010773
+          }
+        },
+        {
+          "ms": 551.002,
+          "input_bytes": 10681,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2854,
+            "output_tokens": 132,
+            "cost": 0.000119868
+          }
+        }
+      ]
+    },
+    {
+      "case": "paper_ko",
+      "trial": 2,
+      "mode": "cross_encoder",
+      "effective_mode": "cross_encoder",
+      "rerank_ms": 1595.91,
+      "order": [
+        "c09",
+        "c22",
+        "c01",
+        "c02",
+        "c05",
+        "c06",
+        "c19",
+        "c33",
+        "c37",
+        "c39",
+        "c03",
+        "c04",
+        "c35",
+        "c11",
+        "c12",
+        "c13",
+        "c15",
+        "c31",
+        "c34",
+        "c14",
+        "c27",
+        "c07",
+        "c10",
+        "c17",
+        "c20",
+        "c32",
+        "c29",
+        "c16",
+        "c18",
+        "c24",
+        "c26",
+        "c25",
+        "c38",
+        "c08",
+        "c30",
+        "c36",
+        "c21",
+        "c23",
+        "c40",
+        "c28"
+      ],
+      "metrics": {
+        "ndcg_at_5": 0.41168618569168947,
+        "ndcg_at_12": 0.6143769716026964,
+        "facet_coverage_at_5": 1.0,
+        "facet_coverage_at_12": 1.0,
+        "unique_content_rate_at_12": 0.5,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": 3,
+        "zero_grade_count_at_12": 2
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 1.0,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": []
+    },
+    {
+      "case": "paper_ko",
+      "trial": 2,
+      "mode": "deterministic",
+      "effective_mode": "deterministic",
+      "rerank_ms": 0.013,
+      "order": [
+        "c01",
+        "c02",
+        "c03",
+        "c04",
+        "c05",
+        "c06",
+        "c07",
+        "c08",
+        "c09",
+        "c10",
+        "c11",
+        "c12",
+        "c14",
+        "c13",
+        "c15",
+        "c16",
+        "c17",
+        "c18",
+        "c20",
+        "c19",
+        "c21",
+        "c22",
+        "c24",
+        "c23",
+        "c26",
+        "c25",
+        "c28",
+        "c27",
+        "c30",
+        "c29",
+        "c31",
+        "c33",
+        "c32",
+        "c34",
+        "c36",
+        "c35",
+        "c37",
+        "c38",
+        "c39",
+        "c40"
+      ],
+      "metrics": {
+        "ndcg_at_5": 1.0,
+        "ndcg_at_12": 0.9922973235403699,
+        "facet_coverage_at_5": 1.0,
+        "facet_coverage_at_12": 1.0,
+        "unique_content_rate_at_12": 0.5833333333333334,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": 1,
+        "zero_grade_count_at_12": 1
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 1.0,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": []
+    },
+    {
+      "case": "paper_ko",
+      "trial": 3,
+      "mode": "cross_encoder",
+      "effective_mode": "cross_encoder",
+      "rerank_ms": 1467.098,
+      "order": [
+        "c09",
+        "c22",
+        "c01",
+        "c02",
+        "c05",
+        "c06",
+        "c19",
+        "c33",
+        "c37",
+        "c39",
+        "c03",
+        "c04",
+        "c35",
+        "c11",
+        "c12",
+        "c13",
+        "c15",
+        "c31",
+        "c34",
+        "c14",
+        "c27",
+        "c07",
+        "c10",
+        "c17",
+        "c20",
+        "c32",
+        "c29",
+        "c16",
+        "c18",
+        "c24",
+        "c26",
+        "c25",
+        "c38",
+        "c08",
+        "c30",
+        "c36",
+        "c21",
+        "c23",
+        "c40",
+        "c28"
+      ],
+      "metrics": {
+        "ndcg_at_5": 0.41168618569168947,
+        "ndcg_at_12": 0.6143769716026964,
+        "facet_coverage_at_5": 1.0,
+        "facet_coverage_at_12": 1.0,
+        "unique_content_rate_at_12": 0.5,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": 3,
+        "zero_grade_count_at_12": 2
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 1.0,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": []
+    },
+    {
+      "case": "paper_ko",
+      "trial": 3,
+      "mode": "deterministic",
+      "effective_mode": "deterministic",
+      "rerank_ms": 0.022,
+      "order": [
+        "c01",
+        "c02",
+        "c03",
+        "c04",
+        "c05",
+        "c06",
+        "c07",
+        "c08",
+        "c09",
+        "c10",
+        "c11",
+        "c12",
+        "c14",
+        "c13",
+        "c15",
+        "c16",
+        "c17",
+        "c18",
+        "c20",
+        "c19",
+        "c21",
+        "c22",
+        "c24",
+        "c23",
+        "c26",
+        "c25",
+        "c28",
+        "c27",
+        "c30",
+        "c29",
+        "c31",
+        "c33",
+        "c32",
+        "c34",
+        "c36",
+        "c35",
+        "c37",
+        "c38",
+        "c39",
+        "c40"
+      ],
+      "metrics": {
+        "ndcg_at_5": 1.0,
+        "ndcg_at_12": 0.9922973235403699,
+        "facet_coverage_at_5": 1.0,
+        "facet_coverage_at_12": 1.0,
+        "unique_content_rate_at_12": 0.5833333333333334,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": 1,
+        "zero_grade_count_at_12": 1
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 1.0,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": []
+    },
+    {
+      "case": "paper_ko",
+      "trial": 3,
+      "mode": "jev",
+      "effective_mode": "jev",
+      "rerank_ms": 1550.688,
+      "order": [
+        "c03",
+        "c04",
+        "c02",
+        "c01",
+        "c34",
+        "c31",
+        "c05",
+        "c06",
+        "c22",
+        "c09",
+        "c13",
+        "c15",
+        "c29",
+        "c37",
+        "c07",
+        "c10",
+        "c27",
+        "c35",
+        "c14",
+        "c39",
+        "c11",
+        "c12",
+        "c16",
+        "c32",
+        "c21",
+        "c20",
+        "c23",
+        "c17",
+        "c25",
+        "c19",
+        "c38",
+        "c33",
+        "c40",
+        "c08",
+        "c24",
+        "c30",
+        "c18",
+        "c28",
+        "c26",
+        "c36"
+      ],
+      "metrics": {
+        "ndcg_at_5": 1.0,
+        "ndcg_at_12": 1.0,
+        "facet_coverage_at_5": 1.0,
+        "facet_coverage_at_12": 1.0,
+        "unique_content_rate_at_12": 0.5,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": 1,
+        "zero_grade_count_at_12": 0
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 1.0,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": [
+        {
+          "ms": 269.121,
+          "input_bytes": 8090,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2222,
+            "output_tokens": 124,
+            "cost": 9.3324e-05
+          }
+        },
+        {
+          "ms": 255.84,
+          "input_bytes": 7888,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2140,
+            "output_tokens": 130,
+            "cost": 8.988e-05
+          }
+        },
+        {
+          "ms": 342.97,
+          "input_bytes": 13414,
+          "status": 200,
+          "usage": {
+            "input_tokens": 3309,
+            "output_tokens": 132,
+            "cost": 0.000138978
+          }
+        },
+        {
+          "ms": 302.398,
+          "input_bytes": 9821,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2565,
+            "output_tokens": 132,
+            "cost": 0.00010773
+          }
+        },
+        {
+          "ms": 376.696,
+          "input_bytes": 10681,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2854,
+            "output_tokens": 132,
+            "cost": 0.000119868
+          }
+        }
+      ]
+    },
+    {
+      "case": "paper_en",
+      "trial": 1,
+      "mode": "jev",
+      "effective_mode": "jev",
+      "rerank_ms": 1384.769,
+      "order": [
+        "c03",
+        "c04",
+        "c02",
+        "c01",
+        "c28",
+        "c31",
+        "c10",
+        "c37",
+        "c08",
+        "c26",
+        "c09",
+        "c35",
+        "c07",
+        "c13",
+        "c11",
+        "c24",
+        "c36",
+        "c39",
+        "c33",
+        "c12",
+        "c14",
+        "c29",
+        "c06",
+        "c05",
+        "c17",
+        "c38",
+        "c19",
+        "c21",
+        "c30",
+        "c16",
+        "c18",
+        "c23",
+        "c32",
+        "c20",
+        "c22",
+        "c25",
+        "c15",
+        "c27",
+        "c34",
+        "c40"
+      ],
+      "metrics": {
+        "ndcg_at_5": 1.0,
+        "ndcg_at_12": 0.9929419311091859,
+        "facet_coverage_at_5": 1.0,
+        "facet_coverage_at_12": 1.0,
+        "unique_content_rate_at_12": 0.6666666666666666,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": 1,
+        "zero_grade_count_at_12": 1
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 1.0,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": [
+        {
+          "ms": 271.804,
+          "input_bytes": 10411,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2709,
+            "output_tokens": 124,
+            "cost": 0.000113778
+          }
+        },
+        {
+          "ms": 248.99,
+          "input_bytes": 9442,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2399,
+            "output_tokens": 130,
+            "cost": 0.000100758
+          }
+        },
+        {
+          "ms": 263.242,
+          "input_bytes": 10180,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2595,
+            "output_tokens": 132,
+            "cost": 0.00010899
+          }
+        },
+        {
+          "ms": 288.459,
+          "input_bytes": 10692,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2804,
+            "output_tokens": 132,
+            "cost": 0.000117768
+          }
+        },
+        {
+          "ms": 308.009,
+          "input_bytes": 9535,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2558,
+            "output_tokens": 132,
+            "cost": 0.000107436
+          }
+        }
+      ]
+    },
+    {
+      "case": "paper_en",
+      "trial": 1,
+      "mode": "cross_encoder",
+      "effective_mode": "cross_encoder",
+      "rerank_ms": 1819.878,
+      "order": [
+        "c01",
+        "c02",
+        "c03",
+        "c04",
+        "c08",
+        "c10",
+        "c35",
+        "c39",
+        "c28",
+        "c31",
+        "c12",
+        "c14",
+        "c16",
+        "c30",
+        "c37",
+        "c11",
+        "c13",
+        "c07",
+        "c09",
+        "c05",
+        "c06",
+        "c26",
+        "c29",
+        "c33",
+        "c36",
+        "c23",
+        "c21",
+        "c15",
+        "c20",
+        "c22",
+        "c18",
+        "c40",
+        "c24",
+        "c27",
+        "c17",
+        "c34",
+        "c38",
+        "c19",
+        "c32",
+        "c25"
+      ],
+      "metrics": {
+        "ndcg_at_5": 1.0,
+        "ndcg_at_12": 1.0,
+        "facet_coverage_at_5": 1.0,
+        "facet_coverage_at_12": 1.0,
+        "unique_content_rate_at_12": 0.5,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": 1,
+        "zero_grade_count_at_12": 0
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 1.0,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": []
+    },
+    {
+      "case": "paper_en",
+      "trial": 1,
+      "mode": "deterministic",
+      "effective_mode": "deterministic",
+      "rerank_ms": 0.012,
+      "order": [
+        "c01",
+        "c02",
+        "c03",
+        "c04",
+        "c05",
+        "c06",
+        "c07",
+        "c08",
+        "c09",
+        "c10",
+        "c11",
+        "c12",
+        "c13",
+        "c14",
+        "c15",
+        "c16",
+        "c18",
+        "c17",
+        "c20",
+        "c19",
+        "c22",
+        "c21",
+        "c23",
+        "c25",
+        "c24",
+        "c27",
+        "c26",
+        "c28",
+        "c30",
+        "c29",
+        "c31",
+        "c32",
+        "c34",
+        "c33",
+        "c36",
+        "c35",
+        "c38",
+        "c40",
+        "c37",
+        "c39"
+      ],
+      "metrics": {
+        "ndcg_at_5": 0.9900323792039635,
+        "ndcg_at_12": 0.9818567734549958,
+        "facet_coverage_at_5": 1.0,
+        "facet_coverage_at_12": 1.0,
+        "unique_content_rate_at_12": 0.5833333333333334,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": 1,
+        "zero_grade_count_at_12": 2
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 1.0,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": []
+    },
+    {
+      "case": "paper_en",
+      "trial": 2,
+      "mode": "cross_encoder",
+      "effective_mode": "cross_encoder",
+      "rerank_ms": 1469.845,
+      "order": [
+        "c01",
+        "c02",
+        "c03",
+        "c04",
+        "c08",
+        "c10",
+        "c35",
+        "c39",
+        "c28",
+        "c31",
+        "c12",
+        "c14",
+        "c16",
+        "c30",
+        "c37",
+        "c11",
+        "c13",
+        "c07",
+        "c09",
+        "c05",
+        "c06",
+        "c26",
+        "c29",
+        "c33",
+        "c36",
+        "c23",
+        "c21",
+        "c15",
+        "c20",
+        "c22",
+        "c18",
+        "c40",
+        "c24",
+        "c27",
+        "c17",
+        "c34",
+        "c38",
+        "c19",
+        "c32",
+        "c25"
+      ],
+      "metrics": {
+        "ndcg_at_5": 1.0,
+        "ndcg_at_12": 1.0,
+        "facet_coverage_at_5": 1.0,
+        "facet_coverage_at_12": 1.0,
+        "unique_content_rate_at_12": 0.5,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": 1,
+        "zero_grade_count_at_12": 0
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 1.0,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": []
+    },
+    {
+      "case": "paper_en",
+      "trial": 2,
+      "mode": "deterministic",
+      "effective_mode": "deterministic",
+      "rerank_ms": 0.014,
+      "order": [
+        "c01",
+        "c02",
+        "c03",
+        "c04",
+        "c05",
+        "c06",
+        "c07",
+        "c08",
+        "c09",
+        "c10",
+        "c11",
+        "c12",
+        "c13",
+        "c14",
+        "c15",
+        "c16",
+        "c18",
+        "c17",
+        "c20",
+        "c19",
+        "c22",
+        "c21",
+        "c23",
+        "c25",
+        "c24",
+        "c27",
+        "c26",
+        "c28",
+        "c30",
+        "c29",
+        "c31",
+        "c32",
+        "c34",
+        "c33",
+        "c36",
+        "c35",
+        "c38",
+        "c40",
+        "c37",
+        "c39"
+      ],
+      "metrics": {
+        "ndcg_at_5": 0.9900323792039635,
+        "ndcg_at_12": 0.9818567734549958,
+        "facet_coverage_at_5": 1.0,
+        "facet_coverage_at_12": 1.0,
+        "unique_content_rate_at_12": 0.5833333333333334,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": 1,
+        "zero_grade_count_at_12": 2
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 1.0,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": []
+    },
+    {
+      "case": "paper_en",
+      "trial": 2,
+      "mode": "jev",
+      "effective_mode": "jev",
+      "rerank_ms": 1438.472,
+      "order": [
+        "c03",
+        "c04",
+        "c02",
+        "c01",
+        "c31",
+        "c28",
+        "c10",
+        "c37",
+        "c08",
+        "c26",
+        "c35",
+        "c09",
+        "c07",
+        "c11",
+        "c13",
+        "c24",
+        "c36",
+        "c39",
+        "c33",
+        "c12",
+        "c14",
+        "c05",
+        "c29",
+        "c06",
+        "c17",
+        "c19",
+        "c38",
+        "c21",
+        "c30",
+        "c16",
+        "c18",
+        "c23",
+        "c32",
+        "c22",
+        "c25",
+        "c40",
+        "c15",
+        "c20",
+        "c27",
+        "c34"
+      ],
+      "metrics": {
+        "ndcg_at_5": 1.0,
+        "ndcg_at_12": 0.9929419311091859,
+        "facet_coverage_at_5": 1.0,
+        "facet_coverage_at_12": 1.0,
+        "unique_content_rate_at_12": 0.6666666666666666,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": 1,
+        "zero_grade_count_at_12": 1
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 1.0,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": [
+        {
+          "ms": 252.971,
+          "input_bytes": 10411,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2709,
+            "output_tokens": 124,
+            "cost": 0.000113778
+          }
+        },
+        {
+          "ms": 299.377,
+          "input_bytes": 9442,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2399,
+            "output_tokens": 130,
+            "cost": 0.000100758
+          }
+        },
+        {
+          "ms": 253.727,
+          "input_bytes": 10180,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2595,
+            "output_tokens": 132,
+            "cost": 0.00010899
+          }
+        },
+        {
+          "ms": 292.228,
+          "input_bytes": 10692,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2804,
+            "output_tokens": 132,
+            "cost": 0.000117768
+          }
+        },
+        {
+          "ms": 336.669,
+          "input_bytes": 9535,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2558,
+            "output_tokens": 132,
+            "cost": 0.000107436
+          }
+        }
+      ]
+    },
+    {
+      "case": "paper_en",
+      "trial": 3,
+      "mode": "deterministic",
+      "effective_mode": "deterministic",
+      "rerank_ms": 0.013,
+      "order": [
+        "c01",
+        "c02",
+        "c03",
+        "c04",
+        "c05",
+        "c06",
+        "c07",
+        "c08",
+        "c09",
+        "c10",
+        "c11",
+        "c12",
+        "c13",
+        "c14",
+        "c15",
+        "c16",
+        "c18",
+        "c17",
+        "c20",
+        "c19",
+        "c22",
+        "c21",
+        "c23",
+        "c25",
+        "c24",
+        "c27",
+        "c26",
+        "c28",
+        "c30",
+        "c29",
+        "c31",
+        "c32",
+        "c34",
+        "c33",
+        "c36",
+        "c35",
+        "c38",
+        "c40",
+        "c37",
+        "c39"
+      ],
+      "metrics": {
+        "ndcg_at_5": 0.9900323792039635,
+        "ndcg_at_12": 0.9818567734549958,
+        "facet_coverage_at_5": 1.0,
+        "facet_coverage_at_12": 1.0,
+        "unique_content_rate_at_12": 0.5833333333333334,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": 1,
+        "zero_grade_count_at_12": 2
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 1.0,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": []
+    },
+    {
+      "case": "paper_en",
+      "trial": 3,
+      "mode": "jev",
+      "effective_mode": "jev",
+      "rerank_ms": 1406.011,
+      "order": [
+        "c03",
+        "c04",
+        "c02",
+        "c01",
+        "c28",
+        "c31",
+        "c10",
+        "c37",
+        "c08",
+        "c26",
+        "c09",
+        "c35",
+        "c07",
+        "c11",
+        "c13",
+        "c39",
+        "c24",
+        "c36",
+        "c33",
+        "c05",
+        "c06",
+        "c12",
+        "c14",
+        "c29",
+        "c17",
+        "c38",
+        "c19",
+        "c21",
+        "c30",
+        "c16",
+        "c18",
+        "c23",
+        "c32",
+        "c22",
+        "c40",
+        "c15",
+        "c20",
+        "c25",
+        "c27",
+        "c34"
+      ],
+      "metrics": {
+        "ndcg_at_5": 1.0,
+        "ndcg_at_12": 0.9929419311091859,
+        "facet_coverage_at_5": 1.0,
+        "facet_coverage_at_12": 1.0,
+        "unique_content_rate_at_12": 0.6666666666666666,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": 1,
+        "zero_grade_count_at_12": 1
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 1.0,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": [
+        {
+          "ms": 272.044,
+          "input_bytes": 10411,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2709,
+            "output_tokens": 124,
+            "cost": 0.000113778
+          }
+        },
+        {
+          "ms": 241.42,
+          "input_bytes": 9442,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2399,
+            "output_tokens": 130,
+            "cost": 0.000100758
+          }
+        },
+        {
+          "ms": 341.179,
+          "input_bytes": 10180,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2595,
+            "output_tokens": 132,
+            "cost": 0.00010899
+          }
+        },
+        {
+          "ms": 253.193,
+          "input_bytes": 10692,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2804,
+            "output_tokens": 132,
+            "cost": 0.000117768
+          }
+        },
+        {
+          "ms": 293.922,
+          "input_bytes": 9535,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2558,
+            "output_tokens": 132,
+            "cost": 0.000107436
+          }
+        }
+      ]
+    },
+    {
+      "case": "paper_en",
+      "trial": 3,
+      "mode": "cross_encoder",
+      "effective_mode": "cross_encoder",
+      "rerank_ms": 1579.7,
+      "order": [
+        "c01",
+        "c02",
+        "c03",
+        "c04",
+        "c08",
+        "c10",
+        "c35",
+        "c39",
+        "c28",
+        "c31",
+        "c12",
+        "c14",
+        "c16",
+        "c30",
+        "c37",
+        "c11",
+        "c13",
+        "c07",
+        "c09",
+        "c05",
+        "c06",
+        "c26",
+        "c29",
+        "c33",
+        "c36",
+        "c23",
+        "c21",
+        "c15",
+        "c20",
+        "c22",
+        "c18",
+        "c40",
+        "c24",
+        "c27",
+        "c17",
+        "c34",
+        "c38",
+        "c19",
+        "c32",
+        "c25"
+      ],
+      "metrics": {
+        "ndcg_at_5": 1.0,
+        "ndcg_at_12": 1.0,
+        "facet_coverage_at_5": 1.0,
+        "facet_coverage_at_12": 1.0,
+        "unique_content_rate_at_12": 0.5,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": 1,
+        "zero_grade_count_at_12": 0
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 1.0,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": []
+    },
+    {
+      "case": "routing_ko",
+      "trial": 1,
+      "mode": "cross_encoder",
+      "effective_mode": "cross_encoder",
+      "rerank_ms": 3476.159,
+      "order": [
+        "c01",
+        "c15",
+        "c04",
+        "c22",
+        "c30",
+        "c18",
+        "c09",
+        "c11",
+        "c10",
+        "c38",
+        "c03",
+        "c05",
+        "c08",
+        "c12",
+        "c06",
+        "c25",
+        "c27",
+        "c07",
+        "c34",
+        "c02",
+        "c33",
+        "c19",
+        "c37",
+        "c29",
+        "c31",
+        "c35",
+        "c17",
+        "c21",
+        "c40",
+        "c14",
+        "c24",
+        "c13",
+        "c39",
+        "c36",
+        "c32",
+        "c16",
+        "c26",
+        "c20",
+        "c28",
+        "c23"
+      ],
+      "metrics": {
+        "ndcg_at_5": 0.7230674243853766,
+        "ndcg_at_12": 0.7035316710055616,
+        "facet_coverage_at_5": 1.0,
+        "facet_coverage_at_12": 1.0,
+        "unique_content_rate_at_12": 1.0,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": 2,
+        "zero_grade_count_at_12": 4
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 1.0,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": []
+    },
+    {
+      "case": "routing_ko",
+      "trial": 1,
+      "mode": "deterministic",
+      "effective_mode": "deterministic",
+      "rerank_ms": 0.021,
+      "order": [
+        "c01",
+        "c02",
+        "c03",
+        "c04",
+        "c05",
+        "c06",
+        "c07",
+        "c08",
+        "c09",
+        "c10",
+        "c11",
+        "c12",
+        "c13",
+        "c14",
+        "c15",
+        "c17",
+        "c16",
+        "c18",
+        "c19",
+        "c21",
+        "c20",
+        "c22",
+        "c24",
+        "c23",
+        "c25",
+        "c26",
+        "c27",
+        "c29",
+        "c28",
+        "c31",
+        "c30",
+        "c33",
+        "c32",
+        "c34",
+        "c35",
+        "c37",
+        "c36",
+        "c38",
+        "c40",
+        "c39"
+      ],
+      "metrics": {
+        "ndcg_at_5": 0.16141165635604893,
+        "ndcg_at_12": 0.20080265263785002,
+        "facet_coverage_at_5": 0.5,
+        "facet_coverage_at_12": 0.5,
+        "unique_content_rate_at_12": 0.9166666666666666,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": 15,
+        "zero_grade_count_at_12": 4
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 0.5,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": []
+    },
+    {
+      "case": "routing_ko",
+      "trial": 1,
+      "mode": "jev",
+      "effective_mode": "jev",
+      "rerank_ms": 1465.878,
+      "order": [
+        "c04",
+        "c15",
+        "c22",
+        "c01",
+        "c38",
+        "c30",
+        "c34",
+        "c12",
+        "c27",
+        "c07",
+        "c31",
+        "c35",
+        "c06",
+        "c18",
+        "c10",
+        "c02",
+        "c19",
+        "c25",
+        "c08",
+        "c21",
+        "c11",
+        "c09",
+        "c33",
+        "c05",
+        "c24",
+        "c40",
+        "c03",
+        "c14",
+        "c29",
+        "c23",
+        "c37",
+        "c32",
+        "c16",
+        "c39",
+        "c28",
+        "c36",
+        "c17",
+        "c26",
+        "c20",
+        "c13"
+      ],
+      "metrics": {
+        "ndcg_at_5": 0.8610217194553011,
+        "ndcg_at_12": 0.8706579760834803,
+        "facet_coverage_at_5": 1.0,
+        "facet_coverage_at_12": 1.0,
+        "unique_content_rate_at_12": 0.9166666666666666,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": 2,
+        "zero_grade_count_at_12": 0
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 1.0,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": [
+        {
+          "ms": 269.035,
+          "input_bytes": 12493,
+          "status": 200,
+          "usage": {
+            "input_tokens": 3681,
+            "output_tokens": 124,
+            "cost": 0.000154602
+          }
+        },
+        {
+          "ms": 260.606,
+          "input_bytes": 9645,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2837,
+            "output_tokens": 130,
+            "cost": 0.000119154
+          }
+        },
+        {
+          "ms": 348.298,
+          "input_bytes": 9681,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2870,
+            "output_tokens": 132,
+            "cost": 0.00012054
+          }
+        },
+        {
+          "ms": 285.389,
+          "input_bytes": 9700,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2784,
+            "output_tokens": 132,
+            "cost": 0.000116928
+          }
+        },
+        {
+          "ms": 299.407,
+          "input_bytes": 10332,
+          "status": 200,
+          "usage": {
+            "input_tokens": 3025,
+            "output_tokens": 132,
+            "cost": 0.00012705
+          }
+        }
+      ]
+    },
+    {
+      "case": "routing_ko",
+      "trial": 2,
+      "mode": "deterministic",
+      "effective_mode": "deterministic",
+      "rerank_ms": 0.033,
+      "order": [
+        "c01",
+        "c02",
+        "c03",
+        "c04",
+        "c05",
+        "c06",
+        "c07",
+        "c08",
+        "c09",
+        "c10",
+        "c11",
+        "c12",
+        "c13",
+        "c14",
+        "c15",
+        "c17",
+        "c16",
+        "c18",
+        "c19",
+        "c21",
+        "c20",
+        "c22",
+        "c24",
+        "c23",
+        "c25",
+        "c26",
+        "c27",
+        "c29",
+        "c28",
+        "c31",
+        "c30",
+        "c33",
+        "c32",
+        "c34",
+        "c35",
+        "c37",
+        "c36",
+        "c38",
+        "c40",
+        "c39"
+      ],
+      "metrics": {
+        "ndcg_at_5": 0.16141165635604893,
+        "ndcg_at_12": 0.20080265263785002,
+        "facet_coverage_at_5": 0.5,
+        "facet_coverage_at_12": 0.5,
+        "unique_content_rate_at_12": 0.9166666666666666,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": 15,
+        "zero_grade_count_at_12": 4
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 0.5,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": []
+    },
+    {
+      "case": "routing_ko",
+      "trial": 2,
+      "mode": "jev",
+      "effective_mode": "jev",
+      "rerank_ms": 1440.82,
+      "order": [
+        "c04",
+        "c15",
+        "c22",
+        "c01",
+        "c38",
+        "c34",
+        "c30",
+        "c12",
+        "c27",
+        "c07",
+        "c06",
+        "c31",
+        "c35",
+        "c02",
+        "c18",
+        "c10",
+        "c25",
+        "c19",
+        "c08",
+        "c09",
+        "c11",
+        "c21",
+        "c33",
+        "c05",
+        "c40",
+        "c03",
+        "c24",
+        "c14",
+        "c29",
+        "c23",
+        "c37",
+        "c32",
+        "c16",
+        "c28",
+        "c39",
+        "c36",
+        "c17",
+        "c20",
+        "c26",
+        "c13"
+      ],
+      "metrics": {
+        "ndcg_at_5": 0.8610217194553011,
+        "ndcg_at_12": 0.8706579760834803,
+        "facet_coverage_at_5": 1.0,
+        "facet_coverage_at_12": 1.0,
+        "unique_content_rate_at_12": 1.0,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": 2,
+        "zero_grade_count_at_12": 0
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 1.0,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": [
+        {
+          "ms": 333.673,
+          "input_bytes": 12493,
+          "status": 200,
+          "usage": {
+            "input_tokens": 3681,
+            "output_tokens": 124,
+            "cost": 0.000154602
+          }
+        },
+        {
+          "ms": 301.237,
+          "input_bytes": 9645,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2837,
+            "output_tokens": 130,
+            "cost": 0.000119154
+          }
+        },
+        {
+          "ms": 307.366,
+          "input_bytes": 9681,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2870,
+            "output_tokens": 132,
+            "cost": 0.00012054
+          }
+        },
+        {
+          "ms": 262.797,
+          "input_bytes": 9700,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2784,
+            "output_tokens": 132,
+            "cost": 0.000116928
+          }
+        },
+        {
+          "ms": 232.063,
+          "input_bytes": 10332,
+          "status": 200,
+          "usage": {
+            "input_tokens": 3025,
+            "output_tokens": 132,
+            "cost": 0.00012705
+          }
+        }
+      ]
+    },
+    {
+      "case": "routing_ko",
+      "trial": 2,
+      "mode": "cross_encoder",
+      "effective_mode": "cross_encoder",
+      "rerank_ms": 3296.296,
+      "order": [
+        "c01",
+        "c15",
+        "c04",
+        "c22",
+        "c30",
+        "c18",
+        "c09",
+        "c11",
+        "c10",
+        "c38",
+        "c03",
+        "c05",
+        "c08",
+        "c12",
+        "c06",
+        "c25",
+        "c27",
+        "c07",
+        "c34",
+        "c02",
+        "c33",
+        "c19",
+        "c37",
+        "c29",
+        "c31",
+        "c35",
+        "c17",
+        "c21",
+        "c40",
+        "c14",
+        "c24",
+        "c13",
+        "c39",
+        "c36",
+        "c32",
+        "c16",
+        "c26",
+        "c20",
+        "c28",
+        "c23"
+      ],
+      "metrics": {
+        "ndcg_at_5": 0.7230674243853766,
+        "ndcg_at_12": 0.7035316710055616,
+        "facet_coverage_at_5": 1.0,
+        "facet_coverage_at_12": 1.0,
+        "unique_content_rate_at_12": 1.0,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": 2,
+        "zero_grade_count_at_12": 4
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 1.0,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": []
+    },
+    {
+      "case": "routing_ko",
+      "trial": 3,
+      "mode": "jev",
+      "effective_mode": "jev",
+      "rerank_ms": 1616.099,
+      "order": [
+        "c04",
+        "c15",
+        "c22",
+        "c01",
+        "c38",
+        "c34",
+        "c30",
+        "c12",
+        "c27",
+        "c07",
+        "c31",
+        "c35",
+        "c06",
+        "c18",
+        "c02",
+        "c10",
+        "c19",
+        "c25",
+        "c08",
+        "c21",
+        "c09",
+        "c11",
+        "c33",
+        "c24",
+        "c40",
+        "c05",
+        "c03",
+        "c14",
+        "c29",
+        "c23",
+        "c37",
+        "c32",
+        "c16",
+        "c39",
+        "c28",
+        "c36",
+        "c17",
+        "c26",
+        "c20",
+        "c13"
+      ],
+      "metrics": {
+        "ndcg_at_5": 0.8610217194553011,
+        "ndcg_at_12": 0.8706579760834803,
+        "facet_coverage_at_5": 1.0,
+        "facet_coverage_at_12": 1.0,
+        "unique_content_rate_at_12": 0.9166666666666666,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": 2,
+        "zero_grade_count_at_12": 0
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 1.0,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": [
+        {
+          "ms": 264.277,
+          "input_bytes": 12493,
+          "status": 200,
+          "usage": {
+            "input_tokens": 3681,
+            "output_tokens": 124,
+            "cost": 0.000154602
+          }
+        },
+        {
+          "ms": 269.387,
+          "input_bytes": 9645,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2837,
+            "output_tokens": 130,
+            "cost": 0.000119154
+          }
+        },
+        {
+          "ms": 251.115,
+          "input_bytes": 9681,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2870,
+            "output_tokens": 132,
+            "cost": 0.00012054
+          }
+        },
+        {
+          "ms": 568.625,
+          "input_bytes": 9700,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2784,
+            "output_tokens": 132,
+            "cost": 0.000116928
+          }
+        },
+        {
+          "ms": 256.968,
+          "input_bytes": 10332,
+          "status": 200,
+          "usage": {
+            "input_tokens": 3025,
+            "output_tokens": 132,
+            "cost": 0.00012705
+          }
+        }
+      ]
+    },
+    {
+      "case": "routing_ko",
+      "trial": 3,
+      "mode": "cross_encoder",
+      "effective_mode": "cross_encoder",
+      "rerank_ms": 3249.769,
+      "order": [
+        "c01",
+        "c15",
+        "c04",
+        "c22",
+        "c30",
+        "c18",
+        "c09",
+        "c11",
+        "c10",
+        "c38",
+        "c03",
+        "c05",
+        "c08",
+        "c12",
+        "c06",
+        "c25",
+        "c27",
+        "c07",
+        "c34",
+        "c02",
+        "c33",
+        "c19",
+        "c37",
+        "c29",
+        "c31",
+        "c35",
+        "c17",
+        "c21",
+        "c40",
+        "c14",
+        "c24",
+        "c13",
+        "c39",
+        "c36",
+        "c32",
+        "c16",
+        "c26",
+        "c20",
+        "c28",
+        "c23"
+      ],
+      "metrics": {
+        "ndcg_at_5": 0.7230674243853766,
+        "ndcg_at_12": 0.7035316710055616,
+        "facet_coverage_at_5": 1.0,
+        "facet_coverage_at_12": 1.0,
+        "unique_content_rate_at_12": 1.0,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": 2,
+        "zero_grade_count_at_12": 4
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 1.0,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": []
+    },
+    {
+      "case": "routing_ko",
+      "trial": 3,
+      "mode": "deterministic",
+      "effective_mode": "deterministic",
+      "rerank_ms": 0.015,
+      "order": [
+        "c01",
+        "c02",
+        "c03",
+        "c04",
+        "c05",
+        "c06",
+        "c07",
+        "c08",
+        "c09",
+        "c10",
+        "c11",
+        "c12",
+        "c13",
+        "c14",
+        "c15",
+        "c17",
+        "c16",
+        "c18",
+        "c19",
+        "c21",
+        "c20",
+        "c22",
+        "c24",
+        "c23",
+        "c25",
+        "c26",
+        "c27",
+        "c29",
+        "c28",
+        "c31",
+        "c30",
+        "c33",
+        "c32",
+        "c34",
+        "c35",
+        "c37",
+        "c36",
+        "c38",
+        "c40",
+        "c39"
+      ],
+      "metrics": {
+        "ndcg_at_5": 0.16141165635604893,
+        "ndcg_at_12": 0.20080265263785002,
+        "facet_coverage_at_5": 0.5,
+        "facet_coverage_at_12": 0.5,
+        "unique_content_rate_at_12": 0.9166666666666666,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": 15,
+        "zero_grade_count_at_12": 4
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 0.5,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": []
+    },
+    {
+      "case": "typing_ko",
+      "trial": 1,
+      "mode": "deterministic",
+      "effective_mode": "deterministic",
+      "rerank_ms": 0.04,
+      "order": [
+        "c01",
+        "c02",
+        "c03",
+        "c04",
+        "c05",
+        "c06",
+        "c07",
+        "c08",
+        "c09",
+        "c10",
+        "c11",
+        "c12",
+        "c13",
+        "c14",
+        "c15",
+        "c16",
+        "c17",
+        "c18",
+        "c20",
+        "c19",
+        "c21",
+        "c22",
+        "c24",
+        "c23",
+        "c25",
+        "c27",
+        "c26",
+        "c29",
+        "c28",
+        "c31",
+        "c30",
+        "c33",
+        "c32",
+        "c34",
+        "c35",
+        "c36",
+        "c38",
+        "c37",
+        "c40",
+        "c39"
+      ],
+      "metrics": {
+        "ndcg_at_5": 0.794863268127025,
+        "ndcg_at_12": 0.808236128596389,
+        "facet_coverage_at_5": 1.0,
+        "facet_coverage_at_12": 1.0,
+        "unique_content_rate_at_12": 1.0,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": null,
+        "zero_grade_count_at_12": 3
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 1.0,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": []
+    },
+    {
+      "case": "typing_ko",
+      "trial": 1,
+      "mode": "jev",
+      "effective_mode": "jev",
+      "rerank_ms": 1382.36,
+      "order": [
+        "c01",
+        "c11",
+        "c10",
+        "c02",
+        "c07",
+        "c03",
+        "c37",
+        "c34",
+        "c29",
+        "c25",
+        "c28",
+        "c38",
+        "c15",
+        "c14",
+        "c04",
+        "c05",
+        "c13",
+        "c08",
+        "c22",
+        "c09",
+        "c35",
+        "c20",
+        "c24",
+        "c33",
+        "c12",
+        "c27",
+        "c31",
+        "c17",
+        "c39",
+        "c40",
+        "c36",
+        "c21",
+        "c32",
+        "c18",
+        "c16",
+        "c26",
+        "c30",
+        "c23",
+        "c19",
+        "c06"
+      ],
+      "metrics": {
+        "ndcg_at_5": 1.0,
+        "ndcg_at_12": 0.9840870412812034,
+        "facet_coverage_at_5": 1.0,
+        "facet_coverage_at_12": 1.0,
+        "unique_content_rate_at_12": 1.0,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": null,
+        "zero_grade_count_at_12": 0
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 1.0,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": [
+        {
+          "ms": 251.024,
+          "input_bytes": 9076,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2681,
+            "output_tokens": 124,
+            "cost": 0.000112602
+          }
+        },
+        {
+          "ms": 248.227,
+          "input_bytes": 11336,
+          "status": 200,
+          "usage": {
+            "input_tokens": 3378,
+            "output_tokens": 130,
+            "cost": 0.000141876
+          }
+        },
+        {
+          "ms": 347.033,
+          "input_bytes": 9044,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2701,
+            "output_tokens": 132,
+            "cost": 0.000113442
+          }
+        },
+        {
+          "ms": 274.876,
+          "input_bytes": 9482,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2793,
+            "output_tokens": 132,
+            "cost": 0.000117306
+          }
+        },
+        {
+          "ms": 254.985,
+          "input_bytes": 8594,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2491,
+            "output_tokens": 132,
+            "cost": 0.000104622
+          }
+        }
+      ]
+    },
+    {
+      "case": "typing_ko",
+      "trial": 1,
+      "mode": "cross_encoder",
+      "effective_mode": "cross_encoder",
+      "rerank_ms": 3245.318,
+      "order": [
+        "c01",
+        "c03",
+        "c14",
+        "c10",
+        "c02",
+        "c25",
+        "c04",
+        "c13",
+        "c07",
+        "c37",
+        "c29",
+        "c11",
+        "c05",
+        "c22",
+        "c09",
+        "c38",
+        "c08",
+        "c34",
+        "c15",
+        "c12",
+        "c27",
+        "c33",
+        "c06",
+        "c35",
+        "c36",
+        "c31",
+        "c17",
+        "c24",
+        "c28",
+        "c20",
+        "c32",
+        "c16",
+        "c39",
+        "c30",
+        "c18",
+        "c23",
+        "c21",
+        "c19",
+        "c26",
+        "c40"
+      ],
+      "metrics": {
+        "ndcg_at_5": 0.823916460813505,
+        "ndcg_at_12": 0.8908902026346578,
+        "facet_coverage_at_5": 1.0,
+        "facet_coverage_at_12": 1.0,
+        "unique_content_rate_at_12": 1.0,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": null,
+        "zero_grade_count_at_12": 0
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 1.0,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": []
+    },
+    {
+      "case": "typing_ko",
+      "trial": 2,
+      "mode": "jev",
+      "effective_mode": "jev",
+      "rerank_ms": 1783.253,
+      "order": [
+        "c01",
+        "c11",
+        "c10",
+        "c03",
+        "c07",
+        "c02",
+        "c37",
+        "c34",
+        "c29",
+        "c25",
+        "c28",
+        "c38",
+        "c15",
+        "c14",
+        "c04",
+        "c13",
+        "c05",
+        "c08",
+        "c22",
+        "c09",
+        "c35",
+        "c20",
+        "c24",
+        "c31",
+        "c12",
+        "c33",
+        "c27",
+        "c17",
+        "c39",
+        "c36",
+        "c40",
+        "c21",
+        "c32",
+        "c26",
+        "c18",
+        "c30",
+        "c16",
+        "c19",
+        "c23",
+        "c06"
+      ],
+      "metrics": {
+        "ndcg_at_5": 0.9329445066320563,
+        "ndcg_at_12": 0.9749880669858393,
+        "facet_coverage_at_5": 0.6666666666666666,
+        "facet_coverage_at_12": 1.0,
+        "unique_content_rate_at_12": 1.0,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": null,
+        "zero_grade_count_at_12": 0
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 1.0,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": [
+        {
+          "ms": 269.419,
+          "input_bytes": 9076,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2681,
+            "output_tokens": 124,
+            "cost": 0.000112602
+          }
+        },
+        {
+          "ms": 684.246,
+          "input_bytes": 11336,
+          "status": 200,
+          "usage": {
+            "input_tokens": 3378,
+            "output_tokens": 130,
+            "cost": 0.000141876
+          }
+        },
+        {
+          "ms": 275.128,
+          "input_bytes": 9044,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2701,
+            "output_tokens": 132,
+            "cost": 0.000113442
+          }
+        },
+        {
+          "ms": 260.825,
+          "input_bytes": 9482,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2793,
+            "output_tokens": 132,
+            "cost": 0.000117306
+          }
+        },
+        {
+          "ms": 289.103,
+          "input_bytes": 8594,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2491,
+            "output_tokens": 132,
+            "cost": 0.000104622
+          }
+        }
+      ]
+    },
+    {
+      "case": "typing_ko",
+      "trial": 2,
+      "mode": "cross_encoder",
+      "effective_mode": "cross_encoder",
+      "rerank_ms": 3111.915,
+      "order": [
+        "c01",
+        "c03",
+        "c14",
+        "c10",
+        "c02",
+        "c25",
+        "c04",
+        "c13",
+        "c07",
+        "c37",
+        "c29",
+        "c11",
+        "c05",
+        "c22",
+        "c09",
+        "c38",
+        "c08",
+        "c34",
+        "c15",
+        "c12",
+        "c27",
+        "c33",
+        "c06",
+        "c35",
+        "c36",
+        "c31",
+        "c17",
+        "c24",
+        "c28",
+        "c20",
+        "c32",
+        "c16",
+        "c39",
+        "c30",
+        "c18",
+        "c23",
+        "c21",
+        "c19",
+        "c26",
+        "c40"
+      ],
+      "metrics": {
+        "ndcg_at_5": 0.823916460813505,
+        "ndcg_at_12": 0.8908902026346578,
+        "facet_coverage_at_5": 1.0,
+        "facet_coverage_at_12": 1.0,
+        "unique_content_rate_at_12": 1.0,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": null,
+        "zero_grade_count_at_12": 0
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 1.0,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": []
+    },
+    {
+      "case": "typing_ko",
+      "trial": 2,
+      "mode": "deterministic",
+      "effective_mode": "deterministic",
+      "rerank_ms": 0.022,
+      "order": [
+        "c01",
+        "c02",
+        "c03",
+        "c04",
+        "c05",
+        "c06",
+        "c07",
+        "c08",
+        "c09",
+        "c10",
+        "c11",
+        "c12",
+        "c13",
+        "c14",
+        "c15",
+        "c16",
+        "c17",
+        "c18",
+        "c20",
+        "c19",
+        "c21",
+        "c22",
+        "c24",
+        "c23",
+        "c25",
+        "c27",
+        "c26",
+        "c29",
+        "c28",
+        "c31",
+        "c30",
+        "c33",
+        "c32",
+        "c34",
+        "c35",
+        "c36",
+        "c38",
+        "c37",
+        "c40",
+        "c39"
+      ],
+      "metrics": {
+        "ndcg_at_5": 0.794863268127025,
+        "ndcg_at_12": 0.808236128596389,
+        "facet_coverage_at_5": 1.0,
+        "facet_coverage_at_12": 1.0,
+        "unique_content_rate_at_12": 1.0,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": null,
+        "zero_grade_count_at_12": 3
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 1.0,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": []
+    },
+    {
+      "case": "typing_ko",
+      "trial": 3,
+      "mode": "cross_encoder",
+      "effective_mode": "cross_encoder",
+      "rerank_ms": 3010.966,
+      "order": [
+        "c01",
+        "c03",
+        "c14",
+        "c10",
+        "c02",
+        "c25",
+        "c04",
+        "c13",
+        "c07",
+        "c37",
+        "c29",
+        "c11",
+        "c05",
+        "c22",
+        "c09",
+        "c38",
+        "c08",
+        "c34",
+        "c15",
+        "c12",
+        "c27",
+        "c33",
+        "c06",
+        "c35",
+        "c36",
+        "c31",
+        "c17",
+        "c24",
+        "c28",
+        "c20",
+        "c32",
+        "c16",
+        "c39",
+        "c30",
+        "c18",
+        "c23",
+        "c21",
+        "c19",
+        "c26",
+        "c40"
+      ],
+      "metrics": {
+        "ndcg_at_5": 0.823916460813505,
+        "ndcg_at_12": 0.8908902026346578,
+        "facet_coverage_at_5": 1.0,
+        "facet_coverage_at_12": 1.0,
+        "unique_content_rate_at_12": 1.0,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": null,
+        "zero_grade_count_at_12": 0
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 1.0,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": []
+    },
+    {
+      "case": "typing_ko",
+      "trial": 3,
+      "mode": "deterministic",
+      "effective_mode": "deterministic",
+      "rerank_ms": 0.013,
+      "order": [
+        "c01",
+        "c02",
+        "c03",
+        "c04",
+        "c05",
+        "c06",
+        "c07",
+        "c08",
+        "c09",
+        "c10",
+        "c11",
+        "c12",
+        "c13",
+        "c14",
+        "c15",
+        "c16",
+        "c17",
+        "c18",
+        "c20",
+        "c19",
+        "c21",
+        "c22",
+        "c24",
+        "c23",
+        "c25",
+        "c27",
+        "c26",
+        "c29",
+        "c28",
+        "c31",
+        "c30",
+        "c33",
+        "c32",
+        "c34",
+        "c35",
+        "c36",
+        "c38",
+        "c37",
+        "c40",
+        "c39"
+      ],
+      "metrics": {
+        "ndcg_at_5": 0.794863268127025,
+        "ndcg_at_12": 0.808236128596389,
+        "facet_coverage_at_5": 1.0,
+        "facet_coverage_at_12": 1.0,
+        "unique_content_rate_at_12": 1.0,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": null,
+        "zero_grade_count_at_12": 3
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 1.0,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": []
+    },
+    {
+      "case": "typing_ko",
+      "trial": 3,
+      "mode": "jev",
+      "effective_mode": "jev",
+      "rerank_ms": 2528.099,
+      "order": [
+        "c01",
+        "c11",
+        "c10",
+        "c02",
+        "c03",
+        "c07",
+        "c37",
+        "c34",
+        "c29",
+        "c25",
+        "c28",
+        "c15",
+        "c38",
+        "c14",
+        "c04",
+        "c13",
+        "c05",
+        "c08",
+        "c22",
+        "c09",
+        "c35",
+        "c24",
+        "c33",
+        "c12",
+        "c27",
+        "c20",
+        "c31",
+        "c17",
+        "c40",
+        "c39",
+        "c36",
+        "c32",
+        "c21",
+        "c18",
+        "c30",
+        "c26",
+        "c16",
+        "c19",
+        "c23",
+        "c06"
+      ],
+      "metrics": {
+        "ndcg_at_5": 0.9397677784787497,
+        "ndcg_at_12": 0.9473238231276547,
+        "facet_coverage_at_5": 1.0,
+        "facet_coverage_at_12": 1.0,
+        "unique_content_rate_at_12": 1.0,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": null,
+        "zero_grade_count_at_12": 0
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 1.0,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": [
+        {
+          "ms": 497.573,
+          "input_bytes": 9076,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2681,
+            "output_tokens": 124,
+            "cost": 0.000112602
+          }
+        },
+        {
+          "ms": 1226.715,
+          "input_bytes": 11336,
+          "status": 200,
+          "usage": {
+            "input_tokens": 3378,
+            "output_tokens": 130,
+            "cost": 0.000141876
+          }
+        },
+        {
+          "ms": 246.733,
+          "input_bytes": 9044,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2701,
+            "output_tokens": 132,
+            "cost": 0.000113442
+          }
+        },
+        {
+          "ms": 284.696,
+          "input_bytes": 9482,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2793,
+            "output_tokens": 132,
+            "cost": 0.000117306
+          }
+        },
+        {
+          "ms": 267.851,
+          "input_bytes": 8594,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2491,
+            "output_tokens": 132,
+            "cost": 0.000104622
+          }
+        }
+      ]
+    },
+    {
+      "case": "eligibility_ko",
+      "trial": 1,
+      "mode": "jev",
+      "effective_mode": "jev",
+      "rerank_ms": 2340.936,
+      "order": [
+        "c06",
+        "c34",
+        "c07",
+        "c31",
+        "c27",
+        "c10",
+        "c01",
+        "c02",
+        "c09",
+        "c35",
+        "c08",
+        "c19",
+        "c20",
+        "c32",
+        "c15",
+        "c17",
+        "c18",
+        "c21",
+        "c37",
+        "c36",
+        "c16",
+        "c39",
+        "c38",
+        "c11",
+        "c14",
+        "c05",
+        "c03",
+        "c04",
+        "c23",
+        "c12",
+        "c40",
+        "c13",
+        "c29",
+        "c24",
+        "c28",
+        "c30",
+        "c22",
+        "c25",
+        "c26",
+        "c33"
+      ],
+      "metrics": {
+        "ndcg_at_5": 0.9661791043627721,
+        "ndcg_at_12": 0.952890194490106,
+        "facet_coverage_at_5": 1.0,
+        "facet_coverage_at_12": 1.0,
+        "unique_content_rate_at_12": 1.0,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": null,
+        "zero_grade_count_at_12": 2
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 1.0,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": [
+        {
+          "ms": 302.521,
+          "input_bytes": 9555,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2548,
+            "output_tokens": 124,
+            "cost": 0.000107016
+          }
+        },
+        {
+          "ms": 307.777,
+          "input_bytes": 11095,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2740,
+            "output_tokens": 130,
+            "cost": 0.00011508
+          }
+        },
+        {
+          "ms": 266.485,
+          "input_bytes": 14747,
+          "status": 200,
+          "usage": {
+            "input_tokens": 3532,
+            "output_tokens": 132,
+            "cost": 0.000148344
+          }
+        },
+        {
+          "ms": 270.33,
+          "input_bytes": 12262,
+          "status": 200,
+          "usage": {
+            "input_tokens": 3103,
+            "output_tokens": 132,
+            "cost": 0.000130326
+          }
+        },
+        {
+          "ms": 1188.163,
+          "input_bytes": 10974,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2764,
+            "output_tokens": 132,
+            "cost": 0.000116088
+          }
+        }
+      ]
+    },
+    {
+      "case": "eligibility_ko",
+      "trial": 1,
+      "mode": "cross_encoder",
+      "effective_mode": "cross_encoder",
+      "rerank_ms": 2103.817,
+      "order": [
+        "c31",
+        "c06",
+        "c07",
+        "c17",
+        "c18",
+        "c21",
+        "c15",
+        "c19",
+        "c20",
+        "c01",
+        "c16",
+        "c09",
+        "c10",
+        "c11",
+        "c27",
+        "c14",
+        "c12",
+        "c34",
+        "c02",
+        "c08",
+        "c13",
+        "c37",
+        "c03",
+        "c04",
+        "c05",
+        "c36",
+        "c38",
+        "c39",
+        "c35",
+        "c40",
+        "c32",
+        "c29",
+        "c23",
+        "c25",
+        "c26",
+        "c28",
+        "c33",
+        "c22",
+        "c24",
+        "c30"
+      ],
+      "metrics": {
+        "ndcg_at_5": 0.38609185977568955,
+        "ndcg_at_12": 0.36803964685902035,
+        "facet_coverage_at_5": 0.5,
+        "facet_coverage_at_12": 0.5,
+        "unique_content_rate_at_12": 0.6666666666666666,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": null,
+        "zero_grade_count_at_12": 8
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 0.5,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": []
+    },
+    {
+      "case": "eligibility_ko",
+      "trial": 1,
+      "mode": "deterministic",
+      "effective_mode": "deterministic",
+      "rerank_ms": 0.017,
+      "order": [
+        "c01",
+        "c02",
+        "c03",
+        "c04",
+        "c05",
+        "c06",
+        "c07",
+        "c08",
+        "c09",
+        "c10",
+        "c11",
+        "c12",
+        "c13",
+        "c14",
+        "c15",
+        "c16",
+        "c17",
+        "c18",
+        "c19",
+        "c20",
+        "c21",
+        "c22",
+        "c23",
+        "c24",
+        "c25",
+        "c26",
+        "c27",
+        "c28",
+        "c29",
+        "c30",
+        "c31",
+        "c32",
+        "c33",
+        "c34",
+        "c35",
+        "c36",
+        "c37",
+        "c38",
+        "c39",
+        "c40"
+      ],
+      "metrics": {
+        "ndcg_at_5": 0.12807640432983614,
+        "ndcg_at_12": 0.3792240276876719,
+        "facet_coverage_at_5": 0.0,
+        "facet_coverage_at_12": 0.5,
+        "unique_content_rate_at_12": 0.8333333333333334,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": null,
+        "zero_grade_count_at_12": 4
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 0.5,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": []
+    },
+    {
+      "case": "eligibility_ko",
+      "trial": 2,
+      "mode": "cross_encoder",
+      "effective_mode": "cross_encoder",
+      "rerank_ms": 1935.765,
+      "order": [
+        "c31",
+        "c06",
+        "c07",
+        "c17",
+        "c18",
+        "c21",
+        "c15",
+        "c19",
+        "c20",
+        "c01",
+        "c16",
+        "c09",
+        "c10",
+        "c11",
+        "c27",
+        "c14",
+        "c12",
+        "c34",
+        "c02",
+        "c08",
+        "c13",
+        "c37",
+        "c03",
+        "c04",
+        "c05",
+        "c36",
+        "c38",
+        "c39",
+        "c35",
+        "c40",
+        "c32",
+        "c29",
+        "c23",
+        "c25",
+        "c26",
+        "c28",
+        "c33",
+        "c22",
+        "c24",
+        "c30"
+      ],
+      "metrics": {
+        "ndcg_at_5": 0.38609185977568955,
+        "ndcg_at_12": 0.36803964685902035,
+        "facet_coverage_at_5": 0.5,
+        "facet_coverage_at_12": 0.5,
+        "unique_content_rate_at_12": 0.6666666666666666,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": null,
+        "zero_grade_count_at_12": 8
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 0.5,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": []
+    },
+    {
+      "case": "eligibility_ko",
+      "trial": 2,
+      "mode": "deterministic",
+      "effective_mode": "deterministic",
+      "rerank_ms": 0.018,
+      "order": [
+        "c01",
+        "c02",
+        "c03",
+        "c04",
+        "c05",
+        "c06",
+        "c07",
+        "c08",
+        "c09",
+        "c10",
+        "c11",
+        "c12",
+        "c13",
+        "c14",
+        "c15",
+        "c16",
+        "c17",
+        "c18",
+        "c19",
+        "c20",
+        "c21",
+        "c22",
+        "c23",
+        "c24",
+        "c25",
+        "c26",
+        "c27",
+        "c28",
+        "c29",
+        "c30",
+        "c31",
+        "c32",
+        "c33",
+        "c34",
+        "c35",
+        "c36",
+        "c37",
+        "c38",
+        "c39",
+        "c40"
+      ],
+      "metrics": {
+        "ndcg_at_5": 0.12807640432983614,
+        "ndcg_at_12": 0.3792240276876719,
+        "facet_coverage_at_5": 0.0,
+        "facet_coverage_at_12": 0.5,
+        "unique_content_rate_at_12": 0.8333333333333334,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": null,
+        "zero_grade_count_at_12": 4
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 0.5,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": []
+    },
+    {
+      "case": "eligibility_ko",
+      "trial": 2,
+      "mode": "jev",
+      "effective_mode": "jev",
+      "rerank_ms": 1392.056,
+      "order": [
+        "c06",
+        "c34",
+        "c07",
+        "c31",
+        "c27",
+        "c10",
+        "c01",
+        "c35",
+        "c02",
+        "c08",
+        "c09",
+        "c19",
+        "c20",
+        "c32",
+        "c17",
+        "c15",
+        "c21",
+        "c18",
+        "c11",
+        "c37",
+        "c16",
+        "c36",
+        "c39",
+        "c38",
+        "c05",
+        "c14",
+        "c03",
+        "c04",
+        "c23",
+        "c12",
+        "c13",
+        "c40",
+        "c29",
+        "c22",
+        "c24",
+        "c28",
+        "c30",
+        "c25",
+        "c26",
+        "c33"
+      ],
+      "metrics": {
+        "ndcg_at_5": 0.9661791043627721,
+        "ndcg_at_12": 0.952890194490106,
+        "facet_coverage_at_5": 1.0,
+        "facet_coverage_at_12": 1.0,
+        "unique_content_rate_at_12": 1.0,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": null,
+        "zero_grade_count_at_12": 2
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 1.0,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": [
+        {
+          "ms": 263.342,
+          "input_bytes": 9555,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2548,
+            "output_tokens": 124,
+            "cost": 0.000107016
+          }
+        },
+        {
+          "ms": 258.841,
+          "input_bytes": 11095,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2740,
+            "output_tokens": 130,
+            "cost": 0.00011508
+          }
+        },
+        {
+          "ms": 288.37,
+          "input_bytes": 14747,
+          "status": 200,
+          "usage": {
+            "input_tokens": 3532,
+            "output_tokens": 132,
+            "cost": 0.000148344
+          }
+        },
+        {
+          "ms": 308.552,
+          "input_bytes": 12262,
+          "status": 200,
+          "usage": {
+            "input_tokens": 3103,
+            "output_tokens": 132,
+            "cost": 0.000130326
+          }
+        },
+        {
+          "ms": 269.083,
+          "input_bytes": 10974,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2764,
+            "output_tokens": 132,
+            "cost": 0.000116088
+          }
+        }
+      ]
+    },
+    {
+      "case": "eligibility_ko",
+      "trial": 3,
+      "mode": "deterministic",
+      "effective_mode": "deterministic",
+      "rerank_ms": 0.014,
+      "order": [
+        "c01",
+        "c02",
+        "c03",
+        "c04",
+        "c05",
+        "c06",
+        "c07",
+        "c08",
+        "c09",
+        "c10",
+        "c11",
+        "c12",
+        "c13",
+        "c14",
+        "c15",
+        "c16",
+        "c17",
+        "c18",
+        "c19",
+        "c20",
+        "c21",
+        "c22",
+        "c23",
+        "c24",
+        "c25",
+        "c26",
+        "c27",
+        "c28",
+        "c29",
+        "c30",
+        "c31",
+        "c32",
+        "c33",
+        "c34",
+        "c35",
+        "c36",
+        "c37",
+        "c38",
+        "c39",
+        "c40"
+      ],
+      "metrics": {
+        "ndcg_at_5": 0.12807640432983614,
+        "ndcg_at_12": 0.3792240276876719,
+        "facet_coverage_at_5": 0.0,
+        "facet_coverage_at_12": 0.5,
+        "unique_content_rate_at_12": 0.8333333333333334,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": null,
+        "zero_grade_count_at_12": 4
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 0.5,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": []
+    },
+    {
+      "case": "eligibility_ko",
+      "trial": 3,
+      "mode": "jev",
+      "effective_mode": "jev",
+      "rerank_ms": 1890.89,
+      "order": [
+        "c06",
+        "c34",
+        "c07",
+        "c31",
+        "c27",
+        "c10",
+        "c01",
+        "c35",
+        "c02",
+        "c09",
+        "c08",
+        "c20",
+        "c19",
+        "c21",
+        "c32",
+        "c17",
+        "c15",
+        "c18",
+        "c36",
+        "c37",
+        "c16",
+        "c38",
+        "c39",
+        "c11",
+        "c14",
+        "c05",
+        "c04",
+        "c03",
+        "c12",
+        "c23",
+        "c13",
+        "c40",
+        "c29",
+        "c22",
+        "c24",
+        "c28",
+        "c30",
+        "c25",
+        "c26",
+        "c33"
+      ],
+      "metrics": {
+        "ndcg_at_5": 0.9661791043627721,
+        "ndcg_at_12": 0.952890194490106,
+        "facet_coverage_at_5": 1.0,
+        "facet_coverage_at_12": 1.0,
+        "unique_content_rate_at_12": 1.0,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": null,
+        "zero_grade_count_at_12": 2
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 1.0,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": [
+        {
+          "ms": 365.946,
+          "input_bytes": 9555,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2548,
+            "output_tokens": 124,
+            "cost": 0.000107016
+          }
+        },
+        {
+          "ms": 369.107,
+          "input_bytes": 11095,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2740,
+            "output_tokens": 130,
+            "cost": 0.00011508
+          }
+        },
+        {
+          "ms": 300.633,
+          "input_bytes": 14747,
+          "status": 200,
+          "usage": {
+            "input_tokens": 3532,
+            "output_tokens": 132,
+            "cost": 0.000148344
+          }
+        },
+        {
+          "ms": 594.719,
+          "input_bytes": 12262,
+          "status": 200,
+          "usage": {
+            "input_tokens": 3103,
+            "output_tokens": 132,
+            "cost": 0.000130326
+          }
+        },
+        {
+          "ms": 256.261,
+          "input_bytes": 10974,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2764,
+            "output_tokens": 132,
+            "cost": 0.000116088
+          }
+        }
+      ]
+    },
+    {
+      "case": "eligibility_ko",
+      "trial": 3,
+      "mode": "cross_encoder",
+      "effective_mode": "cross_encoder",
+      "rerank_ms": 2062.438,
+      "order": [
+        "c31",
+        "c06",
+        "c07",
+        "c17",
+        "c18",
+        "c21",
+        "c15",
+        "c19",
+        "c20",
+        "c01",
+        "c16",
+        "c09",
+        "c10",
+        "c11",
+        "c27",
+        "c14",
+        "c12",
+        "c34",
+        "c02",
+        "c08",
+        "c13",
+        "c37",
+        "c03",
+        "c04",
+        "c05",
+        "c36",
+        "c38",
+        "c39",
+        "c35",
+        "c40",
+        "c32",
+        "c29",
+        "c23",
+        "c25",
+        "c26",
+        "c28",
+        "c33",
+        "c22",
+        "c24",
+        "c30"
+      ],
+      "metrics": {
+        "ndcg_at_5": 0.38609185977568955,
+        "ndcg_at_12": 0.36803964685902035,
+        "facet_coverage_at_5": 0.5,
+        "facet_coverage_at_12": 0.5,
+        "unique_content_rate_at_12": 0.6666666666666666,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": null,
+        "zero_grade_count_at_12": 8
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 0.5,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": []
+    },
+    {
+      "case": "funding_ko",
+      "trial": 1,
+      "mode": "cross_encoder",
+      "effective_mode": "cross_encoder",
+      "rerank_ms": 3155.081,
+      "order": [
+        "c02",
+        "c01",
+        "c08",
+        "c14",
+        "c15",
+        "c04",
+        "c16",
+        "c18",
+        "c19",
+        "c07",
+        "c10",
+        "c17",
+        "c20",
+        "c03",
+        "c06",
+        "c21",
+        "c29",
+        "c37",
+        "c05",
+        "c11",
+        "c12",
+        "c13",
+        "c34",
+        "c09",
+        "c38",
+        "c36",
+        "c22",
+        "c25",
+        "c23",
+        "c35",
+        "c30",
+        "c39",
+        "c27",
+        "c32",
+        "c28",
+        "c24",
+        "c26",
+        "c31",
+        "c40",
+        "c33"
+      ],
+      "metrics": {
+        "ndcg_at_5": 0.5992545309758331,
+        "ndcg_at_12": 0.7095939021366409,
+        "facet_coverage_at_5": 0.5,
+        "facet_coverage_at_12": 1.0,
+        "unique_content_rate_at_12": 0.6666666666666666,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": null,
+        "zero_grade_count_at_12": 7
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 1.0,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": []
+    },
+    {
+      "case": "funding_ko",
+      "trial": 1,
+      "mode": "deterministic",
+      "effective_mode": "deterministic",
+      "rerank_ms": 0.018,
+      "order": [
+        "c01",
+        "c02",
+        "c03",
+        "c04",
+        "c05",
+        "c06",
+        "c07",
+        "c08",
+        "c09",
+        "c10",
+        "c11",
+        "c12",
+        "c13",
+        "c14",
+        "c15",
+        "c16",
+        "c17",
+        "c18",
+        "c19",
+        "c20",
+        "c21",
+        "c22",
+        "c24",
+        "c23",
+        "c25",
+        "c27",
+        "c26",
+        "c29",
+        "c28",
+        "c31",
+        "c30",
+        "c32",
+        "c33",
+        "c34",
+        "c35",
+        "c36",
+        "c37",
+        "c38",
+        "c39",
+        "c40"
+      ],
+      "metrics": {
+        "ndcg_at_5": 0.4984424431872503,
+        "ndcg_at_12": 0.46621912859676196,
+        "facet_coverage_at_5": 0.5,
+        "facet_coverage_at_12": 0.5,
+        "unique_content_rate_at_12": 0.8333333333333334,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": null,
+        "zero_grade_count_at_12": 7
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 0.5,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": []
+    },
+    {
+      "case": "funding_ko",
+      "trial": 1,
+      "mode": "jev",
+      "effective_mode": "jev",
+      "rerank_ms": 1426.546,
+      "order": [
+        "c02",
+        "c17",
+        "c35",
+        "c03",
+        "c07",
+        "c01",
+        "c04",
+        "c20",
+        "c39",
+        "c23",
+        "c21",
+        "c10",
+        "c09",
+        "c30",
+        "c38",
+        "c16",
+        "c28",
+        "c13",
+        "c15",
+        "c19",
+        "c14",
+        "c18",
+        "c29",
+        "c11",
+        "c34",
+        "c26",
+        "c12",
+        "c08",
+        "c05",
+        "c37",
+        "c25",
+        "c36",
+        "c40",
+        "c22",
+        "c31",
+        "c33",
+        "c06",
+        "c27",
+        "c32",
+        "c24"
+      ],
+      "metrics": {
+        "ndcg_at_5": 1.0,
+        "ndcg_at_12": 0.9562697519376379,
+        "facet_coverage_at_5": 1.0,
+        "facet_coverage_at_12": 1.0,
+        "unique_content_rate_at_12": 1.0,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": null,
+        "zero_grade_count_at_12": 4
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 1.0,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": [
+        {
+          "ms": 260.91,
+          "input_bytes": 10012,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2501,
+            "output_tokens": 124,
+            "cost": 0.000105042
+          }
+        },
+        {
+          "ms": 246.226,
+          "input_bytes": 11409,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2758,
+            "output_tokens": 130,
+            "cost": 0.000115836
+          }
+        },
+        {
+          "ms": 342.155,
+          "input_bytes": 14720,
+          "status": 200,
+          "usage": {
+            "input_tokens": 3886,
+            "output_tokens": 132,
+            "cost": 0.000163212
+          }
+        },
+        {
+          "ms": 324.768,
+          "input_bytes": 12518,
+          "status": 200,
+          "usage": {
+            "input_tokens": 3203,
+            "output_tokens": 132,
+            "cost": 0.000134526
+          }
+        },
+        {
+          "ms": 248.467,
+          "input_bytes": 10918,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2830,
+            "output_tokens": 132,
+            "cost": 0.00011886
+          }
+        }
+      ]
+    },
+    {
+      "case": "funding_ko",
+      "trial": 2,
+      "mode": "deterministic",
+      "effective_mode": "deterministic",
+      "rerank_ms": 0.031,
+      "order": [
+        "c01",
+        "c02",
+        "c03",
+        "c04",
+        "c05",
+        "c06",
+        "c07",
+        "c08",
+        "c09",
+        "c10",
+        "c11",
+        "c12",
+        "c13",
+        "c14",
+        "c15",
+        "c16",
+        "c17",
+        "c18",
+        "c19",
+        "c20",
+        "c21",
+        "c22",
+        "c24",
+        "c23",
+        "c25",
+        "c27",
+        "c26",
+        "c29",
+        "c28",
+        "c31",
+        "c30",
+        "c32",
+        "c33",
+        "c34",
+        "c35",
+        "c36",
+        "c37",
+        "c38",
+        "c39",
+        "c40"
+      ],
+      "metrics": {
+        "ndcg_at_5": 0.4984424431872503,
+        "ndcg_at_12": 0.46621912859676196,
+        "facet_coverage_at_5": 0.5,
+        "facet_coverage_at_12": 0.5,
+        "unique_content_rate_at_12": 0.8333333333333334,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": null,
+        "zero_grade_count_at_12": 7
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 0.5,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": []
+    },
+    {
+      "case": "funding_ko",
+      "trial": 2,
+      "mode": "jev",
+      "effective_mode": "jev",
+      "rerank_ms": 1485.992,
+      "order": [
+        "c02",
+        "c17",
+        "c35",
+        "c03",
+        "c07",
+        "c01",
+        "c04",
+        "c39",
+        "c20",
+        "c23",
+        "c10",
+        "c21",
+        "c30",
+        "c09",
+        "c38",
+        "c28",
+        "c16",
+        "c13",
+        "c15",
+        "c19",
+        "c14",
+        "c26",
+        "c18",
+        "c29",
+        "c34",
+        "c08",
+        "c11",
+        "c12",
+        "c05",
+        "c37",
+        "c25",
+        "c36",
+        "c22",
+        "c40",
+        "c33",
+        "c31",
+        "c06",
+        "c27",
+        "c32",
+        "c24"
+      ],
+      "metrics": {
+        "ndcg_at_5": 1.0,
+        "ndcg_at_12": 0.9556622631055007,
+        "facet_coverage_at_5": 1.0,
+        "facet_coverage_at_12": 1.0,
+        "unique_content_rate_at_12": 1.0,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": null,
+        "zero_grade_count_at_12": 4
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 1.0,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": [
+        {
+          "ms": 249.562,
+          "input_bytes": 10012,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2501,
+            "output_tokens": 124,
+            "cost": 0.000105042
+          }
+        },
+        {
+          "ms": 421.443,
+          "input_bytes": 11409,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2758,
+            "output_tokens": 130,
+            "cost": 0.000115836
+          }
+        },
+        {
+          "ms": 303.255,
+          "input_bytes": 14720,
+          "status": 200,
+          "usage": {
+            "input_tokens": 3886,
+            "output_tokens": 132,
+            "cost": 0.000163212
+          }
+        },
+        {
+          "ms": 249.336,
+          "input_bytes": 12518,
+          "status": 200,
+          "usage": {
+            "input_tokens": 3203,
+            "output_tokens": 132,
+            "cost": 0.000134526
+          }
+        },
+        {
+          "ms": 257.489,
+          "input_bytes": 10918,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2830,
+            "output_tokens": 132,
+            "cost": 0.00011886
+          }
+        }
+      ]
+    },
+    {
+      "case": "funding_ko",
+      "trial": 2,
+      "mode": "cross_encoder",
+      "effective_mode": "cross_encoder",
+      "rerank_ms": 3073.089,
+      "order": [
+        "c02",
+        "c01",
+        "c08",
+        "c14",
+        "c15",
+        "c04",
+        "c16",
+        "c18",
+        "c19",
+        "c07",
+        "c10",
+        "c17",
+        "c20",
+        "c03",
+        "c06",
+        "c21",
+        "c29",
+        "c37",
+        "c05",
+        "c11",
+        "c12",
+        "c13",
+        "c34",
+        "c09",
+        "c38",
+        "c36",
+        "c22",
+        "c25",
+        "c23",
+        "c35",
+        "c30",
+        "c39",
+        "c27",
+        "c32",
+        "c28",
+        "c24",
+        "c26",
+        "c31",
+        "c40",
+        "c33"
+      ],
+      "metrics": {
+        "ndcg_at_5": 0.5992545309758331,
+        "ndcg_at_12": 0.7095939021366409,
+        "facet_coverage_at_5": 0.5,
+        "facet_coverage_at_12": 1.0,
+        "unique_content_rate_at_12": 0.6666666666666666,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": null,
+        "zero_grade_count_at_12": 7
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 1.0,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": []
+    },
+    {
+      "case": "funding_ko",
+      "trial": 3,
+      "mode": "jev",
+      "effective_mode": "jev",
+      "rerank_ms": 1846.051,
+      "order": [
+        "c02",
+        "c17",
+        "c35",
+        "c03",
+        "c07",
+        "c01",
+        "c04",
+        "c20",
+        "c23",
+        "c39",
+        "c21",
+        "c10",
+        "c09",
+        "c30",
+        "c38",
+        "c16",
+        "c28",
+        "c13",
+        "c19",
+        "c15",
+        "c14",
+        "c29",
+        "c18",
+        "c26",
+        "c08",
+        "c11",
+        "c12",
+        "c34",
+        "c05",
+        "c37",
+        "c25",
+        "c36",
+        "c40",
+        "c22",
+        "c31",
+        "c33",
+        "c06",
+        "c27",
+        "c32",
+        "c24"
+      ],
+      "metrics": {
+        "ndcg_at_5": 1.0,
+        "ndcg_at_12": 0.9562697519376379,
+        "facet_coverage_at_5": 1.0,
+        "facet_coverage_at_12": 1.0,
+        "unique_content_rate_at_12": 1.0,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": null,
+        "zero_grade_count_at_12": 4
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 1.0,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": [
+        {
+          "ms": 501.538,
+          "input_bytes": 10012,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2501,
+            "output_tokens": 124,
+            "cost": 0.000105042
+          }
+        },
+        {
+          "ms": 442.458,
+          "input_bytes": 11409,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2758,
+            "output_tokens": 130,
+            "cost": 0.000115836
+          }
+        },
+        {
+          "ms": 311.676,
+          "input_bytes": 14720,
+          "status": 200,
+          "usage": {
+            "input_tokens": 3886,
+            "output_tokens": 132,
+            "cost": 0.000163212
+          }
+        },
+        {
+          "ms": 346.013,
+          "input_bytes": 12518,
+          "status": 200,
+          "usage": {
+            "input_tokens": 3203,
+            "output_tokens": 132,
+            "cost": 0.000134526
+          }
+        },
+        {
+          "ms": 238.439,
+          "input_bytes": 10918,
+          "status": 200,
+          "usage": {
+            "input_tokens": 2830,
+            "output_tokens": 132,
+            "cost": 0.00011886
+          }
+        }
+      ]
+    },
+    {
+      "case": "funding_ko",
+      "trial": 3,
+      "mode": "cross_encoder",
+      "effective_mode": "cross_encoder",
+      "rerank_ms": 3034.945,
+      "order": [
+        "c02",
+        "c01",
+        "c08",
+        "c14",
+        "c15",
+        "c04",
+        "c16",
+        "c18",
+        "c19",
+        "c07",
+        "c10",
+        "c17",
+        "c20",
+        "c03",
+        "c06",
+        "c21",
+        "c29",
+        "c37",
+        "c05",
+        "c11",
+        "c12",
+        "c13",
+        "c34",
+        "c09",
+        "c38",
+        "c36",
+        "c22",
+        "c25",
+        "c23",
+        "c35",
+        "c30",
+        "c39",
+        "c27",
+        "c32",
+        "c28",
+        "c24",
+        "c26",
+        "c31",
+        "c40",
+        "c33"
+      ],
+      "metrics": {
+        "ndcg_at_5": 0.5992545309758331,
+        "ndcg_at_12": 0.7095939021366409,
+        "facet_coverage_at_5": 0.5,
+        "facet_coverage_at_12": 1.0,
+        "unique_content_rate_at_12": 0.6666666666666666,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": null,
+        "zero_grade_count_at_12": 7
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 1.0,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": []
+    },
+    {
+      "case": "funding_ko",
+      "trial": 3,
+      "mode": "deterministic",
+      "effective_mode": "deterministic",
+      "rerank_ms": 0.022,
+      "order": [
+        "c01",
+        "c02",
+        "c03",
+        "c04",
+        "c05",
+        "c06",
+        "c07",
+        "c08",
+        "c09",
+        "c10",
+        "c11",
+        "c12",
+        "c13",
+        "c14",
+        "c15",
+        "c16",
+        "c17",
+        "c18",
+        "c19",
+        "c20",
+        "c21",
+        "c22",
+        "c24",
+        "c23",
+        "c25",
+        "c27",
+        "c26",
+        "c29",
+        "c28",
+        "c31",
+        "c30",
+        "c32",
+        "c33",
+        "c34",
+        "c35",
+        "c36",
+        "c37",
+        "c38",
+        "c39",
+        "c40"
+      ],
+      "metrics": {
+        "ndcg_at_5": 0.4984424431872503,
+        "ndcg_at_12": 0.46621912859676196,
+        "facet_coverage_at_5": 0.5,
+        "facet_coverage_at_12": 0.5,
+        "unique_content_rate_at_12": 0.8333333333333334,
+        "shortlist_facet_coverage": 1.0,
+        "first_grade_4_rank": null,
+        "zero_grade_count_at_12": 7
+      },
+      "packed_count": 12,
+      "packed_facet_coverage": 0.5,
+      "rejected_count": 28,
+      "budget_truncated": true,
+      "calls": []
+    }
+  ],
+  "measurement_id": "RERANK-2026-10-02-AGENT",
+  "annotation_policy": {
+    "scale": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "gain": "2**grade - 1",
+    "discount": "log2(rank+1)",
+    "duplicates": "identical whitespace-normalized content receives identical grades; standard nDCG counts duplicate candidate slots",
+    "annotator": "agent inspection of full passages before reranker scoring; no model-as-judge"
+  }
+}

@@ -241,3 +241,7 @@ Console에서 재순위 전후를 비교하려면 `MY_AGENTS_DEPLOYMENT_ENVIRONM
 `MY_AGENTS_DEBUG_KNOWLEDGE_CONTEXT_LOGGING=true`를 사용합니다. 각 순서의 상위 10개 후보에
 대해 rank, document/chunk 위치, RRF/reranker 점수와 짧은 발췌를 표시하며 Jev fallback도
 구분합니다. Preview/production에서는 이 flag를 켜도 해당 표를 출력하지 않습니다.
+
+[로컬 재순위 benchmark와 verdict](./docs/performance/ko/reranking-benchmark-2026-10-02.md)에 owner 비교와 실제 controlled component
+54회 실행을 기록했습니다. 근거 순서/fact coverage, warm latency와 API-reported 비용을
+측정하며 최종 답변 품질은 평가하지 않았습니다.

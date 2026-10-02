@@ -78,8 +78,10 @@ mode, including Jev fallback, and never prints in preview/production even with t
 reordering, identity preservation, stable ties, Unicode/request budgets, partial failures,
 deadlines, no retries, offline behavior, redacted diagnostics, and permission-first shortlist
 handoff. Existing permission-aware retrieval tests remain part of the full offline suite.
-Live Jev quality, latency, cost, batch consistency, and superiority to a cross-encoder have
-not been established. Compare Korean, English, code, identifier/date/version constraints,
+A [54-run local component benchmark](../../performance/en/reranking-benchmark-2026-10-02.md)
+now records source-derived relevance/facet labels, warm latency, repetition behavior, and
+API-reported scoring cost. It supports the current default within that small suite; broader
+quality, production latency, truncation robustness, and universal superiority remain unestablished. Compare Korean, English, code, identifier/date/version constraints,
 and evidence beyond the clipped prefix before treating the new default as a quality result.
 
 Provider contract: [Jev decision types](https://openrouter.ai/blog/insights/what-is-jev/).

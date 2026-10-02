@@ -208,9 +208,14 @@ Jev evidence reranking — 2026-10-02 (**Shipped:** implemented on develop):
   fused/rerank scores, and bounded excerpts; preview/production suppress this table.
 - Fixed-rubric scoring sends only the query, synthetic IDs, and bounded authorized excerpts.
   Any failed batch restores the complete fused shortlist; original retrieval scores remain intact.
-- Full offline suite: **819 passed / 13 skipped / 12 dependency/API deprecation warnings**.
-  Ruff lint/format and diff whitespace checks passed. No dependencies, migrations, or frontend
-  contract changes. Broader live quality, latency, cost, and production evidence remain separate.
+- Full offline suite: **826 passed / 13 skipped / 12 dependency/API deprecation warnings**.
+  Ruff lint/format and diff whitespace checks passed. No dependencies, migrations, frontend
+  contract changes. Live component benchmark: 54 scored runs over six frozen authorized cases;
+  mean nDCG@5 deterministic 0.595 / Jev 0.964 / warm BGE 0.657. Packed fact coverage
+  75.0% / 100.0% / 91.7%; median scoring 0.018 / 1518.340 / 2557.392 ms.
+  Jev scoring API-reported cost: $0.010742886 for 18 passes. No final-answer quality judgment.
+  Broader held-out queries, production rollout/load, and truncation stress remain unverified.
+- [Benchmark protocol, redacted evidence, and verdict](./performance/en/reranking-benchmark-2026-10-02.md).
 - [Current reranking contract](./product-chat-service/en/37-jev-evidence-reranking.md).
 
 Static workspace image inputs — 2026-09-30 (`develop` implementation):

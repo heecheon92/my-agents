@@ -20,6 +20,17 @@ Raw prompt, 문서 본문, document ID, chunk ID, email, token, secret은 이 �
 Route, intent, count, phase name, millisecond 값만 기록합니다.
 각 section은 최신 작업이 위에 오도록 recent-work-first 순서로 유지합니다.
 
+## 2026-10-02 — Jev와 deterministic/warm BGE 비교
+
+[Benchmark report](./reranking-benchmark-2026-10-02.md)에 owner의 세 mode trace와 동일한
+authorized shortlist를 재사용한 실제 54회 component 비교를 기록했습니다. 최종 답변 품질은
+평가하지 않습니다. Mean nDCG@5는 deterministic 0.595 / Jev 0.964 / warm BGE 0.657,
+packed fact coverage는 75.0% / 100.0% / 91.7%였습니다. Median scoring은 0.018 /
+1518.340 / 2557.392 ms이며 BGE cold load/inference 10247.829 ms는 분리했습니다.
+18회 Jev scoring의 API-reported 비용은 $0.010742886입니다. 작은 single-agent annotation
+suite라는 한계를 유지하면서 현재 Jev 기본값을 지지합니다. 중복 content packing을 별도 평가하고
+context limit을 무조건 줄이지 않는 것이 다음 quality-safe 방향입니다.
+
 ## 2026-07-24 — Lightweight BM25 corpus projection
 
 2026-07-24 hybrid-search 변경은 모든 authorized chunk로 request-local `BM25Okapi` corpus를
@@ -112,6 +123,12 @@ entity mention N+1이었습니다. 최신 same-scenario 측정까지 포함한 �
 | OPT-1 | metadata-profile lane과 direct retrieval lane이 query embedding을 공유합니다. | OpenAI query embedding 2 calls, 2433.501 ms. | 1 call, 993.725 ms. |
 
 ## 현재 해석과 다음 단계
+
+2026-10-02 기준 현재 verdict는 Jev 기본값을 유지하고 deterministic/BGE 대안을 보존하는
+것입니다. 다음 실험은 authorized citation provenance를 유지하는 duplicate-content packing입니다.
+작은 component suite이며 production 성능과 최종 답변 품질은 판정하지 않습니다.
+
+### 과거 June 측정 해석
 
 OPT-4 개선은 실제로 확인됐습니다. 다만 새로운 병목이 남아 있습니다.
 

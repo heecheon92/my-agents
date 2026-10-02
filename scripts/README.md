@@ -25,6 +25,7 @@ Alembic and LangGraph maintain separate migration histories; completing one does
 | `scripts.set_user_type` | Set a registered account's platform `user_type` (`normal`, `root`, `system`) with safe dry-run output. | Operator-only system knowledge manager assignment. |
 | `scripts.local_demo_seed` | Seed a file-backed SQLite demo user, knowledge base, document, and extraction run. | Prepare a local demo database before starting the backend. |
 | `scripts.local_demo_smoke` | Smoke-test a running backend over HTTP only. | Verify the local V1 API path after seeding and starting the server. |
+| `scripts.benchmark_reranking` | Freeze an approved local account’s authorized shortlist, then replay deterministic/Jev/warm BGE with pre-scoring relevance labels. | Reranking evidence-quality, latency, and numeric provider-usage comparisons without final answers or DB writes. |
 | `scripts/measure_ingestion_performance.py` | Measure parse/ingest/retrieval-smoke timing in an isolated deterministic database. | Before/after ingestion optimization comparisons. |
 | `scripts.backfill_kb_publication_copies` | Copy legacy approved whole-KB publications into group-owned KB copies with dry-run output. | Migrate historical publication rows after the publish-copy contract change. |
 | `scripts.issue_guest_access_code` | Issue a one-time guest access code for print-first operator delivery. | Guest-code workflows. |
@@ -652,3 +653,16 @@ When adding a new command module:
 5. Do not print secrets or unredacted provider credentials.
 6. Add focused tests under `tests/` that do not require hosted credentials.
 7. Update this README with purpose, examples, prerequisites, and safety notes.
+
+## `scripts.benchmark_reranking`
+
+See the [benchmark protocol and verdict](../docs/performance/en/reranking-benchmark-2026-10-02.md#reproduce-and-audit).
+`prepare` reads loopback PostgreSQL using the selected VS Code profile and account authorization;
+`run` replays private frozen inputs without writing Product DB or generating final answers.
+Use already configured provider keys and keep case/snapshot/label files outside the repository.
+Fix full candidate grades/facets before scoring. New output files are created with mode 0600.
+The checked-in redacted benchmark data preserves anonymous orders and labels for metric audits.
+
+```bash
+uv run python -m scripts.benchmark_reranking --help
+```

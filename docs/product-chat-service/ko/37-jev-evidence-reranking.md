@@ -72,7 +72,9 @@ Console에서 재순위 전후를 비교하려면 `MY_AGENTS_DEPLOYMENT_ENVIRONM
 `tests/test_jev_reranking.py`는 fake key와 mocked HTTP로 wire contract, 순서와 원본 보존,
 Unicode/요청 예산, 부분 실패, deadline, 재시도 없음, offline 경로, 안전한 로그와 권한 확인 후
 후보 전달을 검증합니다. 기존 permission-aware 테스트도 full offline suite에서 유지합니다.
-실제 Jev의 품질, latency/cost, batch 간 일관성이나 cross-encoder 대비 우월성은 측정하지
-않았습니다. 한국어, 영어, code, identifier/date/version 조건과 발췌 뒤쪽의 근거를 별도 평가해야 합니다.
+[54회 local component benchmark](../../performance/ko/reranking-benchmark-2026-10-02.md)에
+source 기반 relevance/facet label, warm latency, 반복 변화와 API-reported 비용을 기록했습니다.
+작은 suite에서 현재 기본값을 지지하며 광범위한 품질, production latency, 잘림 안정성이나
+보편적 우월성은 확인하지 않았습니다. 한국어, 영어, code, identifier/date/version 조건과 발췌 뒤쪽의 근거를 별도 평가해야 합니다.
 
 Provider 계약: [Jev decision types](https://openrouter.ai/blog/insights/what-is-jev/).
