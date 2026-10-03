@@ -239,3 +239,6 @@ verification; they are not implied by the offline checks.
 
 
 Expired guest account erasure is separately configured; see [guest cleanup](./39-expired-guest-cleanup.md).
+
+
+Guest issuance, redemption, and session authentication enforce [one trial per email](./40-guest-trial-abuse-protection.md) using durable eligibility and shared guest rate limits. The in-process abuse guard described above still applies to the other auth flows.

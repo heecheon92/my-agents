@@ -122,6 +122,8 @@ class GuestAccessCodeModel(Base):
     code_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    email_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    generation: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
     guest_user_id: Mapped[str | None] = mapped_column(
         ForeignKey("users.id"), nullable=True, index=True
     )
@@ -165,3 +167,36 @@ class GuestDeletionAuditModel(Base):
     deleted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     counts_json: Mapped[str] = mapped_column(Text, nullable=False)
     reason: Mapped[str] = mapped_column(String(40), nullable=False, default="guest_expired")
+
+
+class GuestTrialModel(Base):
+    """One email identity and its current trial generation; survives account erasure."""
+
+    __tablename__ = "guest_trials"
+    email_fingerprint: Mapped[str] = mapped_column(String(64), primary_key=True)
+    guest_user_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    redeemed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    generation: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_reset_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class GuestPolicyStateModel(Base):
+    """Bootstrap barrier and key verifier; prevents silent identity changes on key rotation."""
+
+    __tablename__ = "guest_policy_state"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    key_verifier: Mapped[str] = mapped_column(String(64), nullable=False)
+    initialized_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class GuestRateBucketModel(Base):
+    """Atomic fixed-window counters shared by every application instance."""
+
+    __tablename__ = "guest_rate_buckets"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    count: Mapped[int] = mapped_column(Integer, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )

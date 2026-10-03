@@ -301,6 +301,7 @@ def test_enabled_cleanup_requires_persistent_db_and_hmac_key():
             _env_file=None,
             MY_AGENTS_DATABASE_URL="sqlite+pysqlite:///test.db",
             MY_AGENTS_GUEST_CLEANUP_ENABLED=True,
+            MY_AGENTS_GUEST_CLEANUP_EMAIL_HMAC_KEY=None,
         )
 
 
@@ -362,6 +363,9 @@ def test_cli_dry_run_requires_explicit_apply(db, engine, monkeypatch, capsys):
 
     user_id = guest(db).id
     monkeypatch.setenv("MY_AGENTS_DATABASE_URL", str(engine.url))
+    from my_agents.settings import get_settings
+
+    get_settings.cache_clear()
     assert main([]) == 0
     output = json.loads(capsys.readouterr().out)
     assert output == {"dry_run": True, "counts": {"eligible": 1}}

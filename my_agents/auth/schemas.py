@@ -191,6 +191,10 @@ class GuestAccessPolicyResponse(BaseModel):
     max_conversations: int = Field(ge=1)
     max_prompts: int = Field(ge=1)
     max_document_uploads: int = Field(ge=1)
+    trial_policy: Literal["one_per_email"] = "one_per_email"
+    active_trial_relogin_supported: bool = True
+    code_resend_cooldown_seconds: int = Field(default=60, ge=1)
+    code_email_daily_limit: int = Field(default=5, ge=1)
 
 
 class DevAuthEmailMessageResponse(BaseModel):

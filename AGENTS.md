@@ -82,6 +82,15 @@ For memory architecture, do not treat LangGraph checkpointers as conversation hi
 All agent-requested user input must use the versioned, semantic contract in `docs/product-chat-service/27-agent-frontend-interaction-contract.md`. Backend interactions describe required input, never frontend components or layout. Keep activity events separate from pending interaction state, require typed answers, and add future AG-UI/A2UI support only as a boundary adapter rather than a Product DB domain model.
 Ambient system knowledge is automatically injected internal context, not a user-controllable source axis: never expose system KBs/documents as interaction options or accept them as resume selections.
 
+## Guest trial eligibility
+
+Guest access permits one trial per normalized email. The HMAC identity ledger survives account
+cleanup; only an explicit operator reset grants another trial. Active-trial re-login must preserve
+account identity, quota, and expiry. Keep issuance/redemption/reset atomic across workers through
+`my_agents/auth/guest_policy.py` and `guest_access.py`; do not substitute process-local locks or
+restore a create-new-user path for every code. Preserve the stable guest HMAC key and generic
+public request responses. See `docs/product-chat-service/40-guest-trial-abuse-protection.md`.
+
 ## Reasoning compatibility policy
 
 The public reasoning effort vocabulary is frozen: `none`, `minimal`, `low`, `medium`,

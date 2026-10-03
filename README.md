@@ -159,6 +159,10 @@ creation and guest code redemption. See the [notification contract](./docs/produ
 Expired guest cleanup is opt-in, defaults to a 24-hour post-expiry grace period, and preserves
 minimal audit/email history. Preview before enabling: [cleanup policy and commands](./docs/product-chat-service/39-expired-guest-cleanup.md).
 
+Guest access now requires the stable `MY_AGENTS_GUEST_CLEANUP_EMAIL_HMAC_KEY` and permits one
+trial per email. Re-login preserves the original account, quota, and expiry; registered emails
+use regular accounts. Apply migration `0039` and follow the [rollout/reset guide](./docs/product-chat-service/40-guest-trial-abuse-protection.md).
+
 ## Verification
 
 ```bash

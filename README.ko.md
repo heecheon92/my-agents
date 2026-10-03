@@ -159,6 +159,10 @@ curl http://127.0.0.1:8000/health   # 다른 터미널에서
 만료 게스트 정리는 별도 활성화하며 기본 유예 기간은 만료 후 24시간입니다. 최소 audit·이메일 이력을 남깁니다.
 활성화 전 [정리 정책과 미리보기 명령](./docs/product-chat-service/39-expired-guest-cleanup.ko.md)을 확인하세요.
 
+게스트 접근에도 고정된 `MY_AGENTS_GUEST_CLEANUP_EMAIL_HMAC_KEY`가 필요하며 이메일당 한 번의 체험만
+허용합니다. 재로그인은 계정·할당량·만료를 유지하고 일반 회원 이메일은 일반 계정을 사용합니다. Migration `0039`와
+[배포·초기화 안내](./docs/product-chat-service/40-guest-trial-abuse-protection.ko.md)를 확인하세요.
+
 ## 검증
 
 ```bash

@@ -671,3 +671,15 @@ The checked-in redacted benchmark data preserves anonymous orders and labels for
 ```bash
 uv run python -m scripts.benchmark_reranking --help
 ```
+
+
+Guest trial eligibility operations (use the intended database environment):
+
+```bash
+uv run python -m scripts.guest_trial_policy backfill
+uv run python -m scripts.guest_trial_policy backfill --apply
+uv run python -m scripts.guest_trial_policy reset --email guest@example.com
+uv run python -m scripts.guest_trial_policy reset --email guest@example.com --apply
+```
+
+Without `--apply`, changes are rolled back. See the [rollout and reset contract](../docs/product-chat-service/40-guest-trial-abuse-protection.md).

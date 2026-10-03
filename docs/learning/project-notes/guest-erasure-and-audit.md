@@ -32,9 +32,11 @@ all-or-nothing transaction across every store.
 A content-free audit survives without a user FK. HMAC of the normalized requester email
 supports comparing trial history without retaining that raw email in the audit. A plain hash
 would allow guesses against common email addresses without a secret. HMAC still produces
-pseudonymous data, and key loss/rotation affects future comparisons. Keeping this history
-is only a foundation: the same-email registration restriction is not yet enforced.
+pseudonymous data, and key loss/rotation affects future comparisons. The guest trial ledger now uses this history to enforce one trial per email, including after
+account deletion. See the [policy](../../product-chat-service/40-guest-trial-abuse-protection.md).
 
 ## Revision history
 
 - 2026-10-03: Explained the local cleanup implementation, retry boundary, and audit tradeoff.
+
+- 2026-10-03: Linked the enforced trial ledger that now preserves eligibility through erasure.

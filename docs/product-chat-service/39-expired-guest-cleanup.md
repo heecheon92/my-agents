@@ -79,8 +79,8 @@ aggregate resource counts, and an HMAC-SHA256 fingerprint of the normalized requ
 It stores no raw email, document name/body, prompt, answer, or credential. Email-less operator codes
 produce a null fingerprint. The audit has no user foreign key and survives account deletion.
 
-This preserves trial history for a later per-email eligibility policy. **It does not yet restrict
-repeated guest registration**: the current fresh-code behavior remains unchanged. HMAC history is
+The separate [guest trial ledger](./40-guest-trial-abuse-protection.md) now enforces one trial per
+email and survives cleanup. This audit also seeds historical eligibility during initial rollout. HMAC history is
 pseudonymous, not anonymous, and has no automatic expiry in this first implementation. Existing
 application/infrastructure logs and backups are outside this database cleanup's scope.
 

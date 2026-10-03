@@ -15,6 +15,7 @@ from my_agents.auth.models import (
     AuthTokenModel,
     GuestAccessCodeModel,
     GuestAccessRequestModel,
+    GuestTrialModel,
     SessionModel,
     UserModel,
 )
@@ -175,6 +176,10 @@ def test_guest_policy_is_public_and_uses_runtime_settings(monkeypatch) -> None: 
         "max_conversations": 4,
         "max_prompts": 24,
         "max_document_uploads": 6,
+        "trial_policy": "one_per_email",
+        "active_trial_relogin_supported": True,
+        "code_resend_cooldown_seconds": 60,
+        "code_email_daily_limit": 5,
     }
 
 
@@ -245,6 +250,7 @@ def test_expired_guest_code_and_session_are_rejected(monkeypatch) -> None:  # no
         guest_code = db.scalar(select(GuestAccessCodeModel))
         assert guest_code is not None
         guest_code.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+        db.scalar(select(GuestTrialModel)).last_sent_at = datetime.now(UTC) - timedelta(minutes=2)
         db.add(guest_code)
         db.commit()
     finally:

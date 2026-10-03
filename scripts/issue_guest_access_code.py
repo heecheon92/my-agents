@@ -48,7 +48,7 @@ def issue_guest_access_code(
     initialize_database(settings)
     session_factory = _sessionmaker_for_url(settings.database_url)
     with session_factory() as db:
-        result = AuthService(db).issue_guest_access_code(
+        result = AuthService(db, guest_settings=settings).issue_guest_access_code(
             email=email,
             ttl=timedelta(seconds=ttl_seconds or settings.guest_code_ttl_seconds),
             request_id=request_id,

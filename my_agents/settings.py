@@ -357,6 +357,19 @@ class Settings(BaseSettings):
         default=False,
         validation_alias=AliasChoices("MY_AGENTS_GUEST_ACCESS_ENABLED"),
     )
+    guest_code_resend_cooldown_seconds: int = Field(
+        default=60, ge=1, validation_alias="MY_AGENTS_GUEST_CODE_RESEND_COOLDOWN_SECONDS"
+    )
+    guest_code_email_daily_limit: int = Field(
+        default=5, ge=1, validation_alias="MY_AGENTS_GUEST_CODE_EMAIL_DAILY_LIMIT"
+    )
+    guest_request_ip_hourly_limit: int = Field(
+        default=30, ge=1, validation_alias="MY_AGENTS_GUEST_REQUEST_IP_HOURLY_LIMIT"
+    )
+    guest_login_ip_window_limit: int = Field(
+        default=60, ge=1, validation_alias="MY_AGENTS_GUEST_LOGIN_IP_WINDOW_LIMIT"
+    )
+
     guest_code_auto_approval: bool = Field(
         default=False,
         validation_alias=AliasChoices("MY_AGENTS_GUEST_CODE_AUTO_APPROVAL"),
@@ -688,6 +701,12 @@ class Settings(BaseSettings):
 
             if not supports_background_sessions(self.database_url):
                 raise ValueError("Guest cleanup requires file-backed SQLite or PostgreSQL")
+        if self.guest_access_enabled and self.deployment_environment == "production":
+            from my_agents.persistence.database import supports_background_sessions
+
+            if not supports_background_sessions(self.database_url):
+                raise ValueError("Production guest access requires persistent SQLite or PostgreSQL")
+        if self.guest_cleanup_enabled or self.guest_access_enabled:
             if (
                 self.guest_cleanup_email_hmac_key is None
                 or len(self.guest_cleanup_email_hmac_key.get_secret_value().encode()) < 32

@@ -19,6 +19,7 @@ from my_agents.auth.models import (
     GuestAccessCodeModel,
     GuestAccessRequestModel,
     GuestDeletionAuditModel,
+    GuestTrialModel,
     SessionModel,
     UserModel,
 )
@@ -187,6 +188,23 @@ def delete_expired_guest(
         UserModel.guest_expires_at <= cutoff,
     )
     try:
+        from my_agents.auth.guest_policy import lock_trial, validate_policy_key
+
+        if not dry_run:
+            validate_policy_key(db, email_hmac_key)
+        trial = db.scalar(select(GuestTrialModel).where(GuestTrialModel.guest_user_id == user_id))
+        if trial is not None and not dry_run:
+            trial = lock_trial(db, trial.email_fingerprint)
+            if trial.guest_user_id != user_id:
+                trial = None
+        owned_codes = GuestAccessCodeModel.guest_user_id == user_id
+        if trial is not None:
+            owned_codes = or_(
+                owned_codes,
+                (GuestAccessCodeModel.email_fingerprint == trial.email_fingerprint)
+                & (GuestAccessCodeModel.generation == trial.generation)
+                & GuestAccessCodeModel.guest_user_id.is_(None),
+            )
         if not dry_run:
             # Acquire a write lock on SQLite and a row lock on PostgreSQL before
             # rechecking ownership/work. Competing cleanup workers recheck after the lock.
@@ -236,7 +254,7 @@ def delete_expired_guest(
             .join(
                 GuestAccessCodeModel, GuestAccessCodeModel.request_id == GuestAccessRequestModel.id
             )
-            .where(GuestAccessCodeModel.guest_user_id == user_id)
+            .where(owned_codes)
         ).all()
         emails = {item.email.strip().casefold() for item in requests}
         if len(emails) > 1:
@@ -342,9 +360,7 @@ def delete_expired_guest(
             .where(GroupInvitationModel.accepted_by_user_id == user_id)
             .values(accepted_by_user_id=None)
         )
-        db.execute(
-            delete(GuestAccessCodeModel).where(GuestAccessCodeModel.guest_user_id == user_id)
-        )
+        db.execute(delete(GuestAccessCodeModel).where(owned_codes))
         request_ids = [item.id for item in requests]
         db.execute(
             delete(GuestAccessRequestModel).where(
@@ -374,6 +390,8 @@ def delete_expired_guest(
                 reason="guest_expired",
             )
         )
+        if trial is not None:
+            trial.guest_user_id = None
         db.execute(delete(UserModel).where(UserModel.id == user_id))
         db.commit()
         return "deleted"

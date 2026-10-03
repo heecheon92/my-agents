@@ -24,6 +24,7 @@ from my_agents.auth.dependencies import (
     get_current_principal,
 )
 from my_agents.auth.email import AuthEmailLanguage, get_local_auth_email_outbox
+from my_agents.auth.guest_policy import GuestIpRateLimited, GuestRequestSuppressed
 from my_agents.auth.models import UserModel
 from my_agents.auth.schemas import (
     AcceptedResponse,
@@ -78,6 +79,8 @@ def guest_access_policy(
         max_conversations=settings.guest_max_conversations,
         max_prompts=settings.guest_max_prompts,
         max_document_uploads=settings.guest_max_document_uploads,
+        code_resend_cooldown_seconds=settings.guest_code_resend_cooldown_seconds,
+        code_email_daily_limit=settings.guest_code_email_daily_limit,
     )
 
 
@@ -191,6 +194,7 @@ def signup(
 @auth_router.post("/guest/request", response_model=AcceptedResponse)
 def request_guest_access_code(
     request: GuestAccessRequest,
+    http_request: Request,
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> AcceptedResponse:
@@ -210,9 +214,16 @@ def request_guest_access_code(
                 email=str(request.email),
                 ttl=timedelta(seconds=settings.guest_code_ttl_seconds),
                 email_language=request.language,
+                client_identifier=_request_client_identifier(http_request),
             )
         else:
-            auth_service.request_guest_access(email=str(request.email))
+            auth_service.request_guest_access(
+                email=str(request.email), client_identifier=_request_client_identifier(http_request)
+            )
+    except GuestRequestSuppressed:
+        return AcceptedResponse()
+    except GuestIpRateLimited as exc:
+        raise HTTPException(status_code=429, detail="too many guest access attempts") from exc
     except Exception as exc:
         deploy_log(
             "auth.api.guest_request.failed",
@@ -232,6 +243,7 @@ def request_guest_access_code(
 @auth_router.post("/guest/login", response_model=LoginResponse, response_model_exclude_unset=True)
 def guest_login(
     request: GuestLoginRequest,
+    http_request: Request,
     response: Response,
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
     settings: Annotated[Settings, Depends(get_settings)],
@@ -243,7 +255,10 @@ def guest_login(
         authenticated = auth_service.redeem_guest_access_code(
             code=request.code,
             access_ttl=timedelta(seconds=settings.guest_access_ttl_seconds),
+            client_identifier=_request_client_identifier(http_request),
         )
+    except GuestIpRateLimited as exc:
+        raise HTTPException(status_code=429, detail="too many guest access attempts") from exc
     except InvalidAuthTokenError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

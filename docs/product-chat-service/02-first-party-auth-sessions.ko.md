@@ -54,3 +54,6 @@ PostgreSQL 동시성은 별도 배포 검증 대상입니다.
 
 
 만료 게스트 계정 삭제는 별도 설정합니다. [게스트 정리 정책](./39-expired-guest-cleanup.ko.md)을 참고하세요.
+
+
+게스트 발급·코드 사용·session 인증은 [이메일당 한 번 체험](./40-guest-trial-abuse-protection.ko.md)과 공유 DB 제한을 적용합니다. 위에서 설명한 in-process abuse guard는 다른 auth 흐름에 계속 적용됩니다.

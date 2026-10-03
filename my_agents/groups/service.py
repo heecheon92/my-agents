@@ -268,6 +268,10 @@ class GroupInvitationService:
     ) -> GroupInvitationSignupResult:
         """Create a verified invited account from token-proved email and accept membership."""
         invitation = self._pending_invitation_for_token(token)
+        from my_agents.auth.guest_policy import lock_signup_identity
+        from my_agents.settings import get_settings
+
+        lock_signup_identity(self._db, invitation.invited_email_normalized, get_settings())
         existing_user = self._db.scalar(
             select(UserModel).where(UserModel.email == invitation.invited_email_normalized)
         )

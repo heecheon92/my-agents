@@ -94,6 +94,16 @@ def _application_lifespan(settings: Settings):
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        if settings.guest_access_enabled:
+            from my_agents.auth.guest_policy import initialize_guest_policy
+            from my_agents.persistence.database import _sessionmaker_for_url, initialize_database
+
+            initialize_database(settings)
+            with _sessionmaker_for_url(settings.database_url)() as db:
+                initialize_guest_policy(
+                    db, settings.guest_cleanup_email_hmac_key.get_secret_value()
+                )
+                db.commit()
         resources = open_langgraph_persistence(settings)
         guest_cleanup_task = None
         notification_task = None
