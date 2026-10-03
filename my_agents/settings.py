@@ -341,6 +341,18 @@ class Settings(BaseSettings):
     def empty_notification_email(cls, value: object) -> object:
         return None if isinstance(value, str) and not value.strip() else value
 
+    guest_cleanup_enabled: bool = Field(
+        default=False, validation_alias=AliasChoices("MY_AGENTS_GUEST_CLEANUP_ENABLED")
+    )
+    guest_cleanup_grace_seconds: int = Field(
+        default=86400,
+        ge=0,
+        validation_alias=AliasChoices("MY_AGENTS_GUEST_CLEANUP_GRACE_SECONDS"),
+    )
+    guest_cleanup_email_hmac_key: SecretStr | None = Field(
+        default=None, validation_alias=AliasChoices("MY_AGENTS_GUEST_CLEANUP_EMAIL_HMAC_KEY")
+    )
+
     guest_access_enabled: bool = Field(
         default=False,
         validation_alias=AliasChoices("MY_AGENTS_GUEST_ACCESS_ENABLED"),
@@ -671,6 +683,18 @@ class Settings(BaseSettings):
                 "MY_AGENTS_FULL_DOCUMENT_RANGE_CHARS must be less than or equal to "
                 "MY_AGENTS_FULL_DOCUMENT_MAX_CHARS"
             )
+        if self.guest_cleanup_enabled:
+            from my_agents.persistence.database import supports_background_sessions
+
+            if not supports_background_sessions(self.database_url):
+                raise ValueError("Guest cleanup requires file-backed SQLite or PostgreSQL")
+            if (
+                self.guest_cleanup_email_hmac_key is None
+                or len(self.guest_cleanup_email_hmac_key.get_secret_value().encode()) < 32
+            ):
+                raise ValueError(
+                    "MY_AGENTS_GUEST_CLEANUP_EMAIL_HMAC_KEY requires at least 32 bytes"
+                )
         if self.response_mode == "openai" and self.openai_api_key is None:
             raise ValueError("OPENAI_API_KEY is required when MY_AGENTS_RESPONSE_MODE=openai")
         if self.embedding_mode == "openai" and self.openai_api_key is None:

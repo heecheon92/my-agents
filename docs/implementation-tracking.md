@@ -564,11 +564,13 @@ Earlier hosted smoke status on 2026-06-03:
 
 ### Product/account lifecycle
 
+- [x] **Shipped:** Opt-in expired guest cleanup implemented and validated (860 tests passed, 14 skipped; lint/format clean). Deployment and PostgreSQL concurrency verification remain pending. Opt-in post-expiry erasure, content-free audit/HMAC history, shared-resource deferral, and dry-run CLI. [Policy](./product-chat-service/39-expired-guest-cleanup.md).
+
 - [x] **Shipped:** Env-gated operator registration alerts with safe worker shutdown and persistent-database isolation (845 tests passed, 14 skipped; lint/format clean). Deployment and live inbox verification remain pending. Covers regular/invited signup and guest redemption with a durable delivery queue. Contract: [auth notifications](./product-chat-service/02-first-party-auth-sessions.md#operator-registration-notifications).
 
 - Hosted auth email delivery is implemented through Resend HTTP from the verified `my-agents.dev` sender, with generic SMTP still available as a portable alternate transport. Provider secrets remain environment-owned and are not documented in the repo.
 - Auth abuse protection is local/in-process by explicit Phase 1 decision; it is acceptable only for single-process public demos and is not a shared Redis/gateway limiter for multi-worker public deployment.
-- No account deletion or profile management surface yet.
+- No self-service or registered-account deletion surface; automatic guest cleanup is tracked above.
 - Guest mode is implemented only as an env-gated public-demo path; no durable anonymous daily quota, self-service account deletion, or profile-management surface yet.
 
 ### Security and production hardening

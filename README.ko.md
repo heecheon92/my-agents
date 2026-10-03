@@ -156,6 +156,9 @@ curl http://127.0.0.1:8000/health   # 다른 터미널에서
 일반·초대 계정 생성 및 게스트 코드 사용 시 알림을 큐에 저장하고 기존 SMTP/Resend로 전송합니다.
 자세한 내용은 [가입 알림 계약](./docs/product-chat-service/02-first-party-auth-sessions.ko.md#운영자-가입-알림)을 참고하세요.
 
+만료 게스트 정리는 별도 활성화하며 기본 유예 기간은 만료 후 24시간입니다. 최소 audit·이메일 이력을 남깁니다.
+활성화 전 [정리 정책과 미리보기 명령](./docs/product-chat-service/39-expired-guest-cleanup.ko.md)을 확인하세요.
+
 ## 검증
 
 ```bash

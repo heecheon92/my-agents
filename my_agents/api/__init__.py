@@ -95,6 +95,7 @@ def _application_lifespan(settings: Settings):
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         resources = open_langgraph_persistence(settings)
+        guest_cleanup_task = None
         notification_task = None
         cleanup_task = None
         if settings.document_workspace_enabled and settings.response_mode == "openai":
@@ -113,8 +114,18 @@ def _application_lifespan(settings: Settings):
                 store=resources.store,
                 document_selection_hitl_enabled=resources.checkpointer is not None,
             )
+            if settings.guest_cleanup_enabled:
+                from my_agents.auth.guest_cleanup import guest_cleanup_loop
+
+                guest_cleanup_task = asyncio.create_task(guest_cleanup_loop(settings, resources))
             yield
         finally:
+            if guest_cleanup_task is not None:
+                guest_cleanup_task.cancel()
+                try:
+                    await guest_cleanup_task
+                except asyncio.CancelledError:
+                    pass
             if notification_task is not None:
                 notification_task.cancel()
                 try:
@@ -232,6 +243,7 @@ def configure_operational_logging() -> None:
     """Enable non-sensitive service lifecycle logs in hosted runtimes."""
     logging.getLogger("my_agents.api.auth").setLevel(logging.INFO)
     logging.getLogger("my_agents.auth.email").setLevel(logging.INFO)
+    logging.getLogger("my_agents.auth.guest_cleanup").setLevel(logging.INFO)
 
 
 def configure_debug_logging(settings: Settings) -> None:

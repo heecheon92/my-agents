@@ -51,3 +51,5 @@ They live outside `docs/learning/` because `docs/learning/` is reserved for the 
 
 English is the default `.md`; Korean counterparts use `.ko.md` in the same topic folder.
 Keep detailed product-service documentation in this folder.
+
+- [Expired guest account cleanup](./39-expired-guest-cleanup.md): grace period, erasure scope, audit retention, and dry-run commands.

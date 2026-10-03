@@ -51,3 +51,6 @@
 오프라인 검증은 세 가지 계정 생성 경로, 비활성화, 중복 가입·코드 재사용, rollback, local outbox 격리,
 재시도, lease 복구, migration/schema 일치를 확인합니다. 실제 SMTP/Resend 전달, 받은편지함 도착,
 PostgreSQL 동시성은 별도 배포 검증 대상입니다.
+
+
+만료 게스트 계정 삭제는 별도 설정합니다. [게스트 정리 정책](./39-expired-guest-cleanup.ko.md)을 참고하세요.

@@ -156,6 +156,9 @@ operator inbox after running `uv run alembic upgrade head`. Unset or blank disab
 The existing SMTP/Resend transport delivers queued notifications for regular/invited account
 creation and guest code redemption. See the [notification contract](./docs/product-chat-service/02-first-party-auth-sessions.md#operator-registration-notifications).
 
+Expired guest cleanup is opt-in, defaults to a 24-hour post-expiry grace period, and preserves
+minimal audit/email history. Preview before enabling: [cleanup policy and commands](./docs/product-chat-service/39-expired-guest-cleanup.md).
+
 ## Verification
 
 ```bash

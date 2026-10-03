@@ -236,3 +236,6 @@ Verification: offline tests cover the three creation paths, disabled configurati
 signup/code reuse, rollback, local outbox isolation, retry, lease recovery, and migration/schema
 parity. Live SMTP/Resend delivery, inbox receipt, and PostgreSQL concurrency require deployment
 verification; they are not implied by the offline checks.
+
+
+Expired guest account erasure is separately configured; see [guest cleanup](./39-expired-guest-cleanup.md).

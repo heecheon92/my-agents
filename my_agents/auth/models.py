@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, UniqueConstraint
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from my_agents.auth.contracts import UserType
@@ -151,3 +151,17 @@ class RegistrationNotificationModel(Base):
     lease_token: Mapped[str | None] = mapped_column(String(36), nullable=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class GuestDeletionAuditModel(Base):
+    """Content-free deletion evidence and keyed email history, independent of users."""
+
+    __tablename__ = "guest_deletion_audits"
+
+    guest_user_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    email_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    guest_created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    guest_expired_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    deleted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    counts_json: Mapped[str] = mapped_column(Text, nullable=False)
+    reason: Mapped[str] = mapped_column(String(40), nullable=False, default="guest_expired")

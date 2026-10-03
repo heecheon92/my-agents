@@ -136,3 +136,9 @@ def _all_projected_items(
 
 def _content_sha256(content: str) -> str:
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
+def delete_user_memory_projection(store: BaseStore, *, user_id: str) -> None:
+    """Erase all projected items in this user's memory namespaces, including orphans."""
+    for namespace, key in _all_projected_items(store, user_id=user_id):
+        store.delete(namespace, key)

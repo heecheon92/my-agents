@@ -99,6 +99,8 @@ Current honest status:
 
 ## 3. Auth and sessions
 
+- [x] **Shipped:** Opt-in expired guest cleanup implemented and validated (860 tests passed, 14 skipped; lint/format clean). Deployment and PostgreSQL concurrency verification remain pending. Opt-in post-expiry erasure, content-free audit/HMAC history, shared-resource deferral, and dry-run CLI. [Policy](./docs/product-chat-service/39-expired-guest-cleanup.md).
+
 - [x] **Shipped:** Env-gated operator registration alerts with safe worker shutdown and persistent-database isolation (845 tests passed, 14 skipped; lint/format clean). Deployment and live inbox verification remain pending. Covers regular/invited signup and guest redemption with a durable delivery queue. Contract: [auth notifications](./docs/product-chat-service/02-first-party-auth-sessions.md#operator-registration-notifications).
 
 - [x] First-party email/password signup: `POST /auth/signup`.
