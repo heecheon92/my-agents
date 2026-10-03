@@ -44,6 +44,7 @@ def get_auth_service(
     return AuthService(
         db,
         email_sender=email_sender,
+        notification_email=settings.registration_notification_email,
         password_hasher=build_password_hasher(
             time_cost=settings.auth_password_hash_time_cost,
             memory_cost=settings.auth_password_hash_memory_cost_kib,

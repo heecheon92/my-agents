@@ -6,6 +6,7 @@ from collections.abc import Generator
 from functools import lru_cache
 
 from sqlalchemy import Engine, MetaData, create_engine
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -109,3 +110,12 @@ def reset_database_caches() -> None:
     _initialized_urls.clear()
     _sessionmaker_for_url.cache_clear()
     _engine_for_url.cache_clear()
+
+
+def supports_background_sessions(database_url: str) -> bool:
+    """In-memory SQLite can share one connection and cannot isolate concurrent sessions."""
+    url = make_url(database_url)
+    return not (
+        url.get_backend_name() == "sqlite"
+        and (url.database in (None, "", ":memory:") or url.query.get("mode") == "memory")
+    )

@@ -42,6 +42,7 @@ EXPECTED_SERVICE_TABLES = {
     "auth_tokens",
     "guest_access_requests",
     "guest_access_codes",
+    "registration_notifications",
     "groups",
     "group_invitations",
     "memberships",
@@ -309,7 +310,7 @@ def test_legacy_documents_without_knowledge_base_upgrade_to_head(
     assert "user_type" in user_columns
     assert legacy_nickname == "legacy-doc"
     assert legacy_user_type == "normal"
-    assert alembic_version == "20260930_0036"
+    assert alembic_version == "20261003_0037"
 
     _assert_database_matches_model_metadata(database_url)
 

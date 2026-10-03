@@ -192,3 +192,47 @@ Explain this in an interview:
 - 2026-05-20: Documented Phase 1 public-demo auth/session boundary, CSRF/CORS/cookie tests, and single-process rate-limit limitation.
 - 2026-05-18: Added email verification, local auth email boundary, password reset tokens, and session revocation after reset.
 - 2026-05-17: Created after implementing minimal first-party auth and owned sessions.
+
+
+## Operator registration notifications
+
+Set `MY_AGENTS_REGISTRATION_NOTIFICATION_EMAIL` to an operator-controlled inbox. Unset or blank
+means no events are queued and no delivery worker starts. Existing pending jobs remain paused;
+re-enabling resumes them. This setting does not backfill earlier accounts. Do not commit personal
+recipient addresses. SMTP and Resend reuse the existing auth-email configuration; local mode only
+records operator messages in memory, separately from `/auth/dev/outbox`.
+
+Events are created for successful regular signup (including pending approval), new account creation
+through a group invitation, and guest code redemption. Requests/resends, failed registrations,
+ordinary logins, verification, and acceptance by an existing group member do not create events.
+Guest alerts use the requester's real email from the access request; operator codes without an
+email report that the email was not provided. Email bodies contain the event type, user ID,
+email, UTC creation time, approval state at creation, and guest expiry, never credentials or codes.
+
+Migration `20261003_0037` adds `registration_notifications`. Run `uv run alembic upgrade head`
+before deploying the feature. Account creation and its notification event commit in one transaction.
+Background delivery requires file-backed SQLite or PostgreSQL. In-memory SQLite queues can be
+drained synchronously in isolated tests, but the background worker logs a warning and exits to
+avoid sharing a request connection. Shutdown signals the worker to finish only its current send
+and waits for that sweep; it does not continue claiming the rest of the batch.
+The enabled FastAPI lifespan worker polls on startup and every 30 seconds after each bounded batch
+(up to 25 jobs); provider calls run off the event loop. An atomic lease prevents ordinary concurrent
+workers from claiming the same job. Failed delivery retries with exponential backoff capped at one
+hour, and expired leases are recoverable. Sender failures do not fail the registration request.
+
+The recipient is snapshotted when the account is created. Changing the setting affects new events;
+already queued events retain their original destination. Restart the application after changing
+configuration. Once disabled and restarted, queued events are not sent. An already in-flight send
+cannot be recalled. Delivery is **at least once**: a process crash after provider acceptance but before
+the success commit can produce a duplicate. Provider acceptance is not proof of inbox receipt.
+
+After successful delivery, the queue clears both email addresses and retains event ID, user ID,
+kind, timestamps, approval/expiry snapshot, and attempt count. These rows have no user foreign key,
+so future guest deletion can preserve minimal delivery evidence. Failed jobs retain the addresses
+needed for retry; automated expiry of delivery records is not implemented. This queue is not a
+per-email abuse ledger and does not implement guest reuse restrictions or expired-account cleanup.
+
+Verification: offline tests cover the three creation paths, disabled configuration, duplicate
+signup/code reuse, rollback, local outbox isolation, retry, lease recovery, and migration/schema
+parity. Live SMTP/Resend delivery, inbox receipt, and PostgreSQL concurrency require deployment
+verification; they are not implied by the offline checks.

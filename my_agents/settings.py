@@ -6,7 +6,7 @@ import os
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
+from pydantic import AliasChoices, EmailStr, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from my_agents.model_defaults import default_reasoning_effort
@@ -331,6 +331,16 @@ class Settings(BaseSettings):
         default=False,
         validation_alias=AliasChoices("MY_AGENTS_ACCOUNT_SIGNUP_AUTO_APPROVAL"),
     )
+    registration_notification_email: EmailStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("MY_AGENTS_REGISTRATION_NOTIFICATION_EMAIL"),
+    )
+
+    @field_validator("registration_notification_email", mode="before")
+    @classmethod
+    def empty_notification_email(cls, value: object) -> object:
+        return None if isinstance(value, str) and not value.strip() else value
+
     guest_access_enabled: bool = Field(
         default=False,
         validation_alias=AliasChoices("MY_AGENTS_GUEST_ACCESS_ENABLED"),

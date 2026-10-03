@@ -352,7 +352,9 @@ def signup_from_group_invitation(
 ) -> GroupInvitationSignupResponse:
     """Create a verified account from an invitation token and accept membership."""
     try:
-        result = GroupInvitationService(db).accept_invitation_with_new_user(
+        result = GroupInvitationService(
+            db, notification_email=settings.registration_notification_email
+        ).accept_invitation_with_new_user(
             token=request.token,
             nickname=request.nickname,
             password=request.password,

@@ -151,6 +151,11 @@ For real OpenAI responses, set `OPENAI_API_KEY` in `.env` and use `MY_AGENTS_RES
 - Run with the frontend and PostgreSQL: [frontend demo runbook](./docs/product-chat-service/10-frontend-demo-runbook.md)
 - Environment variables, optional features, operator steps, and frontend contracts: [runtime and integration reference](./docs/product-chat-service/34-runtime-and-integration-reference.md)
 
+Optional operator registration alerts: set `MY_AGENTS_REGISTRATION_NOTIFICATION_EMAIL` to your
+operator inbox after running `uv run alembic upgrade head`. Unset or blank disables alerts.
+The existing SMTP/Resend transport delivers queued notifications for regular/invited account
+creation and guest code redemption. See the [notification contract](./docs/product-chat-service/02-first-party-auth-sessions.md#operator-registration-notifications).
+
 ## Verification
 
 ```bash

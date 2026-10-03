@@ -94,10 +94,12 @@ class GroupInvitationService:
         *,
         email_sender: AuthEmailSender | None = None,
         ttl: timedelta = DEFAULT_GROUP_INVITATION_TTL,
+        notification_email: str | None = None,
     ) -> None:
         self._db = db
         self._email_sender = email_sender or get_auth_email_sender()
         self._ttl = ttl
+        self._notification_email = notification_email
 
     def create_invitation(
         self,
@@ -297,6 +299,15 @@ class GroupInvitationService:
             self._db.flush()
             member = self._accept_pending_invitation(invitation=invitation, user=user)
             self._db.add(session)
+            from my_agents.auth.notifications import enqueue_registration
+
+            enqueue_registration(
+                self._db,
+                user,
+                recipient=self._notification_email,
+                account_email=user.email,
+                kind="invitation_signup",
+            )
             self._db.commit()
         except IntegrityError as exc:
             self._db.rollback()

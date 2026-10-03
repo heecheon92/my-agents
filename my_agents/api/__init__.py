@@ -95,11 +95,16 @@ def _application_lifespan(settings: Settings):
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         resources = open_langgraph_persistence(settings)
+        notification_task = None
         cleanup_task = None
         if settings.document_workspace_enabled and settings.response_mode == "openai":
             from my_agents.document_workspace.retention import cleanup_loop
 
             cleanup_task = asyncio.create_task(cleanup_loop(settings))
+        if settings.registration_notification_email:
+            from my_agents.auth.notifications import notification_loop
+
+            notification_task = asyncio.create_task(notification_loop(settings))
         try:
             app.state.langgraph_persistence = resources
             app.state.langgraph_store = resources.store
@@ -110,6 +115,12 @@ def _application_lifespan(settings: Settings):
             )
             yield
         finally:
+            if notification_task is not None:
+                notification_task.cancel()
+                try:
+                    await notification_task
+                except asyncio.CancelledError:
+                    pass
             if cleanup_task is not None:
                 cleanup_task.cancel()
                 try:

@@ -64,6 +64,12 @@ class RenderedAuthEmail:
 class AuthEmailSender(Protocol):
     """Minimal email sender protocol used by auth workflows."""
 
+    def send_registration_notification(
+        self, *, recipient_email: str, subject: str, body: str
+    ) -> None:
+        """Deliver an operator-only account creation alert."""
+        ...
+
     def send_email_verification(
         self,
         *,
@@ -112,6 +118,12 @@ class InMemoryAuthEmailSender:
 
     def __init__(self) -> None:
         self._messages: list[AuthEmailMessage] = []
+        self.registration_notifications: list[tuple[str, str, str]] = []
+
+    def send_registration_notification(
+        self, *, recipient_email: str, subject: str, body: str
+    ) -> None:
+        self.registration_notifications.append((recipient_email, subject, body))
 
     def send_email_verification(
         self,
@@ -241,6 +253,11 @@ class SmtpAuthEmailSender:
         self._password = password
         self._use_starttls = use_starttls
         self._timeout_seconds = timeout_seconds
+
+    def send_registration_notification(
+        self, *, recipient_email: str, subject: str, body: str
+    ) -> None:
+        self._send(recipient_email=recipient_email, subject=subject, body=body)
 
     def send_email_verification(
         self,
@@ -414,6 +431,11 @@ class ResendHttpAuthEmailSender:
         self._public_app_base_url = public_app_base_url.rstrip("/")
         self._api_url = api_url.rstrip("/")
         self._timeout_seconds = timeout_seconds
+
+    def send_registration_notification(
+        self, *, recipient_email: str, subject: str, body: str
+    ) -> None:
+        self._send(recipient_email=recipient_email, subject=subject, body=body)
 
     def send_email_verification(
         self,

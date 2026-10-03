@@ -138,8 +138,10 @@ class AuthService:
         db: Session,
         password_hasher: PasswordHasher | None = None,
         email_sender: AuthEmailSender | None = None,
+        notification_email: str | None = None,
     ) -> None:
         self._db = db
+        self._notification_email = notification_email
         self._password_hasher = password_hasher or build_password_hasher()
         self._email_sender = email_sender or get_auth_email_sender()
 
@@ -188,6 +190,15 @@ class AuthService:
             user_id=user.id,
             elapsed_ms=round((perf_counter() - flush_started_at) * 1000, 2),
             **email_context,
+        )
+        from my_agents.auth.notifications import enqueue_registration
+
+        enqueue_registration(
+            self._db,
+            user,
+            recipient=self._notification_email,
+            account_email=normalized_email,
+            kind="registered_signup",
         )
         token = None
         if auto_approve:
@@ -636,11 +647,22 @@ class AuthService:
         guest_code.consumed_at = datetime.now(UTC)
         guest_code.guest_user_id = user.id
         self._db.add_all([session, guest_code])
+        requester_email = None
         if guest_code.request_id is not None:
             request = self._db.get(GuestAccessRequestModel, guest_code.request_id)
             if request is not None:
+                requester_email = request.email
                 request.status = "consumed"
                 self._db.add(request)
+        from my_agents.auth.notifications import enqueue_registration
+
+        enqueue_registration(
+            self._db,
+            user,
+            recipient=self._notification_email,
+            account_email=requester_email,
+            kind="guest_redemption",
+        )
         self._db.commit()
         self._db.refresh(user)
         self._db.refresh(session)

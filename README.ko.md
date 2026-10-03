@@ -151,6 +151,11 @@ curl http://127.0.0.1:8000/health   # 다른 터미널에서
 - 프론트엔드와 PostgreSQL까지 붙여 실행하기: [프론트엔드 연동 실행 안내](./docs/product-chat-service/10-frontend-demo-runbook.ko.md)
 - 환경 변수, 선택 기능, 운영 절차, 프론트엔드 계약: [런타임 설정과 프론트엔드 연동 참고](./docs/product-chat-service/34-runtime-and-integration-reference.ko.md)
 
+운영자 가입 알림은 `uv run alembic upgrade head` 실행 후
+`MY_AGENTS_REGISTRATION_NOTIFICATION_EMAIL`에 수신 주소를 설정하면 켜집니다. 미설정 또는 빈 값이면 꺼집니다.
+일반·초대 계정 생성 및 게스트 코드 사용 시 알림을 큐에 저장하고 기존 SMTP/Resend로 전송합니다.
+자세한 내용은 [가입 알림 계약](./docs/product-chat-service/02-first-party-auth-sessions.ko.md#운영자-가입-알림)을 참고하세요.
+
 ## 검증
 
 ```bash
