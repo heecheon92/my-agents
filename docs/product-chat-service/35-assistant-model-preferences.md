@@ -7,8 +7,9 @@
 Registered users can select an assistant model from the composer or settings page. Product DB
 owns the preference, so both surfaces and later authenticated sessions use one value.
 `MY_AGENTS_OPENAI_MODEL` remains the deployment fallback. Saving `null` resets to that fallback.
-Guests cannot save a selection and always use the deployment fallback, standard mode, and its
-application default effort. The backend ignores a guest preference even if a row contains one.
+Guests cannot save a selection. New guest runs and replays use the operator-configured
+`MY_AGENTS_GUEST_ASSISTANT_MODEL` (default `gpt-6-luna`), standard mode, and its application
+default effort (currently `medium`), independently of `MY_AGENTS_OPENAI_MODEL`. The backend ignores a guest preference even if a row contains one.
 
 The preference affects ordinary assistant answer generation, including RAG and comprehensive
 document answers. Temporary document-workspace attachment turns retain
@@ -22,8 +23,8 @@ All endpoints require authentication and the existing active-account/session che
 - `GET /capabilities/assistant-models` returns `customizable`, `default_model`, and `models`.
   Each model has `id`, `name`, `default_reasoning_effort`, and `pro_supported`.
 - `GET /assistant/preferences` returns `customizable`, `default_model`, nullable `selected_model`,
-  and `effective_model`. A guest has `customizable=false`, `selected_model=null`, and the deployment
-  default as `effective_model`.
+  and `effective_model`. A guest has `customizable=false`, `selected_model=null`, and the configured guest model
+  (default `gpt-6-luna`) as both `default_model` and `effective_model`.
 - `PATCH /assistant/preferences` accepts exactly `{"assistant_model": "gpt-6.1-sol"}` or
   `{"assistant_model": null}`. The field is required; unknown fields and model IDs produce 422.
   Guests receive 403 `permission_denied`. The update targets only the authenticated user.
@@ -118,3 +119,14 @@ unexposed preferences/default reset are covered; no new migration or forced mode
 ## Automatic file recall and admission
 
 Conversation continuity captures the requested ordinary model and workspace model at admission. The actual `assistant_model` may remain unknown until file access is resolved; `run_model_resolved` publishes the selected execution model. A later original-file request uses the separate pinned workspace model, while discussion from retained notes uses the ordinary model. See [continuity](./36-conversation-continuity.md).
+
+
+Guest model policy (2026-10-03): `MY_AGENTS_GUEST_ASSISTANT_MODEL` defaults to `gpt-6-luna`.
+It accepts the six IDs in `SUPPORTED_ASSISTANT_MODELS`, including supported models hidden from
+the picker; blank or unsupported values fail settings validation. Omit it to use the application
+default `DEFAULT_GUEST_ASSISTANT_MODEL`. Restart the backend after changing the environment.
+Changing the registered-user fallback or a stored guest preference does not change guest routing.
+Already-admitted runs retain their persisted model on resume; historical run records are not
+rewritten. No migration is required. Registered preferences, workspace models, summarization,
+routing, metadata, and embeddings retain their existing selection rules. GPT-6 Luna supports the
+existing Responses API and medium effort ([official model documentation](https://developers.openai.com/api/docs/models/gpt-6-luna)).

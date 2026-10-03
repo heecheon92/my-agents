@@ -48,6 +48,7 @@ def deterministic_runtime_env(monkeypatch: pytest.MonkeyPatch):
         "MY_AGENTS_GUEST_CLEANUP_EMAIL_HMAC_KEY", "test-only-guest-cleanup-hmac-key-32-bytes"
     )
     monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
+    monkeypatch.delenv("MY_AGENTS_GUEST_ASSISTANT_MODEL", raising=False)
     monkeypatch.setenv("OPENROUTER_API_KEY", "")
     monkeypatch.setenv("MY_AGENTS_ACCOUNT_SIGNUP_AUTO_APPROVAL", "true")
     _clear_runtime_caches()

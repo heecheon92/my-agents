@@ -11,6 +11,7 @@ from my_agents.assistant_preferences import (
     AssistantPreferencesPatchRequest,
     AssistantPreferencesResponse,
     assistant_preferences_response,
+    default_assistant_model,
 )
 from my_agents.auth.contracts import Principal
 from my_agents.auth.dependencies import get_current_principal
@@ -54,7 +55,7 @@ def get_assistant_models(
     assert_guest_access_active(db, principal)
     return AssistantModelsCapabilityResponse(
         customizable=not principal.is_guest,
-        default_model=settings.openai_model,
+        default_model=default_assistant_model(principal, settings),
         models=[
             AssistantModelCapability(
                 id=model,

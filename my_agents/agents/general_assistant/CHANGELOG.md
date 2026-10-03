@@ -165,3 +165,15 @@ adapter. Images use input_image/high and documents retain input_file. Preserve o
 expiry, guest/consent/ownership/size guards and separate workspace model; reject animation and
 invalid images before transfer. Certified image outputs are outside this slice. Backend offline
 suite: 765 passed, 13 skipped; Ruff lint/format passed. Live OpenAI image requests are unverified.
+
+
+## 2026-10-03 — Configure the guest answer model independently
+
+- **Why:** guest answer cost must not follow changes to the registered-user deployment fallback.
+- **Behavior/contract impact:** new guest sync/stream/replay runs use the operator-controlled
+  `MY_AGENTS_GUEST_ASSISTANT_MODEL` (default `gpt-6-luna`). Preference and model-discovery defaults
+  agree with run admission. Guests keep standard mode and their model's default effort; admitted
+  runs preserve their model on resume. Registered-user and internal workload selection are unchanged.
+- **Verification:** offline API tests cover defaults and operator overrides, a stored guest override,
+  stream/replay metadata and runtime context, reasoning without a database argument, invalid config,
+  and isolation from registered-user model defaults.

@@ -210,8 +210,8 @@ GPT-6.1 Sol은 standard/pro reasoning을 지원합니다. 지원 모델의 `mini
 
 ## 일반 계정의 assistant 모델 선택
 
-사용자 선택은 Product DB가 소유합니다. `MY_AGENTS_OPENAI_MODEL`은 fallback이며 guest는
-그 값으로 고정됩니다. Admission 시 `assistant_model`을 저장하고 runtime context로 response
+사용자 선택은 Product DB가 소유합니다. `MY_AGENTS_OPENAI_MODEL`은 일반 계정의 fallback이며 guest의 새 run과 replay는
+별도 `MY_AGENTS_GUEST_ASSISTANT_MODEL` (기본값 `gpt-6-luna`)을 사용합니다. 운영자만 이 값을 설정하며 재시작 후 적용됩니다. Admission 시 `assistant_model`을 저장하고 runtime context로 response
 node에 전달합니다. Provider를 모델별로 cache하며 global Settings는 수정하지 않습니다.
 선택한 request model과 identity prompt는 같은 설정을 씁니다. Sync/stream/replay는 현재 선택,
 resume는 시작된 run의 고정 모델을 사용합니다. Document workspace와 내부 decision/embedding/

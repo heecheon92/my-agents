@@ -11,6 +11,8 @@ AssistantModelId = Literal[
     "gpt-6-astra",
 ]
 SUPPORTED_ASSISTANT_MODELS: tuple[AssistantModelId, ...] = get_args(AssistantModelId)
+# Default guest answer model; operators may override it independently of registered users.
+DEFAULT_GUEST_ASSISTANT_MODEL: AssistantModelId = "gpt-6-luna"
 # Product-facing choices are separate from the broader API compatibility contract.
 EXPOSED_ASSISTANT_MODELS: tuple[AssistantModelId, ...] = (
     "gpt-6.1-sol",

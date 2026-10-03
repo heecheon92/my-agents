@@ -211,7 +211,7 @@ Ordinary assistant answers use a warm, approachable tone and explain useful cont
 ## Registered assistant model selection
 
 Product DB owns the user's assistant preference. `MY_AGENTS_OPENAI_MODEL` is the fallback;
-guests are locked to it. Run admission persists `assistant_model`; runtime context passes it
+guests independently use `MY_AGENTS_GUEST_ASSISTANT_MODEL` (default `gpt-6-luna`) for new runs and replays. Only operators can configure this setting; a restart applies changes. Run admission persists `assistant_model`; runtime context passes it
 to the response node, which obtains a provider cached by model without mutating global Settings.
 The selected request model and identity prompt use the same settings. Sync/stream/replay use
 current preference, while resume keeps the original pinned model. Document-workspace and

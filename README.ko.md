@@ -211,7 +211,7 @@ Reasoning effort 선택지(`none`부터 `max`)는 고정된 제품 계약입니�
 
 일반 계정은 채팅 입력 영역이나 설정에서 assistant 모델을 선택할 수 있습니다.
 `GET/PATCH /assistant/preferences`로 Product DB에 저장하며 `null`은
-`MY_AGENTS_OPENAI_MODEL` 기본값으로 되돌립니다. Guest는 배포 기본 모델로 고정됩니다.
+`MY_AGENTS_OPENAI_MODEL` 기본값으로 되돌립니다. Guest는 해당 환경 변수와 독립적인 `MY_AGENTS_GUEST_ASSISTANT_MODEL` (기본값 `gpt-6-luna`)을 사용합니다. 운영자만 바꿀 수 있으며 변경 후 재시작이 필요합니다.
 Picker에는 `gpt-6.1-sol`, `gpt-6-luna`, `gpt-6-astra`만 제공합니다.
 API는 `gpt-5.6-luna`, `gpt-5.6-sol`, `gpt-6-sol`도 받으며 노출하지 않는 지원 모델의 기존 선택과
 배포 기본값도 그대로 유효합니다. `my_agents/model_defaults.py`의 application 기본 effort는 수정할 수 있으며

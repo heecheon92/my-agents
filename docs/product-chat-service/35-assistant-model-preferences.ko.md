@@ -7,7 +7,8 @@
 일반 계정은 채팅 입력 영역이나 설정에서 assistant 모델을 선택합니다. Product DB가 이 설정을
 소유하므로 두 화면과 이후 로그인 세션에서 같은 값을 사용합니다. `MY_AGENTS_OPENAI_MODEL`은
 배포 기본값이며 `null`을 저장하면 해당 기본값으로 되돌립니다. Guest는 설정을 바꿀 수 없고
-배포 기본 모델, standard mode, application 기본 effort로 고정합니다. Guest row에 선택값이
+`MY_AGENTS_GUEST_ASSISTANT_MODEL` (기본값 `gpt-6-luna`), standard mode, 해당 모델의 application 기본 effort
+(현재 `medium`)로 고정합니다. 새 guest run과 replay는 `MY_AGENTS_OPENAI_MODEL`과 독립적으로 선택합니다. Guest row에 선택값이
 있더라도 backend가 무시합니다.
 
 모델 선택은 RAG와 문서 전체 읽기를 포함한 일반 assistant 답변에 적용합니다. 임시 document
@@ -23,7 +24,7 @@ Source-selection decision, 내부 RAG selector, metadata enrichment와 embedding
   각 모델에는 `id`, `name`, `default_reasoning_effort`, `pro_supported`가 있습니다.
 - `GET /assistant/preferences`: `customizable`, `default_model`, nullable `selected_model`,
   `effective_model`을 반환합니다. Guest는 `customizable=false`, `selected_model=null`이며
-  `effective_model`은 배포 기본값입니다.
+  `default_model`과 `effective_model`은 모두 운영자가 설정한 guest 모델(기본값 `gpt-6-luna`)입니다.
 - `PATCH /assistant/preferences`: `{"assistant_model": "gpt-6.1-sol"}` 또는
   `{"assistant_model": null}`을 받습니다. 필드는 필수이며 알 수 없는 필드/모델은 422입니다.
   Guest는 403 `permission_denied`입니다. 인증한 본인 row만 변경합니다.
@@ -111,3 +112,13 @@ lint/typecheck/build와 unit 388개, 관련 browser test 17개 통과. 전체 br
 ## 자동 파일 재참조와 접수
 
 대화 맥락 유지는 접수 시 일반 모델과 workspace 모델 선택을 고정합니다. 파일 접근을 결정할 때까지 실제 `assistant_model`은 미확인 상태일 수 있으며 `run_model_resolved`가 실행 모델을 알립니다. 원본을 다시 읽으면 별도 고정한 workspace 모델을, 메모로 논의를 이어가면 일반 모델을 사용합니다. [맥락 유지](./36-conversation-continuity.ko.md)를 참고하세요.
+
+
+게스트 모델 정책 (2026-10-03): `MY_AGENTS_GUEST_ASSISTANT_MODEL` 기본값은 `gpt-6-luna`입니다.
+`SUPPORTED_ASSISTANT_MODELS`의 여섯 ID를 지원하며 picker에서 숨긴 모델도 설정할 수 있습니다.
+빈 값이나 지원하지 않는 ID는 설정 검증에서 거부합니다. 생략하면 `DEFAULT_GUEST_ASSISTANT_MODEL`을
+사용합니다. 환경 변수 변경 후 backend를 재시작하세요. 일반 계정의 fallback이나 guest row의 모델 선택은
+guest 모델을 바꾸지 않습니다. 이미 시작한 run은 resume 시 저장된 모델을 유지하며 과거 기록을 수정하지
+않습니다. Migration은 필요하지 않습니다. 일반 계정, workspace, 요약, routing, metadata, embedding의
+기존 모델 선택 규칙은 유지합니다. GPT-6 Luna는 기존 Responses API와 medium effort를 지원합니다
+([공식 모델 문서](https://developers.openai.com/api/docs/models/gpt-6-luna)).

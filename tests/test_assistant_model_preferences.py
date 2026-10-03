@@ -155,7 +155,11 @@ def test_invalid_preference_cannot_change_stored_model(monkeypatch, body):
     assert client.get("/assistant/preferences").json()["selected_model"] is None
 
 
-def test_guest_model_is_locked_even_if_a_preference_is_present_in_storage(monkeypatch):
+@pytest.mark.parametrize("deployment_model", ["gpt-5.6-sol", "gpt-6-astra"])
+def test_guest_model_is_locked_even_if_a_preference_is_present_in_storage(
+    monkeypatch, deployment_model
+):
+    monkeypatch.setenv("MY_AGENTS_OPENAI_MODEL", deployment_model)
     graph = ModelSpyGraph()
     client = guest_client(monkeypatch, graph=graph)
     login = _guest_login(client)
@@ -169,7 +173,8 @@ def test_guest_model_is_locked_even_if_a_preference_is_present_in_storage(monkey
         sessions.close()
     prefs = client.get("/assistant/preferences").json()
     assert prefs["customizable"] is False and prefs["selected_model"] is None
-    assert prefs["effective_model"] == prefs["default_model"]
+    assert prefs["effective_model"] == prefs["default_model"] == "gpt-6-luna"
+    assert client.get("/capabilities/assistant-models").json()["default_model"] == "gpt-6-luna"
     assert (
         client.patch("/assistant/preferences", json={"assistant_model": "gpt-6-astra"}).status_code
         == 403
@@ -180,7 +185,8 @@ def test_guest_model_is_locked_even_if_a_preference_is_present_in_storage(monkey
         json={"message": "Hello", "reasoning_mode": "pro", "reasoning_effort": "max"},
     )
     assert run.status_code == 200
-    assert run.json()["assistant_model"] == prefs["default_model"]
+    assert run.json()["assistant_model"] == "gpt-6-luna"
+    assert graph.contexts[-1]["assistant_model"] == "gpt-6-luna"
     assert run.json()["reasoning_mode"] == "standard"
     assert run.json()["reasoning_effort"] == "medium"
 
@@ -254,3 +260,96 @@ def test_stream_and_replay_stream_use_selected_model_and_report_pinned_model(mon
     completed = next(event["data"] for event in events if event["event"] == "run_completed")
     assert started["assistant_model"] == completed["assistant_model"] == "gpt-6-luna"
     assert graph.contexts[-1]["assistant_model"] == "gpt-6-luna"
+
+
+def test_guest_stream_and_replay_stay_on_luna_after_deployment_model_changes(monkeypatch):
+    from my_agents.settings import get_settings
+
+    monkeypatch.setenv("MY_AGENTS_OPENAI_MODEL", "gpt-5.6-sol")
+    graph = ModelStreamingSpyGraph()
+    client = guest_client(monkeypatch, graph=graph)
+    _guest_login(client)
+    conversation_id = client.post("/conversations", json={"title": "Guest stream"}).json()["id"]
+    response = client.post(
+        f"/conversations/{conversation_id}/runs/stream",
+        json={"message": "Hello", "reasoning_mode": "pro", "reasoning_effort": "max"},
+    )
+    assert response.status_code == 200
+    events = _parse_sse(response.text)
+    completed = next(event["data"] for event in events if event["event"] == "run_completed")
+    started = next(event["data"] for event in events if event["event"] == "run_started")
+    assert started["assistant_model"] == completed["assistant_model"] == "gpt-6-luna"
+    assert graph.contexts[-1]["assistant_model"] == "gpt-6-luna"
+    monkeypatch.setenv("MY_AGENTS_OPENAI_MODEL", "gpt-6-astra")
+    get_settings.cache_clear()
+    message_id = _assistant_message_id(completed["run_id"])
+    replay = client.post(
+        f"/conversations/{conversation_id}/messages/{message_id}/replay/stream", json={}
+    )
+    assert replay.status_code == 200
+    replayed = next(
+        event["data"] for event in _parse_sse(replay.text) if event["event"] == "run_completed"
+    )
+    assert replayed["assistant_model"] == "gpt-6-luna"
+    assert graph.contexts[-1]["assistant_model"] == "gpt-6-luna"
+    assert graph.contexts[-1]["reasoning_mode"] == "standard"
+
+
+def test_guest_reasoning_without_db_uses_fixed_model_and_its_default(monkeypatch):
+    from my_agents.api.reasoning import resolve_reasoning_preferences
+    from my_agents.auth.contracts import Principal
+    from my_agents.settings import Settings
+
+    monkeypatch.setitem(MODEL_DEFAULT_REASONING_EFFORT, "gpt-6-astra", "high")
+    settings = Settings(_env_file=None, MY_AGENTS_OPENAI_MODEL="gpt-6-astra")
+    result = resolve_reasoning_preferences(
+        settings=settings,
+        principal=Principal(user_id="guest", session_id="session", is_guest=True),
+        requested_mode="pro",
+        requested_effort="max",
+        uses_document_workspace=False,
+    )
+    assert result.model == "gpt-6-luna"
+    assert result.mode == "standard"
+    assert result.effort == "medium"
+
+
+@pytest.mark.parametrize("guest_model", ["gpt-5.6-luna", "gpt-6.1-sol"])
+def test_operator_guest_model_override_is_reported_and_does_not_change_registered_default(
+    monkeypatch, guest_model
+):
+    monkeypatch.setenv("MY_AGENTS_OPENAI_MODEL", "gpt-5.6-sol")
+    monkeypatch.setenv("MY_AGENTS_GUEST_ASSISTANT_MODEL", guest_model)
+    graph = ModelSpyGraph()
+    client = guest_client(monkeypatch, graph=graph)
+    _guest_login(client)
+    preferences = client.get("/assistant/preferences").json()
+    assert preferences["default_model"] == preferences["effective_model"] == guest_model
+    assert preferences["customizable"] is False
+    assert client.get("/capabilities/assistant-models").json()["default_model"] == guest_model
+    assert (
+        client.patch("/assistant/preferences", json={"assistant_model": "gpt-6-astra"}).status_code
+        == 403
+    )
+    conversation = client.post("/conversations", json={"title": "Guest override"}).json()["id"]
+    response = client.post(
+        f"/conversations/{conversation}/runs",
+        json={"message": "Hello", "reasoning_mode": "pro", "reasoning_effort": "max"},
+    )
+    assert response.status_code == 200
+    assert response.json()["assistant_model"] == guest_model
+    assert response.json()["reasoning_mode"] == "standard"
+    assert graph.contexts[-1]["assistant_model"] == guest_model
+    registered = _client(monkeypatch, ModelSpyGraph())
+    _signup_login(registered, "guest-model-operator-test@example.com")
+    assert registered.get("/assistant/preferences").json()["effective_model"] == "gpt-5.6-sol"
+
+
+@pytest.mark.parametrize("model", ["", "gpt-unknown"])
+def test_invalid_guest_model_configuration_is_rejected(model):
+    from pydantic import ValidationError
+
+    from my_agents.settings import Settings
+
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, MY_AGENTS_GUEST_ASSISTANT_MODEL=model)

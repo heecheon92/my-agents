@@ -35,17 +35,23 @@ def selected_assistant_model(db: Session, principal: Principal) -> AssistantMode
     return cast(AssistantModelId, selected) if selected in SUPPORTED_ASSISTANT_MODELS else None
 
 
+def default_assistant_model(principal: Principal, settings: Settings) -> str:
+    """Guest answer policy is independent of the registered-user deployment fallback."""
+    return settings.guest_assistant_model if principal.is_guest else settings.openai_model
+
+
 def effective_assistant_model(db: Session, principal: Principal, settings: Settings) -> str:
-    return selected_assistant_model(db, principal) or settings.openai_model
+    return selected_assistant_model(db, principal) or default_assistant_model(principal, settings)
 
 
 def assistant_preferences_response(
     db: Session, principal: Principal, settings: Settings
 ) -> AssistantPreferencesResponse:
     selected = selected_assistant_model(db, principal)
+    default = default_assistant_model(principal, settings)
     return AssistantPreferencesResponse(
         customizable=not principal.is_guest,
-        default_model=settings.openai_model,
+        default_model=default,
         selected_model=selected,
-        effective_model=selected or settings.openai_model,
+        effective_model=selected or default,
     )

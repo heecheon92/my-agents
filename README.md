@@ -211,7 +211,7 @@ Reasoning effort choices remain a frozen product contract (`none` through `max`)
 
 Registered users can select their assistant model in the chat composer or settings. The preference
 is stored in Product DB through `GET/PATCH /assistant/preferences`; `null` resets it to
-`MY_AGENTS_OPENAI_MODEL`. Guests are locked to the deployment default. The picker offers `gpt-6.1-sol`, `gpt-6-luna`, and `gpt-6-astra`.
+`MY_AGENTS_OPENAI_MODEL`. Guests use `MY_AGENTS_GUEST_ASSISTANT_MODEL` (default `gpt-6-luna`), independent of that environment variable. Only operators can change the guest model; restart after updating it. The picker offers `gpt-6.1-sol`, `gpt-6-luna`, and `gpt-6-astra`.
 The API also accepts `gpt-5.6-luna`, `gpt-5.6-sol`, and `gpt-6-sol`; existing supported
 preferences and deployment defaults remain valid when not advertised.
 Application default efforts can be edited in `my_agents/model_defaults.py`; provider recommendations

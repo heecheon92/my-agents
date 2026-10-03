@@ -9,7 +9,11 @@ from typing import Literal
 from pydantic import AliasChoices, EmailStr, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from my_agents.model_defaults import default_reasoning_effort
+from my_agents.model_defaults import (
+    DEFAULT_GUEST_ASSISTANT_MODEL,
+    AssistantModelId,
+    default_reasoning_effort,
+)
 
 ResponseMode = Literal["deterministic", "openai"]
 ReasoningMode = Literal["standard", "pro"]
@@ -61,6 +65,10 @@ class Settings(BaseSettings):
         default="gpt-5.6-sol",
         min_length=1,
         validation_alias=AliasChoices("MY_AGENTS_OPENAI_MODEL"),
+    )
+    guest_assistant_model: AssistantModelId = Field(
+        default=DEFAULT_GUEST_ASSISTANT_MODEL,
+        validation_alias="MY_AGENTS_GUEST_ASSISTANT_MODEL",
     )
     summarization_model: str = Field(
         default="gpt-6-luna", validation_alias="MY_AGENTS_SUMMARIZATION_MODEL"

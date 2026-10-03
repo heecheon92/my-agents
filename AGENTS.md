@@ -104,8 +104,8 @@ map `none` and `minimal` to `low`, and support standard/pro reasoning.
 Maintain exposed choices separately in `EXPOSED_ASSISTANT_MODELS` as a validated subset
 of `SUPPORTED_ASSISTANT_MODELS`; hiding a
 supported model must not reject or reset its API preference.
-Registered assistant model preferences belong to Product DB; guests stay on the environment
-default. Pin the answer model at run admission and use it on resume. Ordinary model selection
+Registered assistant model preferences belong to Product DB; guests use the operator-controlled
+`MY_AGENTS_GUEST_ASSISTANT_MODEL` (default `gpt-6-luna`), independent of the registered-user fallback. Pin the answer model at run admission and use it on resume. Ordinary model selection
 must not change document workspace, decision, embedding, or metadata models.
 Apply effective values before persistence and again at the provider boundary; preserve
 request/replay/guest policy. See `docs/product-chat-service/26-run-reasoning-preferences.md`

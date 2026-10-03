@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
 from my_agents.api.errors import APIErrorCode, APIHTTPException
-from my_agents.assistant_preferences import effective_assistant_model
+from my_agents.assistant_preferences import default_assistant_model, effective_assistant_model
 from my_agents.auth.contracts import Principal
 from my_agents.auth.dependencies import get_current_principal
 from my_agents.persistence.database import get_database_session
@@ -55,13 +55,14 @@ def resolve_reasoning_preferences(
     db: Session | None = None,
 ) -> EffectiveReasoningPreferences:
     """Resolve and validate one run's effective provider-facing preferences."""
-    model = (
-        settings.document_workspace_model
-        if uses_document_workspace
-        else effective_assistant_model(db, principal, settings)
-        if db is not None
-        else settings.openai_model
-    )
+    if principal.is_guest:
+        model = default_assistant_model(principal, settings)
+    elif uses_document_workspace:
+        model = settings.document_workspace_model
+    elif db is not None:
+        model = effective_assistant_model(db, principal, settings)
+    else:
+        model = settings.openai_model
     preferences = effective_reasoning_preferences(
         settings=settings,
         is_guest=principal.is_guest,
