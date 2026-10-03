@@ -93,6 +93,11 @@ rollback, keep guest access disabled rather than dropping the ledger or allowing
 
 ## Operator-only reset
 
+The same reset is available as **option 8** in `scripts.ops --interactive`, or through
+`scripts.ops guest reset --email guest@example.com [--apply]`. The menu defaults to preview and
+forwards the selected environment. The focused script also accepts explicit `--env`/`--env-file`;
+omitting both retains process settings. See the [interactive reset guide](../../scripts/README.md#reset-a-previously-used-guest-trial-interactively).
+
 Preview and explicitly grant another trial:
 
 ```bash

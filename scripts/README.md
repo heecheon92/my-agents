@@ -15,7 +15,8 @@ Alembic and LangGraph maintain separate migration histories; completing one does
 | Command module | Purpose | Typical use |
 | --- | --- | --- |
 | `scripts.dev_pgvector` | Start and wire a disposable local Docker pgvector/Postgres database. | Local Postgres/pgvector development and migration smoke checks. |
-| `scripts.ops` | Interactive operational dispatcher that collects options and delegates to focused scripts. | Operator-friendly account/guest maintenance. |
+| `scripts.ops` | Interactive operational dispatcher that collects options and delegates to focused scripts. | Operator-friendly account/guest maintenance, including guest trial reset. |
+| `scripts.guest_trial_policy` | Backfill trial history or preview/apply a reset for one guest email. | Standalone policy maintenance; `scripts.ops guest reset` also exposes reset interactively. |
 | `scripts.migrate_database` | Check or run Alembic `upgrade head` against the selected env database. | Production/staging migration status and upgrades after backup/snapshot. |
 | `scripts.langgraph_persistence` | Set up/check framework-owned Postgres tables and dry-run/apply memory Store reconciliation. | Provision or audit baseline PostgreSQL LangGraph persistence. |
 | `scripts.wipe_database` | Dangerously wipe the selected SQLite/Postgres database after explicit confirmations. | Rebuild a local/staging/production database from migrations after a backup/snapshot. |
@@ -320,6 +321,9 @@ Current behavior:
 - `account set-user-type` delegates to `scripts.set_user_type`. This is the only
   supported role mutation path for `root`/`system` system-knowledge managers.
 - `guest issue` delegates to `scripts.issue_guest_access_code`.
+- `guest reset` delegates to `scripts.guest_trial_policy reset`; interactive option **8** asks for
+  the requester email and defaults to preview. An explicit Yes adds `--apply`. Existing menu
+  numbers are preserved.
 - `database migrate` delegates to `scripts.migrate_database`; status-only is the
   default, and `--upgrade --confirm-upgrade --database-name <name>` is required
   before Alembic applies schema changes.
@@ -683,3 +687,36 @@ uv run python -m scripts.guest_trial_policy reset --email guest@example.com --ap
 ```
 
 Without `--apply`, changes are rolled back. See the [rollout and reset contract](../docs/product-chat-service/40-guest-trial-abuse-protection.md).
+
+
+### Reset a previously used guest trial interactively
+
+```bash
+uv run python -m scripts.ops --env-file /path/to/operator.env --interactive
+```
+
+Choose **8. Reset used guest trial eligibility**, enter the guest email, then choose whether to
+apply. The default is a preview. `q`, `quit`, or `exit` cancels without dispatching the reset.
+The prompt explains that applying expires the old guest, revokes its sessions/codes, and keeps
+old data until normal cleanup. Registered-account exclusion and daily email limits remain in force.
+
+The equivalent non-interactive commands are:
+
+```bash
+uv run python -m scripts.ops --env pgvector.production guest reset --email guest@example.com
+uv run python -m scripts.ops --env pgvector.production guest reset --email guest@example.com --apply
+```
+
+The dispatcher forwards its selected `--env`/`--env-file` to the focused script. A missing explicit
+file fails instead of falling back to the process configuration. As with the other operator
+commands, exported environment variables take precedence over values loaded from an env file.
+Standalone `scripts.guest_trial_policy reset` without either env option retains its existing
+process-settings behavior, including use from Render Shell. No script has to copy secrets into a
+new file. To use the interactive dispatcher on Render, satisfy its env-file requirement with an
+empty temporary file and let the exported service settings supply the values:
+
+```bash
+ops_env_file=$(mktemp)
+uv run --no-sync python -m scripts.ops --env-file "$ops_env_file" --interactive
+rm -f "$ops_env_file"
+```

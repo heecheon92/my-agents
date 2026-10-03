@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 
 from pydantic import EmailStr, TypeAdapter
 from sqlalchemy import select
@@ -11,18 +12,27 @@ from sqlalchemy import select
 from my_agents.auth.guest_policy import fingerprint, initialize_guest_policy, reset_trial
 from my_agents.auth.models import GuestTrialModel
 from my_agents.persistence.database import _sessionmaker_for_url, initialize_database
-from my_agents.settings import get_settings
+from my_agents.settings import Settings, get_settings
+from scripts.ops_common import add_env_arguments, resolve_env_file
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    add_env_arguments(parser, default_profile=None)
     parser.add_argument("action", choices=["backfill", "reset"])
     parser.add_argument("--email", help="Required for reset; never written to command output")
     parser.add_argument("--apply", action="store_true")
     args = parser.parse_args(argv)
     if args.action == "reset" and not args.email:
         parser.error("reset requires --email")
-    settings = get_settings()
+    if args.env is not None or args.env_file is not None:
+        env_file = resolve_env_file(profile=args.env or "pgvector.local", env_file=args.env_file)
+        if not env_file.is_file():
+            print(f"error: env file does not exist: {env_file}", file=sys.stderr)
+            return 1
+        settings = Settings(_env_file=env_file)
+    else:
+        settings = get_settings()
     key = (
         settings.guest_cleanup_email_hmac_key.get_secret_value()
         if settings.guest_cleanup_email_hmac_key

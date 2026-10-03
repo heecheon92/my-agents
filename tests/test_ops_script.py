@@ -541,3 +541,62 @@ def test_legacy_auth_approval_entrypoint_delegates_to_ops(monkeypatch) -> None: 
         "--lang",
         "ko",
     ]
+
+
+def test_guest_reset_defaults_to_preview_and_forwards_environment(monkeypatch):
+    captured = []
+    monkeypatch.setattr(ops.guest_trial_policy, "main", lambda argv: captured.append(argv) or 0)
+    assert (
+        ops.main(["--env", "pgvector.production", "guest", "reset", "--email", "guest@example.com"])
+        == 0
+    )
+    assert captured == [["--env", "pgvector.production", "reset", "--email", "guest@example.com"]]
+
+
+def test_interactive_guest_reset_defaults_to_preview(tmp_path, monkeypatch, capsys):
+    env_file = _env_file(tmp_path)
+    prompts = iter(["8", "guest@example.com", ""])
+    captured = []
+    monkeypatch.setattr(ops.guest_trial_policy, "main", lambda argv: captured.append(argv) or 0)
+    assert (
+        ops.main(["--env-file", str(env_file), "--interactive"], input_fn=lambda _: next(prompts))
+        == 0
+    )
+    assert captured == [["--env-file", str(env_file), "reset", "--email", "guest@example.com"]]
+    output = capsys.readouterr().out
+    assert "8. Reset used guest trial eligibility [guest reset]" in output
+    assert "expires the old guest account" in output
+    assert "daily email limits still apply" in output
+
+
+def test_interactive_guest_reset_applies_only_on_explicit_yes(tmp_path, monkeypatch):
+    env_file = _env_file(tmp_path)
+    prompts = iter(["guest reset", "guest@example.com", "yes"])
+    captured = []
+    monkeypatch.setattr(ops.guest_trial_policy, "main", lambda argv: captured.append(argv) or 7)
+    assert (
+        ops.main(["--env-file", str(env_file), "--interactive"], input_fn=lambda _: next(prompts))
+        == 7
+    )
+    assert captured == [
+        ["--env-file", str(env_file), "reset", "--email", "guest@example.com", "--apply"]
+    ]
+
+
+def test_interactive_guest_reset_cancellation_does_not_dispatch(monkeypatch):
+    prompts = iter(["guest reset", "guest@example.com", "q"])
+
+    def unexpected(argv):
+        raise AssertionError("cancelled reset must not run")
+
+    monkeypatch.setattr(ops.guest_trial_policy, "main", unexpected)
+    assert ops.main(["--interactive"], input_fn=lambda _: next(prompts)) == 0
+
+
+def test_guest_reset_subcommand_forwards_apply(monkeypatch):
+    captured = []
+    monkeypatch.setattr(ops.guest_trial_policy, "main", lambda argv: captured.append(argv) or 0)
+    assert ops.main(["guest", "reset", "--email", "guest@example.com", "--apply"]) == 0
+    assert captured == [
+        ["--env", "pgvector.local", "reset", "--email", "guest@example.com", "--apply"]
+    ]

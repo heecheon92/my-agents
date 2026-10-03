@@ -163,6 +163,9 @@ Guest access now requires the stable `MY_AGENTS_GUEST_CLEANUP_EMAIL_HMAC_KEY` an
 trial per email. Re-login preserves the original account, quota, and expiry; registered emails
 use regular accounts. Apply migration `0039` and follow the [rollout/reset guide](./docs/product-chat-service/40-guest-trial-abuse-protection.md).
 
+The interactive operator menu includes **guest trial reset** (preview by default). See the
+[commands and environment selection](./scripts/README.md#reset-a-previously-used-guest-trial-interactively).
+
 ## Verification
 
 ```bash

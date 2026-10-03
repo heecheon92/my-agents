@@ -163,6 +163,9 @@ curl http://127.0.0.1:8000/health   # 다른 터미널에서
 허용합니다. 재로그인은 계정·할당량·만료를 유지하고 일반 회원 이메일은 일반 계정을 사용합니다. Migration `0039`와
 [배포·초기화 안내](./docs/product-chat-service/40-guest-trial-abuse-protection.ko.md)를 확인하세요.
 
+대화형 운영 메뉴에 **게스트 체험 초기화**를 제공합니다(기본값은 미리보기).
+[명령과 환경 선택 안내](./scripts/README.md#reset-a-previously-used-guest-trial-interactively)를 참고하세요.
+
 ## 검증
 
 ```bash

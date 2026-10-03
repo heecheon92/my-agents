@@ -11,15 +11,18 @@ ENV_FILE_BY_PROFILE = {
 }
 
 
-def add_env_arguments(parser: argparse.ArgumentParser) -> None:
+def add_env_arguments(
+    parser: argparse.ArgumentParser, *, default_profile: str | None = "pgvector.local"
+) -> None:
     """Add common safe env-profile arguments to an operator script parser."""
     parser.add_argument(
         "--env",
         choices=tuple(ENV_FILE_BY_PROFILE),
-        default="pgvector.local",
+        default=default_profile,
         help=(
-            "Named env file to load. Defaults to pgvector.local for safety; "
-            "use pgvector.production only when intentionally operating on production."
+            f"Named env file to load. Defaults to {default_profile}; use production intentionally."
+            if default_profile is not None
+            else "Optional env profile. Omit both env options to use current process settings."
         ),
     )
     parser.add_argument(

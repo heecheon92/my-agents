@@ -7,6 +7,7 @@ from collections.abc import Callable, Sequence
 
 from scripts import (
     approve_account_signup,
+    guest_trial_policy,
     issue_guest_access_code,
     migrate_database,
     reject_account_signup,
@@ -112,6 +113,13 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("ko", "en"),
         default="ko",
         help="Language for --send-email content. Defaults to ko; use en for English.",
+    )
+    guest_reset = guest_actions.add_parser("reset", help="Reset a used guest trial's eligibility.")
+    guest_reset.add_argument("--email", required=True, help="Guest requester email address.")
+    guest_reset.add_argument(
+        "--apply",
+        action="store_true",
+        help="Apply reset, expiring the old guest and revoking sessions; otherwise preview.",
     )
     database = subparsers.add_parser("database", help="Database maintenance operations.")
     database_actions = database.add_subparsers(dest="action", required=True)
@@ -220,6 +228,11 @@ def _dispatch(args: argparse.Namespace) -> int:
             delegated.append("--send-email")
         delegated.extend(["--lang", args.lang])
         return issue_guest_access_code.main(delegated)
+    if args.resource == "guest" and args.action == "reset":
+        delegated = [*base_argv, "reset", "--email", args.email]
+        if args.apply:
+            delegated.append("--apply")
+        return guest_trial_policy.main(delegated)
     if args.resource == "database" and args.action == "wipe":
         delegated = [*base_argv]
         if args.execute:
@@ -265,6 +278,7 @@ def _interactive_args(
             ("database wipe", "DANGER: wipe the selected database"),
             ("database migrate", "Check or run Alembic upgrade head"),
             ("account set-user-type", "Set platform user_type for a registered account"),
+            ("guest reset", "Reset used guest trial eligibility"),
         ),
         default="account approve",
     )
@@ -340,6 +354,16 @@ def _interactive_args(
                 choices=(("ko", "Korean"), ("en", "English")),
                 default="ko",
             )
+    elif args.resource == "guest" and args.action == "reset":
+        args.email = _prompt_required(input_fn, "Guest requester email")
+        print(
+            "Reset allows another guest trial, expires the old guest account, and revokes "
+            "its sessions and codes. Old data remains until normal cleanup."
+        )
+        print("Registered-account exclusion and daily email limits still apply.")
+        args.apply = _prompt_bool(
+            input_fn, "Apply the reset now instead of previewing", default=False
+        )
     elif args.resource == "database" and args.action == "wipe":
         print(f"\n{wipe_database.WIPE_WARNING}")
         args.execute = _prompt_bool(

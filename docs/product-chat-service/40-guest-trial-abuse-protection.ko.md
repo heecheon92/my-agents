@@ -75,6 +75,11 @@ accepted 응답이 발송을 보장하지 않는다는 점을 설명해야 합�
 
 ## 운영자 초기화
 
+같은 초기화를 `scripts.ops --interactive`의 **8번 메뉴** 또는
+`scripts.ops guest reset --email guest@example.com [--apply]`로 실행할 수 있습니다. 메뉴는 기본적으로
+미리보기이며 선택한 환경을 전달합니다. 독립 script도 `--env`/`--env-file`을 받으며 둘 다 생략하면
+기존 process 설정을 사용합니다. [대화형 초기화 안내](../../scripts/README.md#reset-a-previously-used-guest-trial-interactively)를 참고하세요.
+
 ```bash
 uv run python -m scripts.guest_trial_policy reset --email guest@example.com
 uv run python -m scripts.guest_trial_policy reset --email guest@example.com --apply
