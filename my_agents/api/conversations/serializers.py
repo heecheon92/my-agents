@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import Literal
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
@@ -113,11 +114,19 @@ def conversation_response(conversation: ConversationModel) -> ConversationRespon
     )
 
 
-def run_summary_response(run: AgentRunModel) -> AgentRunSummaryResponse:
+def run_summary_response(
+    run: AgentRunModel,
+    *,
+    execution_mode: Literal["durable", "legacy"] | None = None,
+    operation_key: str | None = None,
+) -> AgentRunSummaryResponse:
     source_payload = knowledge_base_selection_payload(run_knowledge_base_context(run))
     source_payload["knowledge_base_selection"] = run_knowledge_base_selection(run)
     return AgentRunSummaryResponse(
-        client_request_id=run.client_request_id,
+        execution_mode=execution_mode or run_execution_mode(run),
+        client_request_id=(run.client_request_id or operation_key)
+        if execution_mode is not None
+        else run_client_request_id(run),
         run_id=run.id,
         conversation_id=run.conversation_id,
         status=run.status,
@@ -405,4 +414,33 @@ def message_response(message: MessageModel, db: Session | None = None) -> Messag
         role=message.role,
         content=message.content,
         attachments=attachments,
+    )
+
+
+def run_client_request_id(run: AgentRunModel) -> str | None:
+    if run.client_request_id:
+        return run.client_request_id
+    from sqlalchemy.orm import object_session
+
+    from my_agents.conversations.durable_models import DurableRunJob
+
+    db = object_session(run)
+    if db is None:
+        return None
+    return db.scalar(
+        select(DurableRunJob.client_request_id)
+        .where(DurableRunJob.run_id == run.id, DurableRunJob.kind != "resume")
+        .order_by(DurableRunJob.created_at)
+        .limit(1)
+    )
+
+
+def run_execution_mode(run: AgentRunModel) -> Literal["durable", "legacy"]:
+    from sqlalchemy.orm import object_session
+
+    from my_agents.conversations.durable_models import DurableRunOutput
+
+    db = object_session(run)
+    return (
+        "durable" if db is not None and db.get(DurableRunOutput, run.id) is not None else "legacy"
     )

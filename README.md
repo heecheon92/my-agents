@@ -166,6 +166,37 @@ use regular accounts. Apply migration `0039` and follow the [rollout/reset guide
 The interactive operator menu includes **guest trial reset** (preview by default). See the
 [commands and environment selection](./scripts/README.md#reset-a-previously-used-guest-trial-interactively).
 
+## Recoverable answer generation (opt-in)
+
+An independent answer worker can continue generating and saving an answer after the browser
+disconnects. The client restores a saved output snapshot, then subscribes to committed SSE
+batches. Explicit Stop cancels work; reconnecting never starts another model call.
+
+`MY_AGENTS_DURABLE_RUNS_ENABLED` defaults to `false`: existing chat needs no answer worker.
+For local testing, set it to `true` in both local API and worker environments while leaving it
+unset or `false` on Render. Durable execution needs a
+persistent database shared by the API and worker
+(file-backed SQLite for local development, PostgreSQL for production). Apply migration
+`20261017_0040` with `uv run alembic upgrade head`; PostgreSQL also needs the existing
+`uv run python -m scripts.langgraph_persistence setup` before traffic. Run the worker separately:
+
+```bash
+uv run python -m my_agents.answer_worker
+```
+
+After opting in, for VS Code select **Chat backend: API + answer worker (local pgvector)** to start both
+processes with matching database settings, or the unsuffixed compound for your configured
+database. A worker launched from a plain terminal does not inherit VS Code profile overrides.
+
+`GET /health` reports `frontend_config.durable_runs.enabled` for feature selection and `ready`
+for worker availability. When disabled or absent, the frontend uses legacy chat/regeneration.
+When enabled, an unavailable worker returns 503 without silently switching execution modes. Existing runs use their own `execution_mode` for
+recovery and resume. This backend requires the matching frontend contract. A lost worker fails with `worker_lost`; it does
+not automatically retry the model. Default limits retain 2,000 delivery frames and up to
+2,000,000 partial-answer characters. See the [setup, API, retention, and cancellation
+contract](./docs/product-chat-service/42-durable-answer-generation.md). Implementation and release
+verification are tracked separately in [implementation tracking](./docs/implementation-tracking.md#recoverable-answer-generation).
+
 ## Verification
 
 ```bash

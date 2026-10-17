@@ -10,6 +10,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from my_agents.api.conversations.run_events import append_run_event
+from my_agents.api.conversations.serializers import run_execution_mode
 from my_agents.auth.models import UserModel
 from my_agents.conversations.models import AgentEventType, AgentRunModel, RunStatus
 from my_agents.conversations.schemas import (
@@ -80,6 +81,7 @@ def persist_waiting_document_selection(
     record_langgraph_persistence_operation(operation="interrupt", outcome="waiting")
     db.refresh(run)
     return ConversationRunInterruptedResponse(
+        execution_mode=run_execution_mode(run),
         assistant_model=run.assistant_model,
         run_id=run.id,
         conversation_id=run.conversation_id,
@@ -94,6 +96,7 @@ def interrupted_run_response(run: AgentRunModel) -> ConversationRunInterruptedRe
     except json.JSONDecodeError as exc:
         raise RuntimeError("stored run interaction payload is invalid") from exc
     return ConversationRunInterruptedResponse(
+        execution_mode=run_execution_mode(run),
         assistant_model=run.assistant_model,
         run_id=run.id,
         conversation_id=run.conversation_id,

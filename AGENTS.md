@@ -15,6 +15,11 @@ The current product shape is a FastAPI + LangGraph assistant/router foundation t
 - `main.py` exposes the ASGI app.
 - `my_agents/cli.py` exposes a local terminal chat loop for the current graph.
 - `my_agents/api/` owns the FastAPI app factory and route modules.
+- `my_agents/answer_worker.py` owns opt-in durable answer execution independently of HTTP
+  subscribers; `my_agents/conversations/durable_*` owns jobs, leases, and committed delivery.
+  Disconnect never cancels a durable run. Keep output frames separate from metadata audit
+  events, preserve per-run execution mode, and commit regeneration pruning with completion.
+  See `docs/product-chat-service/42-durable-answer-generation.md` for setup and invariants.
 - `my_agents/agents/general_assistant/graph.py` owns the current general assistant LangGraph `StateGraph`.
 - `my_agents/agents/general_assistant/classifier.py` owns deterministic route classification for the general assistant.
 - `my_agents/agents/general_assistant/responders.py` owns deterministic and OpenAI-backed reply composition for the general assistant.

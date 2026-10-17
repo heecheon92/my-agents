@@ -44,6 +44,25 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
+    durable_runs_enabled: bool = Field(
+        default=False, validation_alias="MY_AGENTS_DURABLE_RUNS_ENABLED"
+    )
+    durable_run_lease_seconds: int = Field(
+        default=60, ge=10, le=600, validation_alias="MY_AGENTS_DURABLE_RUN_LEASE_SECONDS"
+    )
+    durable_run_poll_seconds: float = Field(
+        default=0.25, ge=0.05, le=10, validation_alias="MY_AGENTS_DURABLE_RUN_POLL_SECONDS"
+    )
+    durable_run_max_frames: int = Field(
+        default=2000, ge=10, le=20000, validation_alias="MY_AGENTS_DURABLE_RUN_MAX_FRAMES"
+    )
+    durable_run_queue_timeout_seconds: int = Field(
+        default=300, ge=30, le=3600, validation_alias="MY_AGENTS_DURABLE_RUN_QUEUE_TIMEOUT_SECONDS"
+    )
+    durable_run_batch_ms: int = Field(
+        default=150, ge=0, le=1000, validation_alias="MY_AGENTS_DURABLE_RUN_BATCH_MS"
+    )
+
     response_mode: ResponseMode = Field(
         default="openai",
         validation_alias=AliasChoices("MY_AGENTS_RESPONSE_MODE"),

@@ -185,3 +185,5 @@ When changing `docs/learning/`:
 - Add a revision-history bullet for meaningful changes.
 - Keep explanations code-linked and honest about current behavior versus future intent.
 - Do not use learning notes as a substitute for tests, README updates, or API docs.
+
+- [Why an answer job must outlive its viewer](./project-notes/durable-run-execution-and-delivery.md): worker ownership, output persistence, and reconnect races.

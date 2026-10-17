@@ -386,6 +386,13 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
 
 ## 13. Near-term recommended sequence
 
+- [ ] **Active (status mirror):** Recoverable server-owned answer generation is implemented
+  locally behind a default-off environment flag to keep the existing single-service deployment: queued jobs, independent worker,
+  committed output, snapshot/cursor subscriptions,
+  explicit Stop, and async resume/regeneration. [Runtime guide](./docs/product-chat-service/42-durable-answer-generation.md).
+  Backend/frontend local verification passed, with the documented pre-existing frontend browser failure; hosted deployment is not claimed. Status follows
+  [implementation tracking](./docs/implementation-tracking.md#recoverable-answer-generation).
+
 - [x] **Completed:** The source-backed [message-to-answer walkthrough](./docs/product-chat-service/38-message-to-answer-service-flow.md)
   is owner-approved in English/Korean, with nine Mermaid views across six types and localized SVG exports.
   Runtime behavior is unchanged. See implementation tracking for verification.

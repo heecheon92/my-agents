@@ -22,6 +22,7 @@ class MessageRole(StrEnum):
 class RunStatus(StrEnum):
     """Chat run lifecycle status."""
 
+    QUEUED = "queued"
     RUNNING = "running"
     WAITING_FOR_INPUT = "waiting_for_input"
     CANCELLING = "cancelling"
@@ -93,8 +94,10 @@ class AgentRunModel(Base):
             "uq_agent_runs_active_conversation",
             "conversation_id",
             unique=True,
-            postgresql_where=text("status IN ('running', 'waiting_for_input', 'cancelling')"),
-            sqlite_where=text("status IN ('running', 'waiting_for_input', 'cancelling')"),
+            postgresql_where=text(
+                "status IN ('queued', 'running', 'waiting_for_input', 'cancelling')"
+            ),
+            sqlite_where=text("status IN ('queued', 'running', 'waiting_for_input', 'cancelling')"),
         ),
     )
 

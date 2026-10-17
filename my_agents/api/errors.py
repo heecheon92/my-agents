@@ -18,6 +18,11 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 
 class APIErrorCode(StrEnum):
+    RUN_EXECUTION_MODE_MISMATCH = "run_execution_mode_mismatch"
+    INVALID_STREAM_CURSOR = "invalid_stream_cursor"
+    RUN_OUTPUT_CURSOR_EXPIRED = "run_output_cursor_expired"
+    RUN_REQUEST_ID_CONFLICT = "run_request_id_conflict"
+    DURABLE_RUNS_UNAVAILABLE = "durable_runs_unavailable"
     INVALID_REQUEST = "invalid_request"
     INVALID_CREDENTIALS = "invalid_credentials"
     AUTHENTICATION_REQUIRED = "authentication_required"

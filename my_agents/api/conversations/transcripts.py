@@ -77,6 +77,7 @@ def prune_conversation_from_message(
     removed_messages: list[MessageModel],
     original_run: AgentRunModel | None,
     preserved_run_ids: set[str] | None = None,
+    commit: bool = True,
 ) -> None:
     removed_message_ids = [message.id for message in removed_messages]
     run_ids_to_prune = set(
@@ -142,10 +143,14 @@ def prune_conversation_from_message(
         )
         db.execute(delete(CitationModel).where(CitationModel.run_id.in_(run_ids_to_prune)))
         db.execute(delete(AgentEventModel).where(AgentEventModel.run_id.in_(run_ids_to_prune)))
+        _delete_durable_runs(db, run_ids_to_prune)
         db.execute(delete(AgentRunModel).where(AgentRunModel.id.in_(run_ids_to_prune)))
     if removed_message_ids:
         db.execute(delete(MessageModel).where(MessageModel.id.in_(removed_message_ids)))
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
 
 
 def delete_conversation_tree(db: Session, conversation: ConversationModel) -> None:
@@ -198,6 +203,7 @@ def delete_conversation_tree(db: Session, conversation: ConversationModel) -> No
         )
         db.execute(delete(CitationModel).where(CitationModel.run_id.in_(run_ids)))
         db.execute(delete(AgentEventModel).where(AgentEventModel.run_id.in_(run_ids)))
+        _delete_durable_runs(db, run_ids)
         db.execute(delete(AgentRunModel).where(AgentRunModel.id.in_(run_ids)))
     db.execute(
         delete(DocumentWorkspaceModel).where(
@@ -224,3 +230,14 @@ def store_user_message(db: Session, conversation_id: str, message: str) -> Messa
     db.commit()
     db.refresh(user_message)
     return user_message
+
+
+def _delete_durable_runs(db: Session, run_ids) -> None:
+    from my_agents.conversations.durable_models import (
+        DurableRunFrame,
+        DurableRunJob,
+        DurableRunOutput,
+    )
+
+    for model in (DurableRunFrame, DurableRunJob, DurableRunOutput):
+        db.execute(delete(model).where(model.run_id.in_(run_ids)))

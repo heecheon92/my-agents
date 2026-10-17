@@ -37,6 +37,15 @@ def cancel_run(
     run = db.get(AgentRunModel, run_id)
     if run is None or run.conversation_id != conversation_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="run not found")
+    from my_agents.conversations.durable_runtime import cancel_durable
+
+    if cancel_durable(db, run):
+        db.refresh(run)
+        if run.status == RunStatus.CANCELLED.value:
+            delete_checkpoint_thread(graph_runner, run.id)
+        return ConversationRunCancelResponse(
+            run_id=run.id, conversation_id=conversation_id, status=run.status
+        )
     if run.status == RunStatus.WAITING_FOR_INPUT.value:
         run.status = RunStatus.CANCELLED.value
         run.interaction_id = None

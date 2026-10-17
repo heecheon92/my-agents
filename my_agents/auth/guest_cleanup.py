@@ -75,7 +75,7 @@ def _defer_reason(
         db,
         AgentRunModel,
         AgentRunModel.user_id == user_id,
-        AgentRunModel.status.in_(["running", "cancelling"]),
+        AgentRunModel.status.in_(["queued", "running", "cancelling"]),
     ):
         return "active_run"
     if _exists(
@@ -342,6 +342,9 @@ def delete_expired_guest(
                 ConversationSummaryModel.conversation_id.in_(conv_ids)
             )
         )
+        from my_agents.conversations.durable_runtime import delete_output_rows
+
+        delete_output_rows(db, run_ids)
         db.execute(delete(AgentRunModel).where(AgentRunModel.id.in_(run_ids)))
         db.execute(delete(MessageModel).where(MessageModel.conversation_id.in_(conv_ids)))
         db.execute(delete(ConversationModel).where(ConversationModel.id.in_(conv_ids)))

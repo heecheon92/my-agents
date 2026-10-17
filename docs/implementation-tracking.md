@@ -41,8 +41,10 @@ deployed backend SHA.
 Backlog reconciliation is validated and recorded in this update. The requested hosted upload,
 ingestion, cited answer, and refresh smoke passed on 2026-10-17.
 [Evidence and scope](./product-chat-service/41-production-smoke-evidence-2026-10-17.md).
-The next engineering priority remains embedding-index identity and retrieval evidence-window
-safety. Idle/disconnect recovery, broader feature smoke, and automated release gates remain open.
+Current selected work is [recoverable answer generation](#recoverable-answer-generation),
+implemented and verified locally on both sides; publication and hosted enablement remain open. Embedding-index identity and
+retrieval evidence-window safety remain the following backlog priority. Hosted rollout, broader
+feature smoke, and automated release gates remain separate.
 
 ### Historical maturity estimates
 
@@ -206,6 +208,73 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
 - Reusable LangGraph practice conventions, pattern docs, and runnable simulated-agent implementations now live in `~/Git/Playground/langgraph-playground`.
 
 ## Latest verification evidence
+
+Recoverable answer generation — 2026-10-17 (local implementation; hosted rollout pending):
+
+Final policy: `MY_AGENTS_DURABLE_RUNS_ENABLED=false` by default. The owner keeps the existing
+single-service Render deployment; a hosted worker is not provisioned. Disabled new requests use
+legacy execution; enabled requests require a ready independent worker. Existing durable run
+recovery uses its own execution mode. Local testing can enable the flag independently of Render.
+
+- Full offline backend suite: **928 passed, 37 skipped, 12 dependency/API deprecation warnings**
+  in 159.55 seconds after restoring default-off operation; Ruff lint/format and diff whitespace
+  checks passed. The 37 skips include 23 optional PostgreSQL durability cases plus existing gates.
+  Focused health/admission checks: **37 passed, 23 optional PostgreSQL skips**. Disabled mode
+  blocks fresh async admission despite worker heartbeat, preserves idempotent receipts and
+  saved output subscriptions, and keeps legacy generation available. The running local API
+  reported `enabled: false, ready: false` during that check. Pre-commit focused validation
+  passed **52 tests, 23 optional PostgreSQL skips**; lint, format, and diff checks remained clean.
+- Final opt-in frontend verification: **465/465 unit tests**, Biome (310 files, no warnings),
+  typecheck, and build (20 routes) passed. Browser suite: **245 passed, 2 skipped, 1 known failure**
+  (`conversation-list.spec.ts:188`), including **12/12 durable/gate cases**. Flag-on real-BFF
+  smoke passed **22/22**. Final real-browser login/send/reload restored the session and rejoined
+  mid-answer from saved output: one answer, no re-admission, no page errors. Temporary test
+  API/worker and frontend server were stopped after verification. The owner subsequently verified
+  local opt-in operation, then requested stopping the local worker; local environment values are
+  separate from the default-off hosted policy.
+  The legacy fixture adapter and its two changed spec assertions were
+  removed, so ordinary browser fixtures exercise legacy execution again.
+- A disabled standalone worker exits with a configuration error before DB initialization.
+  Optional VS Code worker/API launch profiles retain matching environment overrides.
+- Local startup follow-up: the owner's API used the VS Code PostgreSQL profile while no worker
+  was attached to that database. Migration `20261017_0040` was present. Starting a worker with
+  identical profile overrides changed port 8000 health from not ready to ready. Added matching
+  API/worker VS Code compounds; JSON/profile checks passed. This local worker was subsequently stopped when the owner restored default-off operation; no hosted worker or real-model answer validation is claimed by this startup check.
+- Earlier targeted storage/migration/API suite: **53 passed** across SQLite and an isolated local
+  PostgreSQL 17/pgvector container. Per-test schemas were isolated and removed. Fresh migrations
+  through `20261017_0040` succeeded on both databases; downgrade rejects active/waiting durable
+  work. A further two migration tests passed after strengthening the waiting-run rollback guard.
+- Verified atomic repeated admission, current-status receipts, cursor replay/pruning, terminal
+  reconciliation, subscriber detachment versus explicit Stop, concurrent Stop/finalization,
+  lost ownership, expired waits, rapid resume before previous-worker cleanup, permission/session
+  revocation, guest boundaries, mocked workspace artifacts, regeneration, and erasure.
+- Final focused replay/terminal checks: **8 passed** across SQLite/PostgreSQL, plus **16 legacy
+  replay tests passed**. Durable regeneration now prunes history in the completion transaction;
+  rollback preserves old history, later admissions survive, and late serialization failure cannot
+  emit a false failure for a canonically completed answer.
+- Locally served OpenAPI verified additive normal/resume/replay admission, snapshots, and GET subscriptions
+  with delivery IDs and route-specific SSE schemas. All schema references resolve. The run list
+  and waiting detail identify `execution_mode` independently of worker readiness.
+- Opus reported **22/22 real-BFF checks passed** against the final isolated deterministic backend.
+  Both agents verified UI login and session/answer restoration on reload; local DB evidence showed
+  exactly one run and assistant message. Mocked browser checks cover partial-output reconnect.
+  The initial session-restore hang was a dev bind-hostname/browser-origin mismatch, resolved by
+  matching `localhost`; it required no application or security-policy change.
+- Final frontend report from Opus: **463/463 unit tests**, Biome/typecheck/build passed;
+  full browser suite **239 passed, 2 skipped, 1 pre-existing failure** at
+  `e2e/conversation-list.spec.ts:188`. The intermittent transcript-autoscroll case passed.
+  All **6 durable browser scenarios** passed. Node 26 DEP0205 warnings remain.
+- Opus also verified real browser reload during an answer: session restored, snapshot fetched,
+  subscription continued after cursor 2, one saved answer, no re-admission and no page errors.
+  Codex independently verified browser login/send/reload and the one-run/one-answer DB invariant.
+- Separate existing frontend issue: BFF query filtering still drops interaction-options pagination
+  cursors outside the new durable-stream route. Opus recorded it as separate scope; it is not
+  silently claimed fixed by durable-run delivery.
+- Temporary local API/answer-worker and frontend test processes were stopped after verification;
+  the owner's existing development processes on ports 8000/3000 were left running.
+  Disposable PostgreSQL schemas/container were removed. Hosted rollout remains pending.
+- Automated checks used deterministic/mocked providers. No hosted schema migration, worker
+  deployment or production enablement is claimed. [Runtime guide](./product-chat-service/42-durable-answer-generation.md).
 
 Backlog reconciliation — 2026-10-17:
 
@@ -644,7 +713,7 @@ Interactive reset is on `develop` only as of the 2026-10-17 remote check.
   implementation-time manual testing. Production feature-level and accessibility/stress evidence
   remain limited; see [the completion record](./completed/mermaid-rendering.md).
   AG-UI and A2UI remain future edge adapters and do not replace Product DB domain contracts.
-- Known near-future gap: streamed run execution is still coupled to the client HTTP/SSE request. If the client disconnects before `run_completed`, the assistant response may never be persisted; durable server-owned/background run execution is required.
+- Legacy POST stream execution remains coupled to the HTTP/SSE request. The opt-in local durable-run implementation separates worker execution from delivery; migration, independent worker readiness, frontend integration, and hosted enablement remain separate gates. See [recoverable answer generation](#recoverable-answer-generation).
 - Completed conversation runs can be refetched with persisted reply, route, and citations.
 - `uv run python -m scripts.local_demo_seed` seeds a verified local demo user, text document, and extraction run for file-backed SQLite demos.
 - `uv run python -m scripts.local_demo_smoke --base-url http://localhost:8000` verifies the seeded V1 API path without the frontend.
@@ -693,6 +762,18 @@ and immediate chat recovery are recorded above. Scope and historical test eviden
 in [the maintenance completion record](./completed/backend-maintenance.md).
 
 ## Recommended next workflow
+
+### Recoverable answer generation
+
+- [ ] **Active:** Recoverable answer generation is implemented locally behind a default-off feature switch
+  to preserve the existing single-service deployment: migration `20261017_0040`, independent answer worker, atomic admission,
+  committed output, cursor/snapshot recovery, explicit Stop, worker-loss handling, and async
+  resume/regeneration. Per-run `execution_mode` prevents switching existing runs to a legacy path.
+  [Runtime guide](./product-chat-service/42-durable-answer-generation.md);
+  [design rationale](./plan/durable-answer-generation.md).
+  Backend validation passed on SQLite/PostgreSQL, and Opus verified frontend unit/browser/build
+  and real-BFF integration. The vulnerability patch remains the frontend baseline. No hosted release,
+  migration of hosted data, worker deployment, or production enablement is claimed.
 
 ### Documentation reconciliation
 

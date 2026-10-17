@@ -166,6 +166,37 @@ curl http://127.0.0.1:8000/health   # 다른 터미널에서
 대화형 운영 메뉴에 **게스트 체험 초기화**를 제공합니다(기본값은 미리보기).
 [명령과 환경 선택 안내](./scripts/README.md#reset-a-previously-used-guest-trial-interactively)를 참고하세요.
 
+## 연결이 끊겨도 이어지는 답변 생성 (선택 기능)
+
+독립적인 answer worker가 브라우저 연결이 끊긴 뒤에도 답변을 생성하고 저장할 수 있습니다.
+클라이언트는 저장된 출력 snapshot을 복원한 뒤 커밋된 SSE batch를 구독합니다. 명시적인
+Stop은 실행을 취소하고, 재연결은 새로운 모델 호출을 시작하지 않습니다.
+
+`MY_AGENTS_DURABLE_RUNS_ENABLED`의 기본값은 `false`이며 기존 채팅에는 answer worker가
+필요하지 않습니다. 로컬 테스트에서는 로컬 API와 worker 모두에 `true`를 설정하고,
+Render에서는 설정하지 않거나 `false`를 유지하세요.
+Durable 실행에는 API와 worker가 공유하는 영속 DB가 필요합니다(로컬 개발은 파일 기반
+SQLite, 운영은 PostgreSQL). `uv run alembic upgrade head`로 migration `20261017_0040`을
+적용하세요. PostgreSQL은 트래픽을 받기 전에 기존
+`uv run python -m scripts.langgraph_persistence setup`도 필요합니다. worker를 별도로 실행합니다.
+
+```bash
+uv run python -m my_agents.answer_worker
+```
+
+기능을 활성화한 뒤 VS Code에서는 **Chat backend: API + answer worker (local pgvector)**를 선택하면 두
+프로세스가 같은 DB 설정으로 실행됩니다. 기본 DB 설정을 쓰려면 접미사가 없는 compound를
+선택하세요. 일반 터미널의 worker는 VS Code profile의 환경 변수 override를 상속하지 않습니다.
+
+`GET /health`의 `frontend_config.durable_runs.enabled`는 기능 선택을, `ready`는 worker
+준비 상태를 나타냅니다. `enabled`가 없거나 `false`이면 기존 채팅·재생성 경로를 사용합니다.
+활성화된 상태에서 worker가 없으면 다른 실행 방식으로 전환하지 않고 503을 반환합니다. 기존 run은 자신의 `execution_mode`에 따라
+복구·resume 경로를 선택합니다. 이 backend에는 대응하는 frontend 계약 구현이 필요합니다. Worker를 잃으면
+`worker_lost`로 실패하며 모델을 자동 재시도하지 않습니다. 기본 보관 한도는 delivery frame
+2,000개, 부분 답변 2,000,000자입니다. [설정·API·보관·취소
+계약](./docs/product-chat-service/42-durable-answer-generation.md)을 참고하세요. 구현과 배포 검증은
+[구현 현황](./docs/implementation-tracking.md#recoverable-answer-generation)에서 별도로 추적합니다.
+
 ## 검증
 
 ```bash

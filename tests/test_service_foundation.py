@@ -25,7 +25,10 @@ def test_create_app_still_exposes_health_and_legacy_assistant_routes() -> None:
         "status": "ok",
         "service": "my-agents",
         "version": "0.1.0",
-        "frontend_config": {"documents": {"upload_concurrency": 3}},
+        "frontend_config": {
+            "documents": {"upload_concurrency": 3},
+            "durable_runs": {"enabled": False, "ready": False},
+        },
     }
 
 

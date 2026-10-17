@@ -74,3 +74,5 @@
 - [만료 게스트 계정 정리](./39-expired-guest-cleanup.ko.md): 유예 기간, 삭제 범위, audit 보존, 미리보기 명령.
 
 - [게스트 체험 자격과 남용 방지](./40-guest-trial-abuse-protection.ko.md): 공유 제한, 기존 계정 처리, 운영자 초기화.
+
+- [복구 가능한 답변 실행](./42-durable-answer-generation.md): independent worker, async admission, snapshots, and resumable delivery.

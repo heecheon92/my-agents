@@ -30,6 +30,7 @@ from my_agents.api.conversations.run_lifecycle import (
 )
 from my_agents.api.conversations.serializers import (
     run_detail_response,
+    run_execution_mode,
     run_knowledge_base_context,
     run_summary_response,
 )
@@ -189,6 +190,8 @@ def prepare_conversation_run_resume(
     principal: Principal,
     db: Session,
     graph_runner: GraphRunner,
+    commit: bool = True,
+    durable: bool = False,
 ) -> PreparedConversationRunResume:
     """Validate and atomically claim one waiting run before execution starts."""
     assert_guest_access_active(db, principal)
@@ -196,6 +199,12 @@ def prepare_conversation_run_resume(
     run = db.get(AgentRunModel, run_id, populate_existing=True)
     if run is None or run.conversation_id != conversation_id or run.user_id != principal.user_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="run not found")
+    if run_execution_mode(run) == "durable" and not durable:
+        raise APIHTTPException(
+            status_code=409,
+            detail="Use the durable resume endpoint for this run.",
+            code=APIErrorCode.RUN_EXECUTION_MODE_MISMATCH,
+        )
     if run.status != RunStatus.WAITING_FOR_INPUT.value:
         raise APIHTTPException(
             status_code=409,
@@ -361,7 +370,10 @@ def prepare_conversation_run_resume(
         resumed_event_payload,
         commit=False,
     )
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     record_langgraph_persistence_operation(operation="resume", outcome="accepted")
     return PreparedConversationRunResume(
         run=run,
@@ -524,7 +536,27 @@ def list_runs(
         .where(AgentRunModel.conversation_id == conversation_id)
         .order_by(AgentRunModel.created_at.desc(), AgentRunModel.id.desc())
     ).all()
-    return [run_summary_response(run) for run in runs]
+    from my_agents.conversations.durable_models import DurableRunJob, DurableRunOutput
+
+    ids = [run.id for run in runs]
+    durable_ids = set(
+        db.scalars(select(DurableRunOutput.run_id).where(DurableRunOutput.run_id.in_(ids))).all()
+    )
+    keys = dict(
+        db.execute(
+            select(DurableRunJob.run_id, DurableRunJob.client_request_id).where(
+                DurableRunJob.run_id.in_(ids), DurableRunJob.kind != "resume"
+            )
+        ).all()
+    )
+    return [
+        run_summary_response(
+            run,
+            execution_mode="durable" if run.id in durable_ids else "legacy",
+            operation_key=keys.get(run.id),
+        )
+        for run in runs
+    ]
 
 
 @router.get(
@@ -594,6 +626,7 @@ def get_run(
                 }
             )
             return ConversationRunInterruptedResponse(
+                execution_mode=response.execution_mode,
                 assistant_model=run.assistant_model,
                 run_id=response.run_id,
                 conversation_id=response.conversation_id,
@@ -631,6 +664,7 @@ def get_run(
             }
         )
         return ConversationRunInterruptedResponse(
+            execution_mode=response.execution_mode,
             assistant_model=run.assistant_model,
             run_id=response.run_id,
             conversation_id=response.conversation_id,

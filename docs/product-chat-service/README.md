@@ -55,3 +55,5 @@ Keep detailed product-service documentation in this folder.
 - [Expired guest account cleanup](./39-expired-guest-cleanup.md): grace period, erasure scope, audit retention, and dry-run commands.
 
 - [Guest trial eligibility and abuse protection](./40-guest-trial-abuse-protection.md): shared limits, rollout reconciliation, and operator reset.
+
+- [Recoverable answer generation](./42-durable-answer-generation.md): independent worker, async admission, snapshots, and resumable delivery.

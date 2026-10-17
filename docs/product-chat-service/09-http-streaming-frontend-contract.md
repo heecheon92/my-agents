@@ -20,6 +20,14 @@ This note documents the backend-only streaming contract for the product chat ser
 The frontend still belongs in a separate repository; this backend exposes the API shape a
 frontend can consume.
 
+## Opt-in durable execution
+
+The opt-in durable-run surface separates admission, worker execution, and SSE observation.
+See [recoverable answer generation](./42-durable-answer-generation.md) for migration `0040`,
+worker setup, snapshots/cursors, asynchronous resume/regeneration, and frontend capability gating.
+Existing POST streams below retain their legacy lifetime. A durable run must use the async resume
+route; legacy resume rejects it with `run_execution_mode_mismatch`.
+
 ## Implemented endpoints
 
 ```text
@@ -319,12 +327,12 @@ stream generator closing and terminalize the run without saving any partial assi
 message. A user who later revisits the conversation may therefore see their user message
 and a cancelled/failed run, but not the answer that was in progress.
 
-This must be handled in the near future for production UX. The preferred direction is to
+The opt-in durable implementation now follows this direction; production migration and rollout remain
+separate. The architecture is to
 make generation server-owned and durable: create the run, execute it in a background job or
 worker independent of the listening client, persist the final assistant message/citations
 when generation completes, and treat SSE as a resumable listener/progress channel rather
-than the owner of execution. Until that architecture exists, frontend code should not assume
-that leaving a streaming conversation will finish and persist the assistant response.
+than the owner of execution. Clients using legacy POST streams must still treat disconnects according to the legacy contract.
 
 ## Frontend contract guidance
 
@@ -355,8 +363,8 @@ that leaving a streaming conversation will finish and persist the assistant resp
 - Deterministic fallback may chunk the final local reply immediately before completion when
   the graph provider does not emit token chunks.
 - Cancellation is cooperative and does not hard-abort a blocked provider call yet.
-- Long-running jobs still execute inside the request; background queues remain a later milestone.
-- Client disconnects can currently cancel/terminalize an in-progress streamed run before the
+- Legacy POST stream jobs execute inside the request; durable jobs use the independent answer worker.
+- Legacy stream disconnects can cancel/terminalize an in-progress run before the
   assistant response is persisted. Durable server-owned run execution is a near-future requirement.
 - CORS must be configured when a real frontend origin is chosen.
 

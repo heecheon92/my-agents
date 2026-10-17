@@ -8,6 +8,7 @@ from my_agents.api.conversations.endpoints.conversations import (
     get_conversation,
     list_conversations,
 )
+from my_agents.api.conversations.endpoints.durable import router as durable_routes
 from my_agents.api.conversations.endpoints.events import router as event_routes
 from my_agents.api.conversations.endpoints.messages import router as message_routes
 from my_agents.api.conversations.endpoints.replay import router as replay_routes
@@ -43,6 +44,7 @@ conversations_router.add_api_route(
     methods=["DELETE"],
     status_code=status.HTTP_204_NO_CONTENT,
 )
+conversations_router.include_router(durable_routes)
 conversations_router.include_router(message_routes)
 conversations_router.include_router(stream_routes)
 conversations_router.include_router(replay_routes)

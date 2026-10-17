@@ -29,7 +29,10 @@ def test_health_returns_status_service_and_version(client: TestClient) -> None:
         "status": "ok",
         "service": "my-agents",
         "version": "0.1.0",
-        "frontend_config": {"documents": {"upload_concurrency": 3}},
+        "frontend_config": {
+            "documents": {"upload_concurrency": 3},
+            "durable_runs": {"enabled": False, "ready": False},
+        },
     }
 
 

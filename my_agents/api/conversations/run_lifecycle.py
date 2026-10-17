@@ -90,6 +90,7 @@ from my_agents.schemas import RouteDecision
 from my_agents.settings import ReasoningEffort, ReasoningMode, get_settings
 
 ACTIVE_RUN_STATUSES = (
+    RunStatus.QUEUED.value,
     RunStatus.RUNNING.value,
     RunStatus.WAITING_FOR_INPUT.value,
     RunStatus.CANCELLING.value,
@@ -677,7 +678,20 @@ def persist_completed_run(
         ),
         commit=False,
     )
-    db.commit()
+    # Durable regeneration replaces the old suffix in this same transaction.
+    # Otherwise a new admission after completion could be included in a later prune.
+    if before_commit := db.info.get("durable_before_completion_commit"):
+        try:
+            before_commit(run)
+            db.commit()
+        except BaseException:
+            # Legacy stream error handling can emit a failure in this session;
+            # it must not accidentally commit the staged completion or deletions.
+            db.rollback()
+            db.info.pop("durable_replay_pruned_run_id", None)
+            raise
+    else:
+        db.commit()
     db.refresh(run)
     for citation in citations:
         db.refresh(citation)
@@ -827,6 +841,10 @@ def cleanup_stale_active_runs(db: Session, conversation_id: str) -> None:
         )
     ).all()
     for run in stale_runs:
+        from my_agents.conversations.durable_models import DurableRunJob
+
+        if db.scalar(select(DurableRunJob.id).where(DurableRunJob.run_id == run.id)):
+            continue  # Durable worker leases, not run creation age, own recovery.
         if run.status in {RunStatus.CANCELLING.value, RunStatus.WAITING_FOR_INPUT.value}:
             run.status = RunStatus.CANCELLED.value
             run.interaction_id = None
@@ -885,6 +903,7 @@ def admit_run(
     attachment_ids: list[str] | None = None,
     requested_reasoning_mode: ReasoningMode | None = None,
     requested_reasoning_effort: ReasoningEffort | None = None,
+    commit: bool = True,
 ) -> AdmittedRun:
     """Atomically persist an authorized prompt/run/events; the DB arbitrates competitors.
 
@@ -979,7 +998,10 @@ def admit_run(
                     payload = json.loads(started.payload_json)
                     payload["assistant_model"] = None
                     started.payload_json = json.dumps(payload)
-        db.commit()
+        if commit:
+            db.commit()
+        else:
+            db.flush()
         return AdmittedRun(run=run, user_message=user_message)
     except IntegrityError as exc:
         db.rollback()

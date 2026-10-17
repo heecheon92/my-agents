@@ -1067,6 +1067,8 @@ def conversation_run_events(
         yield sse_event("run_completed", response.model_dump(mode="json"))
         record_run_metric("completed")
     except GeneratorExit:
+        if db.info.get("durable_execution"):
+            raise  # The worker owns failure/cancellation, not a subscriber or generator.
         current_run = db.get(AgentRunModel, execution_run_id, populate_existing=True)
         if current_run is not None and current_run.status == RunStatus.WAITING_FOR_INPUT.value:
             raise

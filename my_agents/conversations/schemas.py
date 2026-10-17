@@ -386,6 +386,8 @@ class ConversationRunResponse(BaseModel):
 class ConversationRunInterruptedResponse(BaseModel):
     """Refresh-safe response for a graph waiting on user input."""
 
+    execution_mode: Literal["durable", "legacy"] = "legacy"
+
     model_config = ConfigDict(extra="forbid")
 
     assistant_model: str | None = None
@@ -405,11 +407,13 @@ class ConversationRunCancelResponse(BaseModel):
     run_id: str
     conversation_id: str
     status: Literal[
-        "running", "waiting_for_input", "cancelling", "cancelled", "completed", "failed"
+        "queued", "running", "waiting_for_input", "cancelling", "cancelled", "completed", "failed"
     ]
 
 
 class AgentRunSummaryResponse(BaseModel):
+    execution_mode: Literal["durable", "legacy"] = "legacy"
+
     model_config = ConfigDict(extra="forbid")
 
     client_request_id: str | None = None

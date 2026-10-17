@@ -2,6 +2,14 @@
 
 [English original](./09-http-streaming-frontend-contract.md) | 한국어
 
+## 선택적 durable 실행
+
+기본값이 비활성화된 durable-run API는 요청 접수, 독립 worker 실행, SSE 구독을 분리합니다.
+마이그레이션 `0040`, worker 실행, snapshot/cursor 복구, 비동기 resume/replay와 worker 준비 상태는
+[복구 가능한 답변 실행](./42-durable-answer-generation.md)을 참고하세요.
+기존 POST stream은 기존 수명을 유지합니다. durable run은 비동기 resume을 사용해야 하며,
+기존 resume 경로는 `run_execution_mode_mismatch`로 거절합니다. 운영 배포는 별도 단계입니다.
+
 ## 요약
 
 이 문서는 `product-chat-service/09-http-streaming-frontend-contract.md`의 한국어 문서 트랙 항목입니다. 현재는 핵심 목적과 영어 원문 위치를 안내하는 요약본입니다.
@@ -66,7 +74,7 @@ document 단위입니다. `document_id`로 grouping하고 `source_filename`이 �
 `source_page`만 함께 보여주고 일반 citation 상세에서는 snippet과 document/KB/chunk ID를
 숨깁니다.
 
-2026-06-09 기준으로 중요한 알려진 한계도 추가되었습니다. 현재 streamed chat generation은 client-held HTTP/SSE request에 묶여 있어서, 사용자가 탭을 닫거나 다른 화면으로 이동해 stream이 끊기면 assistant message가 최종 저장되기 전에 run이 cancelled/failed로 terminalize될 수 있습니다. 이 경우 사용자가 conversation에 다시 들어와도 생성 중이던 답변이 보이지 않을 수 있습니다. 가까운 시일 내에 server-owned background run execution과 resumable/listener-style SSE 구조로 보완해야 합니다.
+2026-06-09 기준으로 중요한 알려진 한계도 추가되었습니다. 기존 POST stream의 chat generation은 client-held HTTP/SSE request에 묶여 있어서, 사용자가 탭을 닫거나 다른 화면으로 이동해 stream이 끊기면 assistant message가 최종 저장되기 전에 run이 cancelled/failed로 terminalize될 수 있습니다. 이 경우 사용자가 conversation에 다시 들어와도 생성 중이던 답변이 보이지 않을 수 있습니다. 선택적 durable-run 구현은 독립 worker와 복구 가능한 SSE로 이를 보완합니다. 운영 마이그레이션과 활성화는 아직 별도 검증 대상입니다.
 
 ## 문서 상태
 

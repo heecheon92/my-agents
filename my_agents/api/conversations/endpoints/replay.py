@@ -228,10 +228,13 @@ def replay_context_for_request(
     principal: Principal,
     settings: Settings,
     request: ConversationReplayRequest,
+    execution_run_id: str | None = None,
 ) -> ReplayContext:
-    assert_guest_can_send_prompt(db, principal, settings)
+    if execution_run_id is None:
+        assert_guest_can_send_prompt(db, principal, settings)
     get_authorized_conversation(db, conversation_id, principal.user_id)
-    assert_no_active_run(db, conversation_id)
+    if execution_run_id is None:
+        assert_no_active_run(db, conversation_id)
     target_message = db.get(MessageModel, message_id)
     if target_message is None or target_message.conversation_id != conversation_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="message not found")
@@ -686,6 +689,8 @@ def _prune_replayed_transcript(
     replay_context: ReplayContext,
     preserved_run_id: str,
 ) -> None:
+    if db.info.get("durable_replay_pruned_run_id") == preserved_run_id:
+        return
     prune_conversation_from_message(
         db,
         conversation_id=conversation_id,
