@@ -1,6 +1,6 @@
 # Implementation tracking
 
-Last updated: 2026-10-02
+Last updated: 2026-10-17
 Status owner: repo-tracked source of truth for cross-machine agent handoff
 
 This is the portable implementation/status record, independent of machine-local agent sessions.
@@ -29,13 +29,20 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 
 ## Current overall status
 
-As of 2026-09-05, the implemented baseline includes the General Assistant/RAG Agent split,
-permission-first hybrid and bounded full-document retrieval, selective citation attribution,
-reasoning summaries, PostgreSQL-backed HITL, and optional document-workspace APIs. The released
-frontend includes source-choice interactions, workspace controls, and Mermaid rendering.
-The owner confirmed immediate authenticated chat recovery after the pool hotfix; complete
-feature-level/longer-idle production verification and stronger automated release gates remain open.
-See the recommended workflow and completion index for current priorities and delivered scope.
+As of 2026-10-17, the backend baseline includes the General Assistant/RAG Agent split,
+default Jev reranking and bounded decisions, model/reasoning preferences, conversation continuity,
+workspace image inputs, and one-trial guest policy. Before this documentation update, remote
+`main` was `3b6fd23`; remote `develop` and the inspected checkout were `1f654c5`, one interactive
+guest-reset commit ahead.
+GPT-5.6 normalization, GPT-6 compatibility, and bounded Jev decisions are integrated on both
+branches; they are not active implementation tasks. Remote branch state does not prove the
+deployed backend SHA.
+
+Backlog reconciliation is validated and recorded in this update. The requested hosted upload,
+ingestion, cited answer, and refresh smoke passed on 2026-10-17.
+[Evidence and scope](./product-chat-service/41-production-smoke-evidence-2026-10-17.md).
+The next engineering priority remains embedding-index identity and retrieval evidence-window
+safety. Idle/disconnect recovery, broader feature smoke, and automated release gates remain open.
 
 ### Historical maturity estimates
 
@@ -200,6 +207,25 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
 
 ## Latest verification evidence
 
+Backlog reconciliation — 2026-10-17:
+
+- Refreshed remote refs and verified heads with `git ls-remote`: `main` is `3b6fd23`,
+  `develop` was `1f654c5`, with divergence `0 / 1`, before this documentation update.
+- Confirmed `6073312` (GPT-5.6 normalization), `2f2e836` (GPT-6 compatibility), and
+  `1e18c8d` (bounded Jev decisions) are ancestors of remote `main`.
+- Historical implementation checks below retain their original dates and limitations; old
+  publication-pending labels do not override this branch reconciliation. Live model/provider
+  matrices and operational checks remain separate from repository integration.
+- Current local validation: `uv run pytest -q` reported **890 passed, 14 skipped, 12 warnings**
+  in 131.34 seconds. Ruff lint/format passed (294 files); diff whitespace, 94 local link targets,
+  22 heading anchors, and the changed-document credential/personal-email scan passed. Warnings are
+  existing SWIG, HTTP status constant, and LangGraph/asyncio deprecations. Skipped tests do not
+  establish PostgreSQL/live-provider verification.
+- Hosted browser smoke passed: authenticated session, 425-byte Markdown upload/ingestion,
+  four correct fixture facts, supporting-source marker, and answer/citation restoration after
+  full reload. One unrelated retrieved reference remains a quality observation, not a blocking
+  frontend finding. [Evidence](./product-chat-service/41-production-smoke-evidence-2026-10-17.md).
+
 Message-to-answer walkthrough — 2026-10-02 (**Completed:** owner-approved documentation):
 
 - Added adjacent English/Korean service-flow documents with nine Mermaid views across six types covering
@@ -270,7 +296,8 @@ production rollout and live provider access pending):
   remain separate. [Durable completion evidence](./completed/assistant-model-preferences.md).
 
 
-GPT-5.6 normalization and frozen effort contract — 2026-09-27 (local branch implementation):
+GPT-5.6 normalization and frozen effort contract — 2026-09-27 (historical implementation evidence;
+integration on both remote branches verified 2026-10-17):
 
 - Direct GPT-5.6 Sol smoke accepted none and rejected minimal with HTTP 400. The shared
   normalizer now maps minimal to low for GPT-5.6 as well as GPT-6 before persistence and
@@ -301,7 +328,8 @@ Configured chat model identity — 2026-09-23 (develop implementation; deploymen
   Provider-resolved snapshots and live answer behavior were not verified.
 
 
-GPT-6 reasoning compatibility — 2026-09-23 (develop implementation; deployment not verified):
+GPT-6 reasoning compatibility — 2026-09-23 (historical implementation evidence;
+integration on both remote branches verified 2026-10-17; live provider matrix remains unverified):
 
 - GPT-6 Pro is accepted; minimal becomes low before run persistence and provider calls.
   Chat/workspace, replay, guest defaults, capability reporting, and GPT-5.6 compatibility
@@ -311,7 +339,8 @@ GPT-6 reasoning compatibility — 2026-09-23 (develop implementation; deployment
 - [Compatibility learning note](./learning/project-notes/gpt6-reasoning-compatibility.ko.md).
 
 
-Jev decision integration — 2026-09-23 (develop implementation; deployment not verified):
+Jev decision integration — 2026-09-23 (historical implementation evidence;
+integration on both remote branches verified 2026-10-17; live decision evaluation remains open):
 
 - Implemented source gate, RAG operation choice, and ContextForge intent via a shared
   `typesafe/jev-1.13` Decisions API adapter. OpenAI answer/metadata generation is unchanged.
@@ -564,15 +593,11 @@ Earlier hosted smoke status on 2026-06-03:
 
 ### Product/account lifecycle
 
-- [x] **Shipped:** Interactive guest trial reset and `guest reset` dispatcher command with preview-by-default, explicit apply, cancellation, and env forwarding. Validated: 890 tests passed, 14 skipped; lint/format clean. Published on develop; production deployment pending. [Operator guide](../scripts/README.md#reset-a-previously-used-guest-trial-interactively).
-
-- [x] **Shipped:** Guest answer runs/replays use the independent operator-controlled `MY_AGENTS_GUEST_ASSISTANT_MODEL`, defaulting to `gpt-6-luna`; capability metadata aligned. Validated: 882 tests passed, 14 skipped; lint/format clean. Live deployment verification remains pending. [Contract](./product-chat-service/35-assistant-model-preferences.md).
-
-- [x] **Shipped:** One guest trial per email, shared DB limits, concurrent-safe code redemption, active-account re-login, legacy duplicate reconciliation, and operator reset (875 tests passed, 14 skipped; lint/format clean). Production rollout, PostgreSQL concurrency, and proxy-address verification remain pending. [Policy](./product-chat-service/40-guest-trial-abuse-protection.md).
-
-- [x] **Shipped:** Opt-in expired guest cleanup implemented and validated (860 tests passed, 14 skipped; lint/format clean). Deployment and PostgreSQL concurrency verification remain pending. Opt-in post-expiry erasure, content-free audit/HMAC history, shared-resource deferral, and dry-run CLI. [Policy](./product-chat-service/39-expired-guest-cleanup.md).
-
-- [x] **Shipped:** Env-gated operator registration alerts with safe worker shutdown and persistent-database isolation (845 tests passed, 14 skipped; lint/format clean). Deployment and live inbox verification remain pending. Covers regular/invited signup and guest redemption with a durable delivery queue. Contract: [auth notifications](./product-chat-service/02-first-party-auth-sessions.md#operator-registration-notifications).
+The guest/operator implementations are listed in the [shipped index](#shipped-and-completed-index).
+Remaining verification: guest-model pinning in live runs, PostgreSQL concurrency/proxy behavior,
+cleanup enablement/execution, and registration-alert inbox delivery. The public policy endpoint
+now advertises one trial per email and active-trial re-login; that alone does not prove enforcement.
+Interactive reset is on `develop` only as of the 2026-10-17 remote check.
 
 - Hosted auth email delivery is implemented through Resend HTTP from the verified `my-agents.dev` sender, with generic SMTP still available as a portable alternate transport. Provider secrets remain environment-owned and are not documented in the repo.
 - Auth abuse protection is local/in-process by explicit Phase 1 decision; it is acceptable only for single-process public demos and is not a shared Redis/gateway limiter for multi-worker public deployment.
@@ -595,6 +620,7 @@ Earlier hosted smoke status on 2026-06-03:
 - Async ingestion progress is available through an additive endpoint (`POST /documents/{id}/ingest/async`) plus direct run polling. Local/default mode still supports in-process threads; hosted mode can set `MY_AGENTS_INGESTION_EXECUTION_MODE=external_worker` and run `python -m my_agents.ingestion_worker`. Frontend multi-file upload fan-out is exposed as a safe `/health` hint backed by `MY_AGENTS_DOCUMENT_UPLOAD_CONCURRENCY` (default `3`). Durable queue semantics and stale-run recovery remain future work.
 - Ingestion performance now has a repeatable local benchmark harness plus an opt-in redacted Rich timing panel (`MY_AGENTS_DEBUG_INGESTION_TIMING_LOGGING=true`) for upload parse, PDF parser subphases, extraction/indexing phases, and OpenAI metadata/embedding spans. OpenAI metadata generation overlaps chunk embedding/indexing when metadata mode is OpenAI-backed.
 - Embeddings use a provider boundary: deterministic 32-dimensional lexical-hash vectors by default, or opt-in OpenAI embeddings through `langchain-openai` when `MY_AGENTS_EMBEDDING_MODE=openai`; Postgres chunks also store a pgvector `embedding_vector` through Alembic migration `20260521_0007`.
+- The 2026-10-17 hosted smoke returned correct fixture facts and a supporting-source marker, but also listed one unrelated retrieved PDF. Add this precision case to retrieval-quality fixtures; the smoke did not establish a frontend defect.
 - Retrieval ranking is permission-first RAG Agent -> ContextForge orchestration over pgvector SQL vector search on Postgres, JSON cosine fallback for SQLite/tests, an independent request-local `BM25Okapi` lexical ranking, `chunk_id`-keyed Reciprocal Rank Fusion (`k=60`), entity expansion, structured entity retrieval, default Jev rubric reranking, deterministic/cross-encoder alternatives over bounded authorized candidates, and a narrow personal-document fallback. BM25 reads a lightweight authorized chunk projection, hydrates only lexical top-k models, and retains the `keyword_match` source label, so this default hybrid path needs no dedicated DB index or migration; safe corpus caching/full-text indexing, multilingual tokenization, ANN/vector index tuning, production reranker packaging, and retrieval-quality/latency evals remain future work.
 - `rag_agent` is the assistant-facing retrieval-agent boundary. Conversation runs enter it from the `general_assistant` graph; the RAG Agent delegates internally to ContextForge’s thin LangGraph `RetrievalGraph`. The current `rag_agent` contract graph remains the compact trace/grounding verification surface. Hard authorization stays in `RetrievalService`/ContextForge internals.
 - Entity extraction is deterministic regex/technical-term extraction, not production NLP/LLM extraction. Canonical entity creation is conflict-safe for concurrent async ingestion: names are pre-collected in stable order and inserted with dialect-aware `ON CONFLICT DO NOTHING` to avoid Postgres unique-index lock cycles.
@@ -668,6 +694,12 @@ in [the maintenance completion record](./completed/backend-maintenance.md).
 
 ## Recommended next workflow
 
+### Documentation reconciliation
+
+Backlog reconciliation is validated: stale implementation/publication statuses and the retrieval
+sequence are aligned with ROADMAP. The hosted smoke is recorded in the completed index below.
+Frontend repository changes remain outside this task.
+
 ### Next: tokenizer-aware retrieval and embedding-index safety
 
 Mermaid integration is complete; do not schedule its implementation again. The previously
@@ -727,25 +759,25 @@ provider/model/index identity and compatibility currently proves only equal vect
 
 Suggested order:
 
-1. Use `BAAI/bge-reranker-v2-m3` as the Korean/multilingual evaluation candidate and remove the MS
-   MARCO override from the intended runtime.
-2. Add Korean, English, and code relevance fixtures plus reranker latency/memory measurements.
-3. Add query-aware, model-tokenizer-based document windows and redacted window/truncation evidence;
-   authorization must still finish before any reranker input is created.
-4. Persist embedding provider/model/dimensions/encoding-or-preprocessing/index-version identity,
-   exclude incompatible vectors even when dimensions match, and define a re-embed/backfill path.
-5. Add model-aware or provider-reported answer-context token usage while retaining the deterministic
-   character budget as a safe fallback.
+1. Establish Korean, English, and code fixtures against the current Jev default, including
+   relevant evidence near the end of long chunks. Record quality, latency, and bounded-excerpt
+   coverage before changing retrieval behavior.
+2. Persist embedding provider/model/dimensions/encoding-or-preprocessing/index-version identity,
+   exclude incompatible vectors even when dimensions match, and define the legacy-data/backfill path.
+3. Make evidence windows and answer-context budgets model-aware; retain deterministic character
+   caps as safe fallbacks and redacted truncation/usage evidence. Authorization precedes all inputs.
+4. Evaluate `BAAI/bge-reranker-v2-m3` only when selecting the optional cross-encoder strategy.
+   First verify effective settings; the July MS MARCO override is historical evidence, not a
+   verified current setting. Add query-aware tokenizer windows and latency/memory measurements
+   for that strategy before enabling it on the intended host.
 
 Stop condition:
 
-- Korean, English, and code fixtures do not silently lose relevant tail evidence during reranking.
-- The BAAI reranker candidate has recorded relevance, latency, and memory evidence on the intended
-  runtime.
+- Korean, English, and code fixtures expose tail-evidence loss and validate the chosen window policy.
 - Query vectors cannot be compared with a different stored embedding index identity.
 - Existing chunks and metadata profiles have an explicit compatible/re-embed migration decision.
 - Token/usage observability remains redacted, and permission-first retrieval plus offline tests stay
-  green.
+  green. Cross-encoder readiness is a separate conditional gate, not a prerequisite for Jev.
 
 Analysis and acceptance details:
 [`docs/learning/project-notes/tokenizer-consistency-audit-and-rag-index-safety.md`](./learning/project-notes/tokenizer-consistency-audit-and-rag-index-safety.md).
@@ -798,7 +830,7 @@ Suggested order:
 2. Deploy or verify the ingestion worker path for hosted demo: set `MY_AGENTS_INGESTION_EXECUTION_MODE=external_worker` on the web service and run `uv run python -m my_agents.ingestion_worker` as a separate worker process.
 3. Record any new issue in `docs/product-chat-service/15-deployment-troubleshooting-log.md`.
 4. Keep redacted `DEPLOY_DIAG` logs available; tune only noisy call sites after hosted signup/login/chat smoke remains stable.
-5. Treat Render free-tier PDF ingestion slowness as a known resource limitation; prefer small Markdown/plain-text/native-text PDFs for demo until the worker path has smoke evidence or the host is larger.
+5. Treat earlier free-tier ingestion slowness as historical evidence. The last recorded host was a paid Standard instance (1 CPU / 2 GB); verify current resources and worker execution before attributing new latency to hosting. Keep the smoke fixture small.
 
 Stop condition:
 
@@ -841,6 +873,27 @@ system, a multi-device guest account model, or a replacement for shared rate
 limits.
 
 ## Shipped and completed index
+
+- [x] **Completed:** 2026-10-17 hosted Markdown upload -> ingestion -> cited answer -> refresh
+  smoke. Broader auth/group, idle/disconnect, worker, and provider-matrix checks remain open.
+  [Evidence and retained test artifacts](./product-chat-service/41-production-smoke-evidence-2026-10-17.md).
+
+- [x] **Shipped:** GPT-5.6 minimal-to-low normalization, frozen public effort vocabulary,
+  and GPT-6 reasoning compatibility; integrated on both remote branches.
+  [Evidence and limits](./completed/reasoning-and-bounded-decisions.md).
+- [x] **Shipped:** Jev source selection, retrieval-method selection, and ContextForge intent
+  decisions with deterministic fallback; integrated on both remote branches.
+  [Evidence and limits](./completed/reasoning-and-bounded-decisions.md).
+
+- [x] **Shipped:** Interactive guest trial reset and `guest reset` dispatcher command with preview-by-default, explicit apply, cancellation, and env forwarding. Validated: 890 tests passed, 14 skipped; lint/format clean. Published on `develop` (`1f654c5`); absent from remote `main` as of 2026-10-17. [Operator guide](../scripts/README.md#reset-a-previously-used-guest-trial-interactively).
+
+- [x] **Shipped:** Guest answer runs/replays use the independent operator-controlled `MY_AGENTS_GUEST_ASSISTANT_MODEL`, defaulting to `gpt-6-luna`; capability metadata aligned. Validated: 882 tests passed, 14 skipped; lint/format clean. Live deployment verification remains pending. [Contract](./product-chat-service/35-assistant-model-preferences.md).
+
+- [x] **Shipped:** One guest trial per email, shared DB limits, concurrent-safe code redemption, active-account re-login, legacy duplicate reconciliation, and operator reset (875 tests passed, 14 skipped; lint/format clean). Integrated on remote `main`; public policy fields verified 2026-10-17. Enforcement, PostgreSQL concurrency, and proxy-address verification remain pending. [Policy](./product-chat-service/40-guest-trial-abuse-protection.md).
+
+- [x] **Shipped:** Opt-in expired guest cleanup implemented and validated (860 tests passed, 14 skipped; lint/format clean). Integrated on remote `main`; production enablement/execution and PostgreSQL concurrency verification remain pending. Opt-in post-expiry erasure, content-free audit/HMAC history, shared-resource deferral, and dry-run CLI. [Policy](./product-chat-service/39-expired-guest-cleanup.md).
+
+- [x] **Shipped:** Env-gated operator registration alerts with safe worker shutdown and persistent-database isolation (845 tests passed, 14 skipped; lint/format clean). Integrated on remote `main`; production enablement and live inbox verification remain pending. Covers regular/invited signup and guest redemption with a durable delivery queue. Contract: [auth notifications](./product-chat-service/02-first-party-auth-sessions.md#operator-registration-notifications).
 
 - [x] **Shipped:** Default Jev evidence reranking with offline/whole-pass fallback and local-only
   comparison logging — [current contract](./product-chat-service/37-jev-evidence-reranking.md).

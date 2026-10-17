@@ -59,6 +59,8 @@ flowchart LR
 
 Current honest status:
 
+> 2026-10-17 reconciliation baseline, before this documentation update: remote `main` was `3b6fd23`; `develop` was `1f654c5`, one interactive guest-reset commit ahead. Reasoning compatibility and bounded Jev decisions are integrated. The [hosted document/chat smoke](./docs/product-chat-service/41-production-smoke-evidence-2026-10-17.md) passed upload, ingestion, cited answer, and refresh; broader feature gates remain open. Branch heads do not identify the serving deployment.
+
 > The project is a strong **controlled-alpha product preview** after a fresh hosted deploy smoke: auth with required display nicknames, invite-only groups, manager-only rosters, personal/group knowledge bases, hidden group-upload staging, publish-request review, text/PDF/Markdown ingestion, permission-aware retrieval, citations, events, pgvector-backed Postgres retrieval with JSON fallback, SSE assistant streaming, Render backend deployment, Vercel frontend CI/CD, Neon Postgres, and Resend HTTP email through `my-agents.dev` exist as a coherent thin end-to-end slice. It is worth showing to trusted testers with alpha framing, but it is not production-ready because broad production ingestion performance, retrieval-quality evals/reranking, durable background queues, account/profile lifecycle, shared rate limits, stronger deployment-grade auth hardening, automated smoke/migration gates, and production security review remain.
 
 ## 1. Backend foundation
@@ -99,15 +101,15 @@ Current honest status:
 
 ## 3. Auth and sessions
 
-- [x] **Shipped:** Interactive guest trial reset and `guest reset` dispatcher command with preview-by-default, explicit apply, cancellation, and env forwarding. Validated: 890 tests passed, 14 skipped; lint/format clean. Published on develop; production deployment pending. [Operator guide](./scripts/README.md#reset-a-previously-used-guest-trial-interactively).
+- [x] **Shipped:** Interactive guest trial reset and `guest reset` dispatcher command with preview-by-default, explicit apply, cancellation, and env forwarding. Validated: 890 tests passed, 14 skipped; lint/format clean. Published on `develop` (`1f654c5`); absent from remote `main` as of 2026-10-17. [Operator guide](./scripts/README.md#reset-a-previously-used-guest-trial-interactively).
 
 - [x] **Shipped:** Guest answer runs/replays use the independent operator-controlled `MY_AGENTS_GUEST_ASSISTANT_MODEL`, defaulting to `gpt-6-luna`; capability metadata aligned. Validated: 882 tests passed, 14 skipped; lint/format clean. Live deployment verification remains pending. [Contract](./docs/product-chat-service/35-assistant-model-preferences.md).
 
-- [x] **Shipped:** One guest trial per email, shared DB limits, concurrent-safe code redemption, active-account re-login, legacy duplicate reconciliation, and operator reset (875 tests passed, 14 skipped; lint/format clean). Production rollout, PostgreSQL concurrency, and proxy-address verification remain pending. [Policy](./docs/product-chat-service/40-guest-trial-abuse-protection.md).
+- [x] **Shipped:** One guest trial per email, shared DB limits, concurrent-safe code redemption, active-account re-login, legacy duplicate reconciliation, and operator reset (875 tests passed, 14 skipped; lint/format clean). Integrated on remote `main`; public policy fields verified 2026-10-17. Enforcement, PostgreSQL concurrency, and proxy-address verification remain pending. [Policy](./docs/product-chat-service/40-guest-trial-abuse-protection.md).
 
-- [x] **Shipped:** Opt-in expired guest cleanup implemented and validated (860 tests passed, 14 skipped; lint/format clean). Deployment and PostgreSQL concurrency verification remain pending. Opt-in post-expiry erasure, content-free audit/HMAC history, shared-resource deferral, and dry-run CLI. [Policy](./docs/product-chat-service/39-expired-guest-cleanup.md).
+- [x] **Shipped:** Opt-in expired guest cleanup implemented and validated (860 tests passed, 14 skipped; lint/format clean). Integrated on remote `main`; production enablement/execution and PostgreSQL concurrency verification remain pending. Opt-in post-expiry erasure, content-free audit/HMAC history, shared-resource deferral, and dry-run CLI. [Policy](./docs/product-chat-service/39-expired-guest-cleanup.md).
 
-- [x] **Shipped:** Env-gated operator registration alerts with safe worker shutdown and persistent-database isolation (845 tests passed, 14 skipped; lint/format clean). Deployment and live inbox verification remain pending. Covers regular/invited signup and guest redemption with a durable delivery queue. Contract: [auth notifications](./docs/product-chat-service/02-first-party-auth-sessions.md#operator-registration-notifications).
+- [x] **Shipped:** Env-gated operator registration alerts with safe worker shutdown and persistent-database isolation (845 tests passed, 14 skipped; lint/format clean). Integrated on remote `main`; production enablement and live inbox verification remain pending. Covers regular/invited signup and guest redemption with a durable delivery queue. Contract: [auth notifications](./docs/product-chat-service/02-first-party-auth-sessions.md#operator-registration-notifications).
 
 - [x] First-party email/password signup: `POST /auth/signup`.
 - [x] Login with app-owned opaque session cookie: `POST /auth/login`.
@@ -403,17 +405,17 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
   [Completion evidence](./docs/completed/assistant-model-preferences.md);
   [current contract](./docs/product-chat-service/35-assistant-model-preferences.md).
 
-- [ ] **Active:** GPT-5.6 minimal-to-low normalization and the frozen public effort contract are
-  locally implemented and offline-verified on `fix/gpt56-reasoning-normalization`; publication
-  remains pending. [Verification](./docs/implementation-tracking.md#latest-verification-evidence).
+- [x] **Shipped (status mirror):** GPT-5.6 minimal-to-low normalization and the frozen public
+  effort contract are integrated on both remote branches (`6073312`). Publication is no longer
+  pending. [Evidence and live-check limits](./docs/completed/reasoning-and-bounded-decisions.md).
 
 - [ ] **Proposed:** User-configurable assistant style (friendliness and verbosity first;
   explanation level, format, and examples later). No per-user implementation is scheduled.
   [Proposal](./docs/idea/assistant-behavior-preferences.md); status follows implementation tracking.
 
-- [ ] **Active:** GPT-6 reasoning compatibility is implemented on develop and offline-verified:
-  Pro support and minimal-to-low normalization. Model-default migration and live verification
-  remain separate; see [verification](./docs/implementation-tracking.md#latest-verification-evidence).
+- [x] **Shipped (status mirror):** GPT-6 reasoning compatibility, including Pro support and
+  minimal-to-low normalization, is integrated on both remote branches (`2f2e836`). Live provider
+  verification remains separate. [Evidence](./docs/completed/reasoning-and-bounded-decisions.md).
 
 - [x] **Completed:** Markdown language naming uses `.md` English and
   `.ko.md` Korean, with colocated topic pairs and English root/agent READMEs. See the
@@ -422,24 +424,25 @@ This repo remains backend-only. Frontend work belongs in a separate repository.
 - [x] **Shipped:** Jev evidence reranking is the new default,
   with deterministic/cross-encoder alternatives and whole-pass fallback. A [54-run local benchmark](./docs/performance/reranking-benchmark-2026-10-02.md) supports the default with source-derived relevance/facet metrics and API-reported cost; broader held-out and production evidence remain open. See the [reranking contract](./docs/product-chat-service/37-jev-evidence-reranking.md).
 
-- [ ] **Active:** Jev bounded decisions are implemented and offline-verified on `develop`
-  (source gate, RAG method, ContextForge intent); deployment and live evaluation remain separate.
-  See [current verification](./docs/implementation-tracking.md#latest-verification-evidence).
+- [x] **Shipped (status mirror):** Jev bounded decisions (source gate, RAG method, ContextForge
+  intent) are integrated on both remote branches (`1e18c8d`). Live decision evaluation remains
+  separate. [Evidence](./docs/completed/reasoning-and-bounded-decisions.md).
 
+- [x] **Completed (status mirror):** Hosted upload -> ingestion -> cited answer -> refresh
+  smoke passed on 2026-10-17. Backlog reconciliation is validated and recorded in this update.
+  [Evidence and broader remaining gates](./docs/product-chat-service/41-production-smoke-evidence-2026-10-17.md).
 
 Mermaid implementation/integration is complete; preserve its [completion evidence and open
 verification](./docs/completed/mermaid-rendering.md) rather than scheduling a rebuild.
 The next recommendation mirrors implementation tracking; it is not new implementation approval.
 
 1. **Tokenizer-aware retrieval and embedding-index safety**
-   - Keep the committed `BAAI/bge-reranker-v2-m3` direction for Korean/multilingual reranking and remove the MS MARCO override from the intended runtime before evaluation.
-   - Add Korean, English, and code retrieval fixtures, then record relevance, latency, memory, and reranker window/truncation evidence.
-   - Add model-tokenizer-aware query/document windows so the reranker never silently discards relevant tail content from an over-limit pair.
-   - Persist an embedding index identity covering provider, model, dimensions, encoding/preprocessing, and index version; retrieval must exclude incompatible stored vectors even when their lengths match.
-   - Define the re-embed/backfill path for existing documents and metadata profiles before changing the active embedding configuration.
-   - Add model-aware/provider-reported answer-context token usage while preserving redacted logs and the deterministic character cap as a fallback.
-   - Stop when multilingual/code reranker fixtures preserve relevant evidence, the BAAI candidate has measured runtime evidence, incompatible embedding spaces cannot be compared, existing data has an explicit migration decision, and permission-first/offline tests remain green.
-   - Use [`docs/learning/project-notes/tokenizer-consistency-audit-and-rag-index-safety.md`](./docs/learning/project-notes/tokenizer-consistency-audit-and-rag-index-safety.md) as the analysis and acceptance note.
+   - Benchmark Korean, English, and code fixtures against the current Jev default, including relevant tail evidence in long chunks and the unrelated-reference precision observation from the hosted smoke.
+   - Persist embedding provider/model/dimensions/preprocessing/index-version identity; reject incompatible spaces even when dimensions match and define the legacy-data/backfill path.
+   - Add model-aware evidence windows and answer-context usage, retaining deterministic character caps and redacted diagnostics.
+   - Evaluate `BAAI/bge-reranker-v2-m3` only for the optional cross-encoder strategy. Verify effective settings first; the July MS MARCO override is historical, not a confirmed current setting.
+   - Stop when fixtures validate evidence coverage, incompatible spaces cannot be compared, migration decisions are explicit, and permission-first/offline tests remain green. Cross-encoder runtime readiness is a separate conditional gate.
+   - Follow the [canonical sequence and acceptance scope](./docs/implementation-tracking.md#following-retrieval-move-tokenizer-aware-retrieval-and-embedding-index-safety).
 
 2. **Internal performance / quality analysis baseline**
    - Enable `MY_AGENTS_METRICS_ENABLED=true` only in local, staging, or trusted internal runs.
@@ -458,7 +461,7 @@ The next recommendation mirrors implementation tracking; it is not new implement
    - Invite only trusted testers at first, with explicit alpha framing and a warning against sensitive uploads.
 
 4. **Hosted ingestion performance pass**
-   - Treat Render free-tier PDF/Markdown ingestion slowness as a resource/process-isolation limitation, not a parser correctness bug.
+   - Earlier free-tier ingestion slowness is historical. The last recorded host was paid Standard (1 CPU / 2 GB); verify current resources and worker execution before diagnosing new latency.
    - Prefer small Markdown/plain-text/native-text PDFs for public demo.
    - Deploy `MY_AGENTS_INGESTION_EXECUTION_MODE=external_worker` with a separate `python -m my_agents.ingestion_worker` process before trying large files in production.
    - Add stale-run recovery, worker health checks, and parser policy controls before treating ingestion as production-grade.
@@ -472,7 +475,7 @@ The next recommendation mirrors implementation tracking; it is not new implement
 6. **Production-ish auth hardening**
    - Promote local auth abuse protection to a shared limiter when deployment topology requires it.
    - Keep the offline/local auth email boundary testable.
-   - Prepare real email-provider integration notes before public demo exposure.
+   - Resend HTTP integration and notes already exist; verify actual inbox delivery and failure handling during broader hosted auth smoke.
 
 7. **Scoped instruction profiles**
    - Add user and group/workspace instruction profiles as durable Markdown guidance for assistant and future agent behavior.
