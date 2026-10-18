@@ -126,6 +126,14 @@ class DocumentModel(Base):
     source_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     source_page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     parser_name: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    original_file_id: Mapped[str | None] = mapped_column(
+        ForeignKey("stored_files.id"), nullable=True, index=True
+    )
+    ingestion_mode: Mapped[str] = mapped_column(
+        String(20), default="standard", server_default="standard", nullable=False
+    )
+    processing_provenance_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     owner_user_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     group_id: Mapped[str | None] = mapped_column(ForeignKey("groups.id"), nullable=True, index=True)
     knowledge_base_id: Mapped[str] = mapped_column(
@@ -156,6 +164,7 @@ class DocumentParseArtifactModel(Base):
     markdown_content: Mapped[str] = mapped_column(Text, nullable=False)
     elements_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     warnings_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    processing_provenance_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )
@@ -289,6 +298,11 @@ class ExtractionRunModel(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     document_id: Mapped[str] = mapped_column(ForeignKey("documents.id"), nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False)
+    ingestion_mode: Mapped[str] = mapped_column(
+        String(20), default="standard", server_default="standard", nullable=False
+    )
+    candidate_content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    candidate_elements_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     stage: Mapped[str | None] = mapped_column(String(40), nullable=True)
     progress_percent: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     chunk_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

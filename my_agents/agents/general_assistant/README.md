@@ -253,3 +253,11 @@ the current question, and the final incomplete-context disclosure is included in
 Internal delivery metadata records model, counting method, and rendered-text-only scope. Native
 attachments and provider tool processing remain outside this estimate. Document-workspace answers
 apply the same policy independently using their workspace model.
+
+## Document retrieval preferences
+
+Product runs pin the registered user's `document_retrieval_priority` at admission and retain it
+on resume. `automatic` uses the existing source gate; `always` requests authorized document
+retrieval; `on_request` searches for explicit document requests or an explicitly selected KB scope.
+Current no-document instructions take precedence, and attachment-specific routing remains intact.
+Guest runs use `automatic`. See the [preference and file contract](../../../docs/product-chat-service/44-private-document-files-and-preferences.md).

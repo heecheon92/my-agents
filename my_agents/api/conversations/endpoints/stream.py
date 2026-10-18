@@ -160,6 +160,7 @@ def resumed_conversation_run_events(
         reasoning_mode=run.reasoning_mode,  # type: ignore[arg-type]
         reasoning_effort=run.reasoning_effort,  # type: ignore[arg-type]
         assistant_model=run.assistant_model,
+        run_id=run.id,
     )
     retrieval_context: ConversationRetrievalContext | None = None
     memory_snapshot: str | None = None
@@ -684,6 +685,7 @@ def conversation_run_events(
             reasoning_mode=reasoning.mode,
             reasoning_effort=reasoning.effort,
             assistant_model=reasoning.model,
+            run_id=execution_run_id,
         )
         retrieval_context: ConversationRetrievalContext | None = None
         memory_snapshot = graph_memory_source_snapshot_json(graph_input)

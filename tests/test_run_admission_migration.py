@@ -5,12 +5,10 @@ import uuid
 
 import pytest
 from alembic.config import Config
-from sqlalchemy import create_engine, inspect, select, text
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import make_url
-from sqlalchemy.orm import Session
 
 from alembic import command
-from my_agents.conversations.models import AgentRunModel, ConversationModel
 
 
 @pytest.fixture(params=["sqlite", "postgresql"])
@@ -41,22 +39,28 @@ def test_active_run_index_upgrade_and_downgrade(migration_url, monkeypatch, dupl
     config = Config("alembic.ini")
     command.upgrade(config, "20260825_0033")
     engine = create_engine(url)
-    with Session(engine) as db:
-        db.add(ConversationModel(id="one", owner_user_id="user"))
-        db.flush()
-        # Seed the legacy schema without emitting nullable columns added by later ORM versions.
+    with engine.begin() as db:
+        db.execute(
+            text(
+                "INSERT INTO conversations (id,owner_user_id,title,created_at) "
+                "VALUES ('one','user','fixture',CURRENT_TIMESTAMP)"
+            )
+        )
+        # Current ORM defaults include later columns; seed only the 0033 schema.
         for i in range(2 if duplicates else 1):
             db.execute(
-                AgentRunModel.__table__.insert().values(
-                    id=str(i), conversation_id="one", user_id="user", status="running"
-                )
+                text(
+                    "INSERT INTO agent_runs (id,conversation_id,user_id,status,reasoning_mode,"
+                    "reasoning_effort,resolved_knowledge_base_count,created_at) VALUES "
+                    "(:id,'one','user','running','standard','medium',0,CURRENT_TIMESTAMP)"
+                ),
+                {"id": str(i)},
             )
-        db.commit()
     if duplicates:
         with pytest.raises(RuntimeError, match="duplicate active conversations"):
             command.upgrade(config, "head")
-        with Session(engine) as db:
-            assert list(db.scalars(select(AgentRunModel.status))) == ["running", "running"]
+        with engine.connect() as db:
+            assert list(db.scalars(text("SELECT status FROM agent_runs"))) == ["running", "running"]
         assert "uq_agent_runs_active_conversation" not in {
             i["name"] for i in inspect(engine).get_indexes("agent_runs")
         }
@@ -69,6 +73,6 @@ def test_active_run_index_upgrade_and_downgrade(migration_url, monkeypatch, dupl
         assert "uq_agent_runs_active_conversation" not in {
             i["name"] for i in inspect(engine).get_indexes("agent_runs")
         }
-        with Session(engine) as db:
-            assert list(db.scalars(select(AgentRunModel.status))) == ["running"]
+        with engine.connect() as db:
+            assert list(db.scalars(text("SELECT status FROM agent_runs"))) == ["running"]
     engine.dispose()

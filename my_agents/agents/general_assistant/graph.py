@@ -39,6 +39,7 @@ from my_agents.agents.general_assistant.retrieval_gate import (
     RetrievalSourceDecider,
     RetrievalSourceDecision,
     get_retrieval_source_decider,
+    retrieval_preference_decision,
 )
 from my_agents.agents.rag_agent.tool_selection import (
     RagRetrievalToolDecider,
@@ -163,11 +164,18 @@ def decide_retrieval_source(
             ),
             "full_document_requested": False,
         }
-    decider = _retrieval_source_decider(context.get("retrieval_source_decider"))
-    decision = decider.decide(
-        messages=_state_messages(state.get("messages", [])),
+    messages = _state_messages(state.get("messages", []))
+    decision = retrieval_preference_decision(
+        priority=context.get("document_retrieval_priority", "automatic"),
+        messages=messages,
         selection_context=selection_context,
     )
+    if decision is None:
+        decider = _retrieval_source_decider(context.get("retrieval_source_decider"))
+        decision = decider.decide(
+            messages=messages,
+            selection_context=selection_context,
+        )
     if decision.source != "knowledge_base":
         return {
             "retrieval_source_decision": decision,

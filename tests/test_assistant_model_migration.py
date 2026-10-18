@@ -7,8 +7,6 @@ from alembic.config import Config
 from sqlalchemy import create_engine, inspect, text
 
 from alembic import command
-from my_agents.auth.models import UserModel
-from my_agents.conversations.models import AgentRunModel, ConversationModel
 
 
 @pytest.fixture(autouse=True)
@@ -24,17 +22,25 @@ def test_model_preferences_upgrade_and_downgrade_preserve_legacy_rows(tmp_path, 
     command.upgrade(config, "20260905_0034")
     engine = create_engine(url)
     with engine.begin() as db:
+        # Seed the schema at 0034, without current ORM defaults for columns introduced later.
         db.execute(
-            UserModel.__table__.insert().values(
-                id="user", email="test@example.com", nickname="Test", password_hash="offline"
+            text(
+                "INSERT INTO users (id,email,nickname,password_hash,approval_status,account_type,"
+                "user_type,created_at) VALUES ('user','test@example.com','Test','offline',"
+                "'approved','registered','normal',CURRENT_TIMESTAMP)"
             )
         )
         db.execute(
-            ConversationModel.__table__.insert().values(id="conversation", owner_user_id="user")
+            text(
+                "INSERT INTO conversations (id,owner_user_id,title,created_at) "
+                "VALUES ('conversation','user','fixture',CURRENT_TIMESTAMP)"
+            )
         )
         db.execute(
-            AgentRunModel.__table__.insert().values(
-                id="run", conversation_id="conversation", user_id="user", status="completed"
+            text(
+                "INSERT INTO agent_runs (id,conversation_id,user_id,status,reasoning_mode,"
+                "reasoning_effort,resolved_knowledge_base_count,created_at) VALUES "
+                "('run','conversation','user','completed','standard','medium',0,CURRENT_TIMESTAMP)"
             )
         )
     command.upgrade(config, "head")

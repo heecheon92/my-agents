@@ -15,6 +15,7 @@ from pydantic import ValidationError
 
 from my_agents.agents.general_assistant.memory_recall import latest_human_text, message_text
 from my_agents.agents.general_assistant.responders import ResponseProviderConfigurationError
+from my_agents.assistant_preferences import DocumentRetrievalPriority
 from my_agents.decisions import ChoiceDecider, JevDecisionClient, decision_state, use_jev
 from my_agents.knowledge.auth import KnowledgeBaseSelectionContext
 from my_agents.knowledge.routing import route_retrieval
@@ -48,6 +49,11 @@ _EXPLICIT_BYPASS_HINTS = (
     "without knowledge base",
     "without using knowledge base",
     "do not use saved docs",
+    "do not use documents",
+    "don't use documents",
+    "do not search documents",
+    "don't search documents",
+    "without documents",
     "don't use saved docs",
     "dont use saved docs",
     "do not search saved docs",
@@ -125,6 +131,19 @@ _FOLLOW_UP_HINTS = (
     "다음은",
     "또",
 )
+_EXPLICIT_DOCUMENT_REQUEST = re.compile(
+    r"\b(?:my|our|uploaded|saved|stored|this|that|the)\s+(?:[\w-]+\s+){0,2}"
+    r"(?:documents?|docs?|files?|knowledge\s*bases?)\b"
+    r"|\b(?:search|use|consult|read|check|look\s+(?:through|in|at))\s+"
+    r"(?:documents?|docs?|files?)\b"
+    r"|\bknowledge\s*base\b"
+    r"|\b[\w.-]+\.(?:pdf|md|txt|docx|xlsx|pptx)\b"
+    r"|(?:저장|업로드|첨부|이|그|해당|내|우리)\s*(?:된|한|해놓은|놓은)?\s*(?:문서|파일|자료)"
+    r"|(?:문서|파일|자료)\s*(?:기반|기준|에서|에\s*따라|를\s*(?:사용|참고|검색|찾|읽))"
+    r"|(?:문서|파일|자료)(?:를|을)?\s*(?:검색|찾아보|찾|읽|참고|사용)"
+    r"|지식\s*베이스",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -133,6 +152,70 @@ class RetrievalSourceDecision:
 
     source: RetrievalSource
     reason: str
+
+
+def retrieval_preference_decision(
+    *,
+    priority: DocumentRetrievalPriority,
+    messages: Sequence[BaseMessage],
+    selection_context: KnowledgeBaseSelectionContext,
+) -> RetrievalSourceDecision | None:
+    """Apply a pinned user preference without changing source authorization.
+
+    Automatic delegates to the existing semantic gate. The opt-in modes use local
+    rules so a provider failure cannot override the saved preference.
+    """
+    if priority == "automatic":
+        return None
+    query = latest_human_text(messages)
+    if _explicitly_bypasses_knowledge_base(query):
+        return RetrievalSourceDecision("bypass", "latest user message explicitly refuses documents")
+    if selection_context.mode == "selected" and not _selection_context_is_explicit(
+        selection_context
+    ):
+        return RetrievalSourceDecision(
+            "bypass", "selected source scope contains no private knowledge base"
+        )
+    if priority == "always":
+        return RetrievalSourceDecision(
+            "knowledge_base", "user preference requests document search on every turn"
+        )
+    if _selection_context_is_explicit(selection_context):
+        return RetrievalSourceDecision(
+            "knowledge_base", "request explicitly selects a knowledge-base scope"
+        )
+    if _EXPLICIT_DOCUMENT_REQUEST.search(query):
+        return RetrievalSourceDecision(
+            "knowledge_base", "latest user message requests document-backed information"
+        )
+    if not _explicitly_prefers_current_or_web(query) and _continues_document_request(messages):
+        return RetrievalSourceDecision(
+            "knowledge_base", "follow-up continues the recent explicit document request"
+        )
+    return RetrievalSourceDecision(
+        "bypass", "user preference searches documents only when requested"
+    )
+
+
+def _continues_document_request(messages: Sequence[BaseMessage]) -> bool:
+    """Only inherit a recent document request through explicit follow-up language."""
+    user_messages = [message_text(item) for item in messages if isinstance(item, HumanMessage)]
+    if not user_messages:
+        return False
+    latest = " ".join(user_messages[-1].casefold().split())
+    if not any(latest.startswith(hint) for hint in _FOLLOW_UP_HINTS):
+        return False
+    for previous in reversed(user_messages[:-1][-3:]):
+        if _explicitly_bypasses_knowledge_base(previous) or _explicitly_prefers_current_or_web(
+            previous
+        ):
+            return False
+        if _EXPLICIT_DOCUMENT_REQUEST.search(previous):
+            return True
+        normalized = " ".join(previous.casefold().split())
+        if not any(normalized.startswith(hint) for hint in _FOLLOW_UP_HINTS):
+            return False
+    return False
 
 
 class RetrievalSourceDecider(Protocol):
@@ -333,7 +416,19 @@ def _build_gate_model_args(settings: Settings) -> dict[str, Any]:
 
 def _explicitly_bypasses_knowledge_base(message: str) -> bool:
     normalized = " ".join(message.casefold().split())
-    return any(hint in normalized for hint in _EXPLICIT_BYPASS_HINTS)
+    return any(hint in normalized for hint in _EXPLICIT_BYPASS_HINTS) or bool(
+        re.search(
+            r"\b(?:do\s+not|don['’]?t|never)\s+"
+            r"(?:search|use|consult|read|check|look\s+(?:through|in|at))\s+"
+            r"(?:documents?|docs?|files?)\b"
+            r"|\bwithout\s+(?:searching|using|consulting|reading|checking)\s+"
+            r"(?:documents?|docs?|files?)\b"
+            r"|(?:문서|파일|자료)(?:는|를|을|도)?\s*"
+            r"(?:(?:사용|참고|검색)\s*하지|(?:찾아보|찾|읽|보)지)\s*(?:마|말)"
+            r"|(?:문서|파일|자료)(?:는|를|을|도)?\s*안\s*(?:사용|참고|검색|찾아보|찾|읽|보)",
+            normalized,
+        )
+    )
 
 
 def _explicitly_prefers_current_or_web(message: str) -> bool:

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from my_agents.agents.rag_agent import SqlAlchemyRagAgentRuntime
 from my_agents.api.assistant import GraphRunner
+from my_agents.conversations.models import AgentRunModel
 from my_agents.knowledge.auth import KnowledgeBaseSelectionContext
 from my_agents.memory.runtime import SqlAlchemyMemoryRuntime
 from my_agents.observability.metrics import track_graph_invocation
@@ -40,6 +41,7 @@ def graph_context_for_run(
     reasoning_mode: ReasoningMode = "standard",
     reasoning_effort: ReasoningEffort = "medium",
     assistant_model: str | None = None,
+    run_id: str | None = None,
 ) -> dict[str, object]:
     """Build LangGraph runtime context for one conversation run.
 
@@ -47,14 +49,19 @@ def graph_context_for_run(
     graph-owned without storing DB sessions or adapter objects in graph state.
     """
     settings = get_settings()
+    run = db.get(AgentRunModel, run_id) if run_id is not None else None
+    retrieval_priority = run.document_retrieval_priority if run is not None else "automatic"
     context: dict[str, object] = {
         "user_id": user_id,
         "memory_runtime": SqlAlchemyMemoryRuntime(db),
-        "rag_runtime": SqlAlchemyRagAgentRuntime(db),
+        "rag_runtime": SqlAlchemyRagAgentRuntime(
+            db, force_retrieval=retrieval_priority in {"always", "on_request"}
+        ),
         "knowledge_base_selection": selection_context,
         "reasoning_mode": reasoning_mode,
         "reasoning_effort": reasoning_effort,
         "assistant_model": assistant_model,
+        "document_retrieval_priority": retrieval_priority,
         "full_document_max_chars": settings.full_document_max_chars,
         "full_document_range_chars": settings.full_document_range_chars,
     }

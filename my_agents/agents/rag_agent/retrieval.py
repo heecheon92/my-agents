@@ -105,6 +105,7 @@ class SqlAlchemyRagAgentRuntime:
     """DB-backed runtime adapter used by conversation-run service layers."""
 
     db: Session
+    force_retrieval: bool = False
 
     def retrieve_context(
         self,
@@ -124,6 +125,7 @@ class SqlAlchemyRagAgentRuntime:
             messages=messages,
             selection_context=selection_context,
             selected_document_id=selected_document_id,
+            force_retrieval=self.force_retrieval,
         )
 
     def document_options(
@@ -185,6 +187,7 @@ def retrieve_context(
     messages: Sequence[BaseMessage],
     selection_context: KnowledgeBaseSelectionContext,
     selected_document_id: str | None = None,
+    force_retrieval: bool = False,
 ) -> RagAgentRetrievalResult:
     """Invoke the RAG Agent retrieval tool and return answer-ready context.
 
@@ -201,6 +204,7 @@ def retrieve_context(
             messages=messages,
             selection_context=selection_context,
             selected_document_id=selected_document_id,
+            force_retrieval=force_retrieval,
         ),
     )
     result = graph_result.result

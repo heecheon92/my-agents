@@ -65,6 +65,7 @@ from my_agents.api.conversations.serializers import (
     user_visible_citation_pairs,
 )
 from my_agents.api.errors import APIErrorCode, APIHTTPException
+from my_agents.assistant_preferences import document_retrieval_priority
 from my_agents.conversations.models import (
     AgentEventModel,
     AgentEventType,
@@ -217,6 +218,7 @@ def _complete_sync_conversation_run(
         reasoning_mode=run.reasoning_mode,  # type: ignore[arg-type]
         reasoning_effort=run.reasoning_effort,  # type: ignore[arg-type]
         assistant_model=run.assistant_model,
+        run_id=run.id,
     )
     try:
         result = invoke_graph_runner_collecting_updates(
@@ -442,6 +444,7 @@ def complete_resumed_conversation_run(
         reasoning_mode=run.reasoning_mode,  # type: ignore[arg-type]
         reasoning_effort=run.reasoning_effort,  # type: ignore[arg-type]
         assistant_model=run.assistant_model,
+        run_id=run.id,
     )
     try:
         result = invoke_graph_runner_resume_collecting_updates(
@@ -1060,6 +1063,7 @@ def _insert_run(
         reasoning_effort=reasoning_effort,
         assistant_model=assistant_model,
         requested_assistant_model=assistant_model,
+        document_retrieval_priority=document_retrieval_priority(db, user_id),
         user_message_id=user_message_id,
         knowledge_base_selection_mode=selection_context.mode,
         selected_knowledge_base_ids_json=json.dumps(

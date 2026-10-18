@@ -11,5 +11,7 @@ def import_all_models() -> None:
     import my_agents.conversations.models  # noqa: F401
     import my_agents.document_workspace.models  # noqa: F401
     import my_agents.groups.models  # noqa: F401
+    import my_agents.knowledge.file_upload_models  # noqa: F401
     import my_agents.knowledge.models  # noqa: F401
     import my_agents.memory.models  # noqa: F401
+    import my_agents.storage.models  # noqa: F401

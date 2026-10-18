@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from time import perf_counter
 
 from sqlalchemy.orm import Session
@@ -98,6 +99,16 @@ class ContextForgeService:
                 authorized_document_count=document_count,
                 user_selectable_document_count=user_selectable_document_count,
             )
+            if request.force_retrieval and plan.route_decision.route == "no_retrieval":
+                # Preference forces a search, never a fabricated grounding requirement.
+                plan = replace(
+                    plan,
+                    route_decision=replace(
+                        plan.route_decision,
+                        route="retrieval_optional",
+                        reason="document retrieval preference requests authorized source search",
+                    ),
+                )
         timing.update(
             route=plan.route_decision.route,
             intent=plan.intent,

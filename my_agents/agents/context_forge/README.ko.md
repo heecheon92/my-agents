@@ -174,3 +174,10 @@ Console에서 재순위 전후를 비교하려면 `MY_AGENTS_DEPLOYMENT_ENVIRONM
 겹치는 window를 만들고 최대 점수를 사용합니다. 질문이 예산을 초과하거나 window가 16개를
 넘으면 fused 순서를 유지합니다. 원본 chunk와 인용 ID를 바꾸지 않으며 공개 event 필드도 추가하지
 않습니다. [문서 답변 신뢰성](../../../docs/product-chat-service/43-document-answer-reliability.md)을 참고하세요.
+
+## 호출자가 요청한 문서 검색
+
+`force_retrieval`은 제품의 명시적 문서 검색 정책에 따라 `no_retrieval` 의도를
+`retrieval_optional`로 전환합니다. 기존 권한 범위, 모호성 처리, 순위 결정 및 context
+예산은 그대로 적용합니다. General Assistant가 실행별 정책을 고정하며 ContextForge는
+focused retrieval engine 역할을 유지합니다.

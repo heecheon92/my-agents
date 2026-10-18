@@ -111,3 +111,11 @@ Decisions API에 질문과 길이를 제한한 권한 있는 발췌, 임시 후�
 note, memory channel은 보내지 않습니다. Routing provider 선택은 이 mode를 바꾸지 않습니다.
 어느 batch든 실패하면 전체 fused shortlist를 유지하며 offline response mode는 Jev 호출을
 끕니다. [재순위 계약](../../../docs/product-chat-service/37-jev-evidence-reranking.ko.md)을 참고하세요.
+
+## 명시적 검색 정책
+
+제품 runtime은 실행 시작 시 고정한 문서 검색 설정을 전달합니다. 명시적인 개인 문서 검색
+요청은 focused ContextForge 호출의 `force_retrieval`을 통해 일반 질문으로 분류된 경우에도
+검색을 수행하게 합니다. KB와 문서 권한, clarification 처리, 근거 선택 규칙은 그대로
+적용합니다. 후속 질문 재작성과 임의 문서 제목 해석은 별도 과제입니다.
+[문서 검색 설정 계약](../../../docs/product-chat-service/44-private-document-files-and-preferences.md)을 참고하세요.

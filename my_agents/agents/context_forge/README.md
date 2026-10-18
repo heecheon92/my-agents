@@ -180,3 +180,10 @@ The optional cross-encoder uses its own tokenizer to cover chunks with overlappi
 maximum-score aggregation. Over-budget queries or more than 16 windows preserve the fused order.
 Source chunks and citation identifiers remain intact; no new public event fields are introduced.
 See [document-answer reliability](../../../docs/product-chat-service/43-document-answer-reliability.md).
+
+## Caller-requested document search
+
+`force_retrieval` lets the product's explicit document-search policy promote a `no_retrieval`
+intent to `retrieval_optional`. The normal authorized-source boundary, ambiguity handling,
+ranking, and context budget still apply. The general assistant pins this policy per run;
+ContextForge remains the focused retrieval engine.

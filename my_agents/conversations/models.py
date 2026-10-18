@@ -111,6 +111,9 @@ class AgentRunModel(Base):
     reasoning_effort: Mapped[str] = mapped_column(String(20), default="medium", nullable=False)
     client_request_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     assistant_model: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    document_retrieval_priority: Mapped[str] = mapped_column(
+        String(20), default="automatic", server_default="automatic", nullable=False
+    )
     summarization_model: Mapped[str | None] = mapped_column(String(80), nullable=True)
     user_message_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     context_delivery_json: Mapped[str | None] = mapped_column(Text, nullable=True)

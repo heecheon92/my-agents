@@ -250,3 +250,12 @@ tokenizer를 임의로 대체하지 않습니다. 현재 질문보다 선택적 
 생략되었다는 최종 안내 문구도 예산에 포함합니다. 내부 전달 metadata에는 모델, 계산 방법,
 렌더링된 텍스트만을 계산했다는 범위를 남깁니다. 파일·이미지와 provider tool 처리는 이 추정
 밖에 있으며 document-workspace 답변은 별도 workspace 모델로 같은 정책을 적용합니다.
+
+## 문서 검색 설정
+
+제품 실행은 시작할 때 등록 사용자의 `document_retrieval_priority`를 고정하고 재개할 때도
+같은 값을 사용합니다. `automatic`은 기존 source gate를 사용하고, `always`는 권한이 확인된
+문서 검색을 요청합니다. `on_request`는 명시적인 문서 요청이나 사용자가 선택한 KB 범위가
+있을 때 검색합니다. 현재 메시지의 문서 사용 금지 요청이 우선하며 첨부 파일 전용 경로도
+유지합니다. 게스트는 `automatic`을 사용합니다.
+[설정 및 파일 계약](../../../docs/product-chat-service/44-private-document-files-and-preferences.md)을 참고하세요.

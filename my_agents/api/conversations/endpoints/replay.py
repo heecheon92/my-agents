@@ -367,6 +367,7 @@ def replay_conversation_run_events(
             reasoning_mode=replay_context.reasoning_mode,
             reasoning_effort=replay_context.reasoning_effort,
             assistant_model=replay_context.assistant_model,
+            run_id=run.id,
         )
         retrieval_context: ConversationRetrievalContext | None = None
         memory_snapshot = graph_memory_source_snapshot_json(graph_input)

@@ -111,3 +111,11 @@ the query and bounded authorized excerpts to the same Decisions API, with synthe
 It never sends summary, file-note, or memory channels. Routing-provider selection does not change
 this mode. Any failed batch preserves the entire fused shortlist; offline response mode suppresses
 Jev calls. See the [reranking contract](../../../docs/product-chat-service/37-jev-evidence-reranking.md).
+
+## Explicit retrieval policy
+
+The product runtime carries a run-pinned retrieval preference. An explicit private-document
+request can set `force_retrieval` on the focused ContextForge call so a general-intent shortcut
+still performs a search. Authorized KB/document scope, clarification handling, and evidence
+selection remain enforced. This setting does not rewrite a follow-up question or resolve an
+arbitrary document title. See the [document preference contract](../../../docs/product-chat-service/44-private-document-files-and-preferences.md).

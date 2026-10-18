@@ -46,6 +46,7 @@ class ContextForgeRequest:
     selection_context: KnowledgeBaseSelectionContext
     selected_document_id: str | None = None
     quality_mode: QualityMode = "high_recall"
+    force_retrieval: bool = False
 
 
 @dataclass(frozen=True)

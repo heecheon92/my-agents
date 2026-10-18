@@ -30,6 +30,12 @@ class UserModel(Base):
     rejected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     account_type: Mapped[str] = mapped_column(String(20), default="registered", nullable=False)
     assistant_model_preference: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    document_retrieval_priority: Mapped[str] = mapped_column(
+        String(20), default="automatic", server_default="automatic", nullable=False
+    )
+    document_ingestion_mode: Mapped[str] = mapped_column(
+        String(20), default="standard", server_default="standard", nullable=False
+    )
     summarization_model_preference: Mapped[str | None] = mapped_column(String(80), nullable=True)
     user_type: Mapped[str] = mapped_column(
         String(20), default=UserType.NORMAL.value, nullable=False, index=True

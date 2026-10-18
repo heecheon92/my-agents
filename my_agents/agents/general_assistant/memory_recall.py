@@ -10,6 +10,7 @@ from langchain_core.messages import BaseMessage
 from langgraph.runtime import Runtime
 
 from my_agents.agents.rag_agent import RagAgentRuntime
+from my_agents.assistant_preferences import DocumentRetrievalPriority
 from my_agents.knowledge.auth import KnowledgeBaseSelectionContext
 from my_agents.memory.runtime import MemoryRuntime, memory_item_context
 from my_agents.settings import ReasoningEffort, ReasoningMode
@@ -29,6 +30,7 @@ class AssistantRuntimeContext(TypedDict, total=False):
     reasoning_mode: ReasoningMode
     reasoning_effort: ReasoningEffort
     assistant_model: str | None
+    document_retrieval_priority: DocumentRetrievalPriority
     full_document_max_chars: int
     full_document_range_chars: int
 

@@ -59,6 +59,10 @@ EXPECTED_SERVICE_TABLES = {
     "knowledge_base_publications",
     "knowledge_publish_requests",
     "documents",
+    "stored_files",
+    "storage_quota",
+    "storage_cleanup",
+    "document_upload_sessions",
     "document_permissions",
     "document_parse_artifacts",
     "extraction_runs",
@@ -315,7 +319,7 @@ def test_legacy_documents_without_knowledge_base_upgrade_to_head(
     assert "user_type" in user_columns
     assert legacy_nickname == "legacy-doc"
     assert legacy_user_type == "normal"
-    assert alembic_version == "20261017_0041"
+    assert alembic_version == "20261018_0042"
 
     _assert_database_matches_model_metadata(database_url)
 
@@ -346,6 +350,13 @@ def test_sqlite_json_fallback_reads_chunks_created_before_pgvector_migration(
             connection.exec_driver_sql(
                 "alter table document_chunks add column embedding_index_id varchar(64)"
             )
+            for column in (
+                "original_file_id varchar(36)",
+                "ingestion_mode varchar(20) not null default 'standard'",
+                "processing_provenance_json text",
+                "processed_at datetime",
+            ):
+                connection.exec_driver_sql(f"alter table documents add column {column}")
             knowledge_base_id = str(uuid.uuid4())
             connection.exec_driver_sql(
                 "insert into knowledge_bases "

@@ -94,11 +94,17 @@ def patch_assistant_preferences(
     if principal.is_guest:
         raise APIHTTPException(
             status_code=403,
-            detail="Guests cannot select an assistant model",
+            detail="Guests cannot customize assistant preferences",
             code=APIErrorCode.PERMISSION_DENIED,
         )
     user = db.get(UserModel, principal.user_id)
     assert user is not None
-    user.assistant_model_preference = request.assistant_model
+    changes = request.model_dump(exclude_unset=True)
+    if "assistant_model" in changes:
+        user.assistant_model_preference = changes["assistant_model"]
+    if "document_retrieval_priority" in changes:
+        user.document_retrieval_priority = changes["document_retrieval_priority"]
+    if "document_ingestion_mode" in changes:
+        user.document_ingestion_mode = changes["document_ingestion_mode"]
     db.commit()
     return assistant_preferences_response(db, principal, settings)
