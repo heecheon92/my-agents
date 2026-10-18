@@ -78,3 +78,5 @@
 - [복구 가능한 답변 실행](./42-durable-answer-generation.md): independent worker, async admission, snapshots, and resumable delivery.
 
 - [문서 답변 신뢰성](./43-document-answer-reliability.md): 임베딩 식별 정보, 제한된 근거 구간, 모델별 텍스트 예산과 기존 문서 재수집.
+
+- [비공개 문서 파일과 사용자 설정](./44-private-document-files-and-preferences.md): R2 원본 보관, 직접 업로드, 처리 방식, 안전한 재처리와 문서 검색 우선순위.

@@ -6,13 +6,13 @@ import json
 import logging
 from datetime import UTC, datetime
 from threading import Thread
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile, status
-from sqlalchemy import delete, or_, select
+from sqlalchemy import delete, or_, select, update
 from sqlalchemy.orm import Session
 
-from my_agents.api.errors import APIHTTPException, document_upload_error_code
+from my_agents.api.errors import APIErrorCode, APIHTTPException, document_upload_error_code
 from my_agents.auth.contracts import Principal
 from my_agents.auth.dependencies import get_current_principal
 from my_agents.auth.guest_limits import assert_guest_access_active, assert_guest_can_create_document
@@ -60,7 +60,7 @@ from my_agents.knowledge.uploads import (
 from my_agents.memory.service import UserMemoryService
 from my_agents.permissions.contracts import DocumentOperation
 from my_agents.permissions.service import AuthorizationService
-from my_agents.persistence.database import get_database_session
+from my_agents.persistence.database import get_database_session, supports_background_sessions
 from my_agents.settings import Settings, get_settings
 
 documents_router = APIRouter(prefix="/documents", tags=["documents"])
@@ -145,6 +145,7 @@ async def upload_document(
     ],
     knowledge_base_id: Annotated[str, Form(min_length=1)],
     group_id: Annotated[str | None, Form()] = None,
+    ingestion_mode: Annotated[Literal["standard", "ai_assisted"] | None, Form()] = None,
 ) -> DocumentResponse:
     """Create a document from a safe upload and persist parser metadata."""
     if group_id is not None:
@@ -163,6 +164,7 @@ async def upload_document(
         settings=settings,
         title=title,
         file=file,
+        ingestion_mode=ingestion_mode,
     )
 
 
@@ -175,9 +177,13 @@ async def upload_document_in_knowledge_base(
     title: str,
     file: UploadFile,
     allow_system_management: bool = False,
+    ingestion_mode: Literal["standard", "ai_assisted"] | None = None,
 ) -> DocumentResponse:
     """Create an uploaded document inside an already path-selected KB."""
+    from my_agents.api.document_files import selected_ingestion_mode
+
     assert_guest_can_create_document(db, principal, settings)
+    mode = selected_ingestion_mode(db, principal, settings, ingestion_mode)
     knowledge_base = require_document_writable_knowledge_base(
         db,
         knowledge_base_id=knowledge_base_id,
@@ -248,6 +254,36 @@ async def upload_document_in_knowledge_base(
             ),
         ) from exc
     source_filename = file.filename.strip() if file.filename else None
+    original = None
+    if settings.storage_provider == "r2" and not principal.is_guest:
+        from my_agents.storage import StorageUnavailable, get_object_store
+        from my_agents.storage.lifecycle import lock_reserved_file, mark_file_ready, reserve_file
+
+        if not supports_background_sessions(settings.database_url):
+            raise StorageUnavailable("Private originals require a persistent application database.")
+
+        original = reserve_file(
+            db,
+            settings,
+            owner_user_id=principal.user_id,
+            byte_size=parsed.byte_size,
+            sha256=parsed.sha256,
+            filename=source_filename or "document",
+            content_type=parsed.source_content_type,
+        )
+        # Durable reservation survives provider failure and is reclaimed by cleanup.
+        db.commit()
+        require_document_writable_knowledge_base(
+            db,
+            knowledge_base_id=knowledge_base_id,
+            principal=principal,
+            allow_system_management=allow_system_management,
+        )
+        lock_reserved_file(db, original)
+        get_object_store(settings).put(
+            original.object_key, content, content_type=parsed.source_content_type
+        )
+        mark_file_ready(db, original)
     with timing.phase("document.persist"):
         document = DocumentModel(
             title=title.strip(),
@@ -259,6 +295,8 @@ async def upload_document_in_knowledge_base(
             source_sha256=parsed.sha256,
             source_page_count=parsed.page_count,
             parser_name=parsed.parser_name,
+            ingestion_mode=mode,
+            original_file_id=original.id if original else None,
             owner_user_id=principal.user_id,
             group_id=knowledge_base.group_id,
             knowledge_base_id=knowledge_base.id,
@@ -365,7 +403,7 @@ def update_document(
     document = _get_document_or_404(db, document_id)
     if not _can_write_document(db, principal, document):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="document not found")
-    _apply_document_update(document, request)
+    _apply_document_update(db, document, request)
     db.add(document)
     db.commit()
     db.refresh(document)
@@ -390,7 +428,7 @@ def update_document_in_knowledge_base(
     )
     if not _can_write_document(db, principal, document):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="document not found")
-    _apply_document_update(document, request)
+    _apply_document_update(db, document, request)
     db.add(document)
     db.commit()
     db.refresh(document)
@@ -781,15 +819,39 @@ def _can_delete_document(db: Session, principal: Principal, document: DocumentMo
     )
 
 
-def _apply_document_update(document: DocumentModel, request: DocumentUpdateRequest) -> None:
+def _apply_document_update(
+    db: Session, document: DocumentModel, request: DocumentUpdateRequest
+) -> None:
+    if request.content is not None:
+        db.execute(
+            update(DocumentModel)
+            .where(DocumentModel.id == document.id)
+            .values(title=DocumentModel.title)
+        )
+        if db.scalar(
+            select(ExtractionRunModel.id).where(
+                ExtractionRunModel.document_id == document.id,
+                ExtractionRunModel.status.in_(["pending", "running"]),
+            )
+        ):
+            raise APIHTTPException(
+                status_code=409,
+                code=APIErrorCode.REPROCESS_IN_PROGRESS,
+                detail="Wait for document processing before editing its content.",
+            )
     if request.title is not None:
         document.title = request.title.strip()
     if request.content is not None:
         document.content = request.content
+        document.processing_provenance_json = None
+        document.processed_at = None
 
 
 def _delete_document_dependencies(db: Session, document_id: str) -> None:
     """Remove rows that hold foreign keys to a document or its chunks/runs."""
+    from my_agents.storage.lifecycle import schedule_document_file_cleanup
+
+    schedule_document_file_cleanup(db, document_id)
     db.execute(delete(CitationModel).where(CitationModel.document_id == document_id))
     db.execute(
         delete(DocumentParseArtifactModel).where(
@@ -859,6 +921,18 @@ def _document_response(document: DocumentModel) -> DocumentResponse:
         source_sha256=document.source_sha256,
         source_page_count=document.source_page_count,
         parser_name=document.parser_name,
+        ingestion_mode=document.ingestion_mode,
+        original_retained=document.original_file_id is not None,
+        processing_provenance=(
+            json.loads(document.processing_provenance_json)
+            if document.processing_provenance_json
+            else None
+        ),
+        processed_at=(
+            document.processed_at.replace(tzinfo=UTC)
+            if document.processed_at is not None and document.processed_at.tzinfo is None
+            else document.processed_at
+        ),
     )
 
 
@@ -870,6 +944,23 @@ def _extraction_run_response(
     entity_count: int | None = None,
     relationship_count: int | None = None,
 ) -> ExtractionRunResponse:
+    error_code = None
+    if run.error:
+        prefix = run.error.split(":", 1)[0]
+        error_code = (
+            prefix
+            if prefix
+            in {
+                "document_processing_limit",
+                "document_processing_empty",
+                "document_processing_invalid_output",
+                "document_processing_unavailable",
+                "document_processing_fidelity_failed",
+                "document_changed_during_processing",
+                "reprocess_in_progress",
+            }
+            else "document_processing_failed"
+        )
     resolved_chunk_count = _resolve_run_count(
         db,
         run,
@@ -901,6 +992,7 @@ def _extraction_run_response(
         entity_count=resolved_entity_count,
         relationship_count=resolved_relationship_count,
         error=run.error,
+        error_code=error_code,
         started_at=run.started_at,
         completed_at=run.completed_at,
     )

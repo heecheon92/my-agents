@@ -209,6 +209,32 @@ Jev에는 질문과 관련된 부분을 발췌하고, 최종 답변의 텍스트
 사용하므로 추가 worker나 frontend 설정이 필요하지 않습니다.
 [마이그레이션·신뢰성 계약](./docs/product-chat-service/43-document-answer-reliability.md)을 참고하세요.
 
+## 비공개 문서 원본과 사용자 설정
+
+진행 중인 저장소 구현은 비공개 R2에 원본을 보관하고, 권한을 확인한 원본 다운로드와
+`standard` 또는 `ai_assisted` 방식의 원본 재처리를 제공합니다. 재처리가 성공해야 새 본문과
+검색 색인을 함께 활성화합니다. 등록 사용자는 `/assistant/preferences`에서 문서 검색 우선순위
+(`always`, `automatic`, `on_request`)와 기본 처리 방식을 저장합니다. 게스트는 `automatic`과
+`standard`를 유지합니다.
+
+R2는 선택 기능이며 기본값은 비활성화입니다. `.env.example`의
+`MY_AGENTS_STORAGE_PROVIDER=r2`, `MY_AGENTS_R2_*` 백엔드 설정을 구성하고 직접 업로드에 필요한
+정확한 브라우저 origin의 버킷 CORS 규칙을 추가하세요. R2의 소유권 기록을 보존하려면
+PostgreSQL 또는 지속되는 로컬 디스크의 파일 기반 SQLite가 필요하며 기본 메모리 DB는
+거부합니다. 파일 SQLite는 WAL로 동시 조회를 지원하며 쓰기는 한 번에 하나만 처리합니다. 시작 전에
+`uv run alembic upgrade head`를 실행합니다. 직접 업로드 한도는 5 MiB이고, 서버가 안내하는 multipart 클라이언트 한도는
+4,000,000바이트입니다. 비밀키는 브라우저에 전달하지 않습니다. 기존 API 프로세스에서 수집과
+재시도 가능한 파일 정리를 실행하므로 추가 유료 worker 서비스가 필요하지 않습니다.
+AI-assisted 모드를 선택하면 추출한 텍스트를 OpenAI로 보내며 모델 비용이 발생할 수 있습니다.
+Deterministic 모드는 실제 모델 호출 없이 처리했음을 명시합니다. 짧은 일반 텍스트 단위는
+원문의 범위와 내용을 보존하는 chunk로 묶어 임베딩하며, 스프레드시트와 슬라이드의 레코드
+경계는 분리해서 유지합니다.
+
+기존 업로드의 원본은 복구할 수 없어 원본 재처리가 필요하면 다시 업로드해야 합니다.
+임시 OpenAI workspace 첨부 파일의 기존 만료 정책은 유지합니다. 로컬 검증을 마친 진행 중인
+작업이며 운영 환경 배포는 아직 하지 않았습니다.
+[저장소·사용자 설정·통합 계약](./docs/product-chat-service/44-private-document-files-and-preferences.md)을 참고하세요.
+
 ## 검증
 
 ```bash

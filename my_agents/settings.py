@@ -44,6 +44,23 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
+    storage_provider: Literal["disabled", "r2"] = Field(
+        default="disabled", validation_alias="MY_AGENTS_STORAGE_PROVIDER"
+    )
+    storage_direct_uploads_enabled: bool = Field(
+        default=True, validation_alias="MY_AGENTS_STORAGE_DIRECT_UPLOADS_ENABLED"
+    )
+    r2_endpoint_url: str = Field(default="", validation_alias="MY_AGENTS_R2_ENDPOINT_URL")
+    r2_bucket_name: str = Field(default="", validation_alias="MY_AGENTS_R2_BUCKET_NAME")
+    r2_access_key_id: SecretStr | None = Field(
+        default=None, validation_alias="MY_AGENTS_R2_ACCESS_KEY_ID"
+    )
+    r2_secret_access_key: SecretStr | None = Field(
+        default=None, validation_alias="MY_AGENTS_R2_SECRET_ACCESS_KEY"
+    )
+    storage_max_bytes: int = Field(
+        default=8_000_000_000, ge=1, validation_alias="MY_AGENTS_STORAGE_MAX_BYTES"
+    )
     document_ingestion_model: str = Field(
         default="gpt-6-luna", validation_alias="MY_AGENTS_DOCUMENT_INGESTION_MODEL"
     )

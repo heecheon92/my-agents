@@ -209,6 +209,90 @@ Do **not** position it as production-ready or broadly self-serve yet. The main b
 
 ## Latest verification evidence
 
+Private document files and preferences — 2026-10-18 (Active, implemented and verified locally; hosted rollout pending):
+
+- Final complete backend suite after WAL, protected-span processing, and exact-source text
+  packing: **1,172 passed, 42 skipped, 12 existing warnings** in 172.28 seconds. The affected
+  ingestion module also passed all **35 checks**. Earlier database/ingestion/processing/auth
+  checks passed: **129 passed, 1 skipped**. Skipped checks do not establish their gated runtime
+  scenarios; the warnings are existing dependency/API deprecations.
+- Earlier forced interleaving reproduced an in-memory SQLite `StaticPool` isolation failure:
+  closing a polling session could roll back the worker's pending completion on the same connection.
+  Threaded tests now use file SQLite; **24/24 repeats** passed without increasing their timeout.
+- Real concurrent uploads then exposed rollback-journal blocking of an independent auth/session
+  reader during a large atomic index write. File SQLite now enables and verifies WAL, retains
+  `FULL` synchronization and the five-second busy timeout, and still permits only one writer.
+  A regression spills more than 5 MiB and verifies the reader sees old committed data before
+  commit and new data afterward. PostgreSQL and in-memory behavior are unchanged by WAL setup.
+- R2 private originals require PostgreSQL or SQLite on persistent local disk. In-memory Product
+  DBs advertise direct uploads off and reject direct/registered multipart retention with 503
+  before storage writes, preventing ownerless objects after an ephemeral database restart.
+- Applied migration `20261018_0042` to the existing local PostgreSQL development database after
+  confirming no active ingestion. Before/after digests preserved **13 documents and 1,136 chunks**.
+  No hosted migration or automatic reprocessing was performed.
+- Development R2 CORS was read back with exactly `http://localhost:3000` and
+  `http://localhost:3100`, methods `PUT`, `GET`, `HEAD`, allowed `Content-Type`, exposed `ETag`
+  and `Content-Disposition`, and 600-second preflight caching. Production/preview origins are
+  not configured. A one-day expiry targets only `staging/`; the existing seven-day incomplete
+  multipart-upload abort rule remains, with no original expiry. Backend staging cleanup waits
+  for admission expiry plus two minutes; reserved/failed server writes get five minutes to settle.
+- Bucket-scoped application credentials passed SDK `HeadBucket` (HTTP 200). The local endpoint's
+  bucket suffix was removed so bucket and account endpoint are separate SDK inputs; account URLs
+  and credentials remain local-only. Real R2 API round trip: **18/18 checks passed**, including
+  auth/CSRF, OPTIONS 204/PUT, hash and download byte identity, UTF-8 Korean filename, denied unsigned
+  GET, idempotent completion, standard ingestion, honest deterministic AI provenance, reprocess,
+  deletion/download revocation, and provider erasure.
+- Synthetic original and staging bytes were removed. Staging was manually removed after the test,
+  with its durable expiry job left scheduled; this does not establish a real one-hour expiry wait.
+- The first real OpenAI probe failed fidelity checks safely without DB mutation. After protecting
+  code/table spans, a real `gpt-6-luna` probe preserved all four principles in a synthetic Korean
+  state-design excerpt and kept indented Python byte-identical. Provenance was `openai`, two
+  sections, with section-location and protected-content warnings. This checks one real processing
+  boundary, not broad quality/latency or a complete production AI-ingestion workflow.
+- Plain-text packing on the exact synthetic **4.8 MB Korean fixture** reduced index chunks from
+  **200,000 to 1,334**, with a maximum of 1,499 characters and full source-span coverage.
+  Chunking CPU time was **0.231 s before / 0.300 s after**; this demonstrates fewer embedding/index
+  rows, not a 150-fold CPU speedup. Spreadsheet/presentation record boundaries stay isolated.
+- Real concurrent API/R2 ingestion of the 4.8 MB fixture and a 31-byte file completed in **6.03 s**
+  with WAL verified, both hashes matching, and no API errors. This is one local synthetic case,
+  not a hosted throughput or latency guarantee.
+- Final real browser walkthrough passed in **14.5 s**: preferences persisted, small Markdown and
+  4.8 MB text uploaded concurrently, original download hash and provenance matched, and both
+  documents were removed with HTTP 204. No 5xx responses, page errors, or cookies/CSRF headers
+  sent to R2 were observed. The earlier real BFF + R2 suite passed **22/22**.
+- Final frontend checks: **493 unit tests passed**, **11 original-file scenarios passed**, and
+  the full browser suite reported **256 passed, 2 skipped, 1 known baseline failure** at
+  `conversation-list.spec.ts:188`. TypeScript, Biome (317 files), and build passed. These checks
+  include safe error copy and same-upload-ID completion retries in the separate repository.
+  No hosted migration, production enablement, or deployment is claimed.
+- [Current contract](./product-chat-service/44-private-document-files-and-preferences.md) and
+  [debugging lessons](./learning/project-notes/private-originals-and-atomic-document-processing.md).
+
+Document-answer reliability — 2026-10-18 (implemented and verified locally; not deployed):
+
+- Full offline suite: **963 passed, 40 skipped, 12 existing dependency/API deprecation warnings**
+  in 140.22 seconds. Final focused reranker/fallback checks: **51 passed**; Ruff lint/format and
+  diff whitespace checks passed. PostgreSQL identity/migration checks: **25 passed** against an isolated local
+  PostgreSQL 17/pgvector container, including the real vector-distance path and model metadata parity.
+- English/Korean/code tail-evidence baseline: **0/3** facts reached the old Jev prefix; **3/3** reach
+  the new query-bearing window under the unchanged byte cap. Scoring is mocked, not live quality
+  evidence. Selector-only means over 100 iterations: **0.95 / 0.41 / 0.62 ms** respectively.
+- Migration `20261017_0041` preserves old vectors as unknown; explicit re-ingestion is required
+  for their semantic lane. New chunk and metadata-profile vectors receive complete index identity.
+  Keyword/BM25 and authorization boundaries remain intact. No automatic paid backfill ran.
+- Optional cross-encoder windows and final ordinary/workspace text budgets are model-aware;
+  unknown tokenizer mappings/cache misses use an explicit conservative fallback. Tests include
+  final disclosure accounting, query/window limits, invalid vectors, and permission isolation.
+- Generated OpenAPI is byte-identical to the baseline (SHA-256
+  `976ba5b29a28d4b60a3b79fb38694689fe177f158e2c1ef204fb49ac0b1e1cc2`). No frontend model or UI
+  changes are needed. No dependencies, workers, or hosted services were added.
+- Applied migration `0041` to the existing **local** PostgreSQL development database after
+  confirming no active runs. Digest checks preserved all **1,136 chunk vectors and 11 metadata-profile
+  vectors**. They remain unknown until explicit re-ingestion; no hosted migration or backfill ran.
+- [Current contract](./product-chat-service/43-document-answer-reliability.md) and
+  [learning evidence](./learning/project-notes/tokenizer-consistency-audit-and-rag-index-safety.md).
+
+
 Recoverable answer generation — 2026-10-17 (local implementation; hosted rollout pending):
 
 Final policy: `MY_AGENTS_DURABLE_RUNS_ENABLED=false` by default. The owner keeps the existing
@@ -684,8 +768,8 @@ Interactive reset is on `develop` only as of the 2026-10-17 remote check.
 ### Knowledge ingestion and retrieval
 
 - Text-based upload and extraction supports PDFs through the current local parser chain (`pymupdf_text_v1` primary, then lazy pypdf classification for fallback routing to `pypdf_text_v2`, Docling Markdown, constrained Tesseract OCR, and deterministic stream fallback), Markdown through `utf8_markdown_v1`, plain text through `utf8_text_v1`, and Office uploads through local Markdown parsers (`openpyxl_markdown_v1`, `python_pptx_markdown_v1`, and DOCX-only `docling_docx_markdown_v1`).
-- Original uploaded file bytes are not retained yet; only extracted text, source metadata, and supported parse artifacts are stored, so future parser upgrades cannot reprocess old uploads unless users upload the source file again.
-- Scanned/image-heavy PDFs have only a constrained local OCR fallback; legacy `.doc`, HTML, CSV/JSON structural parsing, PDF parse-artifact migration, source-file retention, and production layout-aware parsing remain future work.
+- Original retention is an [active local implementation](#active-private-document-files-and-preferences) through optional private R2 storage. Historical uploads retain only extracted text, source metadata, and supported parse artifacts; their original bytes cannot be reconstructed and require re-upload. Final verification and hosted rollout remain open.
+- Scanned/image-heavy PDFs have only a constrained local OCR fallback; legacy `.doc`, HTML, CSV/JSON structural parsing, PDF parse-artifact migration and production layout-aware parsing remain future work; private source-file retention is tracked in the active storage milestone.
 - Async ingestion progress is available through an additive endpoint (`POST /documents/{id}/ingest/async`) plus direct run polling. Local/default mode still supports in-process threads; hosted mode can set `MY_AGENTS_INGESTION_EXECUTION_MODE=external_worker` and run `python -m my_agents.ingestion_worker`. Frontend multi-file upload fan-out is exposed as a safe `/health` hint backed by `MY_AGENTS_DOCUMENT_UPLOAD_CONCURRENCY` (default `3`). Durable queue semantics and stale-run recovery remain future work.
 - Ingestion performance now has a repeatable local benchmark harness plus an opt-in redacted Rich timing panel (`MY_AGENTS_DEBUG_INGESTION_TIMING_LOGGING=true`) for upload parse, PDF parser subphases, extraction/indexing phases, and OpenAI metadata/embedding spans. OpenAI metadata generation overlaps chunk embedding/indexing when metadata mode is OpenAI-backed.
 - Embeddings use a provider boundary: deterministic 32-dimensional lexical-hash vectors by default, or opt-in OpenAI embeddings through `langchain-openai` when `MY_AGENTS_EMBEDDING_MODE=openai`; Postgres chunks also store a pgvector `embedding_vector` through Alembic migration `20260521_0007`.
@@ -781,13 +865,38 @@ Backlog reconciliation is validated: stale implementation/publication statuses a
 sequence are aligned with ROADMAP. The hosted smoke is recorded in the completed index below.
 Frontend repository changes remain outside this task.
 
-### Next: tokenizer-aware retrieval and embedding-index safety
+### Active: private document files and preferences
 
-Mermaid integration is complete; do not schedule its implementation again. The previously
-following retrieval-safety milestone is the next recommended engineering work, not an automatic
-implementation authorization. See [its scope and acceptance criteria](#following-retrieval-move-tokenizer-aware-retrieval-and-embedding-index-safety).
-Remaining production feature/idle-path smoke and the proposed pre-deploy/CI gates remain separate
-verification and operations work; they were not closed by the frontend release.
+- [ ] **Active:** Private R2 originals, direct-upload admission/finalization, authorized downloads,
+  standard/AI-assisted processing, original-based reprocessing, and per-user document retrieval
+  preferences are implemented and verified locally, pending publication. Frontend runtime and
+  UX work stay in the separate repository and consume served OpenAPI. No hosted migration,
+  production enablement, or deployment is claimed.
+- Storage is optional infrastructure (`MY_AGENTS_STORAGE_PROVIDER=disabled` by default). The
+  existing API process with persistent Product DB supports extraction and cleanup retries; no new
+  Cloudflare Worker or paid Render service is required. The approved S3 dependency is `boto3`.
+- Preserve immutable originals, verify actual bytes before activation, reserve pending/copy
+  capacity (including separate staging reservations), keep the current searchable representation
+  until replacement succeeds, and preserve separate lifetimes for group publication copies. Guests retain standard multipart ingestion.
+- Local evidence above includes offline backend/frontend checks, existing-PostgreSQL migration
+  preservation, real R2/API/BFF/browser integration, and one live OpenAI fidelity sample. Remaining
+  limits include gated skipped checks, broader AI quality/latency and hosted load, production
+  credentials/CORS/schema rollout, and a full real-time staging-expiry wait. Legacy originals
+  cannot be backfilled from extracted text. The known frontend baseline failure remains separate.
+- Retrieval preference does not resolve full follow-up query/document contextualization or
+  adaptive surrounding-context expansion. Those remain explicit quality follow-ups.
+- [Current contract](./product-chat-service/44-private-document-files-and-preferences.md);
+  [architecture learning note](./learning/project-notes/private-originals-and-atomic-document-processing.md).
+
+### Active: document-answer reliability
+
+Document-answer reliability is implemented and verified locally, pending hosted rollout:
+embedding-space identity, legacy keyword fallback with explicit re-ingestion, query-bearing Jev
+excerpts, optional cross-encoder tokenizer windows, and model-aware final text budgets. No extra
+worker service or frontend change is needed. Live/held-out quality and optional cross-encoder host
+measurements remain separate from the offline and PostgreSQL acceptance evidence.
+See [current contract](./product-chat-service/43-document-answer-reliability.md) and
+[scope and acceptance criteria](#following-retrieval-move-tokenizer-aware-retrieval-and-embedding-index-safety).
 
 ### Deferred: attachment-free artifact generation
 
@@ -830,7 +939,7 @@ scheduled. Intent, current behavior, adoption triggers, and acceptance requireme
 
 ### Following retrieval move: tokenizer-aware retrieval and embedding-index safety
 
-The next RAG correctness milestone is not to force one tokenizer across every model. It is to keep
+This milestone does not force one tokenizer across every model. It keeps
 each model paired with its own tokenizer while preventing silent reranker truncation and incompatible
 embedding-space comparisons. The cross-encoder alternative defaults to `BAAI/bge-reranker-v2-m3`; Jev is the default strategy; the
 2026-07-14 safe effective-settings audit found an MS MARCO MiniLM runtime override whose English
@@ -838,7 +947,7 @@ WordPiece tokenizer reduced a representative 1,500-character Korean query/chunk 
 tokens to the model's 512-token input. The same audit found that stored embeddings have no complete
 provider/model/index identity and compatibility currently proves only equal vector length.
 
-Suggested order:
+Accepted scope and verification criteria:
 
 1. Establish Korean, English, and code fixtures against the current Jev default, including
    relevant evidence near the end of long chunks. Record quality, latency, and bounded-excerpt
@@ -884,7 +993,7 @@ Stop condition:
 
 ### Near implementation milestone: Upstage-backed layout-aware ingestion foundation
 
-The next ingestion-quality milestone is to preserve original uploaded files and generalize the provider-backed parse artifact layer before wiring Upstage Document Parse as an optional cloud parser. DOCX now proves the Markdown-plus-elements artifact shape locally, but source-file retention, parser caching, PDF artifact migration, and provider routing remain future work. The near-term plan lives in `docs/plan/upstage-integration.md`, and the broader architecture idea lives in `docs/idea/layout-aware-ingestion-rag-agent.md`.
+This earlier provider proposal is deferred while the active [private document files and preferences](#active-private-document-files-and-preferences) milestone implements original retention and original-based reprocessing with local parsers and OpenAI-assisted cleanup. It does not authorize an Upstage integration. Parser caching, generalized PDF artifacts, and additional parser providers remain separate follow-ups. Historical scope lives in `docs/plan/upstage-integration.md`, with broader ideas in `docs/idea/layout-aware-ingestion-rag-agent.md`.
 
 Suggested order:
 

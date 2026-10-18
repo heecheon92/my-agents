@@ -28,6 +28,16 @@ The current product shape is a FastAPI + LangGraph assistant/router foundation t
 - `my_agents/knowledge/embedding_index.py` owns embedding-space identity. New vectors must carry
   provider/model/dimensions/encoding/preprocessing/version identity; never infer legacy provenance
   from equal dimensions. Preserve permission-first keyword fallback and explicit re-ingestion.
+- `my_agents/storage/` owns private R2 originals, capacity reservations, and durable deletion.
+  Product DB owns permissions and object references and must persist across restarts. Seal verified
+  upload bytes under server-only keys; never ingest a mutable browser-upload object. Cleanup runs
+  inside the existing API process. See `docs/product-chat-service/44-private-document-files-and-preferences.md`.
+- `my_agents/knowledge/document_processing.py` owns standard and AI-assisted preparation. Preserve
+  code/tables verbatim outside model calls and validate prose fidelity. Publish replacement text,
+  chunks, metadata, and provenance atomically; retain the current index after a failed attempt.
+  File-backed SQLite uses WAL on persistent local storage; PostgreSQL remains the deployment path.
+- Document retrieval and ingestion defaults belong to per-user Product DB preferences. Pin retrieval
+  priority at run admission, preserve it on resume, and preserve omitted preference PATCH fields.
 - `my_agents/settings.py` owns environment-driven runtime configuration.
 - `my_agents/model_defaults.py` owns the selectable model catalog and editable application default reasoning effort.
 - `my_agents/schemas.py` owns Pydantic request/response contracts.

@@ -30,7 +30,22 @@ def test_health_returns_status_service_and_version(client: TestClient) -> None:
         "service": "my-agents",
         "version": "0.1.0",
         "frontend_config": {
-            "documents": {"upload_concurrency": 3},
+            "documents": {
+                "upload_concurrency": 3,
+                "direct_uploads": False,
+                "max_upload_bytes": 5242880,
+                "multipart_max_bytes": 4000000,
+                "allowed_extensions": [
+                    ".pdf",
+                    ".md",
+                    ".markdown",
+                    ".txt",
+                    ".xlsx",
+                    ".pptx",
+                    ".docx",
+                ],
+                "ai_assisted_ingestion": True,
+            },
             "durable_runs": {"enabled": False, "ready": False},
         },
     }

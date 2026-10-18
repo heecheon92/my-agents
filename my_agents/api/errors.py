@@ -18,6 +18,13 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 
 class APIErrorCode(StrEnum):
+    STORAGE_UNAVAILABLE = "storage_unavailable"
+    STORAGE_QUOTA_EXCEEDED = "storage_quota_exceeded"
+    UPLOAD_EXPIRED = "upload_expired"
+    UPLOAD_IN_PROGRESS = "upload_in_progress"
+    UPLOAD_INTEGRITY_MISMATCH = "upload_integrity_mismatch"
+    UPLOAD_NOT_READY = "upload_not_ready"
+    ORIGINAL_UNAVAILABLE = "original_unavailable"
     REPROCESS_IN_PROGRESS = "reprocess_in_progress"
     DOCUMENT_PROCESSING_LIMIT = "document_processing_limit"
     DOCUMENT_PROCESSING_EMPTY = "document_processing_empty"
@@ -114,10 +121,11 @@ class APIHTTPException(HTTPException):
 
 
 def install_api_error_handlers(app: FastAPI) -> None:
-    """Install backward-compatible handlers that add a stable top-level code."""
-
+    """Install stable, redacted HTTP and service error responses."""
     from my_agents.knowledge.document_processing import DocumentProcessingError
     from my_agents.knowledge.extraction import ExtractionAlreadyRunning
+    from my_agents.storage import StorageUnavailable
+    from my_agents.storage.lifecycle import StorageQuotaExceeded
 
     @app.exception_handler(DocumentProcessingError)
     async def processing_error_handler(_request, exc):
@@ -134,6 +142,26 @@ def install_api_error_handlers(app: FastAPI) -> None:
             content={
                 "detail": "This document is already being processed.",
                 "code": APIErrorCode.REPROCESS_IN_PROGRESS,
+            },
+        )
+
+    @app.exception_handler(StorageUnavailable)
+    async def storage_unavailable_handler(_request, _exc):
+        return JSONResponse(
+            status_code=503,
+            content={
+                "detail": "Private file storage is unavailable.",
+                "code": APIErrorCode.STORAGE_UNAVAILABLE,
+            },
+        )
+
+    @app.exception_handler(StorageQuotaExceeded)
+    async def storage_quota_handler(_request, _exc):
+        return JSONResponse(
+            status_code=413,
+            content={
+                "detail": "Private file storage capacity has been reached.",
+                "code": APIErrorCode.STORAGE_QUOTA_EXCEEDED,
             },
         )
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile, status
 from sqlalchemy import delete, select
@@ -278,6 +278,7 @@ async def upload_knowledge_base_document(
             )
         ),
     ],
+    ingestion_mode: Annotated[Literal["standard", "ai_assisted"] | None, Form()] = None,
 ) -> DocumentResponse:
     return await upload_document_in_knowledge_base(
         knowledge_base_id=knowledge_base_id,
@@ -287,6 +288,7 @@ async def upload_knowledge_base_document(
         title=title,
         file=file,
         allow_system_management=True,
+        ingestion_mode=ingestion_mode,
     )
 
 

@@ -16,3 +16,5 @@ These notes are my-agents-specific learning and architecture notes that do not f
 - [GPT-6 reasoning 호환성](./gpt6-reasoning-compatibility.ko.md)
 
 - [Workspace 이미지 입력](./workspace-image-inputs.ko.md)
+
+- [Private originals and atomic document processing](./private-originals-and-atomic-document-processing.md): immutable uploads, candidate activation, and retryable object cleanup.

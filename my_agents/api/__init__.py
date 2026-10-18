@@ -20,6 +20,7 @@ from my_agents.api.assistant import GraphRunner, assistant_router, get_graph_run
 from my_agents.api.assistant_preferences import assistant_preferences_router
 from my_agents.api.auth import auth_router
 from my_agents.api.conversations import conversations_router
+from my_agents.api.document_files import file_router
 from my_agents.api.document_workspace import document_workspace_router
 from my_agents.api.documents import documents_router
 from my_agents.api.errors import APIErrorResponse, install_api_error_handlers
@@ -78,6 +79,7 @@ def create_app() -> FastAPI:
     app.include_router(group_invitations_router)
     app.include_router(knowledge_bases_router)
     app.include_router(documents_router)
+    app.include_router(file_router)
     app.include_router(document_workspace_router)
     app.include_router(reasoning_router)
     app.include_router(assistant_preferences_router)
@@ -108,6 +110,11 @@ def _application_lifespan(settings: Settings):
         guest_cleanup_task = None
         notification_task = None
         cleanup_task = None
+        storage_cleanup_task = None
+        if settings.storage_provider == "r2":
+            from my_agents.storage.lifecycle import storage_cleanup_loop
+
+            storage_cleanup_task = asyncio.create_task(storage_cleanup_loop(settings))
         if settings.document_workspace_enabled and settings.response_mode == "openai":
             from my_agents.document_workspace.retention import cleanup_loop
 
@@ -130,6 +137,12 @@ def _application_lifespan(settings: Settings):
                 guest_cleanup_task = asyncio.create_task(guest_cleanup_loop(settings, resources))
             yield
         finally:
+            if storage_cleanup_task is not None:
+                storage_cleanup_task.cancel()
+                try:
+                    await storage_cleanup_task
+                except asyncio.CancelledError:
+                    pass
             if guest_cleanup_task is not None:
                 guest_cleanup_task.cancel()
                 try:

@@ -70,6 +70,12 @@ from my_agents.knowledge.schemas import (
 )
 from my_agents.persistence.database import get_database_session
 from my_agents.settings import Settings, get_settings
+from my_agents.storage.lifecycle import (
+    attach_document_file_copy,
+    discard_file_copies,
+    prepare_document_file_copies,
+    schedule_document_file_cleanup,
+)
 
 groups_router = APIRouter(prefix="/groups", tags=["groups"])
 group_invitations_router = APIRouter(prefix="/group-invitations", tags=["groups"])
@@ -522,6 +528,9 @@ def approve_publish_request(
         knowledge_base_id=publish_request.target_knowledge_base_id or "",
         group_id=group_id,
     )
+    file_copies = prepare_document_file_copies(
+        db, [source_document], owner_user_id=target_knowledge_base.owner_user_id
+    )
     published_document = _copy_document_for_group_knowledge_base(
         source_document=source_document,
         target_knowledge_base=target_knowledge_base,
@@ -536,10 +545,17 @@ def approve_publish_request(
     )
     published_document_id = published_document.id
     try:
+        attach_document_file_copy(
+            db,
+            source_document=source_document,
+            copied_document=published_document,
+            reserved_file=file_copies.get(source_document.id),
+        )
         KnowledgeExtractionService(db).ingest_document(published_document)
     except Exception:
         db.rollback()
         _delete_unapproved_group_document_copy(db, document_id=published_document_id)
+        discard_file_copies(db, file_copies)
         db.commit()
         raise
     publish_request.status = KnowledgePublishRequestStatus.APPROVED.value
@@ -821,6 +837,9 @@ def _copy_document_for_group_knowledge_base(
         source_sha256=source_document.source_sha256,
         source_page_count=source_document.source_page_count,
         parser_name=source_document.parser_name,
+        ingestion_mode=source_document.ingestion_mode,
+        processing_provenance_json=source_document.processing_provenance_json,
+        processed_at=source_document.processed_at,
         owner_user_id=requester_user_id,
         group_id=target_knowledge_base.group_id,
         knowledge_base_id=target_knowledge_base.id,
@@ -834,9 +853,9 @@ def _copy_parse_artifacts_for_group_document(
     published_document: DocumentModel,
 ) -> None:
     artifacts = db.scalars(
-        select(DocumentParseArtifactModel).where(
-            DocumentParseArtifactModel.document_id == source_document.id
-        )
+        select(DocumentParseArtifactModel)
+        .where(DocumentParseArtifactModel.document_id == source_document.id)
+        .order_by(DocumentParseArtifactModel.created_at, DocumentParseArtifactModel.id)
     ).all()
     for artifact in artifacts:
         db.add(
@@ -851,6 +870,7 @@ def _copy_parse_artifacts_for_group_document(
                 parser_version=artifact.parser_version,
                 parser_mode=artifact.parser_mode,
                 markdown_content=artifact.markdown_content,
+                processing_provenance_json=artifact.processing_provenance_json,
                 elements_json=artifact.elements_json,
                 warnings_json=artifact.warnings_json,
             )
@@ -859,6 +879,7 @@ def _copy_parse_artifacts_for_group_document(
 
 def _delete_unapproved_group_document_copy(db: Session, *, document_id: str) -> None:
     """Remove a group-copy document when publish approval ingestion fails."""
+    schedule_document_file_cleanup(db, document_id)
     db.execute(delete(CitationModel).where(CitationModel.document_id == document_id))
     db.execute(
         delete(StructuredKnowledgeEntityModel).where(

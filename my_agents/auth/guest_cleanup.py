@@ -55,6 +55,7 @@ from my_agents.memory.models import MemorySuggestionModel, UserMemoryModel, User
 from my_agents.memory.store_projection import delete_user_memory_projection
 from my_agents.persistence.langgraph import LangGraphPersistenceResources
 from my_agents.settings import Settings
+from my_agents.storage.lifecycle import schedule_user_file_cleanup
 
 logger = logging.getLogger(__name__)
 
@@ -325,6 +326,7 @@ def delete_expired_guest(
         )
         for doc_id in doc_ids:
             delete_document_artifacts(db, document_id=doc_id)
+        schedule_user_file_cleanup(db, user_id)
         db.execute(delete(DocumentModel).where(DocumentModel.id.in_(doc_ids)))
         db.execute(delete(KnowledgeBaseModel).where(KnowledgeBaseModel.id.in_(kb_ids)))
         db.execute(

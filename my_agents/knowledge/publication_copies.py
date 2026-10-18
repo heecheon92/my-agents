@@ -26,6 +26,12 @@ from my_agents.knowledge.models import (
     KnowledgePublishRequestStatus,
     StructuredKnowledgeEntityModel,
 )
+from my_agents.storage.lifecycle import (
+    attach_document_file_copy,
+    discard_file_copies,
+    prepare_document_file_copies,
+    schedule_document_file_cleanup,
+)
 
 
 @dataclass(frozen=True)
@@ -76,6 +82,18 @@ def copy_personal_knowledge_base_to_group(
     """
 
     _require_personal_standard_source(source_knowledge_base)
+    source_documents = db.scalars(
+        select(DocumentModel)
+        .where(
+            DocumentModel.knowledge_base_id == source_knowledge_base.id,
+            DocumentModel.owner_user_id == source_knowledge_base.owner_user_id,
+            DocumentModel.group_id.is_(None),
+        )
+        .order_by(DocumentModel.created_at.asc(), DocumentModel.id.asc())
+    ).all()
+    file_copies = prepare_document_file_copies(
+        db, source_documents, owner_user_id=group_owner_user_id
+    )
     group_copy = KnowledgeBaseModel(
         name=_unique_group_knowledge_base_name(
             db,
@@ -91,15 +109,6 @@ def copy_personal_knowledge_base_to_group(
     db.add(group_copy)
     db.flush()
 
-    source_documents = db.scalars(
-        select(DocumentModel)
-        .where(
-            DocumentModel.knowledge_base_id == source_knowledge_base.id,
-            DocumentModel.owner_user_id == source_knowledge_base.owner_user_id,
-            DocumentModel.group_id.is_(None),
-        )
-        .order_by(DocumentModel.created_at.asc(), DocumentModel.id.asc())
-    ).all()
     try:
         for source_document in source_documents:
             copied_document = _copy_document_for_group_knowledge_base(
@@ -110,6 +119,12 @@ def copy_personal_knowledge_base_to_group(
             db.add(copied_document)
             db.flush()
             copied_document_ids.append(copied_document.id)
+            attach_document_file_copy(
+                db,
+                source_document=source_document,
+                copied_document=copied_document,
+                reserved_file=file_copies.get(source_document.id),
+            )
             _copy_parse_artifacts_for_document(
                 db,
                 source_document=source_document,
@@ -123,6 +138,7 @@ def copy_personal_knowledge_base_to_group(
     except Exception:
         db.rollback()
         delete_knowledge_base_copy(db, knowledge_base_id=group_copy.id)
+        discard_file_copies(db, file_copies)
         db.commit()
         raise
 
@@ -233,6 +249,7 @@ def delete_knowledge_base_copy(db: Session, *, knowledge_base_id: str) -> None:
 def delete_document_artifacts(db: Session, *, document_id: str) -> None:
     """Remove rows that hold direct or indirect references to a document."""
 
+    schedule_document_file_cleanup(db, document_id)
     db.execute(delete(CitationModel).where(CitationModel.document_id == document_id))
     db.execute(
         delete(StructuredKnowledgeEntityModel).where(
@@ -291,6 +308,9 @@ def _copy_document_for_group_knowledge_base(
         source_sha256=source_document.source_sha256,
         source_page_count=source_document.source_page_count,
         parser_name=source_document.parser_name,
+        ingestion_mode=source_document.ingestion_mode,
+        processing_provenance_json=source_document.processing_provenance_json,
+        processed_at=source_document.processed_at,
         owner_user_id=owner_user_id,
         group_id=target_knowledge_base.group_id,
         knowledge_base_id=target_knowledge_base.id,
@@ -304,9 +324,9 @@ def _copy_parse_artifacts_for_document(
     copied_document: DocumentModel,
 ) -> None:
     artifacts = db.scalars(
-        select(DocumentParseArtifactModel).where(
-            DocumentParseArtifactModel.document_id == source_document.id
-        )
+        select(DocumentParseArtifactModel)
+        .where(DocumentParseArtifactModel.document_id == source_document.id)
+        .order_by(DocumentParseArtifactModel.created_at, DocumentParseArtifactModel.id)
     ).all()
     for artifact in artifacts:
         db.add(
@@ -321,6 +341,7 @@ def _copy_parse_artifacts_for_document(
                 parser_version=artifact.parser_version,
                 parser_mode=artifact.parser_mode,
                 markdown_content=artifact.markdown_content,
+                processing_provenance_json=artifact.processing_provenance_json,
                 elements_json=artifact.elements_json,
                 warnings_json=artifact.warnings_json,
             )

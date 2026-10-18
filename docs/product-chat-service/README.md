@@ -59,3 +59,5 @@ Keep detailed product-service documentation in this folder.
 - [Recoverable answer generation](./42-durable-answer-generation.md): independent worker, async admission, snapshots, and resumable delivery.
 
 - [Document-answer reliability](./43-document-answer-reliability.md): embedding identity, bounded evidence windows, model-aware text budgets, and legacy re-ingestion.
+
+- [Private document files and preferences](./44-private-document-files-and-preferences.md): R2 originals, direct uploads, processing modes, safe reprocessing, and user retrieval priority.

@@ -208,6 +208,32 @@ Apply migration `20261017_0041` before running this version. Existing vectors re
 explicit re-ingestion; no automatic paid backfill runs. This uses the existing API and database,
 with no extra worker or frontend configuration. See the [migration and reliability contract](./docs/product-chat-service/43-document-answer-reliability.md).
 
+## Private document originals and preferences
+
+The active storage implementation adds private R2 originals, authorized original downloads, and
+reprocessing from the original with `standard` or `ai_assisted` ingestion. Reprocessing activates
+new text and search indices together only after success. Registered users can save retrieval
+priority (`always`, `automatic`, `on_request`) and their default ingestion mode through
+`/assistant/preferences`; guests keep `automatic` and `standard`.
+
+R2 is optional and disabled by default. Configure `MY_AGENTS_STORAGE_PROVIDER=r2`, the
+`MY_AGENTS_R2_*` backend settings in `.env.example`, and an exact-origin bucket CORS rule for direct
+browser uploads. R2 requires PostgreSQL or file-backed SQLite on persistent local disk to preserve
+object ownership; the in-memory default is rejected. File SQLite uses WAL for concurrent polling
+and keeps its single-writer limit. Apply `uv run alembic upgrade head` before startup. Direct uploads
+accept 5 MiB;
+the served multipart client limit is 4,000,000 bytes. Private credentials never go to the browser.
+The existing API process supports extraction and retryable file cleanup, with no extra paid worker
+service. AI-assisted mode sends extracted text to OpenAI after the user selects that mode; it may
+incur model charges. Deterministic mode explicitly reports simulated processing. Adjacent short
+plain-text units are packed into source-preserving chunks before embedding; spreadsheet and slide
+record boundaries remain separate.
+
+Older uploads have no original to recover and require re-upload for original-based processing.
+Temporary OpenAI workspace attachments retain their existing expiry policy. This work is active
+and verified locally; hosted rollout remains pending. See the
+[storage, preferences, and integration contract](./docs/product-chat-service/44-private-document-files-and-preferences.md).
+
 ## Verification
 
 ```bash
