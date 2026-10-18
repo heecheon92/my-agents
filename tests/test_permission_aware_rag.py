@@ -838,6 +838,7 @@ def test_postgres_vector_statement_filters_permissions_before_vector_ordering() 
     statement = _postgres_vector_authorized_statement(
         user_id="user-1",
         query_embedding=[1.0, 0.0],
+        embedding_index_id="known-test-index",
         limit=10,
     )
 
@@ -849,10 +850,14 @@ def test_postgres_vector_statement_filters_permissions_before_vector_ordering() 
     assert "memberships.user_id" in sql
     assert "document_permissions.user_id" in sql
     assert "ORDER BY vector_distance" in sql
+    assert "document_chunks.embedding_index_id =" in sql
+    assert "vector_dims(document_chunks.embedding_vector) =" in sql
+    assert "CASE WHEN" in sql
 
     scoped_statement = _postgres_vector_authorized_statement(
         user_id="user-1",
         query_embedding=[1.0, 0.0],
+        embedding_index_id="known-test-index",
         limit=10,
         knowledge_base_ids=["kb-selected"],
     )

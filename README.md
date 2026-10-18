@@ -197,6 +197,17 @@ not automatically retry the model. Default limits retain 2,000 delivery frames a
 contract](./docs/product-chat-service/42-durable-answer-generation.md). Implementation and release
 verification are tracked separately in [implementation tracking](./docs/implementation-tracking.md#recoverable-answer-generation).
 
+## Document-answer reliability
+
+Document chunks and metadata-profile embeddings now record their model/index identity. Retrieval
+excludes unknown or incompatible vectors while retaining authorized keyword retrieval. Jev selects
+query-bearing evidence windows, and final answer text budgets use the selected model's tokenizer
+when available, with an explicit conservative fallback.
+
+Apply migration `20261017_0041` before running this version. Existing vectors remain unknown until
+explicit re-ingestion; no automatic paid backfill runs. This uses the existing API and database,
+with no extra worker or frontend configuration. See the [migration and reliability contract](./docs/product-chat-service/43-document-answer-reliability.md).
+
 ## Verification
 
 ```bash

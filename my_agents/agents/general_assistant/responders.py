@@ -493,18 +493,21 @@ def _debug_dump_response(response: Any) -> str:
 
 def _build_input_messages(**kwargs: Any) -> list[BaseMessage]:
     """Pack the rendered text boundary; never silently truncate the latest question."""
-    from my_agents.conversations.continuity import message_tokens
     from my_agents.settings import get_settings
+    from my_agents.token_budget import text_token_counter
 
     packed = dict(kwargs)
     packed["messages"] = list(kwargs.get("messages", []))
     packed["retrieved_context"] = list(kwargs.get("retrieved_context", []))
     packed["memory_context"] = list(kwargs.get("memory_context", []))
     omitted = False
+    counter = text_token_counter(kwargs["model_name"])
     budget = get_settings().context_input_tokens
     while True:
         rendered = _render_input_messages(**packed)
-        total = sum(map(message_tokens, rendered))
+        if omitted:
+            rendered[-1].content = str(rendered[-1].content) + "\nEarlier context is incomplete."
+        total = sum(counter.count(str(message.content)) + 12 for message in rendered)
         if total <= budget - 24:
             break
         history = packed["messages"]
@@ -532,6 +535,10 @@ def _build_input_messages(**kwargs: Any) -> list[BaseMessage]:
     manifest = {
         "policy_version": "conversation-context-v1",
         "estimated_text_input_tokens": total,
+        "input_model": counter.model,
+        "token_counting_method": counter.method,
+        "tokenizer": counter.encoding_name,
+        "budget_scope": "rendered_text_only",
         "message_ids": [message.id for message in packed["messages"] if message.id],
         "retrieved_source_count": len(packed["retrieved_context"]),
         "retrieved_document_ids": [
@@ -542,6 +549,4 @@ def _build_input_messages(**kwargs: Any) -> list[BaseMessage]:
         "historical_delivery": "recorded_text_boundary",
     }
     rendered[-1].additional_kwargs["context_delivery"] = manifest
-    if omitted:
-        rendered[-1].content = str(rendered[-1].content) + "\nEarlier context is incomplete."
     return rendered

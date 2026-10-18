@@ -1,6 +1,6 @@
 ---
 created: 2026-07-14
-updated: 2026-08-09
+updated: 2026-10-18
 status: active
 topics:
   - tokenization
@@ -9,6 +9,9 @@ topics:
   - rag
   - retrieval-quality
 related_code:
+  - my_agents/knowledge/embedding_index.py
+  - my_agents/knowledge/evidence_windows.py
+  - my_agents/token_budget.py
   - my_agents/knowledge/embeddings.py
   - my_agents/knowledge/extraction.py
   - my_agents/knowledge/models.py
@@ -202,8 +205,35 @@ The execution order and completion checklist are tracked as a critical next move
 [`ROADMAP.md`](../../../ROADMAP.md) and the portable handoff summary in
 [`docs/implementation-tracking.md`](../../implementation-tracking.md).
 
+## 2026-10-18 implementation and evidence
+
+The older audit above is historical. The implemented contract is now documented in
+[document-answer reliability](../../product-chat-service/43-document-answer-reliability.md).
+
+- **Reproduced symptom:** English, Korean, and code fixtures put a useful fact after the 3,000-byte
+  prefix. A mocked scorer could not see it in all three cases, so the weaker leading candidate won.
+- **Fix:** select a contiguous query-bearing source window under the same Jev payload limit. All
+  three facts now reach the scorer. Optional cross-encoder windows use that model's tokenizer,
+  reserve query/special tokens, cover the chunk with overlap, and aggregate the maximum score.
+- **Index safety:** migration `0041` records provider/model/dimensions/encoding/preprocessing/version
+  identity for new chunk and profile embeddings. SQLite and PostgreSQL tests prove unknown or
+  incompatible vectors do not receive similarity scores; PostgreSQL also guards the distance
+  expression against a corrupt vector dimension. Authorization still precedes candidate use.
+- **Rejected shortcut:** backfilling every old row with the currently configured model would invent
+  provenance. Old rows remain unknown and retain keyword/BM25 retrieval; explicit re-ingestion
+  computes the intended vectors and identity. A metadata-generation model is not an embedding model.
+- **Budget handling:** ordinary answers use their selected model; workspace answers use the
+  workspace model. A missing tokenizer mapping/cache uses an explicit conservative byte estimate,
+  with no request-time download. The final incomplete-context notice is counted too.
+- **Limits:** the three-case result proves evidence delivery and mocked ranking, not live Jev
+  relevance quality. Selector-only latency was approximately 0.4–0.9 ms per synthetic excerpt.
+  Full provider latency, larger held-out corpora, and a real optional cross-encoder runtime remain
+  follow-up measurements. Preliminary continuity heuristics are not exact provider token counts.
+
 ## Revision history
 
 - 2026-07-14: Created from the tokenizer consistency audit and promoted the remaining RAG safety work
   to the critical next-move roadmap.
 - 2026-08-09: Refreshed the chat-generation row for the GPT-5.6 Sol default.
+
+- 2026-10-18: Implemented embedding identity, legacy re-ingestion policy, query-bearing evidence windows, and model-aware final text budgets; recorded offline/PostgreSQL evidence and limits.

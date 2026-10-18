@@ -41,6 +41,8 @@ class DeterministicEmbeddingProvider:
     provider = "deterministic"
     model = "lexical-hash-v1"
     dimensions = DETERMINISTIC_EMBEDDING_DIMENSIONS
+    encoding_identity = "unicode-latin-digit-hangul-regex-v1"
+    preprocessing_identity = "casefold-sha256-l2-round6-v1"
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         with track_embedding_call(
@@ -63,6 +65,7 @@ class OpenAIEmbeddingProvider:
     """OpenAI embedding provider backed by langchain-openai."""
 
     provider = "openai"
+    preprocessing_identity = "langchain-length-safe-weighted-mean-v1"
 
     def __init__(self, settings: Settings, embeddings: OpenAIEmbeddings | None = None) -> None:
         api_key = settings.openai_api_key_value()
@@ -72,6 +75,15 @@ class OpenAIEmbeddingProvider:
             )
         self.model = settings.openai_embedding_model
         self.dimensions = settings.openai_embedding_dimensions
+        # Record the tokenizer actually selected by langchain-openai, including its
+        # documented cl100k fallback for unrecognized embedding model names.
+        import tiktoken
+
+        try:
+            encoding = tiktoken.model.encoding_name_for_model(self.model)
+        except KeyError:
+            encoding = "cl100k_base"
+        self.encoding_identity = f"tiktoken:{encoding}"
         self._embeddings = embeddings or OpenAIEmbeddings(
             model=self.model,
             dimensions=self.dimensions,

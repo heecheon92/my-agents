@@ -27,7 +27,7 @@ flowchart TD
     Scouts --> Lexical["BM25Okapi lexical ranking"]
     Vector --> Fusion["Candidate Fusion\nRRF by chunk_id"]
     Lexical --> Fusion
-    Fusion --> Judge[Evidence Judge\nDeterministic or cross-encoder]
+    Fusion --> Judge[Evidence Judge\nJev, deterministic, or cross-encoder]
     Judge --> Curator[Context Curator]
     Curator --> Auditor[Citation Auditor evidence]
     Auditor --> Assess[Assess sufficiency / bounded retry]
@@ -164,3 +164,13 @@ Console에서 재순위 전후를 비교하려면 `MY_AGENTS_DEPLOYMENT_ENVIRONM
 `MY_AGENTS_DEBUG_KNOWLEDGE_CONTEXT_LOGGING=true`를 사용합니다. 각 순서의 상위 10개 후보에
 대해 rank, document/chunk 위치, RRF/reranker 점수와 짧은 발췌를 표시하며 Jev fallback도
 구분합니다. Preview/production에서는 이 flag를 켜도 해당 표를 출력하지 않습니다.
+
+## 근거와 임베딩 호환성
+
+수집 시 임베딩 index 식별 정보를 저장합니다. RetrievalService는 식별 정보가 없거나 호환되지
+않는 벡터를 유사도 계산에서 제외하고 권한이 있는 키워드/BM25 검색은 유지합니다. Migration
+`20261017_0041` 이후 기존 벡터에는 명시적 재수집이 필요합니다. Jev는 기존 byte 제한 안에서
+항상 앞부분 대신 질문 관련 연속 구간을 발췌합니다. 선택적 cross-encoder는 자신의 tokenizer로
+겹치는 window를 만들고 최대 점수를 사용합니다. 질문이 예산을 초과하거나 window가 16개를
+넘으면 fused 순서를 유지합니다. 원본 chunk와 인용 ID를 바꾸지 않으며 공개 event 필드도 추가하지
+않습니다. [문서 답변 신뢰성](../../../docs/product-chat-service/43-document-answer-reliability.md)을 참고하세요.

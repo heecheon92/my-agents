@@ -17,9 +17,11 @@ Mandatory instructions and the current question are protected. Oversized current
 refused before admission. Native file/image token processing remains governed by provider limits
 and existing attachment byte/count limits; text estimates are not exact provider token counts.
 
-Tokenization uses the existing local `o200k_base` cache. If unavailable, a conservative UTF-8 byte
-estimate avoids a network download during offline execution. Context estimates include rendered
-prompt overhead. Summarization uses at most two bounded calls, each with a 30-second timeout.
+Preliminary history/summary selection uses the existing local `o200k_base` cache with a
+conservative UTF-8 byte fallback. At the final ordinary/workspace answer boundary, the selected
+model determines the tokenizer; unknown mappings or unavailable/corrupt cache files use an explicit
+UTF-8 byte estimate. The rendered-text count includes prompt overhead and any incomplete-context
+disclosure. Internal delivery metadata identifies the model, counting method, and text-only scope. Summarization uses at most two bounded calls, each with a 30-second timeout.
 Failures retain valid summaries and bounded recent text, mark omitted history, and continue
 without inventing a replacement summary. Cancellation prevents installing the result.
 

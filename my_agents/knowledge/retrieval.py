@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from difflib import SequenceMatcher
 
 from rank_bm25 import BM25Okapi
-from sqlalchemy import and_, desc, false, func, inspect, or_, select, true
+from sqlalchemy import and_, case, desc, false, func, inspect, or_, select, true
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, defer
 
@@ -52,6 +52,7 @@ from my_agents.knowledge.document_resolution import (
 from my_agents.knowledge.document_resolution import (
     _unranked_document_option as _unranked_document_option,
 )
+from my_agents.knowledge.embedding_index import compatible_embedding, embedding_identity
 from my_agents.knowledge.embeddings import EmbeddingProvider, get_embedding_provider
 from my_agents.knowledge.models import (
     DocumentChunkModel,
@@ -628,7 +629,12 @@ class RetrievalService:
             chunk_embedding = _embedding_from_json(chunk.embedding_json)
             semantic_rank = (
                 max(_cosine_similarity(query_embedding, chunk_embedding), 0.0)
-                if _compatible_embeddings(query_embedding, chunk_embedding)
+                if compatible_embedding(
+                    self._embedding_provider,
+                    query_embedding,
+                    chunk_embedding,
+                    chunk.embedding_index_id,
+                )
                 else 0.0
             )
             score = max((0.8 * semantic_rank) + (0.2 * keyword_rank), 0.5)
@@ -762,7 +768,9 @@ class RetrievalService:
             keyword_score = _keyword_score(chunk.content, terms)
             keyword_rank = _normalized_keyword_score(keyword_score, terms)
             chunk_embedding = _embedding_from_json(chunk.embedding_json)
-            if _compatible_embeddings(query_embedding, chunk_embedding):
+            if compatible_embedding(
+                self._embedding_provider, query_embedding, chunk_embedding, chunk.embedding_index_id
+            ):
                 cosine = _cosine_similarity(query_embedding, chunk_embedding)
                 positive_cosine = max(cosine, 0.0)
                 combined_score = (
@@ -807,11 +815,16 @@ class RetrievalService:
         if not query_embedding:
             return []
         try:
+            index_id = embedding_identity(self._embedding_provider, query_embedding).key
+        except ValueError:
+            return []
+        try:
             with track_retrieval_phase("postgres_vector_sql"):
                 rows = self._db.execute(
                     _postgres_vector_authorized_statement(
                         user_id=user_id,
                         query_embedding=query_embedding,
+                        embedding_index_id=index_id,
                         knowledge_base_ids=knowledge_base_ids,
                         limit=limit,
                     )
@@ -1034,7 +1047,12 @@ class RetrievalService:
             keyword_rank = _normalized_keyword_score(
                 _keyword_score(profile.search_text, signal_terms), signal_terms
             )
-            if not _compatible_embeddings(query_embedding, profile_embedding):
+            if not compatible_embedding(
+                self._embedding_provider,
+                query_embedding,
+                profile_embedding,
+                profile.embedding_index_id,
+            ):
                 if keyword_rank <= 0:
                     continue
                 score = 0.55 * keyword_rank
@@ -1309,11 +1327,18 @@ def _postgres_vector_authorized_statement(
     *,
     user_id: str,
     query_embedding: list[float],
+    embedding_index_id: str,
     limit: int,
     knowledge_base_ids: Sequence[str] | None = None,
 ):
     embedding_vector = _embedding_vector_column()
-    vector_distance = embedding_vector.cosine_distance(query_embedding).label("vector_distance")
+    compatible = and_(
+        DocumentChunkModel.embedding_index_id == embedding_index_id,
+        func.vector_dims(embedding_vector) == len(query_embedding),
+    )
+    vector_distance = case(
+        (compatible, embedding_vector.cosine_distance(query_embedding)), else_=None
+    ).label("vector_distance")
     return (
         select(DocumentChunkModel, DocumentModel, vector_distance)
         .options(
@@ -1325,6 +1350,7 @@ def _postgres_vector_authorized_statement(
             _authorized_document_filter(user_id),
             _knowledge_base_scope_filter(user_id, knowledge_base_ids),
             embedding_vector.is_not(None),
+            compatible,
         )
         .order_by(vector_distance, desc(DocumentModel.created_at), DocumentChunkModel.ordinal)
         .limit(limit)
@@ -1913,10 +1939,6 @@ def _embedding_from_json(value: str) -> list[float]:
         else:
             return []
     return vector
-
-
-def _compatible_embeddings(left: list[float], right: list[float]) -> bool:
-    return bool(left) and bool(right) and len(left) == len(right)
 
 
 def _cosine_similarity(left: list[float], right: list[float]) -> float:

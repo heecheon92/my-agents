@@ -76,3 +76,5 @@
 - [게스트 체험 자격과 남용 방지](./40-guest-trial-abuse-protection.ko.md): 공유 제한, 기존 계정 처리, 운영자 초기화.
 
 - [복구 가능한 답변 실행](./42-durable-answer-generation.md): independent worker, async admission, snapshots, and resumable delivery.
+
+- [문서 답변 신뢰성](./43-document-answer-reliability.md): 임베딩 식별 정보, 제한된 근거 구간, 모델별 텍스트 예산과 기존 문서 재수집.

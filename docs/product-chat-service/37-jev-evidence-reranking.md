@@ -52,7 +52,10 @@ to use original retrieval scores. Truncated judgments add `jev:excerpt_truncated
 
 Batches shrink to fit the serialized UTF-8 budget. A query over 4096 UTF-8 bytes or a candidate
 that cannot fit causes whole-pass fallback. Byte limits are conservative request bounds, not
-model-tokenizer windows; useful tail evidence may be absent from clipped excerpts.
+model-tokenizer windows. Excerpts now select contiguous query-bearing source regions rather than
+always taking a prefix; no useful query match retains prefix selection. Rare query terms influence
+selection, original chunks/citations remain unchanged, and selected excerpts still do not establish
+full coverage. See [document-answer reliability](./43-document-answer-reliability.md).
 
 Every response must contain exactly the requested IDs and finite numeric scores in `0..4`.
 Missing credentials, malformed output, HTTP/provider errors, or deadline exhaustion discard

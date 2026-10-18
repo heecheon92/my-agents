@@ -57,3 +57,5 @@ Keep detailed product-service documentation in this folder.
 - [Guest trial eligibility and abuse protection](./40-guest-trial-abuse-protection.md): shared limits, rollout reconciliation, and operator reset.
 
 - [Recoverable answer generation](./42-durable-answer-generation.md): independent worker, async admission, snapshots, and resumable delivery.
+
+- [Document-answer reliability](./43-document-answer-reliability.md): embedding identity, bounded evidence windows, model-aware text budgets, and legacy re-ingestion.

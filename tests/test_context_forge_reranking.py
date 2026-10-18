@@ -31,8 +31,30 @@ from my_agents.observability.metrics import track_embedding_call, track_retrieva
 from my_agents.settings import Settings, get_settings
 
 
+class CharacterTokenizer:
+    """A bounded fake tokenizer so tests can assert every scored pair fits."""
+
+    model_max_length = 4096
+
+    def encode(self, text, text_pair=None, *, add_special_tokens=True):
+        return (
+            list(text)
+            + (list(text_pair) if text_pair is not None else [])
+            + (["<special>"] * (3 if text_pair is not None else 2) if add_special_tokens else [])
+        )
+
+    def decode(self, ids, **kwargs):
+        return "".join(ids)
+
+    def num_special_tokens_to_add(self, *, pair):
+        return 3 if pair else 2
+
+
 class FakeCrossEncoder:
     """Tiny deterministic stand-in for sentence-transformers CrossEncoder."""
+
+    tokenizer = CharacterTokenizer()
+    max_seq_length = 4096
 
     def predict(self, pairs: Sequence[tuple[str, str]], *, batch_size: int) -> list[float]:
         assert batch_size == 8

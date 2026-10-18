@@ -177,3 +177,9 @@ suite: 765 passed, 13 skipped; Ruff lint/format passed. Live OpenAI image reques
 - **Verification:** offline API tests cover defaults and operator overrides, a stored guest override,
   stream/replay metadata and runtime context, reasoning without a database argument, invalid config,
   and isolation from registered-user model defaults.
+
+## 2026-10-18 — Document-answer reliability
+
+- **Why:** Prefix clipping and unqualified token estimates could discard useful evidence or misstate budget usage.
+- **Behavior/contract impact:** Count final rendered text using the selected model mapping or an explicit conservative fallback. Include the omitted-context disclosure in the budget; record redacted counting metadata for ordinary and workspace answers.
+- **Verification:** Offline evidence-window, prompt-budget, and existing agent regressions; see implementation tracking for current results.

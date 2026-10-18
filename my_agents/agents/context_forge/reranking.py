@@ -14,6 +14,7 @@ from typing import Any, Protocol
 
 from my_agents.agents.context_forge.contracts import RetrievalCandidate, RetrievalPlan
 from my_agents.decisions import JEV_MODEL, JevScoreClient, ScoreDecider
+from my_agents.knowledge.evidence_windows import cross_encoder_windows, select_evidence_window
 from my_agents.settings import Settings
 
 logger = logging.getLogger(__name__)
@@ -88,10 +89,21 @@ class CrossEncoderReranker:
         self._batch_size = batch_size
         self._device = device
         self._model: Any | None = model
+        self._effective_name: ContextVar[str] = ContextVar(
+            "cross_encoder_effective_name", default="cross_encoder"
+        )
 
     @property
     def name(self) -> str:
         return "cross_encoder"
+
+    @property
+    def effective_name(self) -> str:
+        return self._effective_name.get()
+
+    def _fallback(self, candidates: Sequence[RetrievalCandidate]) -> list[RetrievalCandidate]:
+        self._effective_name.set("cross_encoder_fallback_deterministic")
+        return list(candidates)
 
     def rerank(
         self,
@@ -99,21 +111,54 @@ class CrossEncoderReranker:
         plan: RetrievalPlan,
         candidates: Sequence[RetrievalCandidate],
     ) -> list[RetrievalCandidate]:
+        self._effective_name.set("cross_encoder")
         if not candidates:
             return []
-        pairs = [(plan.rewritten_query, _candidate_text(candidate)) for candidate in candidates]
-
-        raw_scores = self._cross_encoder.predict(pairs, batch_size=self._batch_size)
-        scores = [float(score) for score in raw_scores]
+        model = self._cross_encoder
+        try:
+            tokenizer = model.tokenizer
+            max_length = getattr(model, "max_seq_length", None) or tokenizer.model_max_length
+            windows = [
+                cross_encoder_windows(
+                    _candidate_text(candidate),
+                    plan.rewritten_query,
+                    tokenizer,
+                    max_length=max_length,
+                )
+                for candidate in candidates
+            ]
+        except AttributeError, TypeError, ValueError:
+            logger.warning("Cross-encoder reranking preserved fused order: tokenizer/window budget")
+            return self._fallback(candidates)
+        pairs = [(plan.rewritten_query, window) for group in windows for window in group]
+        try:
+            raw_scores = [
+                float(score) for score in model.predict(pairs, batch_size=self._batch_size)
+            ]
+        except TypeError, ValueError:
+            logger.warning("Cross-encoder reranking preserved fused order: invalid scores")
+            return self._fallback(candidates)
+        if len(raw_scores) != len(pairs) or not all(math.isfinite(score) for score in raw_scores):
+            logger.warning("Cross-encoder reranking preserved fused order: invalid scores")
+            return self._fallback(candidates)
+        scores = []
+        offset = 0
+        for group in windows:
+            scores.append(max(raw_scores[offset : offset + len(group)]))
+            offset += len(group)
         scored_candidates = [
             RetrievalCandidate(
                 chunk=candidate.chunk,
                 sources=candidate.sources,
                 score=candidate.score,
                 rerank_score=score,
-                reasons=(*candidate.reasons, f"cross_encoder:{self._model_name}"),
+                reasons=(
+                    *candidate.reasons,
+                    *((f"cross_encoder:windows:{len(group)}",) if len(group) > 1 else ()),
+                    f"cross_encoder:{self._model_name}",
+                ),
             )
-            for candidate, score in zip(candidates, scores, strict=True)
+            for candidate, score, group in zip(candidates, scores, windows, strict=True)
         ]
         return sorted(
             scored_candidates,
@@ -181,9 +226,12 @@ class JevReranker:
                 ):
                     candidate_id = f"candidate_{position}"
                     content = _candidate_text(candidates[position])
-                    excerpt = content.encode("utf-8")[
-                        : self._settings.jev_reranker_max_excerpt_bytes
-                    ].decode("utf-8", errors="ignore")
+                    window = select_evidence_window(
+                        content,
+                        plan.rewritten_query,
+                        max_bytes=self._settings.jev_reranker_max_excerpt_bytes,
+                    )
+                    excerpt = window.text
                     record = {
                         "id": candidate_id,
                         "excerpt": excerpt,

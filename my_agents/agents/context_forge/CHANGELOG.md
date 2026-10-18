@@ -96,3 +96,9 @@
 ## 2026-09-23 — Jev bounded decisions
 
 Replaced default semantic decisions with a narrow OpenRouter Jev adapter to reduce generation overhead. Preserved deterministic offline/failure behavior and code-owned authorization. Added mocked HTTP and integration regressions in `tests/test_jev_decisions.py`; full-suite evidence is tracked in `docs/implementation-tracking.md`.
+
+## 2026-10-18 — Document-answer reliability
+
+- **Why:** Prefix clipping and unqualified token estimates could discard useful evidence or misstate budget usage.
+- **Behavior/contract impact:** Select query-bearing Jev excerpts and tokenize optional cross-encoder windows before scoring. Preserve source text, byte bounds, fused fallback, and permission-first retrieval.
+- **Verification:** Offline evidence-window, prompt-budget, and existing agent regressions; see implementation tracking for current results.

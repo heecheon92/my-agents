@@ -35,6 +35,20 @@ DOCUMENT_METADATA_EMBEDDING_VECTOR_COLUMN = Column(
 )
 
 
+class EmbeddingIndexModel(Base):
+    """Immutable public configuration describing one comparable embedding space."""
+
+    __tablename__ = "embedding_indexes"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    provider: Mapped[str] = mapped_column(String(240), nullable=False)
+    model: Mapped[str] = mapped_column(String(240), nullable=False)
+    dimensions: Mapped[int] = mapped_column(Integer, nullable=False)
+    encoding: Mapped[str] = mapped_column(String(240), nullable=False)
+    preprocessing: Mapped[str] = mapped_column(String(240), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
 class KnowledgeBaseScope(StrEnum):
     """Knowledge-base ownership scope."""
 
@@ -171,6 +185,9 @@ class DocumentMetadataProfileModel(Base):
     model: Mapped[str] = mapped_column(String(120), nullable=False)
     prompt_version: Mapped[str] = mapped_column(String(40), nullable=False)
     search_text: Mapped[str] = mapped_column(Text, nullable=False)
+    embedding_index_id: Mapped[str | None] = mapped_column(
+        ForeignKey("embedding_indexes.id"), nullable=True, index=True
+    )
     embedding_json: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
@@ -303,6 +320,9 @@ class DocumentChunkModel(Base):
     end_offset: Mapped[int] = mapped_column(Integer, nullable=False)
     source_page: Mapped[int | None] = mapped_column(Integer, nullable=True)
     source_location_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    embedding_index_id: Mapped[str | None] = mapped_column(
+        ForeignKey("embedding_indexes.id"), nullable=True, index=True
+    )
     embedding_json: Mapped[str] = mapped_column(Text, nullable=False)
 
 

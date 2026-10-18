@@ -49,7 +49,9 @@ retrieval score는 보존하고 answer-mode threshold도 기존 retrieval score�
 
 Batch는 전체 요청 UTF-8 예산에 맞게 줄입니다. 질문이 4096 bytes보다 길거나 단일 후보도
 예산에 들어가지 못하면 전체 fallback합니다. Byte 제한은 tokenizer window가 아니므로
-잘린 뒤쪽의 유용한 근거를 평가하지 못할 수 있습니다.
+전체 문서 근거를 보장하지 않습니다. 이제 항상 앞부분을 자르는 대신 질문과 관련된 연속
+구간을 선택합니다. 유용한 일치 항목이 없으면 앞부분을 유지하며, 드문 질문 용어를 우선합니다.
+원본 chunk·인용 ID를 바꾸지 않습니다. [문서 답변 신뢰성](./43-document-answer-reliability.md)을 참고하세요.
 
 모든 응답은 요청한 ID와 정확히 일치하고 유한한 숫자 `0..4`를 반환해야 합니다. 키 누락,
 잘못된 응답, HTTP/provider 오류, deadline 초과 시 부분 점수를 모두 버리고 전체 원래 순서를

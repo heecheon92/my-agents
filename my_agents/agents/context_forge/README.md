@@ -27,7 +27,7 @@ flowchart TD
     Scouts --> Lexical["BM25Okapi lexical ranking"]
     Vector --> Fusion["Candidate Fusion\nRRF by chunk_id"]
     Lexical --> Fusion
-    Fusion --> Judge[Evidence Judge\nDeterministic or cross-encoder]
+    Fusion --> Judge[Evidence Judge\nJev, deterministic, or cross-encoder]
     Judge --> Curator[Context Curator]
     Curator --> Auditor[Citation Auditor evidence]
     Auditor --> Assess[Assess sufficiency / bounded retry]
@@ -169,3 +169,14 @@ For a readable before/after console comparison, enable
 `MY_AGENTS_DEPLOYMENT_ENVIRONMENT=local`. The table shows ranks, document/chunk locations,
 RRF/reranker scores, and bounded excerpts for the top 10 of each order. It reports the effective
 mode, including Jev fallback, and never prints in preview/production even with the flag enabled.
+
+## Evidence and embedding compatibility
+
+Ingestion records an embedding index identity; RetrievalService excludes unknown/incompatible
+vectors before similarity scoring while preserving authorized keyword/BM25 retrieval. Existing
+vectors require explicit re-ingestion after migration `20261017_0041`. Jev chooses contiguous,
+query-bearing UTF-8 excerpts under unchanged byte limits rather than always taking a prefix.
+The optional cross-encoder uses its own tokenizer to cover chunks with overlapping windows and
+maximum-score aggregation. Over-budget queries or more than 16 windows preserve the fused order.
+Source chunks and citation identifiers remain intact; no new public event fields are introduced.
+See [document-answer reliability](../../../docs/product-chat-service/43-document-answer-reliability.md).

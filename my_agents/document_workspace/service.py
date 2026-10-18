@@ -446,6 +446,8 @@ class SqlAlchemyDocumentWorkspaceRuntime:
         before = self._provider.list_container_files(workspace.provider_container_id or "")
         instructions = _document_workspace_instructions()
         prompt = _document_workspace_prompt(
+            model_name=self._settings.document_workspace_model,
+            input_budget=self._settings.context_input_tokens,
             messages=messages,
             route=route,
             guidance=guidance,
@@ -481,11 +483,18 @@ class SqlAlchemyDocumentWorkspaceRuntime:
         run = self._db.get(AgentRunModel, self._run_id)
         if run is not None:
             from my_agents.conversations.continuity import token_count
+            from my_agents.token_budget import text_token_counter
 
+            counter = text_token_counter(self._settings.document_workspace_model)
             run.context_delivery_json = json.dumps(
                 {
                     "policy_version": "conversation-context-v1",
-                    "estimated_text_input_tokens": token_count(prompt) + token_count(instructions),
+                    "estimated_text_input_tokens": counter.count(prompt)
+                    + counter.count(instructions),
+                    "input_model": counter.model,
+                    "token_counting_method": counter.method,
+                    "tokenizer": counter.encoding_name,
+                    "budget_scope": "rendered_text_only",
                     "native_attachment_ids": [item.id for item in self._attachments],
                     "source_versions": {item.id: item.content_sha256 for item in self._attachments},
                     "native_input_tokens": "provider_reported_only",
@@ -976,19 +985,24 @@ def validate_attachment_selection(
 
 
 def _document_workspace_prompt(**kwargs: Any) -> str:
-    from my_agents.conversations.continuity import token_count
     from my_agents.settings import get_settings
+    from my_agents.token_budget import text_token_counter
 
     packed = dict(kwargs)
+    settings = get_settings()
+    counter = text_token_counter(packed.pop("model_name", settings.document_workspace_model))
+    input_budget = packed.pop("input_budget", settings.context_input_tokens)
     packed["messages"] = list(kwargs["messages"])
     packed["memory_context"] = list(kwargs["memory_context"])
     packed["retrieved_context"] = list(kwargs["retrieved_context"])
     omitted = False
-    budget = get_settings().context_input_tokens - token_count(_document_workspace_instructions())
+    budget = input_budget - counter.count(_document_workspace_instructions())
     while True:
         prompt = _render_document_workspace_prompt(**packed)
-        if token_count(prompt) <= budget - 24:
-            return prompt + ("\nEarlier context is incomplete." if omitted else "")
+        if omitted:
+            prompt += "\nEarlier context is incomplete."
+        if counter.count(prompt) <= budget - 24:
+            return prompt
         history = packed["messages"]
         candidates = [
             index

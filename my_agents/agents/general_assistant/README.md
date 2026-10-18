@@ -243,3 +243,13 @@ the query and bounded authorized excerpts to the same Decisions API, with synthe
 It never sends summary, file-note, or memory channels. Routing-provider selection does not change
 this mode. Any failed batch preserves the entire fused shortlist; offline response mode suppresses
 Jev calls. See the [reranking contract](../../../docs/product-chat-service/37-jev-evidence-reranking.md).
+
+## Model-aware final text budgets
+
+The final rendered prompt uses the selected answer model's tokenizer when a supported, verified
+local cache is available. Unknown mappings/cache misses use an explicit conservative UTF-8 byte
+fallback; another model's tokenizer is not silently substituted. Optional context is reduced before
+the current question, and the final incomplete-context disclosure is included in the budget.
+Internal delivery metadata records model, counting method, and rendered-text-only scope. Native
+attachments and provider tool processing remain outside this estimate. Document-workspace answers
+apply the same policy independently using their workspace model.

@@ -25,6 +25,9 @@ The current product shape is a FastAPI + LangGraph assistant/router foundation t
 - `my_agents/agents/general_assistant/responders.py` owns deterministic and OpenAI-backed reply composition for the general assistant.
 - `my_agents/agents/capabilities.py` describes route capability metadata without claiming separate agents executed.
 - Learning-only simulated-agent graph experiments live in the separate `~/Git/Playground/langgraph-playground` repository.
+- `my_agents/knowledge/embedding_index.py` owns embedding-space identity. New vectors must carry
+  provider/model/dimensions/encoding/preprocessing/version identity; never infer legacy provenance
+  from equal dimensions. Preserve permission-first keyword fallback and explicit re-ingestion.
 - `my_agents/settings.py` owns environment-driven runtime configuration.
 - `my_agents/model_defaults.py` owns the selectable model catalog and editable application default reasoning effort.
 - `my_agents/schemas.py` owns Pydantic request/response contracts.

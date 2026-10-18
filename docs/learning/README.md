@@ -187,3 +187,5 @@ When changing `docs/learning/`:
 - Do not use learning notes as a substitute for tests, README updates, or API docs.
 
 - [Why an answer job must outlive its viewer](./project-notes/durable-run-execution-and-delivery.md): worker ownership, output persistence, and reconnect races.
+
+- [Tokenizer and embedding-index safety](./project-notes/tokenizer-consistency-audit-and-rag-index-safety.md): historical audit, implemented reliability safeguards, and verification limits.

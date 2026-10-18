@@ -241,3 +241,12 @@ Decisions API에 질문과 길이를 제한한 권한 있는 발췌, 임시 후�
 note, memory channel은 보내지 않습니다. Routing provider 선택은 이 mode를 바꾸지 않습니다.
 어느 batch든 실패하면 전체 fused shortlist를 유지하며 offline response mode는 Jev 호출을
 끕니다. [재순위 계약](../../../docs/product-chat-service/37-jev-evidence-reranking.ko.md)을 참고하세요.
+
+## 모델별 최종 텍스트 예산
+
+최종 prompt는 지원되는 모델 매핑과 검증된 로컬 cache가 있으면 선택한 답변 모델의 tokenizer를
+사용합니다. 매핑이나 cache가 없으면 보수적인 UTF-8 byte 추정임을 명시하며 다른 모델의
+tokenizer를 임의로 대체하지 않습니다. 현재 질문보다 선택적 맥락을 먼저 줄이고, 맥락 일부가
+생략되었다는 최종 안내 문구도 예산에 포함합니다. 내부 전달 metadata에는 모델, 계산 방법,
+렌더링된 텍스트만을 계산했다는 범위를 남깁니다. 파일·이미지와 provider tool 처리는 이 추정
+밖에 있으며 document-workspace 답변은 별도 workspace 모델로 같은 정책을 적용합니다.

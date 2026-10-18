@@ -17,6 +17,7 @@ from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
+from my_agents.knowledge.embedding_index import embedding_identity, register_embedding_index
 from my_agents.knowledge.embeddings import deterministic_embedding, get_embedding_provider
 from my_agents.knowledge.metadata_enrichment import (
     DeterministicDocumentMetadataGenerator,
@@ -271,6 +272,9 @@ class KnowledgeExtractionService:
                         end_offset=end,
                         source_page=source_page,
                         source_location_json=source_location_json,
+                        embedding_index_id=register_embedding_index(
+                            self._db, embedding_identity(self._embedding_provider, embedding)
+                        ),
                         embedding_json=json.dumps(embedding),
                     )
                     self._db.add(chunk)
@@ -522,6 +526,9 @@ class KnowledgeExtractionService:
                 model=profile.model,
                 prompt_version=profile.prompt_version,
                 search_text=profile.search_text,
+                embedding_index_id=register_embedding_index(
+                    self._db, embedding_identity(self._embedding_provider, embedding)
+                ),
                 embedding_json=json.dumps(embedding),
             )
             self._db.add(row)

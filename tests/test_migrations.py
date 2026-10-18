@@ -37,6 +37,7 @@ class _LegacyEmbeddingProvider:
 
 EXPECTED_SERVICE_TABLES = {
     "alembic_version",
+    "embedding_indexes",
     "users",
     "sessions",
     "auth_tokens",
@@ -314,7 +315,7 @@ def test_legacy_documents_without_knowledge_base_upgrade_to_head(
     assert "user_type" in user_columns
     assert legacy_nickname == "legacy-doc"
     assert legacy_user_type == "normal"
-    assert alembic_version == "20261017_0040"
+    assert alembic_version == "20261017_0041"
 
     _assert_database_matches_model_metadata(database_url)
 
@@ -341,6 +342,9 @@ def test_sqlite_json_fallback_reads_chunks_created_before_pgvector_migration(
             # the test remains focused on legacy embedding_json fallback behavior.
             connection.exec_driver_sql(
                 "alter table document_chunks add column source_location_json text"
+            )
+            connection.exec_driver_sql(
+                "alter table document_chunks add column embedding_index_id varchar(64)"
             )
             knowledge_base_id = str(uuid.uuid4())
             connection.exec_driver_sql(

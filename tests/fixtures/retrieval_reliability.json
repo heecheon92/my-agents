@@ -1,0 +1,5 @@
+[
+  {"id":"english-tail","query":"What is the ORION recovery timeout?","padding":"This section describes routine deployment housekeeping. ","repeat":160,"evidence":"ORION recovery timeout is 47 seconds.","decoy":"ORION recovery timeout is discussed in another runbook."},
+  {"id":"korean-tail","query":"해오름 복구 제한시간 값은 무엇인가요?","padding":"이 절은 일상적인 배포 점검과 운영 절차에 관한 설명입니다. ","repeat":100,"evidence":"해오름 복구 제한시간은 47초입니다.","decoy":"해오름 복구 제한시간은 다른 문서를 참고하세요."},
+  {"id":"code-tail","query":"What value does ORION_RECOVERY_TIMEOUT_SECONDS use?","padding":"# unrelated setup and housekeeping details\n", "repeat":190,"evidence":"ORION_RECOVERY_TIMEOUT_SECONDS = 47","decoy":"# ORION_RECOVERY_TIMEOUT_SECONDS is configured elsewhere"}
+]

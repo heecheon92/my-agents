@@ -197,6 +197,18 @@ uv run python -m my_agents.answer_worker
 계약](./docs/product-chat-service/42-durable-answer-generation.md)을 참고하세요. 구현과 배포 검증은
 [구현 현황](./docs/implementation-tracking.md#recoverable-answer-generation)에서 별도로 추적합니다.
 
+## 문서 답변 신뢰성
+
+문서 chunk와 metadata profile의 임베딩에 모델/index 식별 정보를 저장합니다. 검색은 식별
+정보가 없거나 호환되지 않는 벡터를 비교하지 않으며, 권한이 있는 키워드 검색은 유지합니다.
+Jev에는 질문과 관련된 부분을 발췌하고, 최종 답변의 텍스트 예산은 선택한 모델의 tokenizer가
+있으면 이를 사용하며 없으면 보수적인 추정값을 명시적으로 사용합니다.
+
+실행 전에 migration `20261017_0041`을 적용하세요. 기존 벡터는 명시적으로 재수집하기 전까지
+식별 정보가 없는 상태로 남으며 자동 유료 backfill은 실행하지 않습니다. 기존 API와 DB를
+사용하므로 추가 worker나 frontend 설정이 필요하지 않습니다.
+[마이그레이션·신뢰성 계약](./docs/product-chat-service/43-document-answer-reliability.md)을 참고하세요.
+
 ## 검증
 
 ```bash
