@@ -1,6 +1,6 @@
 # Implementation tracking
 
-Last updated: 2026-10-17
+Last updated: 2026-10-18
 Status owner: repo-tracked source of truth for cross-machine agent handoff
 
 This is the portable implementation/status record, independent of machine-local agent sessions.
@@ -27,6 +27,13 @@ Use this file to answer: **"What should we do next?"** without first re-reading 
 - Existing historical material is grandfathered and may be compacted incrementally; do not perform a large archive migration while handling an unrelated task.
 - Do not use this file for secrets, local `.env` values, or machine-specific runtime state.
 
+## Session decision evidence
+
+- [x] **Shipped:** Private answer-input records and bounded, permission-checked prior-turn recall.
+  Verified with 1,197 passing tests and clean lint/format. Migration `20261018_0043` and hosted
+  rollout remain separate; real-provider fidelity has not been evaluated.
+  [Scope, verification, and limitations](./completed/session-decision-evidence.md).
+
 ## Current overall status
 
 As of 2026-10-17, the backend baseline includes the General Assistant/RAG Agent split,
@@ -41,10 +48,9 @@ deployed backend SHA.
 Backlog reconciliation is validated and recorded in this update. The requested hosted upload,
 ingestion, cited answer, and refresh smoke passed on 2026-10-17.
 [Evidence and scope](./product-chat-service/41-production-smoke-evidence-2026-10-17.md).
-Current selected work is [recoverable answer generation](#recoverable-answer-generation),
-implemented and verified locally on both sides; publication and hosted enablement remain open. Embedding-index identity and
-retrieval evidence-window safety remain the following backlog priority. Hosted rollout, broader
-feature smoke, and automated release gates remain separate.
+[Session decision evidence](#session-decision-evidence) is implemented and verified locally. Recoverable answers, document-answer reliability,
+document preferences/preparation, and private R2 originals are committed on `develop`; hosted
+rollout and operational enablement remain separate from repository verification.
 
 ### Historical maturity estimates
 
@@ -1063,6 +1069,9 @@ system, a multi-device guest account model, or a replacement for shared rate
 limits.
 
 ## Shipped and completed index
+
+- [x] **Shipped:** Session decision evidence with bounded, source-authorized recall.
+  [Verification and rollout limits](./completed/session-decision-evidence.md).
 
 - [x] **Completed:** 2026-10-17 hosted Markdown upload -> ingestion -> cited answer -> refresh
   smoke. Broader auth/group, idle/disconnect, worker, and provider-matrix checks remain open.

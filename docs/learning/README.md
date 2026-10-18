@@ -191,3 +191,5 @@ When changing `docs/learning/`:
 - [Tokenizer and embedding-index safety](./project-notes/tokenizer-consistency-audit-and-rag-index-safety.md): historical audit, implemented reliability safeguards, and verification limits.
 
 - [Private originals and atomic document processing](./project-notes/private-originals-and-atomic-document-processing.md): original files, active text, derived indices, and the cleanup outbox.
+
+- [Session evidence and decision continuity](./project-notes/session-evidence-and-decision-continuity.md): what an earlier answer received, source access, and honest rationale.

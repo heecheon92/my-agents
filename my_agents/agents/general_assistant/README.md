@@ -261,3 +261,14 @@ on resume. `automatic` uses the existing source gate; `always` requests authoriz
 retrieval; `on_request` searches for explicit document requests or an explicitly selected KB scope.
 Current no-document instructions take precedence, and attachment-specific routing remains intact.
 Guest runs use `automatic`. See the [preference and file contract](../../../docs/product-chat-service/44-private-document-files-and-preferences.md).
+
+## Session evidence at the answer boundary
+
+A runtime-only `SessionEvidenceRuntime` recalls source-linked earlier inputs and explicit prior
+claims immediately before composition. `ResponseComposition.session_evidence` carries private
+post-budget document input data to that adapter without putting it into graph updates or
+checkpoints. Only completed earlier turns from the same owner/conversation are eligible; source
+permissions, replay boundaries, and token limits apply. Jev receives no additional context.
+Records establish what was supplied, not the model's private thoughts or whether it used a fact.
+See the [continuity contract](../../../docs/product-chat-service/36-conversation-continuity.md#session-evidence-for-earlier-decisions)
+and `tests/test_session_evidence.py`.

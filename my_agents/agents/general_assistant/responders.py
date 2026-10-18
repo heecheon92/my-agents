@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
+from contextlib import nullcontext
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any, Protocol
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
+from langsmith import tracing_context
 from pydantic import ValidationError
 
 from my_agents.agents.capabilities import AgentCapability
@@ -20,6 +22,7 @@ from my_agents.agents.general_assistant.context import (
     format_document_context,
     format_memory_context,
 )
+from my_agents.conversations.session_evidence import AnswerEvidence, capture_answer_input
 from my_agents.knowledge.routing import AnswerMode
 from my_agents.reasoning import openai_reasoning_payload
 from my_agents.reasoning_summaries import provider_reasoning_summary
@@ -66,6 +69,7 @@ class ResponseComposition:
     reply: str
     reasoning_summary: str | None = None
     context_delivery: dict[str, object] | None = None
+    session_evidence: AnswerEvidence | None = None
 
 
 class ResponseProvider(Protocol):
@@ -188,7 +192,9 @@ class OpenAIResponseProvider:
         if tools:
             model = model.bind_tools(tools)
 
+        captured: list[AnswerEvidence] = []
         provider_messages = _build_input_messages(
+            capture=captured,
             model_name=self._settings.openai_model,
             messages=messages,
             route=route,
@@ -199,16 +205,34 @@ class OpenAIResponseProvider:
             source_conflicts=source_conflicts,
             answer_mode=answer_mode,
         )
-        response = _stream_and_aggregate_response(
-            model,
-            provider_messages,
-            reasoning=openai_reasoning_payload(
-                model=self._settings.openai_model,
-                mode=reasoning_mode,
-                effort=reasoning_effort or self._settings.openai_reasoning_effort,
-            ),
+        # Historical excerpts are private Product DB context, not provider trace payloads.
+        trace = (
+            tracing_context(enabled=False)
+            if any(m.additional_kwargs.get("session_evidence") for m in messages)
+            else nullcontext()
+        )
+        with trace:
+            response = _stream_and_aggregate_response(
+                model,
+                provider_messages,
+                reasoning=openai_reasoning_payload(
+                    model=self._settings.openai_model,
+                    mode=reasoning_mode,
+                    effort=reasoning_effort or self._settings.openai_reasoning_effort,
+                ),
+            )
+        evidence = captured[0]
+        blocks = getattr(response, "content", None)
+        evidence.web_search_observed = (
+            any(
+                isinstance(block, dict) and block.get("type") == "web_search_call"
+                for block in blocks
+            )
+            if isinstance(blocks, list)
+            else None
         )
         return ResponseComposition(
+            session_evidence=evidence,
             reply=_extract_message_content(
                 response,
                 debug_empty_response=debug_empty_response,
@@ -497,6 +521,7 @@ def _build_input_messages(**kwargs: Any) -> list[BaseMessage]:
     from my_agents.token_budget import text_token_counter
 
     packed = dict(kwargs)
+    capture = packed.pop("capture", None)
     packed["messages"] = list(kwargs.get("messages", []))
     packed["retrieved_context"] = list(kwargs.get("retrieved_context", []))
     packed["memory_context"] = list(kwargs.get("memory_context", []))
@@ -532,6 +557,15 @@ def _build_input_messages(**kwargs: Any) -> list[BaseMessage]:
                 "Current request and mandatory context exceed the input budget"
             )
         omitted = True
+    if capture is not None:
+        capture.append(
+            capture_answer_input(
+                messages=[*rendered[:-1], *packed["messages"][-1:]],
+                documents=packed["retrieved_context"],
+                memory_count=len(packed["memory_context"]),
+                input_truncated=omitted,
+            )
+        )
     manifest = {
         "policy_version": "conversation-context-v1",
         "estimated_text_input_tokens": total,

@@ -9,6 +9,16 @@ English | [한국어](./README.ko.md)
 > [!NOTE]
 > The service is deployed and running, but new accounts are approved manually. Use guest access to look around without waiting for approval.
 
+## Session decision evidence
+
+Follow-up answers can use private records of document excerpts supplied to earlier successful
+answers and the recorded retrieval choice, alongside the conversation. Recorded inputs and stated
+reasons are distinguished from inferred rationale; missing legacy evidence stays unknown. Recall
+is bounded and rechecks document access. No frontend change or extra worker is required. Existing
+databases must apply `uv run alembic upgrade head` (migration `20261018_0043`) before restarting.
+See [conversation continuity](./docs/product-chat-service/36-conversation-continuity.md#session-evidence-for-earlier-decisions)
+for retention, limits, and verification boundaries.
+
 ## Three-minute overview
 
 `my-agents` is more than a RAG example. It connects the whole flow a real product needs in one backend: **authentication → authorization → document ingestion → hybrid retrieval → LangGraph execution → SSE streaming → citation/audit persistence**.

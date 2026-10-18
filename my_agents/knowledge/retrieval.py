@@ -1517,11 +1517,12 @@ def _schema_has_knowledge_base_publications(db: Session) -> bool:
 
 
 def _schema_has_knowledge_base_purpose(db: Session) -> bool:
-    if not inspect(db.get_bind()).has_table("knowledge_bases"):
+    # Inspect the transaction's connection. Inspecting the Engine can check out the
+    # same SQLite connection and roll back pending run/evidence writes on return.
+    inspector = inspect(db.connection())
+    if not inspector.has_table("knowledge_bases"):
         return False
-    return "purpose" in {
-        column["name"] for column in inspect(db.get_bind()).get_columns("knowledge_bases")
-    }
+    return "purpose" in {column["name"] for column in inspector.get_columns("knowledge_bases")}
 
 
 def _schema_has_document_metadata_profiles(db: Session) -> bool:

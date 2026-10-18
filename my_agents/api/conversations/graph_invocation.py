@@ -65,6 +65,10 @@ def graph_context_for_run(
         "full_document_max_chars": settings.full_document_max_chars,
         "full_document_range_chars": settings.full_document_range_chars,
     }
+    from my_agents.conversations.session_evidence import SessionEvidenceRuntime
+
+    if run_id is not None:
+        context["session_evidence_runtime"] = SessionEvidenceRuntime(db, user_id, run_id)
     from my_agents.conversations.file_context import AttachmentRecallRuntime
 
     context["attachment_recall_runtime"] = AttachmentRecallRuntime(

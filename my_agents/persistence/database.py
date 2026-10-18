@@ -33,7 +33,7 @@ class Base(DeclarativeBase):
 def _engine_for_url(database_url: str) -> Engine:
     deploy_log("database.engine.create", **safe_database_url_summary(database_url))
     kwargs = _engine_kwargs_for_url(database_url)
-    engine = create_engine(database_url, **kwargs)
+    engine = create_engine(database_url, hide_parameters=True, **kwargs)
     url = make_url(database_url)
     if (
         url.get_backend_name() == "sqlite"

@@ -290,3 +290,9 @@ Conversation summaries are derived Product DB records, not long-term memory cons
 checkpointer thread scope. Keep context compaction activity metadata-only and preserve original
 message/run/source links. Jev must not receive summary or file-note channels. See
 `docs/product-chat-service/36-conversation-continuity.md`.
+
+Session decision evidence is private run-owned Product DB data, separate from metadata-only
+input manifests. Capture after final packing, recall only earlier completed turns with current
+source authorization, and distinguish supplied inputs from reported or inferred rationale.
+Never checkpoint recalled excerpts, send them to Jev, or expose them in run APIs/events.
+See `docs/product-chat-service/36-conversation-continuity.md#session-evidence-for-earlier-decisions`.

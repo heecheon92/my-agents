@@ -520,6 +520,27 @@ def hidden_source_message_ids(db: Session, conversation_id: str) -> set[str]:
         document_ids = db.scalars(
             select(CitationModel.document_id).where(CitationModel.run_id == run.id)
         ).all()
+        if run.session_evidence_json:
+            from pydantic import ValidationError
+
+            from my_agents.conversations.session_evidence import AnswerEvidence
+
+            try:
+                evidence = AnswerEvidence.model_validate_json(run.session_evidence_json)
+                document_ids = list(set(document_ids) | set(evidence.source_document_ids))
+                if not evidence.source_links_complete:
+                    hidden.add(run.assistant_message_id)
+                for attachment_id in evidence.source_attachment_ids:
+                    attachment = db.get(ConversationAttachmentModel, attachment_id)
+                    if (
+                        attachment is None
+                        or attachment.status == "deleted"
+                        or attachment.owner_user_id != run.user_id
+                        or attachment.conversation_id != run.conversation_id
+                    ):
+                        hidden.add(run.assistant_message_id)
+            except ValidationError:
+                hidden.add(run.assistant_message_id)
         for document_id in document_ids:
             document = db.get(DocumentModel, document_id)
             kb = db.get(KnowledgeBaseModel, document.knowledge_base_id) if document else None

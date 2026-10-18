@@ -122,3 +122,55 @@ BFF/UI stand-in checks include original/notes selection and refresh recovery. No
 fidelity or deployed-release claim is made. The owner subsequently reported browser testing and
 approved commit/push. Publication evidence is preserved in the
 [completion record](../completed/conversation-continuity.md).
+
+## Session evidence for earlier decisions
+
+Conversation history can preserve an assistant's explanation without preserving the inputs that
+supported it. The backend therefore keeps a private, versioned `agent_runs.session_evidence_json`
+record for successful ordinary and workspace answer calls. This complements the metadata-only
+`context_delivery_json`; it is not returned by run APIs, SSE, or OpenAPI models.
+
+Ordinary answer capture happens **after final prompt packing**. It retains the supplied visible
+document excerpts, hashes, message references, input-truncation state, memory count, and the
+recorded source-selection choice/reported reason. A web-search block can establish that a tool
+call was observed; missing blocks do not prove the tool was not used. Native workspace file bytes,
+hosted tool internals, stored-memory bodies, raw provider traces, and private reasoning are not
+copied. Workspace calls retain the packed text-document context; their existing attachment notes
+and native-input manifest remain responsible for file observations and attachment provenance.
+
+The response node uses a runtime-only Product DB adapter to inject relevant prior-turn evidence
+immediately before answer composition. Recalled raw excerpts do not enter graph updates,
+checkpoints, compaction inputs, or Jev decisions. Ordinary provider tracing is disabled for calls
+containing these historical excerpts. SQL exception parameters are hidden. Source-selectors still
+see their existing bounded human/assistant context; this feature does not widen provider scope.
+
+Records are recalled only for completed runs in the same owner's conversation, before the current
+user-message boundary. This excludes an old answer and future turns during regeneration, even
+before successful replay prunes them. Current document authorization is rechecked; removed or
+revoked evidence also excludes its linked assistant claim and summary entries. Source dependencies
+carry forward into follow-up records even when no new retrieval occurs, so removing a source also
+withholds answers derived from its historical evidence. Conversation/run
+pruning and guest cleanup remove records with their owning run. A failed/cancelled run can have an
+internal boundary record if its provider returned before cancellation, but never supplies recall.
+
+The initial bounded policy considers the latest 64 eligible completed turns and supplies at most
+four, preferring the latest and lexical matches in prior replies. Recall uses at most 6,000 locally
+estimated tokens (also capped to one quarter of the total input budget); final provider packing can
+remove it with the existing incomplete-context disclosure. Each persisted record is bounded to
+128 KiB, with at most 32 retained excerpts; omitted/truncated excerpts are explicit. Recall windows
+are capped at 1,600 characters per excerpt. This is not unlimited or exhaustive session memory.
+Older decisions can still appear in source-linked conversation summaries, but exact older evidence
+outside this window is not automatically loaded.
+
+The assistant is instructed to distinguish recorded inputs, user statements, prior assistant claims,
+and inferred rationale. Supplied text proves availability at the successful call boundary, not that
+the model noticed or used it. Later corrections and re-ingestion never rewrite the original record.
+Legacy runs without records remain unknown; malformed records are withheld. A partial/omitted
+record cannot establish that a fact was absent. Current source documents must be re-read for
+current-fact verification; historical snippets describe the earlier turn only.
+
+Apply migration `20261018_0043` with `uv run alembic upgrade head` before restarting an existing API
+or optional answer worker. The column is nullable and no backfill invents earlier evidence. There
+is no new worker, dependency, public endpoint, frontend change, or environment variable. Existing
+`MY_AGENTS_CONTEXT_CONTINUITY_ENABLED=false` disables capture and recall. Offline coverage lives
+in `tests/test_session_evidence.py`; real-provider explanation fidelity is a separate evaluation.

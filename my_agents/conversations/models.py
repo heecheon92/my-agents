@@ -117,6 +117,7 @@ class AgentRunModel(Base):
     summarization_model: Mapped[str | None] = mapped_column(String(80), nullable=True)
     user_message_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     context_delivery_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    session_evidence_json: Mapped[str | None] = mapped_column(Text, nullable=True, deferred=True)
     attachment_notes_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     requested_workspace_model: Mapped[str | None] = mapped_column(String(80), nullable=True)
     requested_assistant_model: Mapped[str | None] = mapped_column(String(80), nullable=True)

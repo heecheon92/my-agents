@@ -540,3 +540,13 @@ The backend can be called v1 when all of the following are true:
   [completion evidence](./docs/completed/conversation-continuity.md) and the canonical
   [shipped index](./docs/implementation-tracking.md#shipped-and-completed-index).
   Database migration and hosted deployment remain separate operations.
+
+## Shipped: session decision evidence
+
+- [x] **Shipped:** Private records of final packed document inputs and reported source-selection
+  reasons; runtime-only, authorization-filtered prior-turn recall. Verified with 1,197 passing tests
+  and clean lint/format. Migration and hosted rollout remain separate. See
+  [completion evidence](./docs/completed/session-decision-evidence.md) and
+  [implementation tracking](./docs/implementation-tracking.md#session-decision-evidence).
+- [ ] **Deferred:** Real-provider explanation-fidelity evaluation and searching arbitrary earlier
+  records beyond the initial bounded selection. No claim of private reasoning reconstruction.

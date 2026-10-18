@@ -18,3 +18,5 @@ These notes are my-agents-specific learning and architecture notes that do not f
 - [Workspace 이미지 입력](./workspace-image-inputs.ko.md)
 
 - [Private originals and atomic document processing](./private-originals-and-atomic-document-processing.md): immutable uploads, candidate activation, and retryable object cleanup.
+
+- [Session evidence and decision continuity](./session-evidence-and-decision-continuity.md): what an earlier answer received, source access, and honest rationale.

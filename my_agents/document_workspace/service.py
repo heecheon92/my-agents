@@ -445,7 +445,9 @@ class SqlAlchemyDocumentWorkspaceRuntime:
         workspace = self._ensure_workspace()
         before = self._provider.list_container_files(workspace.provider_container_id or "")
         instructions = _document_workspace_instructions()
+        captured = []
         prompt = _document_workspace_prompt(
+            capture=captured,
             model_name=self._settings.document_workspace_model,
             input_budget=self._settings.context_input_tokens,
             messages=messages,
@@ -482,6 +484,9 @@ class SqlAlchemyDocumentWorkspaceRuntime:
 
         run = self._db.get(AgentRunModel, self._run_id)
         if run is not None:
+            from my_agents.conversations.session_evidence import SessionEvidenceRuntime
+
+            SessionEvidenceRuntime(self._db, self._user_id, self._run_id).record(captured[0])
             from my_agents.conversations.continuity import token_count
             from my_agents.token_budget import text_token_counter
 
@@ -989,6 +994,7 @@ def _document_workspace_prompt(**kwargs: Any) -> str:
     from my_agents.token_budget import text_token_counter
 
     packed = dict(kwargs)
+    capture = packed.pop("capture", None)
     settings = get_settings()
     counter = text_token_counter(packed.pop("model_name", settings.document_workspace_model))
     input_budget = packed.pop("input_budget", settings.context_input_tokens)
@@ -1002,6 +1008,18 @@ def _document_workspace_prompt(**kwargs: Any) -> str:
         if omitted:
             prompt += "\nEarlier context is incomplete."
         if counter.count(prompt) <= budget - 24:
+            if capture is not None:
+                from my_agents.conversations.session_evidence import capture_answer_input
+
+                capture.append(
+                    capture_answer_input(
+                        messages=packed["messages"],
+                        documents=packed["retrieved_context"],
+                        memory_count=len(packed["memory_context"]),
+                        input_truncated=omitted,
+                        boundary="workspace",
+                    )
+                )
             return prompt
         history = packed["messages"]
         candidates = [

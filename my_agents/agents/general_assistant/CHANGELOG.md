@@ -183,3 +183,12 @@ suite: 765 passed, 13 skipped; Ruff lint/format passed. Live OpenAI image reques
 - **Why:** Prefix clipping and unqualified token estimates could discard useful evidence or misstate budget usage.
 - **Behavior/contract impact:** Count final rendered text using the selected model mapping or an explicit conservative fallback. Include the omitted-context disclosure in the budget; record redacted counting metadata for ordinary and workspace answers.
 - **Verification:** Offline evidence-window, prompt-budget, and existing agent regressions; see implementation tracking for current results.
+
+## 2026-10-18 — Source-linked session evidence
+
+- **Why:** Transcript text and delivery counts could not show which excerpts an earlier answer received.
+- **Behavior:** Capture packed answer evidence in private Product DB run records; inject authorized,
+  bounded historical evidence only at the answer boundary. Keep actual inputs, explicit claims,
+  reported routing reasons, and inferred rationale distinct. No checkpoint or Jev context expansion.
+- **Verification:** Offline regression scenarios are in `tests/test_session_evidence.py`; current
+  validation and provider-evaluation limits are tracked in implementation tracking.

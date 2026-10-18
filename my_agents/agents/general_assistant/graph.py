@@ -373,10 +373,14 @@ def _compose_reply(
         if retrieved_context_override is not None
         else state.get("retrieved_context", [])
     )
+    evidence_runtime = runtime_context.get("session_evidence_runtime")
+    answer_messages = state.get("messages", [])
+    if evidence_runtime is not None:
+        answer_messages = evidence_runtime.messages_for_answer(answer_messages)
     workspace_compose_reply = getattr(workspace_runtime, "compose_reply", None)
     if callable(workspace_compose_reply):
         result = workspace_compose_reply(
-            messages=state.get("messages", []),
+            messages=answer_messages,
             route=route,
             capability=state["capability"],
             guidance=guidance,
@@ -417,7 +421,7 @@ def _compose_reply(
     compose_result = getattr(provider, "compose_result", None)
     if callable(compose_result):
         result = compose_result(
-            messages=state.get("messages", []),
+            messages=answer_messages,
             route=route,
             capability=state["capability"],
             guidance=guidance,
@@ -429,6 +433,11 @@ def _compose_reply(
             reasoning_mode=reasoning_mode,
             reasoning_effort=reasoning_effort,
         )
+        if evidence_runtime is not None:
+            evidence_runtime.record(
+                getattr(result, "session_evidence", None),
+                source_decision=state.get("retrieval_source_decision"),
+            )
         return {
             "reply": result.reply,
             **(
@@ -443,7 +452,7 @@ def _compose_reply(
             ),
         }
     reply = provider.compose_reply(
-        messages=state.get("messages", []),
+        messages=answer_messages,
         route=route,
         capability=state["capability"],
         guidance=guidance,

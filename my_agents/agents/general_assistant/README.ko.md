@@ -259,3 +259,13 @@ tokenizer를 임의로 대체하지 않습니다. 현재 질문보다 선택적 
 있을 때 검색합니다. 현재 메시지의 문서 사용 금지 요청이 우선하며 첨부 파일 전용 경로도
 유지합니다. 게스트는 `automatic`을 사용합니다.
 [설정 및 파일 계약](../../../docs/product-chat-service/44-private-document-files-and-preferences.md)을 참고하세요.
+
+## 답변 경계의 세션 근거
+
+런타임 전용 `SessionEvidenceRuntime`이 답변 작성 직전에 출처가 연결된 이전 입력과 명시된
+이전 주장을 불러옵니다. `ResponseComposition.session_evidence`는 예산 조정 후 문서 입력을
+비공개 어댑터에 전달하며 그래프 업데이트나 체크포인트에는 넣지 않습니다. 같은 소유자·대화의
+이전 완료 실행만 대상으로 권한, 재생성 경계, 토큰 제한을 적용합니다. Jev 입력은 늘리지
+않습니다. 기록은 입력 제공 사실이며 모델의 비공개 사고나 사실 활용 여부의 증거가 아닙니다.
+[연속성 계약](../../../docs/product-chat-service/36-conversation-continuity.ko.md)과
+`tests/test_session_evidence.py`를 참고하세요.
