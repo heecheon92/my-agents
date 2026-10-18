@@ -17,6 +17,12 @@ from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
+from my_agents.knowledge.document_processing import (
+    DocumentIngestionMode,
+    DocumentProcessingError,
+    ProcessedDocument,
+    process_document_text,
+)
 from my_agents.knowledge.embedding_index import embedding_identity, register_embedding_index
 from my_agents.knowledge.embeddings import deterministic_embedding, get_embedding_provider
 from my_agents.knowledge.metadata_enrichment import (
@@ -71,6 +77,13 @@ _CHUNK_OVERLAP_CHARS = 200
 logger = logging.getLogger(__name__)
 
 
+class ExtractionAlreadyRunning(DocumentProcessingError):
+    """A document already has admitted ingestion work."""
+
+    def __init__(self) -> None:
+        super().__init__("reprocess_in_progress", "Document processing is already in progress.")
+
+
 @dataclass(frozen=True)
 class ExtractionSummary:
     """Counts produced by one deterministic extraction run."""
@@ -122,10 +135,25 @@ class KnowledgeExtractionService:
         self._embedding_provider = get_embedding_provider()
         self._debug_ingestion_timing_logging = settings.debug_ingestion_timing_logging
 
-    def create_extraction_run(self, document_id: str) -> ExtractionRunModel:
+    def create_extraction_run(
+        self,
+        document_id: str,
+        *,
+        ingestion_mode: DocumentIngestionMode | None = None,
+        candidate_content: str | None = None,
+        candidate_elements_json: str | None = None,
+    ) -> ExtractionRunModel:
         """Create a queued extraction run without doing document work."""
+        self._lock_document_for_admission(document_id)
+        document = self._db.get(DocumentModel, document_id)
+        if document is not None and document.processed_at is None and candidate_content is None:
+            candidate_content = document.content
+            candidate_elements_json = _parse_artifact_elements_json(self._db, document.id)
         run = ExtractionRunModel(
             document_id=document_id,
+            ingestion_mode=ingestion_mode or (document.ingestion_mode if document else "standard"),
+            candidate_content=candidate_content,
+            candidate_elements_json=candidate_elements_json,
             status=ExtractionStatus.PENDING.value,
             stage="queued",
             progress_percent=0,
@@ -146,7 +174,18 @@ class KnowledgeExtractionService:
     ) -> ExtractionSummary:
         """Execute extraction for a document, optionally into an existing queued run."""
         if run is None:
-            run = ExtractionRunModel(document_id=document.id, status=ExtractionStatus.PENDING.value)
+            self._lock_document_for_admission(document.id)
+            run = ExtractionRunModel(
+                document_id=document.id,
+                ingestion_mode=document.ingestion_mode or "standard",
+                candidate_content=document.content if document.processed_at is None else None,
+                candidate_elements_json=(
+                    _parse_artifact_elements_json(self._db, document.id)
+                    if document.processed_at is None
+                    else None
+                ),
+                status=ExtractionStatus.PENDING.value,
+            )
             self._db.add(run)
             self._db.flush()
         run_id = run.id
@@ -178,16 +217,37 @@ class KnowledgeExtractionService:
         )
         metadata_executor: ThreadPoolExecutor | None = None
         metadata_future: Future[_MetadataGenerationResult] | None = None
+        candidate: ProcessedDocument | None = None
+        original_active_content = document.content
         try:
-            self._mark_progress(run, status=ExtractionStatus.RUNNING, stage="chunking", percent=15)
-            with timing.phase("clear_prior_artifacts"):
-                self._clear_prior_extraction_artifacts(document.id)
+            self._mark_progress(
+                run,
+                status=ExtractionStatus.RUNNING,
+                stage="processing" if run.candidate_content is not None else "chunking",
+                percent=10 if run.candidate_content is not None else 15,
+            )
             with timing.phase("parse_artifact_lookup"):
                 parse_artifact_elements_json = _parse_artifact_elements_json(self._db, document.id)
+            working_document = document
+            settings = get_settings()
+            if run.candidate_content is not None:
+                with timing.phase("document.processing"):
+                    candidate = process_document_text(
+                        run.candidate_content,
+                        mode=run.ingestion_mode,
+                        source_type=document.source_type,
+                        elements_json=run.candidate_elements_json,
+                        settings=settings,
+                    )
+                working_document = _candidate_document(document, candidate.content)
+                parse_artifact_elements_json = candidate.elements_json
+                self._mark_progress(
+                    run, status=ExtractionStatus.RUNNING, stage="chunking", percent=15
+                )
             with timing.phase("chunking"):
                 chunks = list(
                     _chunk_document_text(
-                        document,
+                        working_document,
                         parse_artifact_elements_json=parse_artifact_elements_json,
                     )
                 )
@@ -201,7 +261,6 @@ class KnowledgeExtractionService:
             run.chunk_count = len(chunks)
             with timing.phase("chunk_count_commit"):
                 self._db.commit()
-            settings = get_settings()
             if _should_parallelize_metadata_generation(settings):
                 metadata_executor = ThreadPoolExecutor(
                     max_workers=1,
@@ -210,7 +269,7 @@ class KnowledgeExtractionService:
                 metadata_future = metadata_executor.submit(
                     _generate_document_metadata_profile,
                     settings=settings,
-                    document=_metadata_document_snapshot(document),
+                    document=_metadata_document_snapshot(working_document),
                 )
                 timing.update(metadata_generation="parallel")
             else:
@@ -250,6 +309,25 @@ class KnowledgeExtractionService:
                 stage="entities",
                 percent=85,
             )
+            # Every destructive index change below shares the final commit. Prior
+            # chunks, citations, metadata, and text remain readable until it succeeds.
+            self._mark_progress(run, status=ExtractionStatus.RUNNING, stage="metadata", percent=95)
+            unchanged = self._db.execute(
+                update(DocumentModel)
+                .where(
+                    DocumentModel.id == document.id,
+                    DocumentModel.content == original_active_content,
+                )
+                .values(content=DocumentModel.content)
+                .execution_options(synchronize_session=False)
+            )
+            if unchanged.rowcount != 1:
+                raise DocumentProcessingError(
+                    "document_changed_during_processing",
+                    "The document changed during processing; retry with the current version.",
+                )
+            with timing.phase("clear_prior_artifacts"):
+                self._clear_prior_extraction_artifacts(document.id)
             with timing.phase("entities.extract"):
                 entity_names_by_chunk = [_extract_entity_names(content) for content, *_ in chunks]
             with timing.phase("entities.upsert"):
@@ -332,19 +410,36 @@ class KnowledgeExtractionService:
                         )
                         structured_entity_count += 1
 
-            self._mark_progress(
-                run,
-                status=ExtractionStatus.RUNNING,
-                stage="metadata",
-                percent=95,
-            )
             self._store_document_metadata_profile(
-                document=document,
+                document=working_document,
                 run=run,
                 timing=timing,
                 settings=settings,
                 metadata_future=metadata_future,
             )
+
+            if candidate is not None:
+                document.content = candidate.content
+                document.ingestion_mode = candidate.provenance.mode
+                document.processing_provenance_json = candidate.provenance.model_dump_json()
+                document.processed_at = datetime.now(UTC)
+                self._db.add(
+                    DocumentParseArtifactModel(
+                        document_id=document.id,
+                        source_sha256=document.source_sha256,
+                        source_filename=document.source_filename,
+                        source_content_type=document.source_content_type,
+                        source_type=document.source_type,
+                        parser_provider=candidate.provenance.provider,
+                        parser_name="document_processing",
+                        parser_version=candidate.provenance.version,
+                        parser_mode=candidate.provenance.mode,
+                        processing_provenance_json=candidate.provenance.model_dump_json(),
+                        markdown_content=candidate.content,
+                        elements_json=candidate.elements_json,
+                        warnings_json=json.dumps(candidate.provenance.warnings),
+                    )
+                )
 
             run.status = ExtractionStatus.COMPLETED.value
             run.stage = "completed"
@@ -354,6 +449,8 @@ class KnowledgeExtractionService:
             run.relationship_count = relationship_count
             run.error = None
             run.completed_at = datetime.now(UTC)
+            run.candidate_content = None
+            run.candidate_elements_json = None
             with timing.phase("final_commit"):
                 self._db.commit()
                 self._db.refresh(run)
@@ -388,8 +485,10 @@ class KnowledgeExtractionService:
                 run.stage = "failed"
                 run.error = _safe_error_message(exc)
                 run.completed_at = datetime.now(UTC)
+                run.candidate_content = None
+                run.candidate_elements_json = None
                 self._db.commit()
-            logger.exception(
+            logger.error(
                 "knowledge_ingestion.failed run_id=%s document_id=%s error=%s",
                 run_id,
                 document.id,
@@ -402,6 +501,26 @@ class KnowledgeExtractionService:
                 metadata_future.cancel()
             if metadata_executor is not None:
                 metadata_executor.shutdown(wait=False, cancel_futures=True)
+
+    def _lock_document_for_admission(self, document_id: str) -> None:
+        """Serialize admissions in both SQLite and PostgreSQL before checking jobs."""
+        self._db.execute(
+            update(DocumentModel)
+            .where(DocumentModel.id == document_id)
+            .values(content=DocumentModel.content)
+        )
+        active = self._db.scalar(
+            select(ExtractionRunModel.id)
+            .where(
+                ExtractionRunModel.document_id == document_id,
+                ExtractionRunModel.status.in_(
+                    [ExtractionStatus.PENDING.value, ExtractionStatus.RUNNING.value]
+                ),
+            )
+            .limit(1)
+        )
+        if active is not None:
+            raise ExtractionAlreadyRunning()
 
     def _clear_prior_extraction_artifacts(self, document_id: str) -> None:
         """Remove stale document-derived rows so repeated ingest is idempotent.
@@ -556,6 +675,18 @@ def _metadata_document_snapshot(document: DocumentModel) -> _MetadataDocumentSna
     )
 
 
+def _candidate_document(document: DocumentModel, content: str) -> DocumentModel:
+    """Build a detached view so progress commits cannot activate candidate text."""
+    return DocumentModel(
+        id=document.id,
+        title=document.title,
+        content=content,
+        source_filename=document.source_filename,
+        source_type=document.source_type,
+        source_page_count=document.source_page_count,
+    )
+
+
 def _should_parallelize_metadata_generation(settings: Settings) -> bool:
     """Return whether metadata generation is likely network-bound enough to overlap."""
     if settings.document_metadata_enrichment_mode == "openai":
@@ -603,14 +734,28 @@ def _chunk_document_text(
 ) -> list[tuple[str, int, int, int | None, str | None]]:
     if document.source_type == "pdf":
         return [
-            (content, start, end, source_page, None)
+            (
+                content,
+                start,
+                end,
+                source_page,
+                source_location_json_for_offsets(
+                    elements_json=parse_artifact_elements_json,
+                    start_offset=start,
+                    end_offset=end,
+                ),
+            )
             for content, start, end, source_page in _chunk_pdf_text(document.content)
         ]
-    chunked_text = (
-        _chunk_word_markdown_text(document.content)
-        if document.source_type == _WORD_DOCUMENT_SOURCE_TYPE
-        else _chunk_text(document.content)
-    )
+    if document.source_type == _WORD_DOCUMENT_SOURCE_TYPE:
+        chunked_text = _chunk_word_markdown_text(document.content)
+    elif document.source_type == "markdown":
+        chunked_text = _chunk_markdown_text(document.content)
+    else:
+        chunked_text = _chunk_text(
+            document.content,
+            preserve_units=document.source_type in {"spreadsheet", "presentation"},
+        )
     return [
         (
             content,
@@ -644,10 +789,9 @@ def _stores_sql_embedding_vector(db: Session) -> bool:
 
 def _safe_error_message(exc: Exception) -> str:
     """Return a bounded display-safe failure reason for extraction polling."""
-    message = str(exc).strip()
-    if not message:
-        message = exc.__class__.__name__
-    return f"{exc.__class__.__name__}: {message}"[:300]
+    if isinstance(exc, DocumentProcessingError):
+        return str(exc)[:300]
+    return f"{exc.__class__.__name__}: Document ingestion failed; existing content was preserved."
 
 
 def _chunk_pdf_text(text: str) -> list[tuple[str, int, int, int | None]]:
@@ -656,7 +800,7 @@ def _chunk_pdf_text(text: str) -> list[tuple[str, int, int, int | None]]:
     base_offset = 0
     for page_index, page_text in enumerate(pages, start=1):
         page_chunks = _coalesced_semantic_units(
-            _semantic_units(page_text.strip()),
+            _semantic_units(page_text),
             max_chars=_CHUNK_TARGET_CHARS,
         )
         for content, start, end in page_chunks or _chunk_text(page_text):
@@ -671,12 +815,17 @@ def _chunk_text(
     text: str,
     *,
     max_chars: int = _CHUNK_TARGET_CHARS,
+    preserve_units: bool = False,
 ) -> list[tuple[str, int, int]]:
     stripped = text.strip()
     if not stripped:
         return [("", 0, 0)]
     chunks: list[tuple[str, int, int]] = []
-    units = _semantic_units(stripped)
+    units = _semantic_units(text)
+    if not preserve_units:
+        return _coalesced_semantic_units(
+            units, max_chars=max_chars, source_text=text, respect_headings=False
+        )
     for unit, start, end in units:
         if not unit:
             continue
@@ -695,28 +844,41 @@ def _chunk_word_markdown_text(
     """Return retrieval-sized chunks for Docling DOCX Markdown.
 
     Docling often serializes Word files as Markdown with blank lines between almost
-    every title, list item, image placeholder, and paragraph. The generic text
-    chunker intentionally preserves those semantic units one-for-one, but that
-    makes realistic DOCX uploads produce hundreds of tiny chunks whose highest
-    retrieval hits are frequently heading or table-of-contents fragments. For Word
-    Markdown we keep the same unit boundaries and offsets, then pack adjacent
-    units into retrieval-sized chunks so headings stay with their body text.
+    every title, list item, image placeholder, and paragraph. Word chunks remove
+    image placeholders and pack adjacent units so headings stay with their body,
+    while retaining Word section boundaries.
     """
     stripped = text.strip()
     if not stripped:
         return [("", 0, 0)]
     units = [
         (unit, start, end)
-        for unit, start, end in _semantic_units(stripped)
+        for unit, start, end in _semantic_units(text)
         if not _is_markdown_image_placeholder(unit)
     ]
     return _coalesced_semantic_units(units, max_chars=max_chars) or [(stripped, 0, len(stripped))]
+
+
+def _chunk_markdown_text(text: str) -> list[tuple[str, int, int]]:
+    """Keep Markdown headings with body text while retaining exact source slices."""
+    chunks: list[tuple[str, int, int]] = []
+    for _content, start, end in _coalesced_semantic_units(
+        _semantic_units(text), max_chars=_CHUNK_TARGET_CHARS
+    ):
+        if chunks and not _buffer_contains_non_heading_text([chunks[-1][0]]):
+            _, previous_start, _ = chunks.pop()
+            chunks.extend(_fixed_width_units(text[previous_start:end], base_offset=previous_start))
+        else:
+            chunks.append((text[start:end], start, end))
+    return chunks or [("", 0, 0)]
 
 
 def _coalesced_semantic_units(
     units: Iterable[tuple[str, int, int]],
     *,
     max_chars: int,
+    source_text: str | None = None,
+    respect_headings: bool = True,
 ) -> list[tuple[str, int, int]]:
     chunks: list[tuple[str, int, int]] = []
     buffer: list[str] = []
@@ -727,7 +889,12 @@ def _coalesced_semantic_units(
     def flush_buffer() -> None:
         nonlocal buffer, buffer_start, buffer_end, buffer_chars
         if buffer and buffer_start is not None:
-            chunks.append(("\n\n".join(buffer), buffer_start, buffer_end))
+            content = (
+                source_text[buffer_start:buffer_end]
+                if source_text is not None
+                else "\n\n".join(buffer)
+            )
+            chunks.append((content, buffer_start, buffer_end))
         buffer = []
         buffer_start = None
         buffer_end = 0
@@ -738,6 +905,7 @@ def _coalesced_semantic_units(
             continue
         if (
             buffer
+            and respect_headings
             and _starts_markdown_atx_heading(unit)
             and _buffer_contains_non_heading_text(buffer)
         ):
@@ -746,7 +914,13 @@ def _coalesced_semantic_units(
             flush_buffer()
             chunks.extend(_fixed_width_units(unit, base_offset=start))
             continue
-        candidate_chars = len(unit) if not buffer else buffer_chars + 2 + len(unit)
+        candidate_chars = (
+            end - buffer_start
+            if source_text is not None and buffer_start is not None
+            else len(unit)
+            if not buffer
+            else buffer_chars + 2 + len(unit)
+        )
         if buffer and candidate_chars > max_chars:
             flush_buffer()
             candidate_chars = len(unit)
@@ -875,6 +1049,9 @@ def _deterministic_embedding(text: str, dimensions: int = 32) -> list[float]:
 
 
 def _semantic_units(text: str) -> list[tuple[str, int, int]]:
+    # Retain leading whitespace for exact original offsets; the final paragraph
+    # must still match when the file has a single trailing newline.
+    text = text.rstrip()
     units: list[tuple[str, int, int]] = []
     for match in re.finditer(r"\S(?:.*?\S)?(?=\n{2,}|\Z)", text, flags=re.DOTALL):
         paragraph = match.group(0).strip()
@@ -918,7 +1095,13 @@ def _fixed_width_units(text: str, *, base_offset: int) -> list[tuple[str, int, i
         segment = text[start:end].strip()
         if segment:
             segment_start = start + text[start:end].find(segment)
-            units.append((segment, base_offset + segment_start, base_offset + end))
+            units.append(
+                (
+                    segment,
+                    base_offset + segment_start,
+                    base_offset + segment_start + len(segment),
+                )
+            )
         if end >= len(text):
             break
         start = max(end - _CHUNK_OVERLAP_CHARS, start + 1)

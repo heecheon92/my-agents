@@ -159,6 +159,20 @@ class DocumentUpdateRequest(BaseModel):
         return self
 
 
+class DocumentProcessingProvenance(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: int = 1
+    mode: Literal["standard", "ai_assisted"]
+    provider: str
+    model: str | None = None
+    version: str
+    input_sha256: str
+    output_sha256: str
+    section_count: int = Field(ge=0)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class DocumentResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -174,6 +188,10 @@ class DocumentResponse(BaseModel):
     source_sha256: str | None = None
     source_page_count: int | None = None
     parser_name: str | None = None
+    ingestion_mode: Literal["standard", "ai_assisted"] = "standard"
+    original_retained: bool = False
+    processing_provenance: DocumentProcessingProvenance | None = None
+    processed_at: datetime | None = None
 
 
 class DocumentPreviewResponse(BaseModel):
@@ -224,6 +242,7 @@ class ExtractionRunResponse(BaseModel):
     entity_count: int
     relationship_count: int
     error: str | None = None
+    error_code: str | None = None
     started_at: datetime | None = None
     completed_at: datetime | None = None
 

@@ -18,6 +18,14 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 
 class APIErrorCode(StrEnum):
+    REPROCESS_IN_PROGRESS = "reprocess_in_progress"
+    DOCUMENT_PROCESSING_LIMIT = "document_processing_limit"
+    DOCUMENT_PROCESSING_EMPTY = "document_processing_empty"
+    DOCUMENT_PROCESSING_INVALID_OUTPUT = "document_processing_invalid_output"
+    DOCUMENT_PROCESSING_UNAVAILABLE = "document_processing_unavailable"
+    DOCUMENT_PROCESSING_FIDELITY_FAILED = "document_processing_fidelity_failed"
+    DOCUMENT_CHANGED_DURING_PROCESSING = "document_changed_during_processing"
+    DOCUMENT_PROCESSING_FAILED = "document_processing_failed"
     RUN_EXECUTION_MODE_MISMATCH = "run_execution_mode_mismatch"
     INVALID_STREAM_CURSOR = "invalid_stream_cursor"
     RUN_OUTPUT_CURSOR_EXPIRED = "run_output_cursor_expired"
@@ -107,6 +115,27 @@ class APIHTTPException(HTTPException):
 
 def install_api_error_handlers(app: FastAPI) -> None:
     """Install backward-compatible handlers that add a stable top-level code."""
+
+    from my_agents.knowledge.document_processing import DocumentProcessingError
+    from my_agents.knowledge.extraction import ExtractionAlreadyRunning
+
+    @app.exception_handler(DocumentProcessingError)
+    async def processing_error_handler(_request, exc):
+        code = APIErrorCode(exc.code) if exc.code in APIErrorCode else APIErrorCode.INVALID_REQUEST
+        return JSONResponse(
+            status_code=503 if code == APIErrorCode.DOCUMENT_PROCESSING_UNAVAILABLE else 422,
+            content={"detail": "Document processing could not be completed.", "code": code},
+        )
+
+    @app.exception_handler(ExtractionAlreadyRunning)
+    async def ingestion_busy_handler(_request, _exc):
+        return JSONResponse(
+            status_code=409,
+            content={
+                "detail": "This document is already being processed.",
+                "code": APIErrorCode.REPROCESS_IN_PROGRESS,
+            },
+        )
 
     @app.exception_handler(StarletteHTTPException)
     async def coded_http_exception_handler(

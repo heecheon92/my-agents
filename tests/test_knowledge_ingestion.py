@@ -145,6 +145,9 @@ def _client(monkeypatch) -> TestClient:  # noqa: ANN001 - pytest monkeypatch fix
 
 
 def _file_client(monkeypatch, tmp_path) -> TestClient:  # noqa: ANN001 - pytest fixtures
+    # Threaded ingestion needs separate DBAPI connections for writer and poller.
+    # StaticPool :memory: sessions share a transaction; closing a poll can roll
+    # back the worker's pending final commit.
     monkeypatch.setenv("MY_AGENTS_RESPONSE_MODE", "deterministic")
     monkeypatch.setenv("MY_AGENTS_SESSION_COOKIE_SECURE", "false")
     monkeypatch.setenv("MY_AGENTS_DATABASE_URL", f"sqlite+pysqlite:///{tmp_path / 'app.db'}")
@@ -373,7 +376,7 @@ def test_personal_knowledge_base_document_ingestion_creates_extraction_artifacts
     assert ingest.status_code == 200
     payload = ingest.json()
     assert payload["status"] == "completed"
-    assert payload["chunk_count"] == 2
+    assert payload["chunk_count"] == 1
     assert payload["entity_count"] >= 3
     assert payload["relationship_count"] >= 1
 
@@ -521,7 +524,7 @@ def test_line_heavy_pdf_chunking_coalesces_within_page_boundaries() -> None:
     assert "LangGraph Alpha page one line 12" in chunks[0][0]
     assert "OpenAI metadata profile page two line 1" in chunks[1][0]
     assert "OpenAI metadata profile page two line 12" in chunks[1][0]
-    assert len(chunks) < len(_chunk_text(page_one)) + len(_chunk_text(page_two))
+    assert len(chunks) == len(_chunk_text(page_one)) + len(_chunk_text(page_two))
 
 
 def test_reingesting_document_replaces_chunks_without_duplicate_ordinals(
@@ -546,18 +549,17 @@ def test_reingesting_document_replaces_chunks_without_duplicate_ordinals(
 
     assert first.status_code == 200
     assert second.status_code == 200
-    assert first.json()["chunk_count"] == 2
-    assert second.json()["chunk_count"] == 2
+    assert first.json()["chunk_count"] == 1
+    assert second.json()["chunk_count"] == 1
     chunks = _database_rows(
         select(DocumentChunkModel)
         .where(DocumentChunkModel.document_id == document_id)
         .order_by(DocumentChunkModel.ordinal)
     )
 
-    assert [chunk.ordinal for chunk in chunks] == [0, 1]
+    assert [chunk.ordinal for chunk in chunks] == [0]
     assert [chunk.content for chunk in chunks] == [
-        "First reingest paragraph.",
-        "Second reingest paragraph.",
+        "First reingest paragraph.\n\nSecond reingest paragraph.",
     ]
 
 
@@ -715,8 +717,7 @@ def test_ingestion_uses_configured_embedding_provider(monkeypatch) -> None:  # n
         .order_by(DocumentChunkModel.ordinal)
     )
     assert [chunk.embedding_json for chunk in chunks] == [
-        "[0.0, 21.0, 1.0]",
-        "[1.0, 22.0, 1.0]",
+        "[0.0, 45.0, 1.0]",
     ]
 
 
@@ -746,8 +747,10 @@ def test_openai_metadata_generation_overlaps_chunk_embedding(monkeypatch) -> Non
         client,
         json={
             "title": "Parallel Metadata",
-            "content": "First parallel chunk. OpenAI metadata overlaps here.\n\n"
-            "Second parallel chunk. LangGraph indexing overlaps here.",
+            "content": "First parallel chunk. OpenAI metadata overlaps here. "
+            + "Context detail. " * 80
+            + "\n\nSecond parallel chunk. LangGraph indexing overlaps here. "
+            + "Context detail. " * 80,
             "knowledge_base_id": kb_id,
         },
     )
@@ -763,8 +766,8 @@ def test_openai_metadata_generation_overlaps_chunk_embedding(monkeypatch) -> Non
     assert embedding_started.is_set()
 
 
-def test_async_ingest_returns_queued_run_and_polling_completes(monkeypatch) -> None:  # noqa: ANN001
-    client = _client(monkeypatch)
+def test_async_ingest_returns_queued_run_and_polling_completes(monkeypatch, tmp_path) -> None:  # noqa: ANN001
+    client = _file_client(monkeypatch, tmp_path)
     _signup_login(client, "async-ingest-owner@example.com")
     kb_id = _create_personal_knowledge_base(client, "Async KB")
 
@@ -896,17 +899,17 @@ def test_external_worker_progress_is_visible_to_independent_polling(monkeypatch,
     observed_progress.append(completed["progress_percent"])
 
     assert result.status == "completed"
-    assert observed_progress == [1, 15, 45, 85, 95, 100]
+    assert observed_progress == [1, 10, 15, 45, 85, 95, 100]
     assert observed_progress == sorted(set(observed_progress))
 
 
-def test_async_ingest_persists_failed_status_with_safe_error(monkeypatch) -> None:  # noqa: ANN001
+def test_async_ingest_persists_failed_status_with_safe_error(monkeypatch, tmp_path) -> None:  # noqa: ANN001
     monkeypatch.setattr(
         extraction_module,
         "get_embedding_provider",
         lambda: FailingEmbeddingProvider(),
     )
-    client = _client(monkeypatch)
+    client = _file_client(monkeypatch, tmp_path)
     _signup_login(client, "async-ingest-failure@example.com")
     kb_id = _create_personal_knowledge_base(client, "Async Failure KB")
 
@@ -933,13 +936,14 @@ def test_async_ingest_persists_failed_status_with_safe_error(monkeypatch) -> Non
     assert failed["status"] == "failed"
     assert failed["stage"] == "failed"
     assert "RuntimeError" in failed["error"]
-    assert "fixture embedding failure" in failed["error"]
+    assert "Document ingestion failed" in failed["error"]
+    assert "fixture embedding failure" not in failed["error"]
 
 
-def test_async_ingest_start_and_poll_respect_document_permissions(monkeypatch) -> None:  # noqa: ANN001
-    owner = _client(monkeypatch)
-    reader = _client(monkeypatch)
-    outsider = _client(monkeypatch)
+def test_async_ingest_start_and_poll_respect_document_permissions(monkeypatch, tmp_path) -> None:  # noqa: ANN001
+    owner = _file_client(monkeypatch, tmp_path)
+    reader = _file_client(monkeypatch, tmp_path)
+    outsider = _file_client(monkeypatch, tmp_path)
     _signup_login(owner, "async-permission-owner@example.com")
     reader_id = _signup_login(reader, "async-permission-reader@example.com")
     _signup_login(outsider, "async-permission-outsider@example.com")
@@ -1716,7 +1720,7 @@ def test_word_document_markdown_chunks_keep_headings_with_body_context() -> None
         and "ACCU-BANK는 출입 통제 시스템에 사용되는 사용자 인증용 주 장치" in content
         for content in chunk_texts
     )
-    assert len(chunks) < len(_chunk_text(markdown))
+    assert all(len(content) <= 1500 for content, *_ in chunks)
 
 
 def test_langgraph_academy_pdf_regression_extracts_real_text_when_available() -> None:

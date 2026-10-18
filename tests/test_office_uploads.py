@@ -12,7 +12,8 @@ from pptx import Presentation
 from pptx.util import Inches
 
 import my_agents.knowledge.office_uploads as office_uploads_module
-from my_agents.knowledge.extraction import _chunk_text
+from my_agents.knowledge.extraction import _chunk_document_text
+from my_agents.knowledge.models import DocumentModel
 from my_agents.knowledge.office_uploads import (
     EXCEL_CONTENT_TYPE,
     EXCEL_UPLOAD_PARSER_NAME,
@@ -208,7 +209,12 @@ def test_parse_xlsx_expands_merged_headers_into_row_records() -> None:
         "column_end": "L",
     }
 
-    chunk_texts = [chunk for chunk, _, _ in _chunk_text(parsed.content)]
+    chunk_texts = [
+        chunk
+        for chunk, *_ in _chunk_document_text(
+            DocumentModel(content=parsed.content, source_type="spreadsheet")
+        )
+    ]
     matching_chunks = [chunk for chunk in chunk_texts if "Excel row 6" in chunk]
     assert matching_chunks == [city_average_record]
 

@@ -44,6 +44,22 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
+    document_ingestion_model: str = Field(
+        default="gpt-6-luna", validation_alias="MY_AGENTS_DOCUMENT_INGESTION_MODEL"
+    )
+    document_ingestion_timeout_seconds: float = Field(
+        default=60,
+        gt=0,
+        le=120,
+        validation_alias="MY_AGENTS_DOCUMENT_INGESTION_TIMEOUT_SECONDS",
+    )
+    document_ingestion_max_chars: int = Field(
+        default=200000,
+        ge=1000,
+        le=1000000,
+        validation_alias="MY_AGENTS_DOCUMENT_INGESTION_MAX_CHARS",
+    )
+
     durable_runs_enabled: bool = Field(
         default=False, validation_alias="MY_AGENTS_DURABLE_RUNS_ENABLED"
     )

@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Generator
 from functools import lru_cache
+from sqlite3 import Connection as SQLiteConnection
 
-from sqlalchemy import Engine, MetaData, create_engine
+from sqlalchemy import Engine, MetaData, create_engine, event
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.pool import ConnectionPoolEntry, StaticPool
 
 from my_agents.diagnostics import deploy_log, safe_database_url_summary
 from my_agents.settings import Settings, get_settings
@@ -32,7 +33,36 @@ class Base(DeclarativeBase):
 def _engine_for_url(database_url: str) -> Engine:
     deploy_log("database.engine.create", **safe_database_url_summary(database_url))
     kwargs = _engine_kwargs_for_url(database_url)
-    return create_engine(database_url, **kwargs)
+    engine = create_engine(database_url, **kwargs)
+    url = make_url(database_url)
+    if (
+        url.get_backend_name() == "sqlite"
+        and supports_background_sessions(database_url)
+        and not str(url.database).startswith("file::memory:")
+    ):
+        event.listen(engine, "connect", _configure_file_sqlite_connection)
+    return engine
+
+
+def _configure_file_sqlite_connection(
+    connection: SQLiteConnection, _record: ConnectionPoolEntry
+) -> None:
+    """Keep polling readers independent of large atomic ingestion writes.
+
+    WAL permits readers to observe the previous committed version while a writer
+    spills dirty pages. The default five-second busy wait still bounds brief
+    writer contention; it is not used to hide a long ingestion transaction.
+    """
+    cursor = connection.cursor()
+    try:
+        cursor.execute("PRAGMA busy_timeout=5000")
+        current_mode = cursor.execute("PRAGMA journal_mode").fetchone()[0]
+        if current_mode.lower() != "wal":
+            current_mode = cursor.execute("PRAGMA journal_mode=WAL").fetchone()[0]
+        if current_mode.lower() != "wal":
+            raise RuntimeError("File-backed SQLite requires WAL journal mode.")
+    finally:
+        cursor.close()
 
 
 def _engine_kwargs_for_url(database_url: str) -> dict:

@@ -746,7 +746,7 @@ def test_metadata_profile_match_injects_body_chunks_not_only_heading(
     try:
         results = RetrievalService(db).retrieve_scoped(
             user_id=user_id,
-            query="Find my oncology cancer protocol",
+            query="Find my oncology cancer treatment",
             limit=5,
             knowledge_base_ids=[kb_id],
         )
@@ -819,7 +819,7 @@ def test_matched_document_chunk_rows_are_reused_within_retrieval_attempt(
         with capture_local_timing_phases(lambda phase, _duration_seconds: phases.append(phase)):
             results = RetrievalService(db).retrieve_scoped(
                 user_id=user_id,
-                query="Summarize my uploaded oncology cancer protocol",
+                query="Summarize my uploaded oncology cancer treatment",
                 limit=5,
                 knowledge_base_ids=[kb_id],
             )
@@ -890,8 +890,10 @@ def test_graph_expansion_adds_authorized_related_chunks(monkeypatch) -> None:  #
         client,
         json={
             "title": "LangGraph Expansion Notes",
-            "content": "LangGraph retrieval matches AlphaQuery.\n\n"
-            "LangGraph planner memory explains follow-up synthesis.",
+            "content": "LangGraph retrieval matches AlphaQuery. "
+            + ("Context detail. " * 85).rstrip()
+            + "\n\nLangGraph planner memory explains follow-up synthesis. "
+            + ("Context detail. " * 85).rstrip(),
             "knowledge_base_id": kb_id,
         },
     )
@@ -899,8 +901,10 @@ def test_graph_expansion_adds_authorized_related_chunks(monkeypatch) -> None:  #
         client,
         json={
             "title": "Unselected LangGraph Expansion Notes",
-            "content": "LangGraph retrieval matches AlphaQuery.\n\n"
-            "LangGraph unselected memory must stay outside selected scope.",
+            "content": "LangGraph retrieval matches AlphaQuery. "
+            + ("Context detail. " * 85).rstrip()
+            + "\n\nLangGraph unselected memory must stay outside selected scope. "
+            + ("Context detail. " * 85).rstrip(),
             "knowledge_base_id": unselected_kb_id,
         },
     )

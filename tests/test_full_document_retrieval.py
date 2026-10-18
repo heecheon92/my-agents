@@ -581,14 +581,16 @@ def test_many_chunk_full_document_uses_distributed_bounded_citations(monkeypatch
         f"## Section {index}\nRequirement {index}: preserve distributed provenance."
         for index in range(190)
     )
-    document = _create_document(
-        client,
-        json={
-            "title": "Many Chunk Source",
-            "content": content,
-            "knowledge_base_id": kb_id,
-        },
-    ).json()
+    # Markdown section boundaries intentionally produce many short chunks within
+    # the complete-read budget; plaintext instead packs adjacent short sections.
+    uploaded = client.post(
+        f"/knowledge-bases/{kb_id}/documents/upload",
+        data={"title": "Many Chunk Source"},
+        files={"file": ("many-chunk-source.md", content.encode(), "text/markdown")},
+    )
+    assert uploaded.status_code == 201
+    document = uploaded.json()
+    assert document["source_type"] == "markdown"
     assert client.post(f"/documents/{document['id']}/ingest").status_code == 200
 
     session_generator = get_database_session()

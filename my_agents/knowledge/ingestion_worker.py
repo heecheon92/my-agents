@@ -121,12 +121,13 @@ def execute_claimed_extraction_run(*, database_url: str, run_id: str) -> Ingesti
             )
         try:
             KnowledgeExtractionService(db).ingest_document(document, run=run)
-        except Exception:
+        except Exception as exc:
             # KnowledgeExtractionService persists bounded failed status before re-raising.
-            logger.exception(
-                "ingestion_worker.failed run_id=%s document_id=%s",
+            logger.error(
+                "ingestion_worker.failed run_id=%s document_id=%s error_type=%s",
                 run.id,
                 document.id,
+                type(exc).__name__,
             )
             return IngestionWorkerResult(
                 run_id=run.id,
